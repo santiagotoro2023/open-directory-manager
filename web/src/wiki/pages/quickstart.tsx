@@ -166,6 +166,12 @@ sudo deploy/setup.sh`}</Code>
               needed.
             </li>
           </Steps>
+          <Note>
+            The control plane runs as a local system account named <C>odm</C>, separate from the
+            directory account it authenticates as. If a login account of that name already exists,
+            pass <C>--service-user &lt;name&gt;</C> to <C>deploy/setup.sh</C> to keep the two
+            apart.
+          </Note>
         </Section>
 
         <Section title="Command-line entry points">

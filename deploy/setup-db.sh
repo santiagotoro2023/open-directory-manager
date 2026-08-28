@@ -17,6 +17,7 @@ VENV="/opt/odm/venv"
 usage() {
     cat >&2 <<'EOF'
 usage: setup-db.sh [--db <name>] [--user <name>] [--secrets-file <path>] [--venv <path>]
+                   [--service-user <name>]
 EOF
     exit 2
 }
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
         --user) DB_USER="${2:?}"; shift 2 ;;
         --secrets-file) SECRETS_FILE="${2:?}"; shift 2 ;;
         --venv) VENV="${2:?}"; shift 2 ;;
+        --service-user) SERVICE_USER="${2:?}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
     esac

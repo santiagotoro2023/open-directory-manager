@@ -46,6 +46,7 @@ the command line is asked for.
   --port <n>               console and API port (default: 8443)
   --skip-dc                this machine is not the domain controller
   --skip-console           do not build the console here
+  --service-user <name>    account the control plane runs as (default: odm)
   --yes                    accept the summary without pausing
 USAGE
     exit 2
@@ -61,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         --port) PORT="${2:?}"; shift 2 ;;
         --skip-dc) SKIP_DC="yes"; shift ;;
         --skip-console) SKIP_CONSOLE="yes"; shift ;;
+        --service-user) SERVICE_USER="${2:?}"; shift 2 ;;
         --yes) ASSUME_YES="yes"; shift ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
@@ -224,6 +226,16 @@ command -v systemctl >/dev/null || fail "this needs systemd"
 if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
     useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
     info "Created the $SERVICE_USER service account"
+elif [[ "$(id -u "$SERVICE_USER")" -ge 1000 ]]; then
+    # An account someone logs in with is not a service account. The control
+    # plane would run as them, and its keytab and database password are
+    # readable by its group.
+    warn "$SERVICE_USER is a login account, not a service account."
+    warn "The control plane would run as $SERVICE_USER and share its group."
+    warn "Run with --service-user <name> to keep the two separate."
+    if [[ "$(ask_yes_no "Continue using $SERVICE_USER anyway?" "yes")" != "yes" ]]; then
+        fail "re-run with --service-user <name>"
+    fi
 fi
 ok "Ready to continue"
 
@@ -418,7 +430,8 @@ step "Setting up TLS and the database"
 "$HERE/generate-self-signed.sh" --fqdn "$CONSOLE_FQDN" >/dev/null
 ok "Console certificate created (self-signed for now)"
 
-"$HERE/setup-db.sh" --secrets-file "$SECRETS_FILE" --venv "$VENV" >/dev/null
+"$HERE/setup-db.sh" --secrets-file "$SECRETS_FILE" --venv "$VENV" \
+    --service-user "$SERVICE_USER" >/dev/null
 ok "PostgreSQL database created and migrated"
 
 # ---------------------------------------------------------------- step 7 --
@@ -487,6 +500,10 @@ fi
 
 install -m 0644 "$HERE/odm-api.service" /etc/systemd/system/odm-api.service
 [[ "$PORT" == "8443" ]] || sed -i "s#--port 8443#--port $PORT#" /etc/systemd/system/odm-api.service
+if [[ "$SERVICE_USER" != "odm" ]]; then
+    sed -i "s#^User=odm\$#User=$SERVICE_USER#;s#^Group=odm\$#Group=$SERVICE_USER#" \
+        /etc/systemd/system/odm-api.service
+fi
 systemctl daemon-reload
 systemctl enable odm-api >/dev/null 2>&1 || true
 systemctl restart odm-api || true

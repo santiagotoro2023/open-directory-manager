@@ -238,3 +238,33 @@ def test_a_console_directory_without_an_index_is_refused(tmp_path):
                 console_dir=tmp_path,
             ),
         )
+
+
+def test_the_unit_gives_the_service_a_home_it_can_read():
+    """ProtectHome makes /home unreadable, and a denied stat is not a missing
+    file. asyncpg checks ~/.postgresql for a client certificate on every
+    connection, so a HOME under /home fails startup outright."""
+    import pathlib
+
+    unit = (pathlib.Path("..") / "deploy" / "odm-api.service").read_text()
+
+    assert "ProtectHome=true" in unit, "this test guards ProtectHome; it is gone"
+
+    home = [
+        line.split("=", 2)[2].strip()
+        for line in unit.splitlines()
+        if line.startswith("Environment=HOME=")
+    ]
+    assert home, "the unit sets ProtectHome but never sets HOME"
+    assert not home[0].startswith("/home"), (
+        f"HOME is {home[0]}, which ProtectHome makes unreadable"
+    )
+
+    writable = next(
+        line.split("=", 1)[1].split()
+        for line in unit.splitlines()
+        if line.startswith("ReadWritePaths=")
+    )
+    assert any(home[0] == path or home[0].startswith(path + "/") for path in writable), (
+        f"HOME is {home[0]}, which is outside ReadWritePaths {writable}"
+    )

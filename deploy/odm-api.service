@@ -10,6 +10,11 @@ User=odm
 Group=odm
 # All configuration and secrets come from this mode-0640 file, never the unit.
 Environment=ODM_SECRETS_FILE=/etc/odm/odm.env
+# ProtectHome below makes /home unreadable, so HOME must point somewhere this
+# service can actually stat. Libraries look for optional per-user files there
+# (asyncpg checks ~/.postgresql for a client certificate) and a denied stat is
+# not the same as a missing file: it is an error, and it stops startup.
+Environment=HOME=/var/lib/odm
 WorkingDirectory=/opt/odm
 ExecStart=/opt/odm/venv/bin/uvicorn odm.main:app \
     --host 0.0.0.0 \
