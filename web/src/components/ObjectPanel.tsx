@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, api, type DirectoryObject } from "../api";
 import { Field, Modal } from "./Modal";
+import { RsopDialog } from "./RsopDialog";
 
 // Mirrors the per-type allow-lists the API enforces; anything else is
 // rejected server-side, so the form never offers it.
@@ -68,7 +69,10 @@ export function ObjectPanel({
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<"password" | "move" | "members" | "delete" | null>(null);
+  const [dialog, setDialog] = useState<
+    "password" | "move" | "members" | "delete" | "rsop" | null
+  >(null);
+  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     setDraft(Object.fromEntries(fields.map((f) => [f.attribute, text(object[f.attribute])])));
@@ -166,6 +170,24 @@ export function ObjectPanel({
             {isDisabled(object) ? "Enable" : "Disable"}
           </button>
         )}
+        <button type="button" className="ghost" onClick={() => setDialog("rsop")}>
+          Policy
+        </button>
+        {object.objectType === "ou" && (
+          <button
+            type="button"
+            className="ghost"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => api.policy.setInheritance(dn, !blocked),
+                (result) => setBlocked(result.block_inheritance),
+              )
+            }
+          >
+            {blocked ? "Allow inheritance" : "Block inheritance"}
+          </button>
+        )}
         <button type="button" className="ghost" onClick={() => setDialog("move")}>
           Move
         </button>
@@ -174,6 +196,13 @@ export function ObjectPanel({
         </button>
       </div>
 
+      {dialog === "rsop" && (
+        <RsopDialog
+          dn={dn}
+          isComputer={object.objectType === "computer"}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog === "password" && (
         <PasswordDialog dn={dn} onClose={() => setDialog(null)} />
       )}

@@ -17,6 +17,12 @@ the directory directly (CLAUDE.md §2).
 | `odm/auth.py` | `/api/v1/auth/*` |
 | `odm/routes_directory.py` | `/api/v1/directory/*` |
 | `odm/routes_audit.py` | `/api/v1/audit/*` |
+| `odm/policy.py` | Pure GPO precedence resolution and settings merge |
+| `odm/policy_schema.py` | Typed, validated policy settings |
+| `odm/rsop.py` | Effective-policy assembly from PostgreSQL plus LDAP facts |
+| `odm/sysvol.py` | LDAP/SYSVOL mirror for GPMC interoperability |
+| `odm/routes_policy.py` | `/api/v1/policy/*` |
+| `odm/routes_agent.py` | `/api/v1/agent/*`, SPNEGO machine authentication |
 | `odm/audit.py` | Append-only audit writes and the `audited` wrapper |
 | `migrations/` | Numbered SQL, applied in order |
 
@@ -53,9 +59,22 @@ controller is needed to run them.
 | `POST` | `/api/v1/directory/user/password` | Reset a password |
 | `POST` | `/api/v1/directory/group/members` | Bulk membership edit |
 | `DELETE` | `/api/v1/directory/object` | Soft delete via the recycle bin |
+| `GET` | `/api/v1/policy/gpos` | Group policy objects |
+| `POST` | `/api/v1/policy/gpos` | Create a GPO |
+| `PATCH` | `/api/v1/policy/gpo` | Name, state, settings, filtering, targeting |
+| `DELETE` | `/api/v1/policy/gpo` | Delete a GPO and its links |
+| `POST` | `/api/v1/policy/links` | Link a GPO to a container |
+| `PATCH` | `/api/v1/policy/link` | Link order, enforced, enabled |
+| `DELETE` | `/api/v1/policy/link` | Unlink |
+| `POST` | `/api/v1/policy/inheritance` | Block inheritance on an OU |
+| `GET` | `/api/v1/policy/effective` | RSoP preview for one object |
+| `GET` | `/api/v1/policy/reports` | What agents last reported |
+| `GET` | `/api/v1/agent/policy` | Machine's effective policy (SPNEGO) |
+| `GET` | `/api/v1/agent/user-policy` | A user's policy on that machine (SPNEGO) |
+| `POST` | `/api/v1/agent/report` | RSoP results from an agent (SPNEGO) |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
-Policy, DNS and DHCP routers arrive in later phases.
+DNS and DHCP routers arrive in later phases.
 
 DNs are passed in the query string or the body, never in the path — a DN
 contains commas, equals signs and spaces, and path-escaping them is a bug
@@ -82,3 +101,10 @@ factory.
 - Deletes snapshot the full object into the recycle bin before removal.
 - `audit_log` is append-only, enforced by a trigger; refused writes are
   recorded too.
+- Policy settings are validated against a typed schema before storage:
+  absolute paths without traversal, octal modes, real systemd unit and cron
+  shapes, sudo commands that cannot inject a second rule. The agent runs as
+  root, so the document it receives is checked here, not there.
+- Agents authenticate with SPNEGO only; there is no session cookie or CSRF
+  token on `/api/v1/agent/*`, and the Kerberos principal names the computer
+  object whose policy is served.

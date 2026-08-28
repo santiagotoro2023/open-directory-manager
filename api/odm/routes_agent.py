@@ -1,0 +1,162 @@
+"""Endpoints the policy agent talks to.
+
+Agents authenticate with SPNEGO using the machine keytab that domain join
+already installed — no second credential system (CLAUDE.md §2). There is no
+session cookie and no CSRF token here: the Kerberos ticket is the whole
+identity, and it names the computer object whose policy is being served.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import json
+from dataclasses import dataclass
+from typing import Annotated, Any
+
+import asyncpg
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
+
+from . import objects, rsop
+from .auth import _accept_spnego
+from .config import Settings, get_settings
+from .routes_directory import _bound
+from .security import get_pool
+
+router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
+
+
+@dataclass(frozen=True)
+class Machine:
+    dn: str
+    hostname: str
+    sam_account_name: str
+
+
+async def require_machine(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> Machine:
+    if settings.keytab is None:
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "no service keytab configured")
+
+    header = request.headers.get("authorization", "")
+    scheme, _, payload = header.partition(" ")
+    if scheme.lower() != "negotiate" or not payload:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "kerberos ticket required",
+            headers={"WWW-Authenticate": "Negotiate"},
+        )
+    try:
+        token = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "malformed negotiate token") from exc
+
+    principal, _out = await run_in_threadpool(_accept_spnego, settings, token)
+    name = principal.split("@", 1)[0]
+    # host/ws01.corp.example.internal (service principal) or WS01$ (machine account)
+    dns_host_name = name.split("/", 1)[1] if "/" in name else None
+    sam_account_name = None if dns_host_name else name
+
+    async with _bound(settings, write=False) as conn:
+        computer = await run_in_threadpool(
+            objects.find_computer,
+            conn,
+            settings,
+            sam_account_name=sam_account_name,
+            dns_host_name=dns_host_name,
+        )
+    return Machine(
+        dn=computer["distinguishedName"],
+        hostname=str(computer.get("dNSHostName") or computer.get("cn") or ""),
+        sam_account_name=str(computer.get("sAMAccountName") or ""),
+    )
+
+
+@router.get("/policy")
+async def agent_policy(
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+    os_id: Annotated[str, Query(alias="os", max_length=64)] = "",
+    ip: Annotated[list[str] | None, Query(max_length=16)] = None,
+) -> dict[str, Any]:
+    """The flattened effective policy for the calling machine.
+
+    Precedence, inheritance, enforcement, security filtering and item-level
+    targeting are all resolved here; the agent applies what it is handed.
+    """
+    async with _bound(settings, write=False) as conn:
+        document = await rsop.build(
+            pool,
+            settings,
+            conn,
+            machine.dn,
+            os_id=os_id,
+            ip_addresses=tuple(ip or ()),
+        )
+    document["refresh_minutes"] = (
+        document["settings"].get("agent", {}).get("refresh_minutes")
+        or settings.agent_refresh_minutes
+    )
+    return document
+
+
+@router.get("/user-policy")
+async def agent_user_policy(
+    user: Annotated[str, Query(min_length=1, max_length=104)],
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Policy for one user logging on to the calling machine.
+
+    AD resolves computer and user policy separately; so does ODM. The machine
+    asks on the user's behalf using its own ticket, so a user never needs
+    credentials of their own against the API.
+    """
+    async with _bound(settings, write=False) as conn:
+        account = await run_in_threadpool(objects.find_user, conn, settings, user)
+        document = await rsop.build(pool, settings, conn, account["distinguishedName"])
+    document["target"]["machine"] = machine.dn
+    return document
+
+
+class SettingResult(BaseModel):
+    setting: Annotated[str, Field(max_length=256)]
+    status: Annotated[str, Field(pattern="^(success|failed|skipped)$")]
+    reason: Annotated[str, Field(default="", max_length=512)] = ""
+
+
+class Report(BaseModel):
+    policy_serial: Annotated[str, Field(max_length=64)]
+    agent_version: Annotated[str, Field(default="", max_length=32)] = ""
+    applied_gpos: Annotated[list[dict[str, str]], Field(default_factory=list, max_length=200)]
+    results: Annotated[list[SettingResult], Field(default_factory=list, max_length=1000)]
+
+
+@router.post("/report", status_code=204)
+async def agent_report(
+    body: Report,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """Resultant Set of Policy, as observed by the machine that applied it."""
+    results = [result.model_dump() for result in body.results]
+    await pool.execute(
+        """
+        INSERT INTO agent_report (computer_dn, hostname, agent_version, policy_serial,
+                                  applied_gpos, results, failures)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
+        """,
+        machine.dn,
+        machine.hostname,
+        body.agent_version,
+        body.policy_serial,
+        json.dumps(body.applied_gpos),
+        json.dumps(results),
+        sum(1 for result in results if result["status"] == "failed"),
+    )

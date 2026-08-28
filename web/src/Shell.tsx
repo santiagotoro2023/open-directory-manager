@@ -16,7 +16,7 @@ import type { SessionInfo } from "./api";
 const NAV = [
   { label: "Overview", to: "/", icon: LayoutDashboard, ready: true, end: true },
   { label: "Directory", to: "/directory", icon: Users, ready: true },
-  { label: "Group Policy", to: "/policy", icon: ClipboardList, ready: false },
+  { label: "Group Policy", to: "/policy", icon: ClipboardList, ready: true },
   { label: "DNS", to: "/dns", icon: Globe, ready: false },
   { label: "DHCP", to: "/dhcp", icon: Network, ready: false },
   { label: "Server Roles", to: "/roles", icon: Server, ready: false },

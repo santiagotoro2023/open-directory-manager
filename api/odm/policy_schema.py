@@ -1,0 +1,235 @@
+"""Typed policy settings.
+
+The agent runs as root and executes what this document tells it to, so the
+document is validated here, at the API boundary, and not trusted anywhere
+downstream: absolute paths only, no traversal, octal modes, unit and cron
+shapes checked, principals restricted to a sane charset (CLAUDE.md §6).
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Annotated, Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+MODE_RE = re.compile(r"^0?[0-7]{3}$")
+UNIT_RE = re.compile(r"^[A-Za-z0-9@:_.-]{1,128}\.(service|socket|timer|target|mount|path)$")
+NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+# No backslashes: these land in sudoers and PAM access rules, where a
+# backslash is an escape character.
+PRINCIPAL_RE = re.compile(r"^%?[A-Za-z0-9._-][A-Za-z0-9._ -]{0,63}\$?$")
+CRON_RE = re.compile(
+    r"^(@(reboot|yearly|annually|monthly|weekly|daily|hourly)|[-0-9*/,\s]{9,100})$"
+)
+UNC_RE = re.compile(r"^//[A-Za-z0-9._-]{1,253}/[A-Za-z0-9._$ -]{1,80}$")
+
+Name = Annotated[str, Field(min_length=1, max_length=64)]
+
+
+class Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+def absolute_path(value: str) -> str:
+    if not value.startswith("/") or ".." in value.split("/") or len(value) > 4096:
+        raise ValueError("must be an absolute path without '..'")
+    return value
+
+
+class FileDeployment(Strict):
+    path: str
+    content: Annotated[str, Field(max_length=1_048_576)] = ""
+    mode: str = "0644"
+    owner: Name = "root"
+    group: Name = "root"
+
+    @field_validator("path")
+    @classmethod
+    def _path(cls, value: str) -> str:
+        return absolute_path(value)
+
+    @field_validator("mode")
+    @classmethod
+    def _mode(cls, value: str) -> str:
+        if not MODE_RE.match(value):
+            raise ValueError("mode must be octal, e.g. 0644")
+        return value
+
+
+class Script(Strict):
+    trigger: Literal["startup", "shutdown", "logon", "logoff"]
+    name: str
+    interpreter: str = "/bin/sh"
+    content: Annotated[str, Field(max_length=262_144)]
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not NAME_RE.match(value):
+            raise ValueError("name may contain letters, digits, dot, dash and underscore")
+        return value
+
+    @field_validator("interpreter")
+    @classmethod
+    def _interpreter(cls, value: str) -> str:
+        return absolute_path(value)
+
+
+class SystemdUnit(Strict):
+    unit: str
+    state: Literal["enabled", "disabled", "masked", "started", "stopped"]
+
+    @field_validator("unit")
+    @classmethod
+    def _unit(cls, value: str) -> str:
+        if not UNIT_RE.match(value):
+            raise ValueError("not a systemd unit name")
+        return value
+
+
+class CronJob(Strict):
+    name: str
+    schedule: str
+    command: Annotated[str, Field(min_length=1, max_length=1024)]
+    user: Name = "root"
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not NAME_RE.match(value):
+            raise ValueError("invalid cron job name")
+        return value
+
+    @field_validator("schedule")
+    @classmethod
+    def _schedule(cls, value: str) -> str:
+        if not CRON_RE.match(value.strip()):
+            raise ValueError("schedule must be five cron fields or an @keyword")
+        return value.strip()
+
+
+class FirewallRule(Strict):
+    name: str
+    action: Literal["allow", "deny"] = "allow"
+    direction: Literal["in", "out"] = "in"
+    protocol: Literal["tcp", "udp", "icmp", "any"] = "tcp"
+    port: Annotated[int, Field(ge=1, le=65535)] | None = None
+    source: str = "any"
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not NAME_RE.match(value):
+            raise ValueError("invalid rule name")
+        return value
+
+
+class DriveMap(Strict):
+    """Mounted with cifs and sec=krb5: no credential is ever stored on a client."""
+
+    name: str
+    unc: str
+    mount_point: str
+    for_principal: str | None = None
+    options: Annotated[str, Field(max_length=256)] = ""
+
+    @field_validator("unc")
+    @classmethod
+    def _unc(cls, value: str) -> str:
+        normalized = value.replace("\\", "/")
+        if not UNC_RE.match(normalized):
+            raise ValueError("share must look like //server/share")
+        return normalized
+
+    @field_validator("mount_point")
+    @classmethod
+    def _mount_point(cls, value: str) -> str:
+        return absolute_path(value)
+
+
+class SudoRule(Strict):
+    name: str
+    users: Annotated[list[str], Field(min_length=1, max_length=64)]
+    commands: Annotated[list[str], Field(min_length=1, max_length=64)]
+    run_as: Name = "ALL"
+    nopasswd: bool = False
+
+    @field_validator("users")
+    @classmethod
+    def _users(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not PRINCIPAL_RE.match(value):
+                raise ValueError(f"invalid principal {value!r}")
+        return values
+
+    @field_validator("commands")
+    @classmethod
+    def _commands(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if value != "ALL" and not value.startswith("/"):
+                raise ValueError("commands must be absolute paths or ALL")
+            if any(char in value for char in "\n\r"):
+                raise ValueError("commands must be a single line")
+        return values
+
+
+class LogonRight(Strict):
+    """Deny overrides allow, matching AD semantics."""
+
+    principal: str
+    service: Literal["local", "ssh", "rdp", "all"] = "all"
+    access: Literal["allow", "deny"] = "allow"
+
+    @field_validator("principal")
+    @classmethod
+    def _principal(cls, value: str) -> str:
+        if not PRINCIPAL_RE.match(value):
+            raise ValueError("principal must be a user name or %group")
+        return value
+
+
+class BrowserPolicy(Strict):
+    """Written to each browser's documented managed-policy location."""
+
+    chromium: dict[str, Any] = Field(default_factory=dict)
+    firefox: dict[str, Any] = Field(default_factory=dict)
+
+
+class Wallpaper(Strict):
+    uri: Annotated[str, Field(max_length=1024)]
+    picture_options: Literal["none", "wallpaper", "centered", "scaled", "stretched", "zoom",
+                             "spanned"] = "zoom"
+    for_principal: str | None = None
+
+
+class AgentSettings(Strict):
+    refresh_minutes: Annotated[int, Field(ge=1, le=1440)] = 15
+
+
+class PolicySettings(Strict):
+    files: Annotated[list[FileDeployment], Field(default_factory=list, max_length=200)]
+    scripts: Annotated[list[Script], Field(default_factory=list, max_length=100)]
+    systemd_units: Annotated[list[SystemdUnit], Field(default_factory=list, max_length=200)]
+    cron: Annotated[list[CronJob], Field(default_factory=list, max_length=100)]
+    firewall: Annotated[list[FirewallRule], Field(default_factory=list, max_length=200)]
+    drive_maps: Annotated[list[DriveMap], Field(default_factory=list, max_length=100)]
+    sudo_rules: Annotated[list[SudoRule], Field(default_factory=list, max_length=100)]
+    logon_rights: Annotated[list[LogonRight], Field(default_factory=list, max_length=200)]
+    browser: BrowserPolicy | None = None
+    wallpaper: Wallpaper | None = None
+    agent: AgentSettings | None = None
+
+    def stored(self) -> dict[str, Any]:
+        """Drop empty categories so a GPO's settings show only what it sets."""
+        dumped = self.model_dump(exclude_none=True)
+        return {key: value for key, value in dumped.items() if value not in ([], {}, None)}
+
+
+class Targeting(Strict):
+    """Item-level targeting — the equivalent of a WMI filter."""
+
+    os: Annotated[list[Annotated[str, Field(max_length=64)]] | None, Field(default=None)] = None
+    hostname_pattern: Annotated[str | None, Field(default=None, max_length=253)] = None
+    security_groups: Annotated[list[str] | None, Field(default=None, max_length=64)] = None
+    ip_ranges: Annotated[list[str] | None, Field(default=None, max_length=64)] = None

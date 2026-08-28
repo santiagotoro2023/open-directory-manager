@@ -19,8 +19,8 @@ belongs in these pages.
 |---|---|---|
 | 1 | Samba AD DC provisioning, Postgres schema, FastAPI + Kerberos/LDAP auth with the domain-admin gate, React shell and login | Implemented |
 | 2 | Users/Groups/Computers/OUs CRUD, audit logging wired into every write | Implemented |
-| 3 | GPO object model, precedence resolution, agent pull/apply/report loop, file/script/systemd appliers | Not started |
-| 4 | Drive maps, browser policy, wallpaper, sudo and logon scope, cron | Not started |
+| 3 | GPO object model, precedence resolution, agent pull/apply/report loop, file/script/systemd appliers | Implemented |
+| 4 | Drive maps, browser policy, wallpaper, sudo and logon scope, cron | Implemented |
 | 5 | ADMX/ADML importer and dynamic settings UI | Not started |
 | 6 | DHCP role via Kea, DDNS sync, HA pairing | Not started |
 | 7 | Recycle bin, roles/extensibility framework | Not started |
@@ -29,3 +29,31 @@ belongs in these pages.
 Phase 1 lays groundwork for later phases in the database schema (RBAC and
 delegation, recycle bin, role registry, GPO links) so those phases add code,
 not migrations that rewrite what is already deployed.
+
+## Deliberate implementation choices
+
+Two mechanisms differ from the letter of CLAUDE.md §5.1, in both cases
+because the specified route needs a schema extension or a file share ODM
+cannot reach, and the chosen route is an equally standard Debian mechanism:
+
+- **Sudo scope** is written by the agent to `/etc/sudoers.d`, validated with
+  `visudo`, rather than as `sudoRole` LDAP objects read by SSSD. `sudoRole`
+  needs the sudo schema loaded into Samba's directory; the agent route works
+  on a stock domain and is naturally machine-scoped, because each machine
+  receives its own resolved policy.
+- **Logon rights** are enforced by the agent through `pam_access` and an sshd
+  drop-in rather than by SSSD's `ad_gpo_access_control` reading GPOs from
+  SYSVOL. Deny-overrides-allow semantics are preserved, and local
+  administrators are never locked out.
+
+Both are agent-side, so switching to the SSSD-native path later changes the
+appliers, not the policy model or the UI.
+
+Group policy objects live in PostgreSQL, since most ODM settings (systemd
+units, drive maps, Linux sudo scope) have no native GPO representation. When
+`ODM_SYSVOL_PATH` is set — that is, when the API runs on a domain controller
+— the *structure* is mirrored into LDAP and SYSVOL (a groupPolicyContainer
+per GPO, `gPLink` on each linked container, `gPOptions` for block
+inheritance) so GPMC and RSAT see the same tree. The mirror is
+all-or-nothing: a groupPolicyContainer whose SYSVOL path does not exist is
+worse than no object at all.

@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     keytab: Path | None = None
     service_name: str = "HTTP"
 
+    # --- Group Policy ---
+    # Set only when the API runs on a domain controller: enables mirroring
+    # policy objects into LDAP and SYSVOL for GPMC/RSAT interoperability.
+    # Unset, GPOs are ODM-only and live entirely in PostgreSQL.
+    sysvol_path: Path | None = None
+    agent_refresh_minutes: int = 15
+
     # --- Database ---
     database_url: str = Field(description="postgresql://user:pass@host/db")
     db_pool_min: int = 1

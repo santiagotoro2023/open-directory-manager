@@ -67,6 +67,28 @@ Serve `web/dist/` over HTTPS from the same origin as the API — the session
 cookie is `SameSite=Strict`, and the API rejects state-changing requests from
 any origin not in `ODM_ALLOWED_ORIGINS`.
 
+### 5. Policy agent on domain members
+
+On a machine that is already domain-joined (it needs `/etc/krb5.keytab` and a
+working `krb5.conf`):
+
+```
+sudo ./install-agent.sh \
+    --api-url https://odm.corp.example.internal:8443 \
+    --binary ./odm-agent \
+    --ca-cert ./api-ca.pem
+sudo odm-agent apply --force
+```
+
+Build the binary with `cd agent && go build -o odm-agent .`. The agent
+authenticates with the machine keytab, so it needs no credential of its own.
+`install-agent.sh` also installs the packages the appliers depend on
+(`cifs-utils`, `libpam-mount`, `nftables`, `dconf-cli`).
+
+If the API runs on the domain controller, set `ODM_SYSVOL_PATH` so group
+policy objects are mirrored into LDAP and SYSVOL for GPMC/RSAT; without it
+they are ODM-only and live in PostgreSQL.
+
 ## Verifying Phase 1
 
 ```
@@ -76,3 +98,13 @@ curl --cacert /etc/odm/tls/ca.crt https://odm.corp.example.internal:8443/api/v1/
 Then sign in to the web UI as a member of the group named by
 `ODM_ADMIN_GROUP`. Any account outside that group must be refused with 403,
 and both outcomes must appear in `audit_log`.
+
+## Verifying policy end to end
+
+1. Create a GPO under Group Policy, add a file-deployment setting writing
+   `/etc/motd`, and link it to the OU holding a test machine.
+2. Run `odm-agent apply --force` on that machine; `/etc/motd` should change.
+3. Open the computer object in Directory, choose **Policy**, and confirm the
+   GPO is listed as applied and the agent's report shows `success`.
+4. Remove the setting, apply again, and confirm the file is removed — the
+   agent prunes what it previously owned.

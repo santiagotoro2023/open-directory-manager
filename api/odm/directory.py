@@ -228,6 +228,18 @@ def _lookup_user(
     )
 
 
+def nested_groups(conn: Connection, settings: Settings, dn: str) -> list[str]:
+    """Every group the object belongs to, including through nesting.
+
+    Blocking; call through run_in_threadpool.
+    """
+    filt = (
+        "(&(objectClass=group)"
+        f"(member:{MATCHING_RULE_IN_CHAIN}:={escape_filter_chars(dn)}))"
+    )
+    return [entry["dn"] for entry in _search(conn, settings.base_dn, filt, ["distinguishedName"])]
+
+
 def _lookup_group_dn(settings: Settings, conn: Connection, group_name: str) -> str:
     filt = f"(&(objectClass=group)(sAMAccountName={escape_filter_chars(group_name)}))"
     entries = _search(conn, settings.base_dn, filt, ["distinguishedName"])

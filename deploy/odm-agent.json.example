@@ -1,0 +1,10 @@
+{
+  "_comment": "Install as /etc/odm/agent.json, mode 0640 root:root. Written by the domain-join client; edit only to point an agent at a different control plane.",
+  "api_url": "https://odm.corp.example.internal:8443",
+  "service_principal": "HTTP/odm.corp.example.internal",
+  "keytab": "/etc/krb5.keytab",
+  "realm": "CORP.EXAMPLE.INTERNAL",
+  "krb5_conf": "/etc/krb5.conf",
+  "ca_cert": "/etc/odm/tls/api-ca.pem",
+  "refresh_minutes": 15
+}

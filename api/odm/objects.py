@@ -333,6 +333,50 @@ def search(
     return [_entry(e) for e in raw[:limit]], truncated
 
 
+def find_computer(
+    conn: Connection,
+    settings: Settings,
+    *,
+    sam_account_name: str | None = None,
+    dns_host_name: str | None = None,
+) -> dict[str, Any]:
+    """Resolve a computer account from what a Kerberos principal tells us."""
+    clauses = []
+    if sam_account_name:
+        clauses.append(f"(sAMAccountName={escape_filter_chars(sam_account_name)})")
+    if dns_host_name:
+        clauses.append(f"(dNSHostName={escape_filter_chars(dns_host_name)})")
+        short = dns_host_name.split(".", 1)[0]
+        clauses.append(f"(sAMAccountName={escape_filter_chars(short)}$)")
+    if not clauses:
+        raise NotFound("no computer identity supplied")
+
+    found = _search(
+        conn,
+        safe_dn(settings.base_dn),
+        f"(&(objectClass=computer)(|{''.join(clauses)}))",
+        TYPES["computer"].attributes,
+    )
+    if len(found) != 1:
+        raise NotFound("computer account could not be resolved unambiguously")
+    return _entry(found[0])
+
+
+def find_user(conn: Connection, settings: Settings, sam_account_name: str) -> dict[str, Any]:
+    """Resolve a user account by logon name."""
+    validate_username(sam_account_name)
+    found = _search(
+        conn,
+        safe_dn(settings.base_dn),
+        "(&(objectCategory=person)(objectClass=user)"
+        f"(sAMAccountName={escape_filter_chars(sam_account_name)}))",
+        TYPES["user"].attributes,
+    )
+    if len(found) != 1:
+        raise NotFound("user could not be resolved unambiguously")
+    return _entry(found[0])
+
+
 def containers(conn: Connection, settings: Settings) -> list[dict[str, Any]]:
     """Every OU and built-in container, for the navigation tree."""
     raw = _search(

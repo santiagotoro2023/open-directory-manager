@@ -28,6 +28,72 @@ export interface AuditEntry {
   after_state: Record<string, unknown> | null;
 }
 
+export interface PolicySettings {
+  files?: Record<string, unknown>[];
+  scripts?: Record<string, unknown>[];
+  systemd_units?: Record<string, unknown>[];
+  cron?: Record<string, unknown>[];
+  firewall?: Record<string, unknown>[];
+  drive_maps?: Record<string, unknown>[];
+  sudo_rules?: Record<string, unknown>[];
+  logon_rights?: Record<string, unknown>[];
+  browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
+  wallpaper?: { uri: string; picture_options: string; for_principal?: string };
+  agent?: { refresh_minutes: number };
+}
+
+export interface Targeting {
+  os?: string[];
+  hostname_pattern?: string;
+  security_groups?: string[];
+  ip_ranges?: string[];
+}
+
+export interface Gpo {
+  guid: string;
+  display_name: string;
+  description: string;
+  enabled: boolean;
+  version: number;
+  settings: PolicySettings;
+  security_filter: string[];
+  targeting: Targeting;
+  updated_at: string;
+  link_count?: number;
+  links?: GpoLink[];
+}
+
+export interface GpoLink {
+  id: string;
+  gpo_guid: string;
+  target_dn: string;
+  link_order: number;
+  enforced: boolean;
+  enabled: boolean;
+  display_name?: string;
+  gpo_enabled?: boolean;
+}
+
+export interface EffectivePolicy {
+  target: { dn: string; hostname: string; os: string };
+  applied_gpos: { guid: string; name: string }[];
+  skipped_gpos: { guid: string; name: string; reason: string }[];
+  settings: PolicySettings;
+  serial: string;
+}
+
+export interface AgentReport {
+  id: string;
+  computer_dn: string;
+  hostname: string;
+  reported_at: string;
+  agent_version: string | null;
+  policy_serial: string | null;
+  applied_gpos: { guid: string; name: string }[];
+  results: { setting: string; status: string; reason?: string }[];
+  failures: number;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -153,6 +219,46 @@ export const api = {
 
     remove: (dn: string) =>
       request<void>(`/directory/object${qs({ dn })}`, { method: "DELETE" }),
+  },
+
+  policy: {
+    list: () => request<{ gpos: Gpo[] }>("/policy/gpos"),
+
+    get: (guid: string) => request<Gpo>(`/policy/gpo${qs({ guid })}`),
+
+    create: (display_name: string, description: string) =>
+      request<Gpo>("/policy/gpos", json({ display_name, description })),
+
+    update: (body: Partial<Gpo> & { guid: string }) =>
+      request<Gpo>("/policy/gpo", { method: "PATCH", body: JSON.stringify(body) }),
+
+    remove: (guid: string) =>
+      request<void>(`/policy/gpo${qs({ guid })}`, { method: "DELETE" }),
+
+    links: (target_dn?: string) => request<{ links: GpoLink[] }>(`/policy/links${qs({ target_dn })}`),
+
+    link: (gpo_guid: string, target_dn: string) =>
+      request<{ id: string; link_order: number }>("/policy/links", json({ gpo_guid, target_dn })),
+
+    updateLink: (body: {
+      id: string;
+      link_order?: number;
+      enforced?: boolean;
+      enabled?: boolean;
+    }) => request<GpoLink>("/policy/link", { method: "PATCH", body: JSON.stringify(body) }),
+
+    unlink: (id: string) => request<void>(`/policy/link${qs({ id })}`, { method: "DELETE" }),
+
+    setInheritance: (ou_dn: string, block_inheritance: boolean) =>
+      request<{ block_inheritance: boolean }>(
+        "/policy/inheritance",
+        json({ ou_dn, block_inheritance }),
+      ),
+
+    effective: (dn: string) => request<EffectivePolicy>(`/policy/effective${qs({ dn })}`),
+
+    reports: (computer_dn?: string) =>
+      request<{ reports: AgentReport[] }>(`/policy/reports${qs({ computer_dn })}`),
   },
 
   audit: {

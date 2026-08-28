@@ -1,0 +1,27 @@
+[Unit]
+Description=Open Directory Manager policy agent
+Documentation=https://example.org/odm
+After=network-online.target sssd.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/sbin/odm-agent daemon
+Restart=on-failure
+RestartSec=30
+
+# The agent applies policy as root: it writes /etc, manages systemd units and
+# reloads sshd. It reads its Kerberos identity from the machine keytab that
+# domain join installed, and holds no credential of its own (CLAUDE.md §2).
+NoNewPrivileges=false
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

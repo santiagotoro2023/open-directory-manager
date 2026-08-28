@@ -613,3 +613,114 @@ table.data.compact td {
     width: auto;
   }
 }
+
+/* ---------------------------------------------------------- group policy -- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-muted);
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.settings-editor section {
+  margin-bottom: 26px;
+}
+
+.settings-editor header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.settings-editor h3,
+.scope-form h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.scope-form h3 {
+  margin-top: 22px;
+}
+
+.settings-editor input,
+.settings-editor select,
+.settings-editor textarea {
+  width: 100%;
+}
+
+.settings-editor input[type="checkbox"] {
+  width: auto;
+}
+
+.scope-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+
+.inline-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.inline-fields .field {
+  flex: 1 1 240px;
+}
+
+textarea {
+  padding: 9px 11px;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+}
+
+textarea.mono,
+.settings-editor textarea {
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+}
+
+.rsop-list {
+  margin: 6px 0 14px;
+  padding-left: 20px;
+}
+
+.modal pre,
+.content pre {
+  margin: 0 0 14px;
+  padding: 10px;
+  overflow: auto;
+  max-height: 300px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.content .toolbar h1 {
+  margin: 0;
+  font-size: 20px;
+}

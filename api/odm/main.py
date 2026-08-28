@@ -13,7 +13,16 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import auth, db, directory, objects, routes_audit, routes_directory
+from . import (
+    auth,
+    db,
+    directory,
+    objects,
+    routes_agent,
+    routes_audit,
+    routes_directory,
+    routes_policy,
+)
 from .config import get_settings
 from .security import CSRF_HEADER, SecurityHeadersMiddleware
 
@@ -63,6 +72,8 @@ def create_app() -> FastAPI:
         )
     app.include_router(auth.router)
     app.include_router(routes_directory.router)
+    app.include_router(routes_policy.router)
+    app.include_router(routes_agent.router)
     app.include_router(routes_audit.router)
 
     # Directory failures map to HTTP once, here, instead of a try/except in

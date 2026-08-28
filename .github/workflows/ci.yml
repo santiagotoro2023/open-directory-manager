@@ -92,9 +92,11 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y libkrb5-dev libsasl2-dev
           pip install pip-audit==2.7.3
-          pip install -e .
-          # --skip-editable: odm-api is this repo, not a PyPI package to audit.
-          pip-audit --strict --skip-editable
+          pip install .
+          # Audit the resolved dependency set; odm-api is this repo, not a
+          # PyPI distribution, so it is excluded rather than looked up.
+          pip freeze --exclude odm-api > /tmp/resolved-requirements.txt
+          pip-audit --strict --no-deps -r /tmp/resolved-requirements.txt
       - name: npm audit
         working-directory: web
         run: npm install --no-audit --no-fund && npm audit --audit-level=high

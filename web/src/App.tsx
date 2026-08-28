@@ -5,6 +5,7 @@ import { Shell } from "./Shell";
 import { Audit } from "./pages/Audit";
 import { Directory } from "./pages/Directory";
 import { Overview } from "./pages/Overview";
+import { Policy } from "./pages/Policy";
 import { api, type SessionInfo } from "./api";
 
 export function App() {
@@ -40,6 +41,7 @@ export function App() {
         <Route element={<Shell session={session} onSignOut={signOut} />}>
           <Route index element={<Overview session={session} />} />
           <Route path="directory" element={<Directory />} />
+          <Route path="policy" element={<Policy />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
