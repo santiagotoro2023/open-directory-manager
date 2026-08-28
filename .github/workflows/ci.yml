@@ -55,10 +55,19 @@ jobs:
         working-directory: api
         env:
           ODM_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
+        # Explicit, so pipefail is set: these pipe into tee, and without it the
+        # exit status would be tee's.
+        shell: bash
         run: |
-          # A silently skipped integration suite is the same as not having one.
-          pytest tests/test_integration_db.py -q --no-header -rs 2>&1 | tee result.txt
-          grep -qE "^[0-9]+ passed" result.txt
+          # A silently skipped integration suite is the same as not having one,
+          # and with a database configured none of it has any reason to skip.
+          result="${RUNNER_TEMP:-/tmp}/integration.txt"
+          pytest tests/test_integration_db.py -q --no-header -rs 2>&1 | tee "$result"
+          if grep -q "skipped" "$result"; then
+            echo "the database tests skipped despite a database being configured" >&2
+            exit 1
+          fi
+          grep -qE "[0-9]+ passed" "$result"
 
   installed:
     name: installed package (not the source tree)
@@ -96,16 +105,19 @@ jobs:
           ODM_DOMAIN: corp.example.internal
           ODM_LDAP_URI: ldaps://dc1.corp.example.internal
           ODM_LDAP_CA_CERT: /nonexistent/ca.pem
+        shell: bash
         run: |
+          # / is not writable by the runner, so keep the output elsewhere.
+          applied="${RUNNER_TEMP:-/tmp}/applied.txt"
           # Run from / so nothing can resolve a path relative to the checkout.
           cd /
-          odm-db migrate | tee applied.txt
+          odm-db migrate | tee "$applied"
           # An install that finds no migrations used to print exactly this.
-          if grep -q "no pending migrations" applied.txt; then
+          if grep -q "no pending migrations" "$applied"; then
             echo "the installed package shipped no migrations" >&2
             exit 1
           fi
-          test "$(grep -c '\.sql$' applied.txt)" -ge 10
+          test "$(grep -c '\.sql$' "$applied")" -ge 10
       - name: The console must be servable from the installed copy
         env:
           ODM_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
