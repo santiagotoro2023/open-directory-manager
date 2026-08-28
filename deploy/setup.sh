@@ -337,7 +337,8 @@ if [[ "$SKIP_DC" == "yes" ]]; then
     warn "Run create-api-service-account.sh on a domain controller and copy"
     warn "the keytab to /etc/odm/odm-api.keytab before starting the service."
 else
-    "$HERE/create-api-service-account.sh" --realm "$REALM" --api-host "$CONSOLE_FQDN"
+    "$HERE/create-api-service-account.sh" --realm "$REALM" --api-host "$CONSOLE_FQDN" \
+        --service-user "$SERVICE_USER"
     ok "svc-odm-api created, with a keytab at /etc/odm/odm-api.keytab"
 fi
 
@@ -427,7 +428,8 @@ ok "Settings written to $SECRETS_FILE"
 
 step "Setting up TLS and the database"
 
-"$HERE/generate-self-signed.sh" --fqdn "$CONSOLE_FQDN" >/dev/null
+"$HERE/generate-self-signed.sh" --fqdn "$CONSOLE_FQDN" \
+    --service-group "$SERVICE_USER" >/dev/null
 ok "Console certificate created (self-signed for now)"
 
 "$HERE/setup-db.sh" --secrets-file "$SECRETS_FILE" --venv "$VENV" \
@@ -479,9 +481,14 @@ ok "Role framework installed"
 
 step "Starting Open Directory Manager"
 
+# Four scripts write under /etc/odm and the service has to read all of it, so
+# ownership is settled here once rather than in each of them. The checks below
+# then confirm it on the files that stop the service dead if it is wrong.
+chown -R "root:$SERVICE_USER" /etc/odm
+find /etc/odm -type d -exec chmod 0750 {} +
+find /etc/odm -type f -exec chmod 0640 {} +
+
 if [[ -f /etc/odm/odm-api.keytab ]]; then
-    chown "root:$SERVICE_USER" /etc/odm/odm-api.keytab 2>/dev/null || true
-    chmod 0640 /etc/odm/odm-api.keytab
     if runuser -u "$SERVICE_USER" -- test -r /etc/odm/odm-api.keytab; then
         ok "The service can read its keytab"
     else
@@ -497,6 +504,17 @@ if runuser -u "$SERVICE_USER" -- test -r "$LDAP_CA" 2>/dev/null; then
 else
     warn "The $SERVICE_USER user cannot read $LDAP_CA; LDAPS will fail."
 fi
+
+# uvicorn loads these before it binds a port, so an unreadable key is not a
+# degraded console: it is no console at all.
+for FILE in /etc/odm/tls/api.crt /etc/odm/tls/api.key; do
+    if runuser -u "$SERVICE_USER" -- test -r "$FILE"; then
+        continue
+    fi
+    warn "The $SERVICE_USER user cannot read $FILE."
+    fail "the console certificate must be readable by $SERVICE_USER"
+done
+ok "The service can read its console certificate"
 
 install -m 0644 "$HERE/odm-api.service" /etc/systemd/system/odm-api.service
 [[ "$PORT" == "8443" ]] || sed -i "s#--port 8443#--port $PORT#" /etc/systemd/system/odm-api.service

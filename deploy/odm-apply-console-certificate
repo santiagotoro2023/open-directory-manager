@@ -10,7 +10,11 @@ set -euo pipefail
 STAGING="/var/lib/odm/tls-staging"
 TLS_DIR="/etc/odm/tls"
 SERVICE="odm-api"
-SERVICE_GROUP="odm"
+# Asked of the unit rather than assumed: the account the control plane runs as
+# is chosen at setup time, and a certificate the service cannot read replaces a
+# working console with none at all.
+SERVICE_GROUP="$(systemctl show -p Group --value "$SERVICE" 2>/dev/null || true)"
+[[ -n "$SERVICE_GROUP" ]] || SERVICE_GROUP="odm"
 
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 [[ -f "$STAGING/console.crt" && -f "$STAGING/console.key" ]] || {

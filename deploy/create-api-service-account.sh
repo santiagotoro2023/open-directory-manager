@@ -19,6 +19,7 @@ SERVICE_USER="odm"
 usage() {
     cat >&2 <<'EOF'
 usage: create-api-service-account.sh --realm <dns.domain> --api-host <fqdn> [--keytab <path>]
+                                     [--service-user <name>]
 EOF
     exit 2
 }
@@ -28,6 +29,7 @@ while [[ $# -gt 0 ]]; do
         --realm) REALM="${2:?}"; shift 2 ;;
         --api-host) API_HOST="${2:?}"; shift 2 ;;
         --keytab) KEYTAB="${2:?}"; shift 2 ;;
+        --service-user) SERVICE_USER="${2:?}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
     esac

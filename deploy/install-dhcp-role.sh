@@ -15,7 +15,6 @@ REALM=""
 DNS_SERVER=""
 CA_PORT="8000"
 CA_USER="odm"
-SECRETS_DIR="/etc/odm"
 
 usage() {
     cat >&2 <<'USAGE'
@@ -76,15 +75,18 @@ else
 fi
 
 echo "==> Generating the Control Agent credential"
-install -d -m 0750 "$SECRETS_DIR"
-CA_PASSWORD_FILE="$SECRETS_DIR/kea-ca.password"
+# These live with Kea's own configuration because the Control Agent is what
+# reads them, and it runs as _kea. Under /etc/odm they would be behind a
+# directory only the control plane may enter.
+CA_USER_FILE="/etc/kea/odm-ca.user"
+CA_PASSWORD_FILE="/etc/kea/odm-ca.password"
 if [[ ! -f "$CA_PASSWORD_FILE" ]]; then
-    umask 077
-    openssl rand -base64 32 | tr -d '\n/+=' | head -c 32 > "$CA_PASSWORD_FILE"
+    ( umask 077
+      openssl rand -base64 32 | tr -d '\n/+=' | head -c 32 > "$CA_PASSWORD_FILE" )
 fi
-chmod 0640 "$CA_PASSWORD_FILE"
-printf '%s' "$CA_USER" > "$SECRETS_DIR/kea-ca.user"
-chmod 0640 "$SECRETS_DIR/kea-ca.user"
+printf '%s' "$CA_USER" > "$CA_USER_FILE"
+chown root:_kea "$CA_USER_FILE" "$CA_PASSWORD_FILE" 2>/dev/null || true
+chmod 0640 "$CA_USER_FILE" "$CA_PASSWORD_FILE"
 
 backup() { [[ -f "$1" ]] && cp -a "$1" "$1.pre-odm.$(date +%s)"; return 0; }
 
@@ -230,7 +232,7 @@ cat > /etc/kea/kea-ctrl-agent.conf <<JSON
       "type": "basic",
       "realm": "kea-control-agent",
       "clients": [ {
-        "user-file": "$SECRETS_DIR/kea-ca.user",
+        "user-file": "$CA_USER_FILE",
         "password-file": "$CA_PASSWORD_FILE"
       } ]
     },

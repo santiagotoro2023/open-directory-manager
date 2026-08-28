@@ -15,6 +15,7 @@ SERVICE_GROUP="odm"
 
 usage() {
     echo "usage: generate-self-signed.sh [--fqdn <name>] [--tls-dir <path>] [--days <n>]" >&2
+    echo "                               [--service-group <name>]" >&2
     exit 2
 }
 
@@ -23,6 +24,7 @@ while [[ $# -gt 0 ]]; do
         --fqdn) FQDN="${2:?}"; shift 2 ;;
         --tls-dir) TLS_DIR="${2:?}"; shift 2 ;;
         --days) DAYS="${2:?}"; shift 2 ;;
+        --service-group) SERVICE_GROUP="${2:?}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
     esac
