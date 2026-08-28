@@ -309,6 +309,8 @@ def test_the_built_console_has_no_inline_script_for_the_policy_to_block():
     import pathlib
     import re
 
+    import pytest
+
     index = pathlib.Path("..") / "web" / "dist" / "index.html"
     if not index.is_file():
         pytest.skip("console not built here")
