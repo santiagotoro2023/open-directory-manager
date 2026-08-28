@@ -63,12 +63,14 @@ systemctl status odm-agent`}</Code>
               [<C key="1">--domain</C>, "The domain to join. Required."],
               [<C key="2">--server</C>, "A specific controller. Discovered from DNS when omitted."],
               [<C key="3">--admin-user</C>, "Join as this account; the password is prompted for."],
-              [<C key="4">--otp</C>, "Join with a one-time password instead of a credential."],
+              [<C key="4">--otp</C>, "Enrol with a one-time token instead of a credential."],
               [<C key="5">--ou</C>, "Create the host account in this organizational unit."],
               [<C key="6">--hostname</C>, "Override the host name used for the account."],
               [<C key="7">--api-url</C>, "The control plane. Discovered from the domain when omitted."],
               [<C key="8">--no-agent</C>, "Join without installing the policy agent."],
               [<C key="9">--unattended</C>, "Never prompt. Fails rather than asking."],
+              [<C key="10">--password-file</C>, "Read the credential's password from a file."],
+              [<C key="11">--dry-run</C>, "Report what would happen and change nothing."],
             ]}
           />
         </Section>
@@ -88,15 +90,39 @@ systemctl status odm-agent`}</Code>
           />
           <Note>
             Both front ends produce the same configuration. The desktop application is a view over
-            the same join library the command uses.
+            the same join library the command uses, and a test asserts that two runs of the same
+            options produce identical files.
           </Note>
         </Section>
 
-        <Section title="One-time passwords">
+        <Section title="Enrolment tokens">
           <p>
-            A one-time password lets a machine join without a domain administrator credential on
-            the client. It is single-use and time-limited.
+            A token lets a machine enrol without a domain administrator credential ever being
+            typed on it.
           </p>
+          <Steps>
+            <li>
+              In the console: <strong>Directory</strong> → select the container the host accounts
+              should land in → <strong>Enrolment tokens</strong>.
+            </li>
+            <li>
+              Set how many machines may use it and how long it lives, then{" "}
+              <strong>Create token</strong>. The command to run on the client is shown once.
+            </li>
+            <li>
+              On the client: <C>odm-client-install --domain … --otp …</C>.
+            </li>
+          </Steps>
+          <p>
+            Redeeming a token creates the host account and returns that machine&rsquo;s own
+            keytab, and nothing else. Redemption is throttled per source address, and every
+            attempt — successful or refused — is recorded in the audit log. A token can be revoked
+            at any time from the same dialog.
+          </p>
+          <Note>
+            Token enrolment needs the control plane on a domain controller. Where it is not,
+            join with <C>--admin-user</C>.
+          </Note>
         </Section>
 
         <Section title="Verifying">

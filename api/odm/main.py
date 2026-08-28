@@ -22,6 +22,7 @@ from . import (
     db,
     directory,
     dns,
+    enrolment,
     kea,
     objects,
     roles,
@@ -32,6 +33,7 @@ from . import (
     routes_dhcp,
     routes_directory,
     routes_dns,
+    routes_join,
     routes_operations,
     routes_policy,
     routes_rbac,
@@ -108,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_rbac.router)
     app.include_router(routes_ca.router)
     app.include_router(routes_operations.router)
+    app.include_router(routes_join.router)
     app.include_router(routes_audit.router)
 
     # Directory failures map to HTTP once, here, instead of a try/except in
@@ -123,6 +126,7 @@ def create_app() -> FastAPI:
         (kea.KeaUnavailable, status.HTTP_501_NOT_IMPLEMENTED),
         (kea.KeaError, status.HTTP_502_BAD_GATEWAY),
         (backup.BackupError, status.HTTP_400_BAD_REQUEST),
+        (enrolment.EnrolmentError, status.HTTP_400_BAD_REQUEST),
         (roles.RoleError, status.HTTP_400_BAD_REQUEST),
         (ca.CaNotInitialised, status.HTTP_501_NOT_IMPLEMENTED),
         (ca.CaError, status.HTTP_400_BAD_REQUEST),

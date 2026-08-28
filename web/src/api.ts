@@ -310,6 +310,19 @@ export interface BackupRecord {
   detail: string | null;
 }
 
+export interface JoinToken {
+  id: string;
+  label: string;
+  container_dn: string;
+  hostname: string | null;
+  uses_allowed: number;
+  uses_spent: number;
+  expires_at: string;
+  created_by: string;
+  last_used_at: string | null;
+  last_used_by: string | null;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -687,6 +700,24 @@ export const api = {
       }>("/backups"),
 
     takeBackup: () => request<{ id: string; state: string }>("/backups", json({})),
+  },
+
+  join: {
+    tokens: () => request<{ tokens: JoinToken[] }>("/join/tokens"),
+
+    createToken: (body: {
+      label: string;
+      container_dn: string;
+      hostname?: string;
+      uses_allowed: number;
+      ttl_minutes: number;
+    }) =>
+      request<{ id: string; token: string; expires_at: string; command: string }>(
+        "/join/tokens",
+        json(body),
+      ),
+
+    revokeToken: (id: string) => request<void>(`/join/token${qs({ id })}`, { method: "DELETE" }),
   },
 
   audit: {

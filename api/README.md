@@ -20,6 +20,8 @@ the directory directly (CLAUDE.md §2).
 | `odm/replication.py` | Multi-controller replication state and forced runs |
 | `odm/backup.py` | Domain backup archives and retention |
 | `odm/routes_operations.py` | `/api/v1/health`, `/replication/*`, `/backups` |
+| `odm/enrolment.py` | Machine enrolment: tokens and keytab provisioning |
+| `odm/routes_join.py` | `/api/v1/join/*` |
 | `odm/objects.py` | Directory object CRUD, DN guard, protected-object guard |
 | `odm/auth.py` | `/api/v1/auth/*` |
 | `odm/routes_directory.py` | `/api/v1/directory/*` |
@@ -138,6 +140,10 @@ controller is needed to run them.
 | `GET` | `/api/v1/backups` | Backup history and archives on disk |
 | `POST` | `/api/v1/backups` | Take a backup now (202; poll the list) |
 | `GET` | `/api/v1/health` | Directory, replication, DHCP, certificates, agents, backups |
+| `GET` | `/api/v1/join/tokens` | Active enrolment tokens |
+| `POST` | `/api/v1/join/tokens` | Create one; the value is returned once |
+| `DELETE` | `/api/v1/join/token` | Revoke one |
+| `POST` | `/api/v1/join/redeem` | Enrol a machine (token-authenticated, throttled) |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
 DNS and DHCP routers arrive in later phases.
@@ -197,6 +203,9 @@ factory.
 - Restored objects come back disabled, and with a new SID — snapshot restore
   is not tombstone reanimation, which CLAUDE.md §5.3 deliberately does not
   rely on.
+- Enrolment tokens are stored as their SHA-256 only. Redemption is
+  unauthenticated by design, so it is throttled per source address and every
+  attempt is audited; it returns that machine's own keytab and nothing else.
 - Agents authenticate with SPNEGO only; there is no session cookie or CSRF
   token on `/api/v1/agent/*`, and the Kerberos principal names the computer
   object whose policy is served.

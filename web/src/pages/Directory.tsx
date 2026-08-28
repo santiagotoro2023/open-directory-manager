@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
 import { BulkImport, CreateDialog } from "../components/CreateDialog";
+import { EnrolmentTokens } from "../components/EnrolmentTokens";
 import { ObjectPanel, isDisabled } from "../components/ObjectPanel";
 
 const ICONS = {
@@ -51,6 +52,7 @@ export function Directory() {
   const [selected, setSelected] = useState<DirectoryObject | null>(null);
   const [creating, setCreating] = useState<ObjectType | null>(null);
   const [importing, setImporting] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -155,6 +157,9 @@ export function Directory() {
             <Upload size={15} aria-hidden="true" />
             Import CSV
           </button>
+          <button type="button" className="ghost" onClick={() => setEnrolling(true)}>
+            Enrolment tokens
+          </button>
         </div>
 
         <p className="mono muted breadcrumb">{search ? `Search: ${search}` : container}</p>
@@ -237,6 +242,10 @@ export function Directory() {
             void refresh();
           }}
         />
+      )}
+
+      {enrolling && (
+        <EnrolmentTokens container={container} onClose={() => setEnrolling(false)} />
       )}
 
       {importing && (

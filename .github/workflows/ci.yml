@@ -72,6 +72,32 @@ jobs:
       - name: Test
         working-directory: ${{ matrix.module }}
         run: go test ./...
+      - name: Build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+
+  gui:
+    name: join GUI (vet + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Install desktop toolkit headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+      # The desktop application is behind a build tag so the other jobs do
+      # not need a graphics toolchain.
+      - name: Vet
+        working-directory: client-join
+        run: go vet -tags gui ./...
+      - name: Build
+        working-directory: client-join
+        run: go build -tags gui -o /dev/null ./cmd/odm-join-gui
 
   dependency-scan:
     name: dependency scan

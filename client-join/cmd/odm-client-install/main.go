@@ -1,0 +1,207 @@
+// Command odm-client-install joins this machine to an ODM domain.
+//
+// It is one command with flags for unattended use and prompts for anything
+// left out, and it produces the same configuration as the desktop join
+// application: both call the same join library (CLAUDE.md §5.6).
+package main
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	"golang.org/x/term"
+
+	"odm.example.org/client-join/join"
+)
+
+const version = "0.1.0"
+
+func main() {
+	flags := flag.NewFlagSet("odm-client-install", flag.ContinueOnError)
+	flags.Usage = usage
+
+	domain := flags.String("domain", "", "domain to join, e.g. corp.example.internal")
+	server := flags.String("server", "", "a specific domain controller (discovered when omitted)")
+	apiURL := flags.String("api-url", "", "the ODM control plane (derived from the domain when omitted)")
+	adminUser := flags.String("admin-user", "", "join with this domain credential")
+	passwordFile := flags.String("password-file", "", "read the credential's password from this file")
+	otp := flags.String("otp", "", "enrol with a one-time token instead of a credential")
+	ou := flags.String("ou", "", "container for the host account")
+	hostname := flags.String("hostname", "", "override this machine's name")
+	caCert := flags.String("ca-cert", "", "certificate validating the control plane's TLS certificate")
+	noAgent := flags.Bool("no-agent", false, "join without installing the policy agent")
+	unattended := flags.Bool("unattended", false, "never prompt; fail instead")
+	dryRun := flags.Bool("dry-run", false, "report what would happen and change nothing")
+	root := flags.String("root", "", "write beneath this directory instead of /")
+	showVersion := flags.Bool("version", false, "print the version and exit")
+
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		os.Exit(2)
+	}
+	if *showVersion {
+		fmt.Println("odm-client-install", version)
+		return
+	}
+
+	options := join.Options{
+		Domain:    *domain,
+		Server:    *server,
+		APIURL:    *apiURL,
+		AdminUser: *adminUser,
+		OTP:       *otp,
+		OU:        *ou,
+		Hostname:  *hostname,
+		CACert:    *caCert,
+		NoAgent:   *noAgent,
+		DryRun:    *dryRun,
+		Root:      *root,
+	}
+
+	if err := gather(&options, *passwordFile, *unattended); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-client-install:", err)
+		os.Exit(1)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	result, err := join.Run(ctx, options, join.NewEnv(options.Root), func(step, detail string) {
+		if detail == "" {
+			fmt.Printf("==> %s\n", step)
+			return
+		}
+		fmt.Printf("==> %s: %s\n", step, detail)
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-client-install:", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf(`
+Joined %s.
+
+  Host        %s
+  Realm       %s
+  Controller  %s
+  Method      %s
+  Agent       %s
+
+Verify with:
+  klist -k /etc/krb5.keytab
+  id someone@%s
+`, result.Domain, result.Hostname, result.Realm, result.Controller, result.Method,
+		agentState(result.AgentSetUp), result.Domain)
+}
+
+func agentState(installed bool) string {
+	if installed {
+		return "installed and enabled"
+	}
+	return "not installed"
+}
+
+// gather fills in anything the flags left out, prompting unless unattended.
+func gather(options *join.Options, passwordFile string, unattended bool) error {
+	reader := bufio.NewReader(os.Stdin)
+
+	if options.Domain == "" {
+		if unattended {
+			return errors.New("--domain is required")
+		}
+		value, err := prompt(reader, "Domain")
+		if err != nil {
+			return err
+		}
+		options.Domain = value
+	}
+
+	if options.OTP == "" && options.AdminUser == "" {
+		if unattended {
+			return errors.New("either --admin-user or --otp is required")
+		}
+		value, err := prompt(reader, "Administrator account (blank to use an enrolment token)")
+		if err != nil {
+			return err
+		}
+		if value == "" {
+			token, err := prompt(reader, "Enrolment token")
+			if err != nil {
+				return err
+			}
+			options.OTP = token
+		} else {
+			options.AdminUser = value
+		}
+	}
+
+	if options.AdminUser != "" && options.Password == "" {
+		switch {
+		case passwordFile != "":
+			body, err := os.ReadFile(passwordFile)
+			if err != nil {
+				return fmt.Errorf("cannot read the password file: %w", err)
+			}
+			options.Password = strings.TrimRight(string(body), "\r\n")
+		case unattended:
+			return errors.New("--password-file is required with --admin-user when unattended")
+		default:
+			password, err := promptSecret(fmt.Sprintf("Password for %s", options.AdminUser))
+			if err != nil {
+				return err
+			}
+			options.Password = password
+		}
+	}
+	return nil
+}
+
+func prompt(reader *bufio.Reader, label string) (string, error) {
+	fmt.Printf("%s: ", label)
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
+}
+
+func promptSecret(label string) (string, error) {
+	fmt.Printf("%s: ", label)
+	secret, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("cannot read the password: %w", err)
+	}
+	return string(secret), nil
+}
+
+func usage() {
+	fmt.Fprint(os.Stderr, `usage: odm-client-install --domain <domain> [flags]
+
+Joins this machine to an ODM domain: creates its account, installs its
+Kerberos keytab, configures identity and authentication, and installs the
+policy agent.
+
+  --domain          domain to join, e.g. corp.example.internal
+  --server          a specific domain controller (discovered when omitted)
+  --api-url         the ODM control plane (derived from the domain when omitted)
+  --admin-user      join with this domain credential
+  --password-file   read that credential's password from a file
+  --otp             enrol with a one-time token instead of a credential
+  --ou              container for the host account
+  --hostname        override this machine's name
+  --ca-cert         certificate validating the control plane's TLS certificate
+  --no-agent        join without installing the policy agent
+  --unattended      never prompt; fail instead
+  --dry-run         report what would happen and change nothing
+  --version
+
+Anything omitted is prompted for, unless --unattended is given.
+`)
+}
