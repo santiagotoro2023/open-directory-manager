@@ -84,7 +84,7 @@ export function Content() {
         <Section title="Dynamic updates">
           <p>
             Zones created by provisioning accept secure dynamic updates, so domain members register
-            themselves and the DHCP service can register the hosts it gives addresses to. The zone
+            themselves and the DHCP service can register the computers it gives addresses to. The zone
             list marks which zones have this enabled.
           </p>
         </Section>

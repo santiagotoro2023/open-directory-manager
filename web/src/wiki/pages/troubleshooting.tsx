@@ -19,7 +19,7 @@ export function Content() {
           rows={[
             ["Is the control plane up?", <Code key="a">curl --cacert /etc/odm/tls/api.crt https://&lt;console&gt;:8443/api/v1/healthz</Code>],
             ["What did ODM think happened?", "Audit Log, filtered by actor or object."],
-            ["What did the machine do?", "Directory → the host → Policy → the agent's report."],
+            ["What did the machine do?", "Directory → the computer → Policy → the agent's report."],
             ["Is the domain healthy?", "Operations → Health."],
           ]}
         />
@@ -64,7 +64,7 @@ export function Content() {
               ],
               [
                 "Skipped: security filtering",
-                "The host is not in the filter. Filters follow nested group membership.",
+                "The computer is not in the filter. Filters follow nested group membership.",
               ],
               [
                 "Skipped: os / hostname / ip targeting",
@@ -124,7 +124,7 @@ export function Content() {
                 </>,
               ],
               [
-                "The host is missing from the directory",
+                "The computer is missing from the directory",
                 "Look in the container the join used, and in the recycle bin in case an old account was deleted.",
               ],
             ]}

@@ -39,7 +39,7 @@ id someone@corp.example.internal
 systemctl status odm-agent`}</Code>
         </Example>
 
-        <Where>The host appears under Directory once the join finishes.</Where>
+        <Where>The computer appears under Directory once the join finishes.</Where>
       </Quickstart>
 
       <Details>
@@ -64,7 +64,7 @@ systemctl status odm-agent`}</Code>
               [<C key="2">--server</C>, "A specific controller. Discovered from DNS when omitted."],
               [<C key="3">--admin-user</C>, "Join as this account; the password is prompted for."],
               [<C key="4">--otp</C>, "Enrol with a one-time token instead of a credential."],
-              [<C key="5">--ou</C>, "Create the host account in this organizational unit."],
+              [<C key="5">--ou</C>, "Create the computer account in this organizational unit."],
               [<C key="6">--hostname</C>, "Override the host name used for the account."],
               [<C key="7">--api-url</C>, "The control plane. Discovered from the domain when omitted."],
               [<C key="8">--no-agent</C>, "Join without installing the policy agent."],
@@ -81,7 +81,7 @@ systemctl status odm-agent`}</Code>
             rows={[
               ["Discovery", "Locates controllers through the domain's service records."],
               ["Kerberos", <>Writes <C key="a">/etc/krb5.conf</C> for the realm.</>],
-              ["Join", "Creates or takes over the host account and writes /etc/krb5.keytab."],
+              ["Join", "Creates or takes over the computer account and writes /etc/krb5.keytab."],
               ["Identity", <>Writes <C key="b">/etc/sssd/sssd.conf</C> so domain users resolve and can log in.</>],
               ["Name service", "Adds sss to passwd, group and shadow, and enables home-directory creation."],
               ["Agent", "Installs odm-agent, writes its configuration and enables the service."],
@@ -102,7 +102,7 @@ systemctl status odm-agent`}</Code>
           </p>
           <Steps>
             <li>
-              In the console: <strong>Directory</strong> → select the container the host accounts
+              In the console: <strong>Directory</strong> → select the container the computer accounts
               should land in → <strong>Enrolment tokens</strong>.
             </li>
             <li>
@@ -114,7 +114,7 @@ systemctl status odm-agent`}</Code>
             </li>
           </Steps>
           <p>
-            Redeeming a token creates the host account and returns that machine&rsquo;s own
+            Redeeming a token creates the computer account and returns that machine&rsquo;s own
             keytab, and nothing else. Redemption is throttled per source address, and every
             attempt — successful or refused — is recorded in the audit log. A token can be revoked
             at any time from the same dialog.
@@ -132,7 +132,7 @@ getent group 'domain users'        # group resolution
 sudo odm-agent apply --force       # policy applies
 systemctl status odm-agent`}</Code>
           <p>
-            In the console, the host appears under <strong>Directory</strong> and its{" "}
+            In the console, the computer appears under <strong>Directory</strong> and its{" "}
             <strong>Policy</strong> dialog shows a report once the agent has run.
           </p>
         </Section>
@@ -140,14 +140,14 @@ systemctl status odm-agent`}</Code>
         <Section title="Leaving">
           <Steps>
             <li>Stop and disable the agent service.</li>
-            <li>Remove the host account from the directory in the console.</li>
+            <li>Remove the computer account from the directory in the console.</li>
             <li>
               Remove <C>/etc/krb5.keytab</C>, the SSSD configuration and{" "}
               <C>/etc/odm</C>.
             </li>
           </Steps>
           <Note>
-            Deleting the host account puts it in the recycle bin. Restoring it issues a new
+            Deleting the computer account puts it in the recycle bin. Restoring it issues a new
             security identifier, so a machine restored this way must be re-joined.
           </Note>
         </Section>

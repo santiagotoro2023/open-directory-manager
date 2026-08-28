@@ -20,9 +20,9 @@ export function Content() {
         <Reference
           headers={["In ODM", "Active Directory", "Also known as"]}
           rows={[
-            ["Host", "Computer object", "Machine, client, member"],
+            ["Computer", "Computer object", "Machine, client, host, member"],
             ["User group", "Group holding user accounts", "Group"],
-            ["Computer group", "Group holding computer accounts", "Host group"],
+            ["Computer group", "Group holding computer accounts", "Machine group"],
             ["HBAC rule", "Logon rights", "Host-based access control"],
             ["Sudo rule", "—", "Privilege escalation rule"],
             ["Organizational unit", "Organizational unit", "OU, container"],
@@ -46,11 +46,11 @@ export function Content() {
               ["Organizational unit", "A container. Policy links and delegation scopes attach to it."],
               ["Built-in container", "A container created with the domain, such as Users or Computers."],
               ["Security identifier", "The stable identifier a principal is known by. Access rules name it."],
-              ["Account name", "The short logon name. A host account's ends with a dollar sign."],
+              ["Account name", "The short logon name. A computer account's ends with a dollar sign."],
               ["User principal name", "A logon name in e-mail form, such as ada@corp.example.internal."],
               ["Nesting", "A group holding another group. Membership follows through it."],
               ["User group", "A group that holds people. Used for sudo rules, HBAC rules, delegation and policy filtering."],
-              ["Computer group", "A group that holds hosts. Used for policy filtering and item-level targeting."],
+              ["Computer group", "A group that holds computers. Used for policy filtering and item-level targeting."],
               ["Group scope", "Where a group can be used: global, domain local or universal."],
             ]}
           />

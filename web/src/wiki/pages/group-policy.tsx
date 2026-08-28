@@ -45,7 +45,7 @@ export function Content() {
           <strong>Block inheritance</strong>.
         </Example>
         <Example title="See what a machine will get">
-          <strong>Directory</strong> → select the host → <strong>Policy</strong>.
+          <strong>Directory</strong> → select the computer → <strong>Policy</strong>.
         </Example>
 
         <Where>Group Policy for the objects; Directory for inheritance and per-object results.</Where>

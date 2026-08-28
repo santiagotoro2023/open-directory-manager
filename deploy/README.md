@@ -84,11 +84,16 @@ domain's authority under **Certificates → Replace console certificate**.
 
 ```
 cd web && npm install && npm run build
+sudo cp -r dist /opt/odm/console
 ```
 
-Serve `web/dist/` over HTTPS from the same origin as the API — the session
-cookie is `SameSite=Strict`, and the API rejects state-changing requests from
-any origin not in `ODM_ALLOWED_ORIGINS`.
+Point `ODM_CONSOLE_DIR` at that directory and the control plane serves the
+console itself, so the two share an origin without a proxy in front. The
+session cookie is `SameSite=Strict`, and the API rejects state-changing
+requests from any origin not in `ODM_ALLOWED_ORIGINS`.
+
+To serve the console from somewhere else instead, leave `ODM_CONSOLE_DIR`
+unset and put a reverse proxy in front of both.
 
 Then, signed in as a domain administrator, open **Group Policy** and create
 the default policies. The operator documentation is inside the console under

@@ -147,7 +147,9 @@ controller is needed to run them.
 | `POST` | `/api/v1/join/redeem` | Enrol a machine (token-authenticated, throttled) |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
-DNS and DHCP routers arrive in later phases.
+With `ODM_CONSOLE_DIR` set, the built console is served from the same
+origin: every API route is registered first, and anything else returns the
+application shell.
 
 DNs are passed in the query string or the body, never in the path — a DN
 contains commas, equals signs and spaces, and path-escaping them is a bug

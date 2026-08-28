@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     admin_recheck_minutes: int = 5
 
     # --- Web ---
+    # Where the built console lives. Set, the control plane serves it, so the
+    # console and the API share an origin without a proxy in front.
+    console_dir: Path | None = None
     allowed_origins: list[str] = Field(
         default_factory=list,
         description="Exact origins allowed to call the API (the UI's own origin)",

@@ -30,11 +30,11 @@ journalctl -u odm-agent -n 50`}</Code>
         </Example>
 
         <Example title="See what it reported">
-          In the console: <strong>Directory</strong> → select the host →{" "}
+          In the console: <strong>Directory</strong> → select the computer →{" "}
           <strong>Policy</strong>.
         </Example>
 
-        <Where>Directory → a host → Policy shows both the resolved policy and the agent's report.</Where>
+        <Where>Directory → a computer → Policy shows both the resolved policy and the agent's report.</Where>
       </Quickstart>
 
       <Details>

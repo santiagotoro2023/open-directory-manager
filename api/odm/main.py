@@ -10,10 +10,12 @@ import asyncio
 import contextlib
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import (
     auth,
@@ -40,7 +42,7 @@ from . import (
     routes_recyclebin,
     routes_roles,
 )
-from .config import get_settings
+from .config import Settings, get_settings
 from .security import CSRF_HEADER, SecurityHeadersMiddleware
 
 
@@ -139,7 +141,33 @@ def create_app() -> FastAPI:
             await conn.execute("SELECT 1")
         return {"status": "ok", "domain": settings.domain}
 
+    _serve_console(app, settings)
     return app
+
+
+def _serve_console(app: FastAPI, settings: Settings) -> None:
+    """Serve the built console from the same origin as the API.
+
+    Mounted after every API route, so nothing under /api is shadowed. Unknown
+    paths return the application shell, because the console routes on the
+    client side.
+    """
+    if settings.console_dir is None:
+        return
+    root = Path(settings.console_dir)
+    index = root / "index.html"
+    if not index.is_file():
+        raise RuntimeError(f"ODM_CONSOLE_DIR={root} contains no index.html")
+
+    app.mount("/assets", StaticFiles(directory=root / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def console(path: str) -> Response:
+        candidate = (root / path).resolve()
+        # Only ever a file inside the console directory.
+        if path and candidate.is_file() and candidate.is_relative_to(root.resolve()):
+            return FileResponse(candidate)
+        return FileResponse(index)
 
 
 app = create_app()

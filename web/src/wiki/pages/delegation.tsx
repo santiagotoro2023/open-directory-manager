@@ -35,7 +35,7 @@ export function Content() {
               <strong>Assign</strong>.
             </li>
           </Steps>
-          They can now sign in and manage users and hosts under Sales, and nothing else.
+          They can now sign in and manage users and computers under Sales, and nothing else.
         </Example>
 
         <Example title="Give someone read-only visibility">
@@ -108,7 +108,7 @@ export function Content() {
               ["domain-admin", "Everything."],
               [
                 "helpdesk",
-                "Read the directory; create and edit users, groups and hosts; reset passwords; edit group membership; move and delete objects; restore from the recycle bin; read the audit log.",
+                "Read the directory; create and edit users, groups and computers; reset passwords; edit group membership; move and delete objects; restore from the recycle bin; read the audit log.",
               ],
               [
                 "auditor",
@@ -116,7 +116,7 @@ export function Content() {
               ],
               [
                 "directory-admin",
-                "Full directory management within the scope: users, groups, hosts, organizational units, moves, deletes, restores and purges.",
+                "Full directory management within the scope: users, groups, computers, organizational units, moves, deletes, restores and purges.",
               ],
               ["dns-admin", "Read the directory; read and write DNS."],
               ["dhcp-admin", "Read the directory; read and write DHCP."],
@@ -137,7 +137,7 @@ export function Content() {
               ["user.password.reset", "Resetting a user's password."],
               ["group.write", "Creating and editing groups."],
               ["group.member.write", "Changing group membership."],
-              ["computer.write", "Creating and editing hosts."],
+              ["computer.write", "Creating and editing computers."],
               ["ou.write", "Creating and editing organizational units."],
               ["object.move", "Moving an object. Required at both source and destination."],
               ["object.delete", "Deleting an object."],

@@ -14,6 +14,7 @@ repository itself.
 | [../client-join/README.md](../client-join/README.md) | Domain-join CLI and GUI |
 | [../branding/BRAND.md](../branding/BRAND.md) | Logo usage, palette, typography |
 | `web/src/wiki/` | The operator wiki, served inside the console under **Wiki** |
+| [../README.md](../README.md) | Overview and quickstart |
 
 ## Build status against CLAUDE.md §7
 

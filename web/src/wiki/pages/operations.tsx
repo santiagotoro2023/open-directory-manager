@@ -60,7 +60,7 @@ export function Content() {
           <Reference
             headers={["Naming context", "Holds"]}
             rows={[
-              [<C key="1">DC=corp,DC=example,DC=internal</C>, "The domain: users, groups, hosts, organizational units."],
+              [<C key="1">DC=corp,DC=example,DC=internal</C>, "The domain: users, groups, computers, organizational units."],
               [<C key="2">CN=Configuration,…</C>, "Forest configuration: sites, services, partitions."],
               [<C key="3">CN=Schema,CN=Configuration,…</C>, "The schema."],
               [<C key="4">DC=DomainDnsZones,…</C>, "DNS zones replicated domain-wide."],

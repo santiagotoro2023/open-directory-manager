@@ -418,7 +418,7 @@ function MembersDialog({
         label="Add member"
         hint={
           group.groupKind === "computer"
-            ? "Search hosts and groups by name"
+            ? "Search computers and groups by name"
             : "Search users and groups by name"
         }
       >

@@ -149,3 +149,92 @@ def test_every_migration_is_numbered_in_sequence():
         for path in pathlib.Path("migrations").glob("*.sql")
     )
     assert numbers == list(range(1, len(numbers) + 1)), numbers
+
+
+# ------------------------------------------------------------- the console ---
+
+
+def build_console(tmp_path):
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "app.js").write_text("console.log(1)")
+    (tmp_path / "index.html").write_text("<!doctype html><title>ODM</title>")
+    return tmp_path
+
+
+def console_app(tmp_path):
+    from fastapi import FastAPI
+
+    from odm.config import Settings
+    from odm.main import _serve_console
+
+    app = FastAPI()
+
+    @app.get("/api/v1/marker")
+    async def marker() -> dict[str, bool]:
+        return {"api": True}
+
+    _serve_console(
+        app,
+        Settings(
+            realm="corp.example.internal",
+            domain="corp.example.internal",
+            ldap_uri="ldaps://dc1",
+            ldap_ca_cert="/nonexistent",
+            database_url="postgresql://odm@localhost/odm",
+            console_dir=build_console(tmp_path),
+        ),
+    )
+    return app
+
+
+async def test_serving_the_console_does_not_shadow_the_api(tmp_path):
+    import httpx
+
+    app = console_app(tmp_path)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="https://odm.test"
+    ) as client:
+        # The API is mounted first, so the catch-all never sees its paths.
+        assert (await client.get("/api/v1/marker")).json() == {"api": True}
+        # A real asset is served as itself.
+        assert "console.log" in (await client.get("/assets/app.js")).text
+        # Anything else is the application shell, because the console routes
+        # on the client side.
+        for path in ("/", "/directory", "/wiki/dhcp"):
+            response = await client.get(path)
+            assert response.status_code == 200
+            assert "<title>ODM</title>" in response.text
+
+
+async def test_the_console_never_serves_a_file_outside_its_directory(tmp_path):
+    import httpx
+
+    app = console_app(tmp_path)
+    (tmp_path.parent / "secret.txt").write_text("not for the web")
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="https://odm.test"
+    ) as client:
+        response = await client.get("/../secret.txt")
+        assert "not for the web" not in response.text
+
+
+def test_a_console_directory_without_an_index_is_refused(tmp_path):
+    import pytest
+    from fastapi import FastAPI
+
+    from odm.config import Settings
+    from odm.main import _serve_console
+
+    with pytest.raises(RuntimeError):
+        _serve_console(
+            FastAPI(),
+            Settings(
+                realm="corp.example.internal",
+                domain="corp.example.internal",
+                ldap_uri="ldaps://dc1",
+                ldap_ca_cert="/nonexistent",
+                database_url="postgresql://odm@localhost/odm",
+                console_dir=tmp_path,
+            ),
+        )

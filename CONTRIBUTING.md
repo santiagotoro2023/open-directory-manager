@@ -83,7 +83,8 @@ adding it to `SECTION_ORDER`.
 
 Terminology follows the console:
 
-- Computer objects are **Hosts**.
+- Computer objects are **Computers**; the object type on the wire is
+  `computer`.
 - A group is a **User group** or a **Computer group**, with a **scope**
   (global, domain local, universal). The words "security group" and
   "distribution group" are not used.

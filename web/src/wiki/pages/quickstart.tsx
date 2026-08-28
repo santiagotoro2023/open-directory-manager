@@ -62,7 +62,7 @@ export function Content() {
             domain, installs the machine keytab and enables the policy agent.
           </Example>
           <Example title="See what a machine actually got">
-            <strong>Directory</strong> → select the host → <strong>Policy</strong>. The dialog
+            <strong>Directory</strong> → select the computer → <strong>Policy</strong>. The dialog
             shows which policy objects applied, which did not and why, the effective settings, and
             the machine&rsquo;s own report of what it applied.
           </Example>
@@ -115,7 +115,7 @@ export function Content() {
             headers={["Section", "Covers"]}
             rows={[
               ["Overview", "The current session and the domain it belongs to."],
-              ["Directory", "Users, groups, hosts and organizational units."],
+              ["Directory", "Users, groups, computers and organizational units."],
               ["Group Policy", "Policy objects, their settings, links and precedence."],
               ["DNS", "Zones and records in the domain's integrated DNS."],
               ["DHCP", "Scopes, reservations, leases and failover state."],

@@ -5,8 +5,8 @@ export const meta: WikiPageMeta = {
   id: "directory",
   title: "Directory",
   section: "Managing the domain",
-  summary: "Users, groups, hosts and organizational units: creating, editing, moving and deleting.",
-  keywords: ["user", "group", "host", "computer", "ou", "organizational unit", "csv", "bulk", "password"],
+  summary: "Users, groups, computers and organizational units: creating, editing, moving and deleting.",
+  keywords: ["user", "group", "computer", "ou", "organizational unit", "csv", "bulk", "password"],
 };
 
 export function Content() {
@@ -14,7 +14,7 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          The directory holds four kinds of object: users, groups, hosts and organizational units.
+          The directory holds four kinds of object: users, groups, computers and organizational units.
           Organizational units are containers; policy links and delegation scopes attach to them,
           so the structure is worth planning before objects are created.
         </p>
@@ -33,7 +33,7 @@ export function Content() {
         </Example>
         <Example title="Add members to a group">
           Select the group → <strong>Members</strong> in the detail panel → search →{" "}
-          <strong>Apply</strong>. A user group offers people; a computer group offers hosts.
+          <strong>Apply</strong>. A user group offers people; a computer group offers computers.
         </Example>
         <Example title="Import many users at once">
           <strong>Import CSV</strong> in the toolbar. Columns:{" "}
@@ -54,8 +54,8 @@ export function Content() {
             headers={["Type", "Holds", "Named by"]}
             rows={[
               ["User", "A person's account and its attributes", "Account name, plus a full name used as the object's common name"],
-              ["Group", "People or hosts, and other groups", "Group name"],
-              ["Host", "A machine account, created by joining or by hand", "Host name; the account name gains a trailing $"],
+              ["Group", "People or computers, and other groups", "Group name"],
+              ["Computer", "A machine account, created by joining or by hand", "Computer name; the account name gains a trailing $"],
               ["Organizational unit", "Other objects, and policy links", "Name"],
             ]}
           />
@@ -83,7 +83,7 @@ export function Content() {
               ],
               [
                 "Computer group",
-                "Hosts, and other groups",
+                "Computers, and other groups",
                 "Group policy filtering and item-level targeting by machine",
               ],
             ]}
@@ -126,7 +126,7 @@ export function Content() {
                 </C>,
               ],
               ["Group", <C key="g">description, mail</C>],
-              ["Host", <C key="h">dNSHostName, description</C>],
+              ["Computer", <C key="h">dNSHostName, description</C>],
               ["Organizational unit", <C key="o">description</C>],
             ]}
           />

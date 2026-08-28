@@ -4,7 +4,7 @@ import { Field, Modal } from "./Modal";
 
 const GROUP_KINDS = [
   ["user", "User group — holds people"],
-  ["computer", "Computer group — holds machines"],
+  ["computer", "Computer group — holds computers"],
 ] as const;
 
 const GROUP_SCOPES = [
@@ -16,7 +16,7 @@ const GROUP_SCOPES = [
 const TITLES: Record<ObjectType, string> = {
   user: "New user",
   group: "New group",
-  computer: "New host",
+  computer: "New computer",
   ou: "New organizational unit",
 };
 
@@ -166,7 +166,7 @@ export function CreateDialog({
 
       {type === "computer" && (
         <>
-          <Field label="Host name">
+          <Field label="Computer name">
             <input value={form.name ?? ""} required onChange={set("name")} />
           </Field>
           <Field label="DNS host name">

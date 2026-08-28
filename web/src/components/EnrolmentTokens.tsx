@@ -62,7 +62,7 @@ export function EnrolmentTokens({
       }}
     >
       <p className="muted">
-        Host accounts are created in <span className="mono">{container}</span>.
+        Computer accounts are created in <span className="mono">{container}</span>.
       </p>
 
       <Field label="Label" hint="Shown in the token list">
