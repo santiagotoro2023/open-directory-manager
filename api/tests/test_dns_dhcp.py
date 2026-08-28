@@ -13,7 +13,6 @@ from conftest import BASE_DN  # noqa: F401  (import for environment setup orderi
 from odm import dns, kea
 from odm.config import get_settings
 
-
 # --------------------------------------------------------------------- DNS ---
 
 
