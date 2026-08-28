@@ -26,7 +26,7 @@ export function Content() {
             On a fresh Debian 12 or 13 server, one command does the whole install and finishes by
             printing the address to sign in at.
           </p>
-          <Code>{`git clone <repository>
+          <Code>{`git clone https://github.com/santiagotoro2023/open-directory-manager.git
 cd open-directory-manager
 sudo deploy/setup.sh`}</Code>
           <p>

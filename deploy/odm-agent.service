@@ -1,6 +1,6 @@
 [Unit]
 Description=Open Directory Manager policy agent
-Documentation=https://example.org/odm
+Documentation=https://github.com/santiagotoro2023/open-directory-manager
 After=network-online.target sssd.service
 Wants=network-online.target
 

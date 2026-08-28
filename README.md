@@ -21,7 +21,7 @@ HBAC rule, user group, computer group.
 On a **fresh Debian 12 or 13 server** with a static address:
 
 ```bash
-git clone https://github.com/<your-org>/open-directory-manager.git
+git clone https://github.com/santiagotoro2023/open-directory-manager.git
 cd open-directory-manager
 sudo deploy/setup.sh
 ```
@@ -151,6 +151,13 @@ cd web         && npm install && npm run build
 
 CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push.
+
+## Repository
+
+https://github.com/santiagotoro2023/open-directory-manager
+
+Issues and pull requests are welcome; see
+[CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
