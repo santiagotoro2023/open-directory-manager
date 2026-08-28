@@ -65,12 +65,16 @@ systemctl status odm-agent`}</Code>
               [<C key="3">--admin-user</C>, "Join as this account; the password is prompted for."],
               [<C key="4">--otp</C>, "Enrol with a one-time token instead of a credential."],
               [<C key="5">--ou</C>, "Create the computer account in this organizational unit."],
-              [<C key="6">--hostname</C>, "Override the host name used for the account."],
+              [<C key="6">--hostname</C>, "Name this machine takes in the domain. Its own name when omitted."],
               [<C key="7">--api-url</C>, "The control plane. Discovered from the domain when omitted."],
               [<C key="8">--no-agent</C>, "Join without installing the policy agent."],
               [<C key="9">--unattended</C>, "Never prompt. Fails rather than asking."],
               [<C key="10">--password-file</C>, "Read the credential's password from a file."],
               [<C key="11">--dry-run</C>, "Report what would happen and change nothing."],
+              [
+                <C key="12">--keep-hostname</C>,
+                "Fail rather than renaming this machine to its domain name.",
+              ],
             ]}
           />
         </Section>
@@ -79,15 +83,30 @@ systemctl status odm-agent`}</Code>
           <Reference
             headers={["Step", "Result"]}
             rows={[
+              [
+                "Naming",
+                <>
+                  Renames this machine to its fully-qualified domain name and points{" "}
+                  <C key="h">/etc/hosts</C> at it.
+                </>,
+              ],
               ["Discovery", "Locates controllers through the domain's service records."],
               ["Kerberos", <>Writes <C key="a">/etc/krb5.conf</C> for the realm.</>],
               ["Join", "Creates or takes over the computer account and writes /etc/krb5.keytab."],
               ["Identity", <>Writes <C key="b">/etc/sssd/sssd.conf</C> so domain users resolve and can log in.</>],
               ["Name service", "Adds sss to passwd, group and shadow, and enables home-directory creation."],
+              ["Services", <>Enables and restarts <C key="s">sssd</C> so the new configuration takes effect.</>],
               ["Agent", "Installs odm-agent, writes its configuration and enables the service."],
               ["First apply", "Runs the agent once so the machine arrives with its policy."],
             ]}
           />
+          <Note>
+            A machine holds its Kerberos identity under its fully-qualified name, so a machine
+            called <C>ws01</C> joining <C>corp.example.internal</C> becomes{" "}
+            <C>ws01.corp.example.internal</C>. Services already running keep the old name until
+            they restart; reboot after a join that renamed the machine.{" "}
+            <C>--keep-hostname</C> stops the join instead of renaming.
+          </Note>
           <Note>
             Both front ends produce the same configuration. The desktop application is a view over
             the same join library the command uses, and a test asserts that two runs of the same

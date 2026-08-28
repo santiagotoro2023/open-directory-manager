@@ -37,6 +37,7 @@ func main() {
 	hostname := flags.String("hostname", "", "override this machine's name")
 	caCert := flags.String("ca-cert", "", "certificate validating the control plane's TLS certificate")
 	noAgent := flags.Bool("no-agent", false, "join without installing the policy agent")
+	keepName := flags.Bool("keep-hostname", false, "fail rather than rename this machine")
 	unattended := flags.Bool("unattended", false, "never prompt; fail instead")
 	dryRun := flags.Bool("dry-run", false, "report what would happen and change nothing")
 	root := flags.String("root", "", "write beneath this directory instead of /")
@@ -60,6 +61,7 @@ func main() {
 		Hostname:  *hostname,
 		CACert:    *caCert,
 		NoAgent:   *noAgent,
+		KeepName:  *keepName,
 		DryRun:    *dryRun,
 		Root:      *root,
 	}
@@ -96,8 +98,18 @@ Joined %s.
 Verify with:
   klist -k /etc/krb5.keytab
   id someone@%s
-`, result.Domain, result.Hostname, result.Realm, result.Controller, result.Method,
-		agentState(result.AgentSetUp), result.Domain)
+%s`, result.Domain, result.Hostname, result.Realm, result.Controller, result.Method,
+		agentState(result.AgentSetUp), result.Domain, rebootNote(result))
+}
+
+// rebootNote is printed when this machine was renamed to join. Long-running
+// services keep the old name until they restart.
+func rebootNote(result *join.Result) string {
+	if !result.Renamed {
+		return ""
+	}
+	return "\nThis machine was renamed to " + result.Hostname +
+		". Reboot to restart everything still using the old name.\n"
 }
 
 func agentState(installed bool) string {
@@ -198,6 +210,7 @@ policy agent.
   --hostname        override this machine's name
   --ca-cert         certificate validating the control plane's TLS certificate
   --no-agent        join without installing the policy agent
+  --keep-hostname   fail rather than rename this machine to its domain name
   --unattended      never prompt; fail instead
   --dry-run         report what would happen and change nothing
   --version

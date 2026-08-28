@@ -357,6 +357,9 @@ if [[ ! -f "$LDAP_CA" && -f /var/lib/samba/private/tls/ca.pem ]]; then
     install -m 0644 /var/lib/samba/private/tls/ca.pem "$LDAP_CA"
 fi
 
+# Scoped deliberately: the secrets file must never exist world-readable, even
+# for an instant. Left set, it would also strip the read bits off everything
+# written below, including the console the service has to serve.
 umask 077
 cat > "$SECRETS_FILE" <<ENVFILE
 # Written by deploy/setup.sh. Settings and secrets live here and nowhere else.
@@ -405,6 +408,7 @@ ENVFILE
 umask 022
 chown root:"$SERVICE_USER" "$SECRETS_FILE"
 chmod 0640 "$SECRETS_FILE"
+umask 022
 ok "Settings written to $SECRETS_FILE"
 
 # ---------------------------------------------------------------- step 6 --
@@ -435,7 +439,14 @@ else
         rm -rf "$CONSOLE_DIR"
         install -d -m 0755 "$CONSOLE_DIR"
         cp -r "$REPO/web/dist/." "$CONSOLE_DIR/"
-        ok "Console installed to $CONSOLE_DIR"
+        # The service runs as $SERVICE_USER and has to read every file here.
+        chmod -R u=rwX,go=rX "$CONSOLE_DIR"
+        if runuser -u "$SERVICE_USER" -- test -r "$CONSOLE_DIR/index.html"; then
+            ok "Console installed to $CONSOLE_DIR"
+        else
+            warn "The $SERVICE_USER user cannot read $CONSOLE_DIR/index.html."
+            warn "The console will not load until it can."
+        fi
     else
         warn "The console did not build here, so the API will serve the API only."
         warn "Build it on another machine, copy dist/ to $CONSOLE_DIR, uncomment"
@@ -477,7 +488,8 @@ fi
 install -m 0644 "$HERE/odm-api.service" /etc/systemd/system/odm-api.service
 [[ "$PORT" == "8443" ]] || sed -i "s#--port 8443#--port $PORT#" /etc/systemd/system/odm-api.service
 systemctl daemon-reload
-systemctl enable --now odm-api >/dev/null 2>&1 || systemctl restart odm-api
+systemctl enable odm-api >/dev/null 2>&1 || true
+systemctl restart odm-api || true
 
 READY="no"
 for _ in $(seq 1 30); do
@@ -492,8 +504,19 @@ echo
 if [[ "$READY" == "yes" ]]; then
     printf '%s  Open Directory Manager is running.%s\n' "$GREEN$B" "$R"
 else
-    printf '%s  Setup finished, but the control plane has not answered yet.%s\n' "$YELLOW$B" "$R"
-    printf '      Check it with: journalctl -u odm-api -n 50\n'
+    printf '%s  Setup finished, but the control plane has not answered yet.%s\n' "$RED$B" "$R"
+    echo
+    printf '      %s\n' "$(systemctl is-active odm-api 2>/dev/null || true)" \
+        | sed 's/^      $//'
+    printf '      Its own account of what went wrong:\n\n'
+    # The operator should not have to go and find this. A service that will not
+    # start is the one thing the installer cannot work around.
+    journalctl -u odm-api -n 30 --no-pager 2>/dev/null \
+        | sed 's/^/      /' \
+        || printf '      journalctl produced nothing.\n'
+    echo
+    printf '      Follow it with: journalctl -u odm-api -f\n'
+    printf '      Restart after a fix with: systemctl restart odm-api\n'
 fi
 
 cat <<DONE

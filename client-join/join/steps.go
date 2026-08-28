@@ -19,18 +19,31 @@ func Preflight(ctx context.Context, options Options, env Env) error {
 	if env.Root == "" && os.Geteuid() != 0 {
 		return fmt.Errorf("joining a domain requires root")
 	}
-	if !strings.Contains(options.Hostname, ".") {
-		return fmt.Errorf("set a fully-qualified host name before joining")
-	}
 	if options.DryRun || env.Run == nil {
 		return nil
 	}
-	for _, tool := range []string{"net", "sssd"} {
+	for _, tool := range []string{"net", "sssd", "hostnamectl"} {
 		if _, err := env.Run.Run(ctx, "sh", "-c", "command -v "+tool); err != nil {
 			return fmt.Errorf(
 				"%s is not installed; install samba-common-bin and sssd-ad first", tool,
 			)
 		}
+	}
+	return nil
+}
+
+// StartServices makes the configuration written above take effect.
+func StartServices(ctx context.Context, options Options, env Env) error {
+	if options.DryRun || env.Run == nil {
+		return nil
+	}
+	if _, err := env.Run.Run(ctx, "systemctl", "enable", "sssd"); err != nil {
+		return fmt.Errorf("cannot enable sssd: %w", err)
+	}
+	if _, err := env.Run.Run(ctx, "systemctl", "restart", "sssd"); err != nil {
+		return fmt.Errorf(
+			"sssd did not start; check journalctl -u sssd: %w", err,
+		)
 	}
 	return nil
 }

@@ -160,11 +160,15 @@ func buildForm(window fyne.Window) fyne.CanvasObject {
 				setStatus(status, "Join failed: "+err.Error())
 				return
 			}
-			setStatus(status, fmt.Sprintf(
+			message := fmt.Sprintf(
 				"Joined %s as %s. Controller %s. Agent %s.",
 				result.Domain, result.Hostname, result.Controller,
 				map[bool]string{true: "installed", false: "not installed"}[result.AgentSetUp],
-			))
+			)
+			if result.Renamed {
+				message += "\nThis machine was renamed. Reboot to finish."
+			}
+			setStatus(status, message)
 		}()
 	}
 

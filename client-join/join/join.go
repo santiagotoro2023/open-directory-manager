@@ -27,6 +27,7 @@ type Options struct {
 	OTP       string // or enrol with a one-time token instead
 	CACert    string // certificate validating the control plane's TLS
 	NoAgent   bool   // join without installing the policy agent
+	KeepName  bool   // leave this machine's name alone
 	DryRun    bool   // report what would happen, change nothing
 	Root      string // write beneath this directory instead of /
 }
@@ -42,6 +43,7 @@ type Result struct {
 	Controller string
 	Method     string // "credential" or "token"
 	AgentSetUp bool
+	Renamed    bool // this machine's own name was changed to join
 }
 
 var ErrMissing = errors.New("missing required option")
@@ -101,6 +103,31 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		return nil, err
 	}
 
+	// The machine's own name has to be right before it joins: the account,
+	// the keytab principal and the certificate subject all use it.
+	name, err := PlanHostname(options)
+	if err != nil {
+		return nil, err
+	}
+	renamed := false
+	if name.NeedsRename() {
+		if options.KeepName {
+			return nil, fmt.Errorf(
+				"this machine is called %q, but joining %s needs %q; "+
+					"drop --keep-hostname or set it yourself first",
+				name.Current, options.Domain, name.Wanted,
+			)
+		}
+		progress("Naming this machine", name.Wanted)
+		if !options.DryRun {
+			if err := ApplyHostname(ctx, name, env); err != nil {
+				return nil, err
+			}
+		}
+		renamed = true
+	}
+	options.Hostname = name.Wanted
+
 	controller := options.Server
 	if controller == "" {
 		progress("Discovering the domain", options.Domain)
@@ -122,6 +149,7 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		Domain:     options.Domain,
 		Hostname:   options.Hostname,
 		Controller: controller,
+		Renamed:    renamed,
 	}
 
 	if options.OTP != "" {
@@ -150,6 +178,13 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		return nil, err
 	}
 	if err := ConfigureNameService(ctx, options, env); err != nil {
+		return nil, err
+	}
+
+	// Writing sssd.conf changes nothing until sssd reads it, so a join that
+	// stopped here would look successful while no domain user could log in.
+	progress("Starting identity services", "sssd")
+	if err := StartServices(ctx, options, env); err != nil {
 		return nil, err
 	}
 

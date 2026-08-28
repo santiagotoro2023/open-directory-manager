@@ -40,13 +40,29 @@ apt-get install -y --no-install-recommends postgresql
 id -u "$SERVICE_USER" >/dev/null 2>&1 || \
     useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
 
-if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
-    echo "role $DB_USER already exists; leaving its password alone"
+# A password ODM cannot read is no use to it, so the two are decided together:
+# the role keeps its password only while the secrets file still holds a URL for
+# it. Otherwise this resets both, which is what makes a re-run work.
+HAVE_URL="no"
+[[ -f "$SECRETS_FILE" ]] && grep -q '^ODM_DATABASE_URL=' "$SECRETS_FILE" && HAVE_URL="yes"
+
+ROLE_EXISTS="no"
+sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" \
+    | grep -q 1 && ROLE_EXISTS="yes"
+
+if [[ "$ROLE_EXISTS" == "yes" && "$HAVE_URL" == "yes" ]]; then
+    echo "role $DB_USER already exists and is configured; leaving its password alone"
     DB_PASSWORD=""
 else
     DB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n/+=' | head -c 32)"
-    sudo -u postgres psql -v ON_ERROR_STOP=1 \
-        -c "CREATE ROLE \"$DB_USER\" LOGIN PASSWORD '$DB_PASSWORD'"
+    if [[ "$ROLE_EXISTS" == "yes" ]]; then
+        echo "role $DB_USER exists but no connection URL is configured; resetting its password"
+        sudo -u postgres psql -v ON_ERROR_STOP=1 \
+            -c "ALTER ROLE \"$DB_USER\" LOGIN PASSWORD '$DB_PASSWORD'"
+    else
+        sudo -u postgres psql -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE \"$DB_USER\" LOGIN PASSWORD '$DB_PASSWORD'"
+    fi
 fi
 
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 || \
