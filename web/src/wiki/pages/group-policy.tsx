@@ -170,8 +170,11 @@ export function Content() {
             <C>gPLink</C> on each target, and blocked inheritance is written to <C>gPOptions</C>.
           </p>
           <Note>
-            Without <C>ODM_SYSVOL_PATH</C>, policy objects exist only in ODM. Agents are
-            unaffected; external group policy tooling will not see them.
+            The mirror is off after a standard install. Turning it on requires the control-plane
+            service account to be able to write Samba&rsquo;s SYSVOL share, and{" "}
+            <C>ReadWritePaths</C> in the service unit extended to cover it. Without it, policy
+            objects exist only in ODM: agents are unaffected, and external group policy tooling
+            does not see them.
           </Note>
         </Section>
       </Details>

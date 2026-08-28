@@ -40,7 +40,7 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 CapabilityBoundingSet=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-ReadWritePaths=/var/lib/odm
+ReadWritePaths=/var/lib/odm /var/backups/odm
 UMask=0077
 
 [Install]

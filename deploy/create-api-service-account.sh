@@ -14,6 +14,7 @@ REALM=""
 API_HOST=""
 ACCOUNT="svc-odm-api"
 KEYTAB="/etc/odm/odm-api.keytab"
+SERVICE_USER="odm"
 
 usage() {
     cat >&2 <<'EOF'
@@ -66,7 +67,27 @@ echo "==> Exporting keytab to $KEYTAB"
 install -d -m 0750 "$(dirname "$KEYTAB")"
 rm -f "$KEYTAB"
 samba-tool domain exportkeytab "$KEYTAB" --principal="$SPN"
-chmod 0600 "$KEYTAB"
+
+# The control plane runs unprivileged and authenticates with this keytab, so
+# the service user must be able to read it — and nobody else.
+if id -u "$SERVICE_USER" >/dev/null 2>&1; then
+    chown "root:$SERVICE_USER" "$KEYTAB"
+    chgrp "$SERVICE_USER" "$(dirname "$KEYTAB")"
+    chmod 0640 "$KEYTAB"
+else
+    chmod 0600 "$KEYTAB"
+    echo "    note: the $SERVICE_USER user does not exist yet;" >&2
+    echo "          re-run after installing the control plane, or chown the keytab" >&2
+fi
+
+# The DC's LDAPS certificate is signed by a CA under Samba's private
+# directory, which is root-only. Publish a readable copy for clients.
+SAMBA_CA="/var/lib/samba/private/tls/ca.pem"
+if [[ -f "$SAMBA_CA" ]]; then
+    install -d -m 0755 /etc/odm/tls
+    install -m 0644 "$SAMBA_CA" /etc/odm/tls/dc-ca.pem
+    echo "==> Published the directory CA to /etc/odm/tls/dc-ca.pem"
+fi
 
 cat <<EOF
 
@@ -75,8 +96,10 @@ Service account ready.
   Account   $ACCOUNT
   SPN       $SPN
   Rights    create/delete/read/write child objects under $BASE_DN
-  Keytab    $KEYTAB  (mode 0600 — copy to the API host over a secure channel,
-                      chown it to the odm user, and never commit it)
+  Keytab    $KEYTAB  (readable by the odm service user only —
+                      copy to the API host over a secure channel if the
+                      control plane runs elsewhere, and never commit it)
+  CA        /etc/odm/tls/dc-ca.pem  (validates the controller's LDAPS certificate)
 
 Set ODM_KEYTAB to that path. Re-exporting the keytab invalidates the previous
 copy, so export once and distribute that file.

@@ -139,9 +139,11 @@ authenticates with the machine keytab, so it needs no credential of its own.
 `install-agent.sh` also installs the packages the appliers depend on
 (`cifs-utils`, `libpam-mount`, `nftables`, `dconf-cli`).
 
-If the API runs on the domain controller, set `ODM_SYSVOL_PATH` so group
-policy objects are mirrored into LDAP and SYSVOL for GPMC/RSAT; without it
-they are ODM-only and live in PostgreSQL.
+`ODM_SYSVOL_PATH` mirrors group policy objects into LDAP and SYSVOL for
+GPMC and RSAT. It is off after a standard install: the control-plane service
+account needs write access to Samba's SYSVOL share, and `ReadWritePaths` in
+`odm-api.service` extended to cover it. Without it, policy objects live in
+PostgreSQL and agents are unaffected.
 
 ### 6. Role framework
 

@@ -220,6 +220,11 @@ if [[ -f /var/lib/samba/private/sam.ldb ]]; then
 fi
 
 command -v systemctl >/dev/null || fail "this needs systemd"
+
+if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+    useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
+    info "Created the $SERVICE_USER service account"
+fi
 ok "Ready to continue"
 
 # ---------------------------------------------------------------- step 2 --
@@ -333,9 +338,6 @@ info "Installing build dependencies"
 apt-get install -y --no-install-recommends \
     python3-venv python3-dev build-essential libkrb5-dev libsasl2-dev curl >/dev/null
 
-id -u "$SERVICE_USER" >/dev/null 2>&1 || \
-    useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
-
 install -d -m 0755 /opt/odm
 [[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
 info "Installing the control plane (this takes a minute)"
@@ -347,8 +349,13 @@ install -d -m 0750 -o root -g "$SERVICE_USER" /etc/odm
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/lib/odm
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/backups/odm
 
-LDAP_CA="/var/lib/samba/private/tls/ca.pem"
-[[ -f "$LDAP_CA" ]] || LDAP_CA="/etc/odm/tls/dc-ca.pem"
+# Samba's own CA lives under a root-only directory; create-api-service-account.sh
+# publishes a readable copy.
+LDAP_CA="/etc/odm/tls/dc-ca.pem"
+if [[ ! -f "$LDAP_CA" && -f /var/lib/samba/private/tls/ca.pem ]]; then
+    install -d -m 0755 /etc/odm/tls
+    install -m 0644 /var/lib/samba/private/tls/ca.pem "$LDAP_CA"
+fi
 
 umask 077
 cat > "$SECRETS_FILE" <<ENVFILE
@@ -368,10 +375,11 @@ ODM_LDAP_CA_CERT=$LDAP_CA
 ODM_KEYTAB=/etc/odm/odm-api.keytab
 
 # --- Group Policy ---
-# Set because the control plane runs on a domain controller: policy objects
-# are mirrored into LDAP and SYSVOL for GPMC and RSAT.
-ODM_SYSVOL_PATH=/var/lib/samba/sysvol/$REALM/Policies
 ODM_AGENT_REFRESH_MINUTES=15
+# Mirrors policy objects into LDAP and SYSVOL so GPMC and RSAT see them.
+# Off by default: it needs the $SERVICE_USER user to write Samba's SYSVOL
+# share, and ReadWritePaths in the unit file extended to match.
+#ODM_SYSVOL_PATH=/var/lib/samba/sysvol/$REALM/Policies
 
 # --- Console ---
 ODM_CONSOLE_DIR=$CONSOLE_DIR
@@ -446,6 +454,25 @@ ok "Role framework installed"
 # ---------------------------------------------------------------- step 8 --
 
 step "Starting Open Directory Manager"
+
+if [[ -f /etc/odm/odm-api.keytab ]]; then
+    chown "root:$SERVICE_USER" /etc/odm/odm-api.keytab 2>/dev/null || true
+    chmod 0640 /etc/odm/odm-api.keytab
+    if runuser -u "$SERVICE_USER" -- test -r /etc/odm/odm-api.keytab; then
+        ok "The service can read its keytab"
+    else
+        warn "The $SERVICE_USER user cannot read /etc/odm/odm-api.keytab."
+        warn "Kerberos authentication will fail until it can."
+    fi
+else
+    warn "No keytab at /etc/odm/odm-api.keytab; Kerberos features will not work."
+fi
+
+if runuser -u "$SERVICE_USER" -- test -r "$LDAP_CA" 2>/dev/null; then
+    ok "The service can read the directory CA"
+else
+    warn "The $SERVICE_USER user cannot read $LDAP_CA; LDAPS will fail."
+fi
 
 install -m 0644 "$HERE/odm-api.service" /etc/systemd/system/odm-api.service
 [[ "$PORT" == "8443" ]] || sed -i "s#--port 8443#--port $PORT#" /etc/systemd/system/odm-api.service
