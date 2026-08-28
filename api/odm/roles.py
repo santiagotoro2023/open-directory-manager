@@ -18,9 +18,15 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 
+# Absolute, so the helper cannot be shadowed by anything on PATH.
+SUDO = shutil.which("sudo") or "/usr/bin/sudo"
 ROLE_HELPER = "/opt/odm/bin/odm-role-install"
+CONSOLE_CERT_HELPER = "/opt/odm/bin/odm-apply-console-certificate"
+STAGING_DIR = "/var/lib/odm/tls-staging"
 INSTALL_TIMEOUT_SECONDS = 900
+HELPER_TIMEOUT_SECONDS = 60
 
 _ROLE_RE = re.compile(r"^[a-z][a-z0-9-]{1,31}$")
 _ARG_RE = re.compile(r"^[A-Za-z0-9@:/._-]{1,253}$")
@@ -73,6 +79,24 @@ REGISTRY: dict[str, Role] = {
             "standby — then add the printed ODM_KEA_* lines to the secrets file."
         ),
     ),
+    "certificate-authority": Role(
+        name="certificate-authority",
+        title="Certificate authority",
+        summary=(
+            "An internal CA that issues server and client certificates, "
+            "publishes its root to domain members through group policy, and "
+            "can re-issue the administration console's own certificate."
+        ),
+        arguments=("ca_dir",),
+        optional_arguments=frozenset({"ca_dir"}),
+        packages=(),
+        produces_settings=("ODM_CA_DIR",),
+        ui_section="ca",
+        notes=(
+            "After installing, create the root under Certificates, then "
+            "publish it so agents install it into the system trust store."
+        ),
+    ),
     "file-server": Role(
         name="file-server",
         title="File server",
@@ -112,7 +136,7 @@ def build_command(role: Role, config: dict[str, str]) -> list[str]:
     if role.core:
         raise RoleError("the core role is always installed")
 
-    command = ["sudo", "-n", ROLE_HELPER, role.name]
+    command = [SUDO, "-n", ROLE_HELPER, role.name]
     for argument in role.arguments:
         value = str(config.get(argument, "")).strip()
         if not value:
@@ -127,6 +151,48 @@ def build_command(role: Role, config: dict[str, str]) -> list[str]:
 
 def available() -> bool:
     return shutil.which("sudo") is not None
+
+
+def stage_console_certificate(settings, certificate_pem: str, private_key_pem: str) -> None:
+    """Write the console's new certificate where the helper will find it."""
+    if not private_key_pem:
+        raise RoleError("no private key was generated for the console certificate")
+    staging = Path(STAGING_DIR)
+    staging.mkdir(parents=True, exist_ok=True)
+    staging.chmod(0o700)
+
+    key_file = staging / "console.key"
+    key_file.touch(mode=0o600, exist_ok=True)
+    key_file.chmod(0o600)
+    key_file.write_text(private_key_pem, encoding="ascii")
+
+    cert_file = staging / "console.crt"
+    cert_file.write_text(certificate_pem, encoding="ascii")
+    cert_file.chmod(0o644)
+
+
+def apply_console_certificate() -> bool:
+    """Ask the privileged helper to install the staged pair and restart.
+
+    Returns False when the helper is not installed, so the console can tell
+    the operator to install it rather than reporting a silent success.
+    """
+    if not Path(CONSOLE_CERT_HELPER).exists():
+        return False
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed helper, no arguments, no shell
+            [SUDO, "-n", CONSOLE_CERT_HELPER],
+            capture_output=True,
+            text=True,
+            timeout=HELPER_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RoleError(f"could not apply the console certificate: {exc}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]
+        raise RoleError("\n".join(detail) or "the helper refused the certificate")
+    return True
 
 
 def install(role: Role, config: dict[str, str]) -> str:

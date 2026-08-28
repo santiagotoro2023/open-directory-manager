@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Login } from "./Login";
 import { Shell } from "./Shell";
 import { Audit } from "./pages/Audit";
+import { Certificates } from "./pages/Certificates";
 import { Delegation } from "./pages/Delegation";
 import { Dhcp } from "./pages/Dhcp";
 import { Directory } from "./pages/Directory";
@@ -51,6 +52,7 @@ export function App() {
           <Route path="dhcp" element={<Dhcp />} />
           <Route path="roles" element={<Roles />} />
           <Route path="delegation" element={<Delegation />} />
+          <Route path="certificates" element={<Certificates />} />
           <Route path="recyclebin" element={<RecycleBin />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -28,6 +28,7 @@ var appliers = []applier{
 	{"systemd_units", applySystemdUnits},
 	{"cron", applyCron},
 	{"drive_maps", applyDriveMaps},
+	{"trusted_certificates", applyTrustedCertificates},
 	{"browser", applyBrowser},
 	{"wallpaper", applyWallpaper},
 	{"firewall", applyFirewall},

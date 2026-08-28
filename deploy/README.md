@@ -53,9 +53,17 @@ sudo install -m 0644 odm-api.service /etc/systemd/system/
 sudo systemctl enable --now odm-api
 ```
 
-TLS certificate and key for the API go in `/etc/odm/tls/api.crt` and
-`/etc/odm/tls/api.key` (mode 0640, readable by the `odm` group). There is no
-plaintext listener.
+The console is served over HTTPS from the first boot. Generate its first
+certificate before starting the service:
+
+```
+sudo ./generate-self-signed.sh --fqdn odm.corp.example.internal
+```
+
+That writes `/etc/odm/tls/api.crt` and `/etc/odm/tls/api.key` (0640,
+root:odm). There is no plaintext listener. Once the certificate-authority
+role is installed, the console can re-issue its own certificate from the
+domain's authority under **Certificates → Replace console certificate**.
 
 ### 4. Web UI
 
@@ -104,7 +112,20 @@ sudo visudo -cf /etc/sudoers.d/odm-roles
 The sudoers rule grants the `odm` user exactly one command and nothing else.
 Roles can then be installed from **Server Roles** in the UI.
 
-### 7. DHCP role (optional, added after the base install)
+### 7. Certificate-authority role (optional)
+
+```
+sudo /opt/odm/bin/odm-role-install certificate-authority --ca-dir /var/lib/odm/ca
+```
+
+Or install it from **Server Roles** in the console. Add the printed
+`ODM_CA_DIR` to the secrets file and restart the API, then open
+**Certificates** and create the root. **Publish to domain** writes the root
+into a group policy object linked at the domain head, so agents install it
+into `/usr/local/share/ca-certificates` and run `update-ca-certificates` on
+their next refresh.
+
+### 8. DHCP role (optional, added after the base install)
 
 Run on both nodes of the failover pair:
 

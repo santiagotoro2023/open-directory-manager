@@ -192,6 +192,29 @@ class HbacRule(Strict):
         return value
 
 
+class TrustedCertificate(Strict):
+    """A certificate to install into the machine's system trust store."""
+
+    name: str
+    certificate_pem: Annotated[str, Field(min_length=1, max_length=32_768)]
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not NAME_RE.match(value):
+            raise ValueError("invalid certificate name")
+        return value
+
+    @field_validator("certificate_pem")
+    @classmethod
+    def _pem(cls, value: str) -> str:
+        if "-----BEGIN CERTIFICATE-----" not in value:
+            raise ValueError("not a PEM certificate")
+        if "PRIVATE KEY" in value:
+            raise ValueError("a trust anchor must not carry a private key")
+        return value
+
+
 class BrowserPolicy(Strict):
     """Written to each browser's documented managed-policy location."""
 
@@ -250,6 +273,9 @@ class PolicySettings(Strict):
     drive_maps: Annotated[list[DriveMap], Field(default_factory=list, max_length=100)]
     sudo_rules: Annotated[list[SudoRule], Field(default_factory=list, max_length=100)]
     hbac_rules: Annotated[list[HbacRule], Field(default_factory=list, max_length=200)]
+    trusted_certificates: Annotated[
+        list[TrustedCertificate], Field(default_factory=list, max_length=32)
+    ]
     admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None

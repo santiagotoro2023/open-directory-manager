@@ -15,6 +15,8 @@ the directory directly (CLAUDE.md §2).
 | `odm/security.py` | Security headers, origin checks, session/CSRF gates, authorization |
 | `odm/authz.py` | Permissions, scopes and the delegation model |
 | `odm/routes_rbac.py` | `/api/v1/rbac/*` — roles and assignments |
+| `odm/ca.py` | Certificate authority: issuance, profiles, revocation lists |
+| `odm/routes_ca.py` | `/api/v1/ca/*` |
 | `odm/objects.py` | Directory object CRUD, DN guard, protected-object guard |
 | `odm/auth.py` | `/api/v1/auth/*` |
 | `odm/routes_directory.py` | `/api/v1/directory/*` |
@@ -118,6 +120,15 @@ controller is needed to run them.
 | `GET` | `/api/v1/rbac/assignments` | Who holds what, where |
 | `POST` | `/api/v1/rbac/assignments` | Grant a role at a scope |
 | `DELETE` | `/api/v1/rbac/assignment` | Revoke an assignment |
+| `GET` | `/api/v1/ca/status` | Authority state and inventory counts |
+| `POST` | `/api/v1/ca/initialise` | Create the root authority |
+| `GET` | `/api/v1/ca/root` | Root certificate, PEM |
+| `GET` | `/api/v1/ca/crl` | Revocation list, PEM |
+| `GET` | `/api/v1/ca/certificates` | Issued certificates |
+| `POST` | `/api/v1/ca/issue` | Issue a server or client certificate |
+| `POST` | `/api/v1/ca/revoke` | Revoke one |
+| `POST` | `/api/v1/ca/publish` | Distribute the root through group policy |
+| `POST` | `/api/v1/ca/console-certificate` | Re-issue and install the console's own |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
 DNS and DHCP routers arrive in later phases.
@@ -166,6 +177,11 @@ factory.
   invoked through a shell.
 - Kea changes are config-tested before they are set, and only then written to
   disk. The Control Agent URL must be https unless it is on the loopback.
+- CA private keys are written 0600 into the CA directory and never leave it;
+  a leaf key is returned once in the issuing response and not stored.
+- Replacing the console certificate stages the pair where the API can write
+  and hands off to a privileged helper, which proves the key matches the
+  certificate and that it is not already expired before installing it.
 - Role installers need root and the API does not have it: it calls one fixed
   helper through a sudoers rule that names that single command, and only the
   arguments a role descriptor declares are passed, each pattern-checked.

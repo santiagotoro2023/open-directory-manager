@@ -42,6 +42,8 @@ PERMISSIONS: tuple[str, ...] = (
     "backup.write",
     "audit.read",
     "rbac.write",
+    "ca.read",
+    "ca.issue",
 )
 
 WILDCARD = "*"

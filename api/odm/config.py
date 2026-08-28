@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     kea_password: str | None = None
     kea_ca_cert: Path | None = None
 
+    # --- Certificate authority ---
+    # Set by the certificate-authority role; unset, the endpoints report the
+    # role as not configured.
+    ca_dir: Path | None = None
+
     # --- Database ---
     database_url: str = Field(description="postgresql://user:pass@host/db")
     db_pool_min: int = 1

@@ -240,6 +240,33 @@ export interface RoleInstance {
   updated_at: string;
 }
 
+export interface CaStatus {
+  initialised: boolean;
+  subject?: string;
+  not_before?: string;
+  not_after?: string;
+  fingerprint?: string;
+  serial?: string;
+  issued?: number;
+  expiring_soon?: number;
+}
+
+export interface IssuedCertificate {
+  serial: string;
+  subject: string;
+  sans: string[];
+  profile: "server" | "client" | "console";
+  fingerprint: string;
+  not_before: string;
+  not_after: string;
+  issued_by: string;
+  issued_at: string;
+  revoked_at: string | null;
+  revocation_reason: string | null;
+  certificate_pem?: string;
+  private_key_pem?: string;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -545,6 +572,42 @@ export const api = {
 
     unassign: (id: string) =>
       request<void>(`/rbac/assignment${qs({ id })}`, { method: "DELETE" }),
+  },
+
+  ca: {
+    status: () => request<CaStatus>("/ca/status"),
+
+    initialise: (common_name?: string) =>
+      request<CaStatus>("/ca/initialise", json({ common_name })),
+
+    certificates: (include_revoked = false) =>
+      request<{ certificates: IssuedCertificate[] }>(
+        `/ca/certificates${qs({ include_revoked: include_revoked ? "true" : undefined })}`,
+      ),
+
+    issue: (body: {
+      common_name: string;
+      sans: string[];
+      profile: string;
+      validity_days: number;
+    }) => request<IssuedCertificate>("/ca/issue", json(body)),
+
+    revoke: (serial: string, reason: string) =>
+      request<void>("/ca/revoke", json({ serial, reason })),
+
+    publish: () => request<{ gpo_guid: string; display_name: string }>("/ca/publish", json({})),
+
+    consoleCertificate: (body: {
+      common_name: string;
+      sans: string[];
+      validity_days: number;
+    }) =>
+      request<{ serial: string; fingerprint: string; applied: boolean; note: string }>(
+        "/ca/console-certificate",
+        json(body),
+      ),
+
+    rootUrl: "/api/v1/ca/root",
   },
 
   audit: {

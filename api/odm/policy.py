@@ -38,6 +38,7 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "drive_maps": ("mount_point",),
     "sudo_rules": ("name",),
     "hbac_rules": ("principal", "service"),
+    "trusted_certificates": ("name",),
     "admx": ("policy_id",),
 }
 

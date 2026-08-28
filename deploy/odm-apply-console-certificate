@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Install a newly issued certificate for the administration console.
+#
+# The API stages the pair where it can write; this validates them, installs
+# them where the service reads them, and restarts it. Nothing is taken as an
+# argument, so there is no argument to abuse.
+
+set -euo pipefail
+
+STAGING="/var/lib/odm/tls-staging"
+TLS_DIR="/etc/odm/tls"
+SERVICE="odm-api"
+SERVICE_GROUP="odm"
+
+[[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
+[[ -f "$STAGING/console.crt" && -f "$STAGING/console.key" ]] || {
+    echo "no staged certificate to install" >&2; exit 1
+}
+
+# The pair must actually belong together, or the restart takes the console
+# offline until somebody notices.
+CERT_MODULUS="$(openssl x509 -noout -modulus -in "$STAGING/console.crt" | openssl sha256)"
+KEY_MODULUS="$(openssl rsa -noout -modulus -in "$STAGING/console.key" | openssl sha256)"
+[[ "$CERT_MODULUS" == "$KEY_MODULUS" ]] || {
+    echo "the staged certificate and key do not match" >&2; exit 1
+}
+openssl x509 -noout -checkend 0 -in "$STAGING/console.crt" || {
+    echo "the staged certificate is already expired" >&2; exit 1
+}
+
+install -d -m 0750 -o root -g "$SERVICE_GROUP" "$TLS_DIR"
+for name in crt key; do
+    [[ -f "$TLS_DIR/api.$name" ]] && cp -a "$TLS_DIR/api.$name" "$TLS_DIR/api.$name.previous"
+done
+install -m 0644 -o root -g "$SERVICE_GROUP" "$STAGING/console.crt" "$TLS_DIR/api.crt"
+install -m 0640 -o root -g "$SERVICE_GROUP" "$STAGING/console.key" "$TLS_DIR/api.key"
+shred -u "$STAGING/console.key" 2>/dev/null || rm -f "$STAGING/console.key"
+rm -f "$STAGING/console.crt"
+
+systemctl restart "$SERVICE"
+echo "installed; $SERVICE restarted"

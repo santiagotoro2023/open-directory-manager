@@ -577,3 +577,47 @@ func TestSessionHookAppliesUserPolicyWithoutBlockingLogin(t *testing.T) {
 		t.Fatalf("user apply must be backgrounded so a slow API cannot block login:\n%s", hook)
 	}
 }
+
+// ------------------------------------------------------------ trust anchors --
+
+const testAnchor = `-----BEGIN CERTIFICATE-----
+MIIBkTCB+wIJAKp0P0Example
+-----END CERTIFICATE-----`
+
+func TestTrustAnchorIsInstalledAndTheBundleRebuilt(t *testing.T) {
+	env, runner := testEnv(t)
+	results := applyTrustedCertificates(context.Background(), policy.Settings{
+		TrustedCerts: []policy.TrustedCert{
+			{Name: "odm-root-ca", CertificatePEM: testAnchor},
+		},
+	}, env)
+
+	// update-ca-certificates only reads files ending in .crt.
+	body := read(t, env, trustAnchorDir+"/odm-odm-root-ca.crt")
+	if !strings.HasPrefix(body, "-----BEGIN CERTIFICATE-----") {
+		t.Fatalf("anchor not written verbatim:\n%s", body)
+	}
+	if !strings.HasSuffix(body, "\n") {
+		t.Error("anchor must end with a newline")
+	}
+	if !runner.ran("update-ca-certificates", "") {
+		t.Error("the trust bundle was never rebuilt")
+	}
+	if statuses(results)["trusted_certificates:odm-root-ca"] != "success" {
+		t.Fatalf("results = %+v", results)
+	}
+}
+
+func TestSomethingThatIsNotACertificateIsSkipped(t *testing.T) {
+	env, runner := testEnv(t)
+	results := applyTrustedCertificates(context.Background(), policy.Settings{
+		TrustedCerts: []policy.TrustedCert{{Name: "bogus", CertificatePEM: "not a certificate"}},
+	}, env)
+
+	if statuses(results)["trusted_certificates:bogus"] != "skipped" {
+		t.Fatalf("results = %+v", results)
+	}
+	if runner.ran("update-ca-certificates", "") {
+		t.Error("the bundle should not be rebuilt when nothing was installed")
+	}
+}

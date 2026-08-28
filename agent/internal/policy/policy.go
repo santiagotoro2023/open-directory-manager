@@ -42,6 +42,7 @@ type Settings struct {
 	DriveMaps    []DriveMap    `json:"drive_maps,omitempty"`
 	SudoRules    []SudoRule    `json:"sudo_rules,omitempty"`
 	HbacRules    []HbacRule    `json:"hbac_rules,omitempty"`
+	TrustedCerts []TrustedCert `json:"trusted_certificates,omitempty"`
 	Browser      *Browser      `json:"browser,omitempty"`
 	Wallpaper    *Wallpaper    `json:"wallpaper,omitempty"`
 	Agent        *AgentConfig  `json:"agent,omitempty"`
@@ -105,6 +106,12 @@ type HbacRule struct {
 	Principal string `json:"principal"`
 	Service   string `json:"service"`
 	Access    string `json:"access"`
+}
+
+// TrustedCert is a certificate to install into the system trust store.
+type TrustedCert struct {
+	Name           string `json:"name"`
+	CertificatePEM string `json:"certificate_pem"`
 }
 
 type Browser struct {

@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from . import (
     auth,
+    ca,
     db,
     directory,
     dns,
@@ -26,6 +27,7 @@ from . import (
     routes_admx,
     routes_agent,
     routes_audit,
+    routes_ca,
     routes_dhcp,
     routes_directory,
     routes_dns,
@@ -97,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_recyclebin.router)
     app.include_router(routes_roles.router)
     app.include_router(routes_rbac.router)
+    app.include_router(routes_ca.router)
     app.include_router(routes_audit.router)
 
     # Directory failures map to HTTP once, here, instead of a try/except in
@@ -112,6 +115,8 @@ def create_app() -> FastAPI:
         (kea.KeaUnavailable, status.HTTP_501_NOT_IMPLEMENTED),
         (kea.KeaError, status.HTTP_502_BAD_GATEWAY),
         (roles.RoleError, status.HTTP_400_BAD_REQUEST),
+        (ca.CaNotInitialised, status.HTTP_501_NOT_IMPLEMENTED),
+        (ca.CaError, status.HTTP_400_BAD_REQUEST),
     ):
         app.add_exception_handler(exception, _problem(code))
 

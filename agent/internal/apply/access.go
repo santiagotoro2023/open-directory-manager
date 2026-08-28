@@ -173,3 +173,43 @@ func withRoot(values []string, keep string) []string {
 	}
 	return append(values, keep)
 }
+
+const trustAnchorDir = "/usr/local/share/ca-certificates"
+
+// Trust anchors (CLAUDE.md §4): certificates the domain's own authority
+// issues are only useful once machines trust the root that signed them.
+// Debian reads anchors from /usr/local/share/ca-certificates and rebuilds
+// the bundle with update-ca-certificates.
+func applyTrustedCertificates(ctx context.Context, s policy.Settings, env Env) []policy.Result {
+	if len(s.TrustedCerts) == 0 {
+		return nil
+	}
+	results := make([]policy.Result, 0, len(s.TrustedCerts)+1)
+	installed := false
+
+	for _, anchor := range s.TrustedCerts {
+		setting := "trusted_certificates:" + anchor.Name
+		if !strings.Contains(anchor.CertificatePEM, "-----BEGIN CERTIFICATE-----") {
+			results = append(results, policy.Skip(setting, "not a PEM certificate"))
+			continue
+		}
+		body := anchor.CertificatePEM
+		if !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		// update-ca-certificates only considers files ending in .crt.
+		path := trustAnchorDir + "/odm-" + strings.ReplaceAll(anchor.Name, ".", "-") + ".crt"
+		if err := env.WriteFile(path, body, 0o644, "root", "root"); err != nil {
+			results = append(results, policy.Fail(setting, err))
+			continue
+		}
+		installed = true
+		results = append(results, policy.Ok(setting))
+	}
+
+	if installed {
+		results = append(results, runAll(ctx, env, "trusted_certificates:refresh",
+			[]string{"update-ca-certificates"}))
+	}
+	return results
+}

@@ -142,7 +142,7 @@ def test_install_command_passes_only_declared_arguments():
             "extra": "--wipe-everything",  # not declared, so never passed
         },
     )
-    assert command[:4] == ["sudo", "-n", roles.ROLE_HELPER, "dhcp"]
+    assert command[:4] == [roles.SUDO, "-n", roles.ROLE_HELPER, "dhcp"]
     assert "--extra" not in command and "--wipe-everything" not in command
     assert command[4:6] == ["--ha-role", "primary"]
 
@@ -175,6 +175,13 @@ def test_hostile_argument_values_never_reach_the_installer(value):
                 "dns_server": "10.10.0.10",
             },
         )
+
+
+def test_the_helper_is_invoked_by_absolute_path():
+    # A relative name could be shadowed by anything on PATH.
+    assert roles.SUDO.startswith("/")
+    assert roles.ROLE_HELPER.startswith("/")
+    assert roles.CONSOLE_CERT_HELPER.startswith("/")
 
 
 def test_every_registered_role_has_an_installer_case():
