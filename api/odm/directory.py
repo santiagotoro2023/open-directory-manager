@@ -141,10 +141,24 @@ def authenticate(settings: Settings, username: str, password: str) -> DirectoryU
         # succeeds. Never let one reach the DC.
         raise InvalidCredentials("empty password")
 
-    upn = to_upn(username, settings.realm)
-    conn = _connect(settings, upn, password)
+    # Resolve the account to its distinguished name before binding as it.
+    #
+    # A simple bind matches the name it is handed literally, and which forms
+    # of a name exist varies by account: a freshly provisioned Samba
+    # Administrator has no userPrincipalName, so Administrator@REALM matches
+    # nothing and the bind is refused exactly as though the password were
+    # wrong. A distinguished name always exists, so one bind attempt settles
+    # it — which also means a mistyped password costs the account one failure
+    # here and not several.
+    service = service_connection(settings)
     try:
-        return _describe(settings, conn, _lookup_user(settings, conn, upn, username))
+        found = _lookup_user(settings, service, to_upn(username, settings.realm), username)
+    finally:
+        service.unbind()
+
+    conn = _connect(settings, found.dn, password)
+    try:
+        return _describe(settings, conn, found)
     finally:
         conn.unbind()
 

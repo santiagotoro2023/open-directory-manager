@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 from datetime import datetime
 
 import asyncpg
@@ -26,6 +27,8 @@ from . import audit, authz, directory, sessions
 from .config import Settings, get_settings
 from .security import clear_session_cookie, current_session, get_pool, set_session_cookie
 from .sessions import Session
+
+log = logging.getLogger("odm.auth")
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -132,6 +135,10 @@ async def login(
         )
     except (directory.InvalidCredentials, directory.NotAuthorized) as exc:
         denied = isinstance(exc, directory.NotAuthorized)
+        # The browser is told only that the credentials were rejected. The
+        # reason the directory gave belongs in the journal: until someone can
+        # sign in, the audit log the same reason is written to cannot be read.
+        log.warning("sign-in refused for %r: %s", body.username, exc)
         async with pool.acquire() as conn:
             await sessions.record_attempt(
                 conn,

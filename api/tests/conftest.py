@@ -152,6 +152,12 @@ def recycle_bin_rows(state: dict) -> list[tuple]:
 # --------------------------------------------------------------- fake LDAP ---
 
 
+_ATTRIBUTE_CASE = {
+    "samaccountname": "sAMAccountName",
+    "userprincipalname": "userPrincipalName",
+}
+
+
 class FakeLdap:
     """Enough of an ldap3 Connection to exercise the object layer.
 
@@ -194,7 +200,23 @@ class FakeLdap:
         if "person" in wanted:
             wanted.discard("person")
             wanted.add("user")
-        return bool(wanted & classes)
+        if not wanted & classes:
+            return False
+
+        # Name equality, when the filter asks for it. Without this every user
+        # matches every user lookup, and a test cannot tell "resolved the
+        # wrong account" from "resolved the right one".
+        named = [
+            token.split("=", 1)
+            for token in tokens
+            if token.lower().startswith(("samaccountname=", "userprincipalname="))
+        ]
+        if not named:
+            return True
+        return any(
+            str(entry.get(_ATTRIBUTE_CASE[attribute.lower()], "")).lower() == value.lower()
+            for attribute, value in named
+        )
 
     # -- ldap3 surface --
     def search(self, search_base, search_filter, search_scope, attributes, paged_size=None):
