@@ -81,8 +81,14 @@ The sidebar, search and routing are driven from that registry; nothing else
 needs to change. A new section is created by naming it in `meta.section` and
 adding it to `SECTION_ORDER`.
 
-Terminology follows the console: Hosts rather than computers, Groups
-described by scope and kind rather than "security groups", HBAC rules rather
-than logon rights. Active Directory terms are kept where they are the
-clearest: Organizational Unit, Group Policy Object, Distinguished Name,
-Sudo Rule, security filtering, enforced link, block inheritance.
+Terminology follows the console:
+
+- Computer objects are **Hosts**.
+- A group is a **User group** or a **Computer group**, with a **scope**
+  (global, domain local, universal). The words "security group" and
+  "distribution group" are not used.
+- Logon rights are **HBAC rules**.
+
+Active Directory terms are kept where they are the clearest: Organizational
+Unit, Group Policy Object, Distinguished Name, Sudo Rule, security
+filtering, enforced link, block inheritance.

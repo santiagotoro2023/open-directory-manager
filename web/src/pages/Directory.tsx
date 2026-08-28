@@ -198,7 +198,13 @@ export function Directory() {
                     {label(object)}
                     {isDisabled(object) && <span className="badge">Disabled</span>}
                   </td>
-                  <td>{TYPE_LABELS[object.objectType] ?? object.objectType}</td>
+                  <td>
+                    {object.objectType === "group"
+                      ? object.groupKind === "computer"
+                        ? "Computer group"
+                        : "User group"
+                      : (TYPE_LABELS[object.objectType] ?? object.objectType)}
+                  </td>
                   <td>{String(object.sAMAccountName ?? "")}</td>
                   <td>{String(object.description ?? "")}</td>
                 </tr>

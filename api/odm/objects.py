@@ -29,20 +29,22 @@ from ldap3.utils.conv import escape_filter_chars
 from ldap3.utils.dn import escape_rdn, parse_dn, safe_dn
 
 from .config import Settings
-from .directory import DirectoryError, validate_username
+from .directory import DirectoryError, read_sid, validate_username
 
 UF_ACCOUNTDISABLE = 0x0002
 UF_NORMAL_ACCOUNT = 0x0200
 UF_WORKSTATION_TRUST_ACCOUNT = 0x1000
 
-# groupType bit 0x80000000 marks a security group; the low bits set the scope.
-GROUP_TYPES = {
-    "global-security": -2147483646,
-    "domain-local-security": -2147483644,
-    "universal-security": -2147483640,
-    "global-distribution": 2,
-    "domain-local-distribution": 4,
-    "universal-distribution": 8,
+# What a group is for. Both kinds can be granted access; the kind decides
+# which objects the console offers as members and how the group is labelled.
+GROUP_KINDS = ("user", "computer")
+
+# Where a group can be used. The high bit marks it as usable for access,
+# which every ODM group is; the low bits set the scope.
+GROUP_SCOPES = {
+    "global": -2147483646,
+    "domain-local": -2147483644,
+    "universal": -2147483640,
 }
 
 # Objects whose removal breaks the domain. Deleting their *contents* is fine.
@@ -99,6 +101,7 @@ TYPES: dict[str, TypeSpec] = {
             *COMMON_ATTRS,
             "cn",
             "sAMAccountName",
+            "objectSid",
             "userPrincipalName",
             "givenName",
             "sn",
@@ -135,8 +138,8 @@ TYPES: dict[str, TypeSpec] = {
         ldap_filter="(objectClass=group)",
         object_classes=["top", "group"],
         rdn_attribute="cn",
-        attributes=[*COMMON_ATTRS, "cn", "sAMAccountName", "groupType", "member", "memberOf",
-                    "mail", "managedBy"],
+        attributes=[*COMMON_ATTRS, "cn", "sAMAccountName", "objectSid", "groupType", "member",
+                    "memberOf", "mail", "managedBy"],
         editable=frozenset({"description", "mail"}),
     ),
     "computer": TypeSpec(
@@ -147,6 +150,7 @@ TYPES: dict[str, TypeSpec] = {
             *COMMON_ATTRS,
             "cn",
             "sAMAccountName",
+            "objectSid",
             "dNSHostName",
             "operatingSystem",
             "operatingSystemVersion",
@@ -236,6 +240,9 @@ def _check(conn: Connection, action: str) -> None:
 
 def _entry(raw: dict) -> dict[str, Any]:
     attributes = {k: _jsonable(v) for k, v in raw["attributes"].items() if v not in ([], "")}
+    # A security identifier is meaningful to an operator; its raw bytes are not.
+    if raw["attributes"].get("objectSid") is not None:
+        attributes["objectSid"] = read_sid(raw["attributes"]["objectSid"])
     attributes["distinguishedName"] = raw["dn"]
     attributes["objectType"] = _classify(raw["attributes"].get("objectClass") or [])
     return attributes
@@ -434,15 +441,18 @@ def create_user(conn: Connection, settings: Settings, payload: dict[str, Any]) -
 def create_group(conn: Connection, settings: Settings, payload: dict[str, Any]) -> str:
     name = validate_username(str(payload["name"]))
     container = normalize_dn(settings, payload["container"])
-    scope = str(payload.get("group_type") or "global-security")
-    if scope not in GROUP_TYPES:
-        raise ObjectError(f"unknown group type {scope!r}")
+    scope = str(payload.get("scope") or "global")
+    if scope not in GROUP_SCOPES:
+        raise ObjectError(f"unknown group scope {scope!r}")
+    kind = str(payload.get("kind") or "user")
+    if kind not in GROUP_KINDS:
+        raise ObjectError(f"unknown group type {kind!r}")
 
     dn = f"CN={escape_rdn(name)},{container}"
     attributes = {
         "cn": name,
         "sAMAccountName": name,
-        "groupType": GROUP_TYPES[scope],
+        "groupType": GROUP_SCOPES[scope],
     }
     if payload.get("description"):
         attributes["description"] = str(payload["description"])

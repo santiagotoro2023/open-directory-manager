@@ -79,6 +79,49 @@ def _audit_context(request: Request, session: Session, pool: asyncpg.Pool, actio
     )
 
 
+async def _with_kinds(pool: asyncpg.Pool, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Label each group with what it is for.
+
+    A group ODM has never classified reads as a user group, so a group made
+    outside the console still has a sensible label.
+    """
+    sids = [
+        str(entry["objectSid"])
+        for entry in entries
+        if entry.get("objectType") == "group" and entry.get("objectSid")
+    ]
+    kinds: dict[str, str] = {}
+    if sids:
+        rows = await pool.fetch(
+            "SELECT object_sid, kind FROM group_kind WHERE object_sid = ANY($1::text[])", sids
+        )
+        kinds = {row["object_sid"]: row["kind"] for row in rows}
+    for entry in entries:
+        if entry.get("objectType") == "group":
+            entry["groupKind"] = kinds.get(str(entry.get("objectSid") or ""), "user")
+    return entries
+
+
+async def _record_kind(
+    pool: asyncpg.Pool, entry: dict[str, Any], kind: str, actor: str
+) -> None:
+    if not entry.get("objectSid"):
+        return
+    await pool.execute(
+        """
+        INSERT INTO group_kind (object_sid, kind, group_dn, updated_by)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (object_sid) DO UPDATE
+            SET kind = excluded.kind, group_dn = excluded.group_dn,
+                updated_by = excluded.updated_by, updated_at = now()
+        """,
+        str(entry["objectSid"]),
+        kind,
+        entry["distinguishedName"],
+        actor,
+    )
+
+
 # ------------------------------------------------------------------- reads ---
 
 
@@ -96,6 +139,7 @@ async def tree(
 @router.get("/objects")
 async def list_objects(
     authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
     object_type: Literal["user", "group", "computer", "ou"] | None = None,
     container: str | None = Query(default=None, max_length=1024),
@@ -113,17 +157,19 @@ async def list_objects(
         scope=scope,
         limit=limit,
     )
-    return {"objects": found, "truncated": truncated}
+    return {"objects": await _with_kinds(pool, found), "truncated": truncated}
 
 
 @router.get("/object")
 async def read_object(
     dn: str = Query(max_length=1024),
     authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     authz.require("directory.read", dn)
-    return await _read(settings, objects.get, dn)
+    entry = await _read(settings, objects.get, dn)
+    return (await _with_kinds(pool, [entry]))[0]
 
 
 # ----------------------------------------------------------------- creates ---
@@ -147,15 +193,17 @@ class CreateUser(BaseModel):
 class CreateGroup(BaseModel):
     container: Dn
     name: Name
-    group_type: Literal[
-        "global-security",
-        "domain-local-security",
-        "universal-security",
-        "global-distribution",
-        "domain-local-distribution",
-        "universal-distribution",
-    ] = "global-security"
+    # What the group is for; decides which objects the console offers as
+    # members and how it is labelled.
+    kind: Literal["user", "computer"] = "user"
+    # Where it can be used across the forest.
+    scope: Literal["global", "domain-local", "universal"] = "global"
     description: Text = None
+
+
+class GroupKindRequest(BaseModel):
+    dn: Dn
+    kind: Literal["user", "computer"]
 
 
 class CreateComputer(BaseModel):
@@ -216,7 +264,7 @@ async def create_group(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     authz.require("group.write", body.container)
-    return await _create(
+    created = await _create(
         request,
         session,
         pool,
@@ -226,6 +274,9 @@ async def create_group(
         objects.create_group,
         body.model_dump(),
     )
+    await _record_kind(pool, created, body.kind, session.principal)
+    created["groupKind"] = body.kind
+    return created
 
 
 @router.post("/computers", status_code=201)
@@ -430,6 +481,30 @@ async def set_password(
         entry.detail = "must change at next logon" if body.must_change else None
 
 
+@router.post("/group/kind")
+async def set_group_kind(
+    body: GroupKindRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Change whether a group is a user group or a computer group."""
+    authz.require("group.write", body.dn)
+    async with _audit_context(
+        request, session, pool, "group.kind", object_type="group", object_dn=body.dn
+    ) as entry:
+        group = await _read(settings, objects.get, body.dn)
+        if group.get("objectType") != "group":
+            raise objects.ObjectError("not a group")
+        labelled = (await _with_kinds(pool, [group]))[0]
+        entry.before = {"groupKind": labelled.get("groupKind")}
+        await _record_kind(pool, group, body.kind, session.principal)
+        entry.after = {"groupKind": body.kind}
+        return {**group, "groupKind": body.kind}
+
+
 class MembersRequest(BaseModel):
     dn: Dn
     add: Annotated[list[Dn], Field(default_factory=list, max_length=1000)]
@@ -456,7 +531,7 @@ async def edit_members(
             )
         entry.before = {"member": before.get("member") or []}
         entry.after = {"member": after.get("member") or []}
-        return after
+        return (await _with_kinds(pool, [after]))[0]
 
 
 # ----------------------------------------------------------------- deletes ---

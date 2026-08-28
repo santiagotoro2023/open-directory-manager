@@ -76,6 +76,7 @@ controller is needed to run them.
 | `POST` | `/api/v1/directory/object/enabled` | Enable or disable an account |
 | `POST` | `/api/v1/directory/user/password` | Reset a password |
 | `POST` | `/api/v1/directory/group/members` | Bulk membership edit |
+| `POST` | `/api/v1/directory/group/kind` | Set whether a group is for users or computers |
 | `DELETE` | `/api/v1/directory/object` | Soft delete via the recycle bin |
 | `GET` | `/api/v1/policy/gpos` | Group policy objects |
 | `POST` | `/api/v1/policy/gpos` | Create a GPO |

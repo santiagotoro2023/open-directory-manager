@@ -421,8 +421,16 @@ export const api = {
         json({ users }),
       ),
 
-    createGroup: (body: { container: string; name: string; group_type: string; description?: string }) =>
-      request<DirectoryObject>("/directory/groups", json(body)),
+    createGroup: (body: {
+      container: string;
+      name: string;
+      kind: "user" | "computer";
+      scope: string;
+      description?: string;
+    }) => request<DirectoryObject>("/directory/groups", json(body)),
+
+    setGroupKind: (dn: string, kind: "user" | "computer") =>
+      request<DirectoryObject>("/directory/group/kind", json({ dn, kind })),
 
     createComputer: (body: { container: string; name: string; dns_host_name?: string }) =>
       request<DirectoryObject>("/directory/computers", json(body)),

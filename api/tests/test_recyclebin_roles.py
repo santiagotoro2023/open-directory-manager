@@ -53,8 +53,10 @@ def test_restore_recreates_the_object_without_directory_owned_attributes(ldap_on
     entry = ldap_only.entries[dn]
     assert entry["sAMAccountName"] == "grace"
     assert entry["displayName"] == "Grace Hopper"
-    for owned in ("objectSid", "objectGUID", "whenCreated", "memberOf", "distinguishedName"):
+    for owned in ("objectGUID", "whenCreated", "memberOf", "distinguishedName"):
         assert owned not in entry, f"{owned} must not be written back"
+    # The directory issues a fresh identifier; the snapshot's is not replayed.
+    assert entry["objectSid"] != "S-1-5-21-1-2-3-9999"
 
 
 def test_restored_account_comes_back_disabled(ldap_only):

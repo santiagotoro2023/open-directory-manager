@@ -44,10 +44,17 @@ def test_ordinary_objects_are_mutable():
     objects.assert_mutable(get_settings(), f"CN=ada,OU=Example Corp,{BASE_DN}")
 
 
-def test_group_type_scopes_are_the_real_ad_values():
-    assert objects.GROUP_TYPES["global-security"] == -2147483646
-    assert objects.GROUP_TYPES["domain-local-security"] == -2147483644
-    assert objects.GROUP_TYPES["universal-distribution"] == 8
+def test_group_scopes_are_the_real_directory_values():
+    assert objects.GROUP_SCOPES["global"] == -2147483646
+    assert objects.GROUP_SCOPES["domain-local"] == -2147483644
+    assert objects.GROUP_SCOPES["universal"] == -2147483640
+
+
+def test_every_group_can_be_granted_access():
+    # The high bit marks a group as usable for access control. Every group
+    # ODM creates has it, so a group is never one that cannot be used.
+    for value in objects.GROUP_SCOPES.values():
+        assert value < 0, value
 
 
 # ------------------------------------------------------------------- reads ---
@@ -125,6 +132,34 @@ async def test_user_without_a_password_stays_disabled(admin_client, ldap):
     assert int(entry["userAccountControl"]) & objects.UF_ACCOUNTDISABLE
 
 
+async def test_a_group_is_created_for_users_or_for_computers(admin_client, ldap):
+    for name, kind in (("Engineers", "user"), ("Workstations", "computer")):
+        response = await admin_client.post(
+            "/api/v1/directory/groups",
+            json={"container": f"OU=Example Corp,{BASE_DN}", "name": name, "kind": kind},
+        )
+        assert response.status_code == 201
+        assert response.json()["groupKind"] == kind
+
+
+async def test_group_kind_can_be_changed(admin_client, ldap):
+    dn = f"CN=Helpdesk,OU=Example Corp,{BASE_DN}"
+    response = await admin_client.post(
+        "/api/v1/directory/group/kind", json={"dn": dn, "kind": "computer"}
+    )
+    assert response.status_code == 200
+    assert response.json()["groupKind"] == "computer"
+    assert audit_rows(admin_client.state)[-1]["action"] == "group.kind"
+
+
+async def test_an_unclassified_group_reads_as_a_user_group(admin_client, ldap):
+    response = await admin_client.get(
+        "/api/v1/directory/object", params={"dn": f"CN=Helpdesk,OU=Example Corp,{BASE_DN}"}
+    )
+    assert response.status_code == 200
+    assert response.json()["groupKind"] == "user"
+
+
 async def test_create_group_and_ou(admin_client, ldap):
     ou = await admin_client.post(
         "/api/v1/directory/ous",
@@ -137,7 +172,8 @@ async def test_create_group_and_ou(admin_client, ldap):
         json={
             "container": f"OU=Engineering,{BASE_DN}",
             "name": "Engineers",
-            "group_type": "domain-local-security",
+            "scope": "domain-local",
+            "kind": "computer",
         },
     )
     assert group.status_code == 201

@@ -165,6 +165,7 @@ class FakeLdap:
         self.result = {"result": 0, "description": "success"}
         self.response: list[dict] = []
         self.unbound = False
+        self.serial = 0
 
     # -- helpers --
     def _in_scope(self, dn: str, base: str, scope: str) -> bool:
@@ -210,7 +211,14 @@ class FakeLdap:
         if dn in self.entries:
             self.result = {"result": 68, "description": "entryAlreadyExists", "message": ""}
             return False
-        self.entries[dn] = {"objectClass": list(object_classes), **attributes}
+        # The directory issues a security identifier; the fake mints one too,
+        # because the group classification is keyed on it.
+        self.serial += 1
+        self.entries[dn] = {
+            "objectClass": list(object_classes),
+            "objectSid": f"S-1-5-21-1-2-3-{7000 + self.serial}",
+            **attributes,
+        }
         self.result = {"result": 0, "description": "success"}
         return True
 
@@ -275,12 +283,14 @@ def sample_directory() -> dict[str, dict]:
             "objectClass": ["top", "group"],
             "cn": "Helpdesk",
             "sAMAccountName": "Helpdesk",
+            "objectSid": "S-1-5-21-1-2-3-1601",
             "groupType": -2147483646,
         },
         f"CN=Domain Admins,CN=Users,{BASE_DN}": {
             "objectClass": ["top", "group"],
             "cn": "Domain Admins",
             "sAMAccountName": "Domain Admins",
+            "objectSid": "S-1-5-21-1-2-3-512",
             "groupType": -2147483646,
         },
     }

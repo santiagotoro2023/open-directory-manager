@@ -27,9 +27,13 @@ export function Content() {
           Select the organizational unit → <strong>New user</strong> → account name, full name and
           a password. Leave the password empty to create the account disabled.
         </Example>
+        <Example title="Create a group">
+          Select the organizational unit → <strong>New group</strong> → name it, choose{" "}
+          <strong>User group</strong> or <strong>Computer group</strong>.
+        </Example>
         <Example title="Add members to a group">
-          Select the group → <strong>Members</strong> in the detail panel → search for users, hosts
-          or other groups → <strong>Apply</strong>.
+          Select the group → <strong>Members</strong> in the detail panel → search →{" "}
+          <strong>Apply</strong>. A user group offers people; a computer group offers hosts.
         </Example>
         <Example title="Import many users at once">
           <strong>Import CSV</strong> in the toolbar. Columns:{" "}
@@ -50,7 +54,7 @@ export function Content() {
             headers={["Type", "Holds", "Named by"]}
             rows={[
               ["User", "A person's account and its attributes", "Account name, plus a full name used as the object's common name"],
-              ["Group", "Users, hosts and other groups", "Group name"],
+              ["Group", "People or hosts, and other groups", "Group name"],
               ["Host", "A machine account, created by joining or by hand", "Host name; the account name gains a trailing $"],
               ["Organizational unit", "Other objects, and policy links", "Name"],
             ]}
@@ -62,26 +66,48 @@ export function Content() {
           </Note>
         </Section>
 
-        <Section title="Group scope and kind">
+        <Section title="User groups and computer groups">
           <p>
-            A group has a scope, which controls where it can be used, and a kind, which controls
-            whether it can be granted access.
+            Every group is either a <strong>user group</strong> or a{" "}
+            <strong>computer group</strong>. The type decides what the member picker offers and
+            how the group is labelled; it is set when the group is created and can be changed
+            afterwards from the group&rsquo;s detail panel.
           </p>
           <Reference
-            headers={["Scope", "Use"]}
+            headers={["Type", "Holds", "Typically used for"]}
             rows={[
-              ["Global", "Members from this domain; usable throughout the forest."],
-              ["Domain local", "Members from anywhere; usable in this domain."],
-              ["Universal", "Members from anywhere; usable throughout the forest."],
+              [
+                "User group",
+                "People, and other groups",
+                "Sudo rules, HBAC rules, drive maps assigned to a group, delegation, group policy filtering",
+              ],
+              [
+                "Computer group",
+                "Hosts, and other groups",
+                "Group policy filtering and item-level targeting by machine",
+              ],
             ]}
           />
+          <p>
+            Both types can be granted access. A group ODM has not classified — one created
+            outside the console — is shown as a user group until it is changed.
+          </p>
+        </Section>
+
+        <Section title="Group scope">
+          <p>Scope controls where in the forest a group can be used.</p>
           <Reference
-            headers={["Kind", "Use"]}
+            headers={["Scope", "Members from", "Usable in"]}
             rows={[
-              ["Security", "Can be granted access: policy filtering, sudo rules, HBAC rules, delegation."],
-              ["Distribution", "Cannot be granted access. Membership only."],
+              ["Global", "This domain", "Anywhere in the forest"],
+              ["Domain local", "Anywhere", "This domain"],
+              ["Universal", "Anywhere", "Anywhere in the forest"],
             ]}
           />
+          <Note>
+            Scope is fixed when the group is created. To change it, create a new group and move
+            the membership across.
+          </Note>
         </Section>
 
         <Section title="Editable attributes">

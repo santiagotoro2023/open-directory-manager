@@ -2,17 +2,15 @@ import { useState } from "react";
 import { ApiError, api, type NewUser, type ObjectType } from "../api";
 import { Field, Modal } from "./Modal";
 
-// A group's identifier on the wire combines its scope and its kind; the form
-// asks for them separately.
+const GROUP_KINDS = [
+  ["user", "User group — holds people"],
+  ["computer", "Computer group — holds machines"],
+] as const;
+
 const GROUP_SCOPES = [
   ["global", "Global"],
   ["domain-local", "Domain local"],
   ["universal", "Universal"],
-] as const;
-
-const GROUP_KINDS = [
-  ["security", "Security — can be granted access"],
-  ["distribution", "Distribution — mailing list only"],
 ] as const;
 
 const TITLES: Record<ObjectType, string> = {
@@ -36,7 +34,7 @@ export function CreateDialog({
   const [form, setForm] = useState<Record<string, string>>({});
   const [mustChange, setMustChange] = useState(true);
   const [groupScope, setGroupScope] = useState<string>("global");
-  const [groupKind, setGroupKind] = useState<string>("security");
+  const [groupKind, setGroupKind] = useState<"user" | "computer">("user");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +60,8 @@ export function CreateDialog({
         await api.directory.createGroup({
           container,
           name: form.name ?? "",
-          group_type: `${groupScope}-${groupKind}`,
+          kind: groupKind,
+          scope: groupScope,
           description: form.description,
         });
       } else if (type === "computer") {
@@ -138,18 +137,21 @@ export function CreateDialog({
           <Field label="Group name">
             <input value={form.name ?? ""} required onChange={set("name")} />
           </Field>
-          <Field label="Group scope" hint="Where the group can be used across the forest">
-            <select value={groupScope} onChange={(e) => setGroupScope(e.target.value)}>
-              {GROUP_SCOPES.map(([value, label]) => (
+          <Field label="Group type">
+            <select
+              value={groupKind}
+              onChange={(e) => setGroupKind(e.target.value as "user" | "computer")}
+            >
+              {GROUP_KINDS.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label="Group kind">
-            <select value={groupKind} onChange={(e) => setGroupKind(e.target.value)}>
-              {GROUP_KINDS.map(([value, label]) => (
+          <Field label="Scope" hint="Where the group can be used across the forest">
+            <select value={groupScope} onChange={(e) => setGroupScope(e.target.value)}>
+              {GROUP_SCOPES.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>

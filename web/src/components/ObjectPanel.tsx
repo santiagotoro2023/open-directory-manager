@@ -30,13 +30,15 @@ const EDITABLE: Record<string, { attribute: string; label: string }[]> = {
   ou: [{ attribute: "description", label: "Description" }],
 };
 
-const GROUP_TYPES: Record<number, string> = {
-  [-2147483646]: "Global · security",
-  [-2147483644]: "Domain local · security",
-  [-2147483640]: "Universal · security",
-  2: "Global · distribution",
-  4: "Domain local · distribution",
-  8: "Universal · distribution",
+const GROUP_SCOPES: Record<number, string> = {
+  [-2147483646]: "Global",
+  [-2147483644]: "Domain local",
+  [-2147483640]: "Universal",
+};
+
+const GROUP_KIND_LABELS: Record<string, string> = {
+  user: "User group",
+  computer: "Computer group",
 };
 
 const UF_ACCOUNTDISABLE = 0x0002;
@@ -116,10 +118,29 @@ export function ObjectPanel({
       </header>
 
       {object.objectType === "group" && (
-        <p className="muted">
-          {GROUP_TYPES[Number(object.groupType)] ?? "Unknown group type"} ·{" "}
-          {(object.member as string[] | undefined)?.length ?? 0} members
-        </p>
+        <>
+          <p className="muted">
+            {GROUP_KIND_LABELS[String(object.groupKind ?? "user")]} ·{" "}
+            {GROUP_SCOPES[Number(object.groupType)] ?? "unknown scope"} ·{" "}
+            {(object.member as string[] | undefined)?.length ?? 0} members
+          </p>
+          <label className="field">
+            <span>Group type</span>
+            <select
+              value={String(object.groupKind ?? "user")}
+              disabled={busy}
+              onChange={(e) =>
+                void run(
+                  () => api.directory.setGroupKind(dn, e.target.value as "user" | "computer"),
+                  onChanged,
+                )
+              }
+            >
+              <option value="user">User group</option>
+              <option value="computer">Computer group</option>
+            </select>
+          </label>
+        </>
       )}
       {isAccount && (
         <p className="muted">
@@ -357,14 +378,23 @@ function MembersDialog({
       setCandidates([]);
       return;
     }
+    const wanted = group.groupKind === "computer" ? "computer" : "user";
     const timer = setTimeout(() => {
       void api.directory
         .list({ query: search, scope: "subtree" })
-        .then((r) => setCandidates(r.objects.filter((o) => o.objectType !== "ou")))
+        .then((result) =>
+          // A user group offers people and other groups; a computer group
+          // offers machines and other groups.
+          setCandidates(
+            result.objects.filter(
+              (object) => object.objectType === wanted || object.objectType === "group",
+            ),
+          ),
+        )
         .catch(() => setCandidates([]));
     }, 200);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search, group.groupKind]);
 
   const pending = [...members.filter((m) => !remove.includes(m)), ...add];
 
@@ -384,7 +414,14 @@ function MembersDialog({
         })
       }
     >
-      <Field label="Add member" hint="Search users, groups and computers by name">
+      <Field
+        label="Add member"
+        hint={
+          group.groupKind === "computer"
+            ? "Search hosts and groups by name"
+            : "Search users and groups by name"
+        }
+      >
         <input value={search} onChange={(e) => setSearch(e.target.value)} />
       </Field>
       {candidates.length > 0 && (

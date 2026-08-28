@@ -21,7 +21,8 @@ export function Content() {
           headers={["In ODM", "Active Directory", "Also known as"]}
           rows={[
             ["Host", "Computer object", "Machine, client, member"],
-            ["Group", "Security or distribution group", "User group, host group"],
+            ["User group", "Group holding user accounts", "Group"],
+            ["Computer group", "Group holding computer accounts", "Host group"],
             ["HBAC rule", "Logon rights", "Host-based access control"],
             ["Sudo rule", "—", "Privilege escalation rule"],
             ["Organizational unit", "Organizational unit", "OU, container"],
@@ -48,6 +49,9 @@ export function Content() {
               ["Account name", "The short logon name. A host account's ends with a dollar sign."],
               ["User principal name", "A logon name in e-mail form, such as ada@corp.example.internal."],
               ["Nesting", "A group holding another group. Membership follows through it."],
+              ["User group", "A group that holds people. Used for sudo rules, HBAC rules, delegation and policy filtering."],
+              ["Computer group", "A group that holds hosts. Used for policy filtering and item-level targeting."],
+              ["Group scope", "Where a group can be used: global, domain local or universal."],
             ]}
           />
         </Section>
