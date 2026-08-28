@@ -275,6 +275,20 @@ func TestSudoRuleIsValidatedBeforeInstall(t *testing.T) {
 	if !strings.Contains(body, "%Helpdesk ALL=(ALL) NOPASSWD: /usr/bin/systemctl") {
 		t.Fatalf("rule = %q", body)
 	}
+
+	// sudo parses everything in sudoers.d, so the validation candidate must
+	// never be staged there.
+	entries, err := os.ReadDir(env.Path(sudoersDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "odm-helpdesk" {
+		names := []string{}
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("unexpected files in sudoers.d: %v", names)
+	}
 }
 
 func TestInvalidSudoersIsNeverInstalled(t *testing.T) {

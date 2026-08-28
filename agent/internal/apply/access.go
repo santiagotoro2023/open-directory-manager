@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	sudoersDir   = "/etc/sudoers.d"
-	accessConf   = "/etc/security/access.conf"
+	sudoersDir     = "/etc/sudoers.d"
+	sudoersStaging = "/etc/odm/sudoers-candidate"
+	accessConf     = "/etc/security/access.conf"
 	pamAccountPath = "/etc/pam.d/common-account"
-	sshdDropIn   = "/etc/ssh/sshd_config.d/50-odm.conf"
+	sshdDropIn     = "/etc/ssh/sshd_config.d/50-odm.conf"
 )
 
 // alwaysAllowed can never be locked out by policy. Writing a logon-rights
@@ -44,12 +45,14 @@ func applySudo(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		// cron.d-style naming rules apply to sudoers.d too: no dots.
 		path := sudoersDir + "/odm-" + strings.ReplaceAll(rule.Name, ".", "-")
 
-		if err := env.WriteFile(path+".tmp-check", body, 0o440, "root", "root"); err != nil {
+		// Validate a candidate outside sudoers.d first: an unparsable file
+		// in that directory breaks sudo for everyone on the machine.
+		if err := env.WriteFile(sudoersStaging, body, 0o440, "root", "root"); err != nil {
 			results = append(results, policy.Fail(setting, err))
 			continue
 		}
 		if env.Run != nil {
-			if _, err := env.Run.Run(ctx, "visudo", "-cf", env.Path(path+".tmp-check")); err != nil {
+			if _, err := env.Run.Run(ctx, "visudo", "-cf", env.Path(sudoersStaging)); err != nil {
 				results = append(results, policy.Fail(setting, err))
 				continue
 			}

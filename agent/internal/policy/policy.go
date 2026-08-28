@@ -135,8 +135,8 @@ type Report struct {
 	Results      []Result `json:"results"`
 }
 
-func Ok(setting string) Result      { return Result{Setting: setting, Status: "success"} }
-func Skip(s, why string) Result     { return Result{Setting: s, Status: "skipped", Reason: why} }
+func Ok(setting string) Result  { return Result{Setting: setting, Status: "success"} }
+func Skip(s, why string) Result { return Result{Setting: s, Status: "skipped", Reason: why} }
 func Fail(s string, err error) Result {
 	return Result{Setting: s, Status: "failed", Reason: err.Error()}
 }

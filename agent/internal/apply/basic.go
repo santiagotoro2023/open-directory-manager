@@ -3,7 +3,6 @@ package apply
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
@@ -245,13 +244,4 @@ func runAll(ctx context.Context, env Env, setting string, commands ...[]string) 
 		}
 	}
 	return policy.Ok(setting)
-}
-
-func sortedKeys[V any](in map[string]V) []string {
-	keys := make([]string, 0, len(in))
-	for key := range in {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }

@@ -45,7 +45,7 @@ func New(cfg agentconfig.Config, version string) (*Client, error) {
 		return nil, fmt.Errorf("load keytab: %w", err)
 	}
 
-	principal, err := machinePrincipal(cfg)
+	principal, err := machinePrincipal()
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (c *Client) Close() {
 
 // machinePrincipal derives the machine account name the way a domain join
 // creates it: the short hostname, upper case, with a trailing dollar.
-func machinePrincipal(cfg agentconfig.Config) (string, error) {
+func machinePrincipal() (string, error) {
 	host, err := os.Hostname()
 	if err != nil {
 		return "", err
