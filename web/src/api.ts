@@ -37,6 +37,7 @@ export interface PolicySettings {
   drive_maps?: Record<string, unknown>[];
   sudo_rules?: Record<string, unknown>[];
   logon_rights?: Record<string, unknown>[];
+  admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
   wallpaper?: { uri: string; picture_options: string; for_principal?: string };
   agent?: { refresh_minutes: number };
@@ -92,6 +93,50 @@ export interface AgentReport {
   applied_gpos: { guid: string; name: string }[];
   results: { setting: string; status: string; reason?: string }[];
   failures: number;
+}
+
+export interface AdmxElement {
+  id: string;
+  type: "boolean" | "decimal" | "text" | "multiText" | "enum" | "list";
+  value_name: string;
+  label: string;
+  required: boolean;
+  minimum: number | null;
+  maximum: number | null;
+  max_length: number | null;
+  items: { label: string; value: string | number }[];
+}
+
+export interface AdmxPolicy {
+  id: string;
+  display_name: string;
+  explain_text: string;
+  policy_class: string;
+  category: string;
+  registry_key: string;
+  value_name: string;
+  supported_on: string;
+  elements: AdmxElement[];
+  applicable: boolean;
+}
+
+export interface AdmxTemplate {
+  id: string;
+  namespace: string;
+  display_name: string;
+  file_name: string;
+  revision: string;
+  policy_count: number;
+  applicable_count: number;
+  has_adml: boolean;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+export interface AdmxSelection {
+  policy_id: string;
+  state: "enabled" | "disabled";
+  values: Record<string, unknown>;
 }
 
 export class ApiError extends Error {
@@ -259,6 +304,33 @@ export const api = {
 
     reports: (computer_dn?: string) =>
       request<{ reports: AgentReport[] }>(`/policy/reports${qs({ computer_dn })}`),
+  },
+
+  admx: {
+    templates: () => request<{ templates: AdmxTemplate[] }>("/admx/templates"),
+
+    upload: (file_name: string, admxB64: string, admlB64?: string) =>
+      request<{ namespace: string; policy_count: number; applicable_count: number }>(
+        "/admx/templates",
+        json({ file_name, admx: admxB64, adml: admlB64 }),
+      ),
+
+    removeTemplate: (id: string) =>
+      request<void>(`/admx/template${qs({ id })}`, { method: "DELETE" }),
+
+    categories: () =>
+      request<{ categories: { name: string; display_name: string; parent: string | null; policy_count: number }[] }>(
+        "/admx/categories",
+      ),
+
+    policies: (params: { query?: string; category?: string; applicable_only?: boolean }) =>
+      request<{ policies: AdmxPolicy[] }>(
+        `/admx/policies${qs({
+          query: params.query,
+          category: params.category,
+          applicable_only: params.applicable_only === false ? "false" : undefined,
+        })}`,
+      ),
   },
 
   audit: {

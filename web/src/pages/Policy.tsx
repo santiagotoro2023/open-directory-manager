@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { SettingsEditor } from "../components/SettingsEditor";
+import { TemplateManager } from "../components/TemplateManager";
 
 type Tab = "settings" | "links" | "scope";
 
@@ -10,6 +11,7 @@ export function Policy() {
   const [gpos, setGpos] = useState<Gpo[]>([]);
   const [selected, setSelected] = useState<Gpo | null>(null);
   const [creating, setCreating] = useState(false);
+  const [templates, setTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -51,6 +53,9 @@ export function Policy() {
       <div className="toolbar">
         <h1>Group Policy Objects</h1>
         <span className="spacer" />
+        <button type="button" className="ghost" onClick={() => setTemplates(true)}>
+          Administrative templates
+        </button>
         <button type="button" className="primary" onClick={() => setCreating(true)}>
           <Plus size={15} aria-hidden="true" />
           New GPO
@@ -95,6 +100,8 @@ export function Policy() {
           )}
         </tbody>
       </table>
+
+      {templates && <TemplateManager onClose={() => setTemplates(false)} />}
 
       {creating && (
         <CreateGpoDialog

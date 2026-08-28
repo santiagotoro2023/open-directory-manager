@@ -13,7 +13,7 @@ from typing import Any
 import asyncpg
 from ldap3 import Connection
 
-from . import directory, objects, policy
+from . import admx, directory, objects, policy
 from .config import Settings
 
 Inputs = tuple[dict[str, policy.Gpo], list[policy.Link], set[str]]
@@ -54,6 +54,55 @@ async def load_inputs(pool: asyncpg.Pool) -> Inputs:
     return gpos, links, {row["ou_dn"] for row in blocked_rows}
 
 
+async def load_admx(pool: asyncpg.Pool) -> dict[str, admx.Policy]:
+    """Imported ADMX definitions, keyed by policy id."""
+    rows = await pool.fetch(
+        "SELECT id, registry_key, value_name, enabled_value, disabled_value, elements"
+        " FROM admx_policy"
+    )
+    definitions: dict[str, admx.Policy] = {}
+    for row in rows:
+        definitions[row["id"]] = admx.Policy(
+            id=row["id"],
+            name=row["id"],
+            display_name=row["id"],
+            explain_text="",
+            policy_class="Both",
+            category="",
+            registry_key=row["registry_key"],
+            value_name=row["value_name"],
+            supported_on="",
+            enabled_value=json.loads(row["enabled_value"]) if row["enabled_value"] else None,
+            disabled_value=json.loads(row["disabled_value"]) if row["disabled_value"] else None,
+            elements=[admx.Element(**element) for element in json.loads(row["elements"])],
+        )
+    return definitions
+
+
+async def apply_admx(pool: asyncpg.Pool, document: dict[str, Any]) -> None:
+    """Expand ADMX selections into settings the agent understands.
+
+    Administrative templates are a *source* of browser policy, not a separate
+    thing the agent applies, so they are folded into the browser documents
+    here. A selection ODM cannot map to a Debian mechanism is reported rather
+    than silently dropped (CLAUDE.md §3.6).
+    """
+    settings = document["settings"]
+    selections = settings.pop("admx", None)
+    if not selections:
+        return
+
+    generated, notes = admx.expand(selections, await load_admx(pool))
+    browser = settings.setdefault("browser", {})
+    for name, values in generated.items():
+        # Anything set explicitly on the GPO wins over the template default.
+        browser[name] = {**values, **browser.get(name, {})}
+    if not browser:
+        settings.pop("browser", None)
+    if notes:
+        document["admx_notes"] = notes
+
+
 def target_facts(
     conn: Connection,
     settings: Settings,
@@ -86,10 +135,15 @@ async def build(
 ) -> dict[str, Any]:
     gpos, links, blocked = await load_inputs(pool)
     target = target_facts(conn, settings, dn, os_id=os_id, ip_addresses=ip_addresses)
-    return policy.effective_policy(
+    document = policy.effective_policy(
         chain=policy.container_chain(target.dn, settings.base_dn),
         links=links,
         gpos=gpos,
         blocked=blocked,
         target=target,
     )
+    await apply_admx(pool, document)
+    # The serial fingerprints what the agent will actually apply, so it is
+    # recomputed after template expansion.
+    document["serial"] = policy.serial(document)
+    return document

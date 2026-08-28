@@ -38,6 +38,7 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "drive_maps": ("mount_point",),
     "sudo_rules": ("name",),
     "logon_rights": ("principal", "service"),
+    "admx": ("policy_id",),
 }
 
 # Categories that are objects rather than lists; merged one level deep.

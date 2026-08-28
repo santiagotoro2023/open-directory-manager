@@ -19,6 +19,8 @@ the directory directly (CLAUDE.md §2).
 | `odm/routes_audit.py` | `/api/v1/audit/*` |
 | `odm/policy.py` | Pure GPO precedence resolution and settings merge |
 | `odm/policy_schema.py` | Typed, validated policy settings |
+| `odm/admx.py` | ADMX/ADML parser and expansion into browser policy |
+| `odm/routes_admx.py` | `/api/v1/admx/*` |
 | `odm/rsop.py` | Effective-policy assembly from PostgreSQL plus LDAP facts |
 | `odm/sysvol.py` | LDAP/SYSVOL mirror for GPMC interoperability |
 | `odm/routes_policy.py` | `/api/v1/policy/*` |
@@ -72,6 +74,11 @@ controller is needed to run them.
 | `GET` | `/api/v1/agent/policy` | Machine's effective policy (SPNEGO) |
 | `GET` | `/api/v1/agent/user-policy` | A user's policy on that machine (SPNEGO) |
 | `POST` | `/api/v1/agent/report` | RSoP results from an agent (SPNEGO) |
+| `POST` | `/api/v1/admx/templates` | Import an ADMX plus ADML pair |
+| `GET` | `/api/v1/admx/templates` | Imported templates |
+| `DELETE` | `/api/v1/admx/template` | Remove a template |
+| `GET` | `/api/v1/admx/policies` | Search parsed settings |
+| `GET` | `/api/v1/admx/categories` | Category tree for the picker |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
 DNS and DHCP routers arrive in later phases.
@@ -105,6 +112,9 @@ factory.
   absolute paths without traversal, octal modes, real systemd unit and cron
   shapes, sudo commands that cannot inject a second rule. The agent runs as
   root, so the document it receives is checked here, not there.
+- Uploaded ADMX/ADML is parsed with defusedxml, so entity expansion,
+  external entities and DTD retrieval are refused, and both files are size
+  and element bounded.
 - Agents authenticate with SPNEGO only; there is no session cookie or CSRF
   token on `/api/v1/agent/*`, and the Kerberos principal names the computer
   object whose policy is served.

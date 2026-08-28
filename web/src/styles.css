@@ -724,3 +724,39 @@ textarea.mono,
   margin: 0;
   font-size: 20px;
 }
+
+/* ------------------------------------------------ administrative templates -- */
+
+.admx-row {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.admx-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admx-head > div:first-child {
+  flex: 1;
+}
+
+.admx-head p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.admx-row .field {
+  margin-top: 10px;
+}
+
+.admx-row .field input,
+.admx-row .field select,
+.admx-row .field textarea {
+  width: 100%;
+}

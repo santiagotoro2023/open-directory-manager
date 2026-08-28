@@ -21,7 +21,7 @@ belongs in these pages.
 | 2 | Users/Groups/Computers/OUs CRUD, audit logging wired into every write | Implemented |
 | 3 | GPO object model, precedence resolution, agent pull/apply/report loop, file/script/systemd appliers | Implemented |
 | 4 | Drive maps, browser policy, wallpaper, sudo and logon scope, cron | Implemented |
-| 5 | ADMX/ADML importer and dynamic settings UI | Not started |
+| 5 | ADMX/ADML importer and dynamic settings UI | Implemented |
 | 6 | DHCP role via Kea, DDNS sync, HA pairing | Not started |
 | 7 | Recycle bin, roles/extensibility framework | Not started |
 | 8 | Hardening pass, delegated admin, backup/restore, replication topology | Not started |
@@ -48,6 +48,13 @@ cannot reach, and the chosen route is an equally standard Debian mechanism:
 
 Both are agent-side, so switching to the SSSD-native path later changes the
 appliers, not the policy model or the UI.
+
+Administrative templates are parsed from the vendor's own ADMX and ADML, and
+the settings UI is generated from that schema rather than hand-written per
+setting. Because Debian clients have no registry, ODM maps the registry keys
+it recognises — Chrome, Chromium and Firefox — onto each browser's native
+managed-policy document, and reports any other template setting as having no
+Debian equivalent instead of accepting it and doing nothing.
 
 Group policy objects live in PostgreSQL, since most ODM settings (systemd
 units, drive maps, Linux sudo scope) have no native GPO representation. When

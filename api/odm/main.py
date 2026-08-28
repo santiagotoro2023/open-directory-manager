@@ -18,6 +18,7 @@ from . import (
     db,
     directory,
     objects,
+    routes_admx,
     routes_agent,
     routes_audit,
     routes_directory,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(routes_directory.router)
     app.include_router(routes_policy.router)
+    app.include_router(routes_admx.router)
     app.include_router(routes_agent.router)
     app.include_router(routes_audit.router)
 

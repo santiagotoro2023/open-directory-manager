@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
-import type { PolicySettings } from "../api";
+import type { AdmxSelection, PolicySettings } from "../api";
+import { AdmxEditor } from "./AdmxEditor";
 
 type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox";
 
@@ -300,6 +301,11 @@ export function SettingsEditor({
           </label>
         </div>
       </section>
+
+      <AdmxEditor
+        selections={settings.admx ?? []}
+        onChange={(admx: AdmxSelection[]) => onChange({ ...settings, admx })}
+      />
 
       <section>
         <header>

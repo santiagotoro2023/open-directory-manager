@@ -203,6 +203,37 @@ class Wallpaper(Strict):
     for_principal: str | None = None
 
 
+class AdmxSelection(Strict):
+    """One imported ADMX policy, configured.
+
+    Element values are validated for shape here; what each element means
+    comes from the imported template, and the compiler ignores values whose
+    element no longer exists.
+    """
+
+    policy_id: Annotated[str, Field(min_length=1, max_length=256)]
+    state: Literal["enabled", "disabled"] = "enabled"
+    values: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("values")
+    @classmethod
+    def _values(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if len(values) > 64:
+            raise ValueError("too many element values")
+        for key, value in values.items():
+            if not NAME_RE.match(key):
+                raise ValueError(f"invalid element id {key!r}")
+            if isinstance(value, list):
+                scalar = str | int | float | bool
+                if len(value) > 512 or any(not isinstance(v, scalar) for v in value):
+                    raise ValueError(f"invalid list value for {key!r}")
+            elif not isinstance(value, str | int | float | bool | type(None)):
+                raise ValueError(f"invalid value for {key!r}")
+            elif isinstance(value, str) and len(value) > 8192:
+                raise ValueError(f"value for {key!r} is too long")
+        return values
+
+
 class AgentSettings(Strict):
     refresh_minutes: Annotated[int, Field(ge=1, le=1440)] = 15
 
@@ -216,6 +247,7 @@ class PolicySettings(Strict):
     drive_maps: Annotated[list[DriveMap], Field(default_factory=list, max_length=100)]
     sudo_rules: Annotated[list[SudoRule], Field(default_factory=list, max_length=100)]
     logon_rights: Annotated[list[LogonRight], Field(default_factory=list, max_length=200)]
+    admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None
     agent: AgentSettings | None = None
