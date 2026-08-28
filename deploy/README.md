@@ -4,9 +4,24 @@ Everything here targets Debian 12 (bookworm) and Debian 13 (trixie). Run it
 on dedicated servers or VMs — `provision-dc.sh` reconfigures Samba,
 networking and DNS on the host it runs on.
 
-Phase 1 brings up the core role only: Active Directory, Group Policy storage
-and DNS, plus the ODM control plane. DHCP, file-server and later roles are
-installed afterwards through the role framework, not from here.
+Bring-up installs the core role only: Active Directory, Group Policy and
+DNS, plus the ODM control plane and its console. DHCP, file-server,
+certificate-authority and PXE are installed afterwards through the role
+framework, from the console or with `odm-role-install`.
+
+| Script | Runs on | Purpose |
+|---|---|---|
+| `provision-dc.sh` | The first domain controller | Provisions the domain |
+| `create-api-service-account.sh` | A domain controller | The control plane's account, SPN, keytab and delegated rights |
+| `generate-self-signed.sh` | The control-plane host | The console's first TLS certificate |
+| `setup-db.sh` | The control-plane host | PostgreSQL role, database and schema |
+| `odm-role-install` + `odm-roles.sudoers` | The control-plane host | Lets the service install roles without being root |
+| `odm-apply-console-certificate` | The control-plane host | Installs a console certificate issued by the domain authority |
+| `install-dhcp-role.sh` | Each DHCP node | ISC Kea failover pair with dynamic DNS |
+| `install-file-server-role.sh` | A file server | Kerberos SMB shares for drive maps |
+| `install-ca-role.sh` | The control-plane host | Prepares the certificate authority directory |
+| `install-pxe-role.sh` | A boot server | Unattended installation that joins on first boot |
+| `install-agent.sh` | An already-joined machine | The policy agent alone |
 
 ## Order of operations
 
@@ -65,7 +80,7 @@ root:odm). There is no plaintext listener. Once the certificate-authority
 role is installed, the console can re-issue its own certificate from the
 domain's authority under **Certificates → Replace console certificate**.
 
-### 4. Web UI
+### 4. Console
 
 ```
 cd web && npm install && npm run build
@@ -75,7 +90,17 @@ Serve `web/dist/` over HTTPS from the same origin as the API — the session
 cookie is `SameSite=Strict`, and the API rejects state-changing requests from
 any origin not in `ODM_ALLOWED_ORIGINS`.
 
+Then, signed in as a domain administrator, open **Group Policy** and create
+the default policies. The operator documentation is inside the console under
+**Wiki**.
+
 ### 5. Policy agent on domain members
+
+Machines are normally joined with `odm-client-install`, which installs and
+enables the agent as part of the join — see the **Joining machines** page in
+the console wiki. The steps below install the agent alone on a machine that
+is already joined.
+
 
 On a machine that is already domain-joined (it needs `/etc/krb5.keytab` and a
 working `krb5.conf`):
@@ -145,15 +170,19 @@ the secrets file. Secure dynamic update needs the GSS-TSIG hook and a DDNS
 keytab; the script tells you if the hook is missing rather than leaving you
 with updates Samba silently rejects.
 
-## Verifying Phase 1
+## Verifying the installation
 
 ```
 curl --cacert /etc/odm/tls/ca.crt https://odm.corp.example.internal:8443/api/v1/healthz
 ```
 
-Then sign in to the web UI as a member of the group named by
-`ODM_ADMIN_GROUP`. Any account outside that group must be refused with 403,
-and both outcomes must appear in `audit_log`.
+Then sign in to the console as a member of the group named by
+`ODM_ADMIN_GROUP`. An account that is neither in that group nor holds a
+delegated assignment must be refused, and both outcomes must appear in the
+audit log.
+
+Under **Operations → Health**, every card should report. Cards for roles that
+are not installed say so rather than erroring.
 
 ## Verifying policy end to end
 

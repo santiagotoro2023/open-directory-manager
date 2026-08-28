@@ -119,3 +119,33 @@ def test_every_permission_is_held_by_at_least_one_built_in_role():
     reserved = {"rbac.write", "role.install"}
     missing = set(authz.PERMISSIONS) - seeded - reserved
     assert missing == set(), f"permissions no built-in role holds: {sorted(missing)}"
+
+
+def test_every_setting_is_in_the_example_secrets_file():
+    """A setting nobody can discover is a setting nobody configures."""
+    import pathlib
+    import re
+
+    from odm.config import Settings
+
+    example = (pathlib.Path("..") / "deploy" / "odm.env.example").read_text()
+    documented = set(re.findall(r"^#?(ODM_[A-Z_]+)=", example, re.M))
+    defined = {"ODM_" + name.upper() for name in Settings.model_fields}
+
+    assert defined - documented == set(), (
+        f"settings missing from odm.env.example: {sorted(defined - documented)}"
+    )
+    assert documented - defined == set(), (
+        f"odm.env.example names settings that do not exist: {sorted(documented - defined)}"
+    )
+
+
+def test_every_migration_is_numbered_in_sequence():
+    """Migrations are applied in filename order; a gap or a duplicate breaks it."""
+    import pathlib
+
+    numbers = sorted(
+        int(path.name.split("_", 1)[0])
+        for path in pathlib.Path("migrations").glob("*.sql")
+    )
+    assert numbers == list(range(1, len(numbers) + 1)), numbers
