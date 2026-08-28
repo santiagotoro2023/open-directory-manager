@@ -7,7 +7,7 @@ from conftest import ADMIN
 
 from odm import directory, sessions
 from odm.config import derive_base_dn, get_settings
-from odm.directory import InvalidCredentials, nested_member_filter, validate_username
+from odm.directory import InvalidCredentials, nested_groups_filter, validate_username
 
 
 def _directory_returns(monkeypatch, result):
@@ -37,10 +37,21 @@ def test_validate_username_accepts_real_names():
     assert validate_username("ada@corp.example.internal") == "ada@corp.example.internal"
 
 
-def test_nested_member_filter_escapes_and_walks_nesting():
-    filt = nested_member_filter("CN=a*b,DC=x", "CN=Domain Admins,DC=x")
+def test_nested_groups_filter_escapes_and_walks_nesting():
+    filt = nested_groups_filter("CN=a*b,DC=x")
     assert "1.2.840.113556.1.4.1941" in filt
     assert "a*b" not in filt and r"a\2ab" in filt
+
+
+def test_object_sid_is_rendered_not_stringified_bytes():
+    """objectSid arrives as a binary blob; a str() of it is useless."""
+    # revision, sub-authority count, 6-byte identifier authority, then the
+    # sub-authorities little-endian: S-1-5-21-1-2-3-1104.
+    raw = bytes([1, 5, 0, 0, 0, 0, 0, 5]) + b"".join(
+        value.to_bytes(4, "little") for value in (21, 1, 2, 3, 1104)
+    )
+    assert directory.read_sid(raw) == "S-1-5-21-1-2-3-1104"
+    assert directory.read_sid(None) is None
 
 
 def test_empty_password_never_reaches_the_dc():

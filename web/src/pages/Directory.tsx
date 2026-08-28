@@ -24,8 +24,8 @@ const ICONS = {
 
 const TYPE_LABELS: Record<string, string> = {
   user: "User",
-  group: "Security group",
-  computer: "Computer",
+  group: "Group",
+  computer: "Host",
   ou: "Organizational unit",
   container: "Container",
   domain: "Domain",
@@ -135,7 +135,7 @@ export function Directory() {
             <option value="">All types</option>
             <option value="user">Users</option>
             <option value="group">Groups</option>
-            <option value="computer">Computers</option>
+            <option value="computer">Hosts</option>
             <option value="ou">Organizational units</option>
           </select>
           <span className="spacer" />
@@ -146,7 +146,7 @@ export function Directory() {
             New group
           </button>
           <button type="button" className="ghost" onClick={() => setCreating("computer")}>
-            New computer
+            New host
           </button>
           <button type="button" className="ghost" onClick={() => setCreating("ou")}>
             New OU
@@ -170,7 +170,7 @@ export function Directory() {
             <tr>
               <th scope="col">Name</th>
               <th scope="col">Type</th>
-              <th scope="col">Logon name</th>
+              <th scope="col">Account name</th>
               <th scope="col">Description</th>
             </tr>
           </thead>

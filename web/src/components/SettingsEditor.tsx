@@ -84,7 +84,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "drive_maps",
     title: "Drive maps",
-    note: "Mounted with sec=krb5; no credentials are stored on the client.",
+    note: "Mounted with cifs and sec=krb5; no credentials are stored on the client.",
     fields: [
       { key: "name", label: "Name", width: "140px" },
       { key: "unc", label: "Share", placeholder: "//fs01/shared" },
@@ -108,9 +108,11 @@ export const CATEGORIES: CategorySpec[] = [
     blank: { name: "", users: [], commands: [], run_as: "ALL", nopasswd: false },
   },
   {
-    key: "logon_rights",
-    title: "Logon rights",
-    note: "Deny overrides allow. Local administrators are never locked out.",
+    key: "hbac_rules",
+    title: "HBAC rules",
+    note:
+      "Host-based access control: who may open a session, and how. Deny overrides allow, and " +
+      "local administrators are never locked out.",
     fields: [
       { key: "principal", label: "User or %group", placeholder: "%Engineers" },
       {

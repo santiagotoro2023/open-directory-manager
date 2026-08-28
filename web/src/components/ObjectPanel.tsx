@@ -30,13 +30,13 @@ const EDITABLE: Record<string, { attribute: string; label: string }[]> = {
   ou: [{ attribute: "description", label: "Description" }],
 };
 
-const GROUP_SCOPES: Record<number, string> = {
-  [-2147483646]: "Global security",
-  [-2147483644]: "Domain local security",
-  [-2147483640]: "Universal security",
-  2: "Global distribution",
-  4: "Domain local distribution",
-  8: "Universal distribution",
+const GROUP_TYPES: Record<number, string> = {
+  [-2147483646]: "Global · security",
+  [-2147483644]: "Domain local · security",
+  [-2147483640]: "Universal · security",
+  2: "Global · distribution",
+  4: "Domain local · distribution",
+  8: "Universal · distribution",
 };
 
 const UF_ACCOUNTDISABLE = 0x0002;
@@ -117,7 +117,7 @@ export function ObjectPanel({
 
       {object.objectType === "group" && (
         <p className="muted">
-          Scope: {GROUP_SCOPES[Number(object.groupType)] ?? "Unknown"} ·{" "}
+          {GROUP_TYPES[Number(object.groupType)] ?? "Unknown group type"} ·{" "}
           {(object.member as string[] | undefined)?.length ?? 0} members
         </p>
       )}

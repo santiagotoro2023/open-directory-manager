@@ -37,7 +37,7 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "firewall": ("name",),
     "drive_maps": ("mount_point",),
     "sudo_rules": ("name",),
-    "logon_rights": ("principal", "service"),
+    "hbac_rules": ("principal", "service"),
     "admx": ("policy_id",),
 }
 

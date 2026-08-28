@@ -41,7 +41,7 @@ type Settings struct {
 	Firewall     []Firewall    `json:"firewall,omitempty"`
 	DriveMaps    []DriveMap    `json:"drive_maps,omitempty"`
 	SudoRules    []SudoRule    `json:"sudo_rules,omitempty"`
-	LogonRights  []LogonRight  `json:"logon_rights,omitempty"`
+	HbacRules    []HbacRule    `json:"hbac_rules,omitempty"`
 	Browser      *Browser      `json:"browser,omitempty"`
 	Wallpaper    *Wallpaper    `json:"wallpaper,omitempty"`
 	Agent        *AgentConfig  `json:"agent,omitempty"`
@@ -99,7 +99,9 @@ type SudoRule struct {
 	NoPasswd bool     `json:"nopasswd"`
 }
 
-type LogonRight struct {
+// HbacRule is host-based access control: who may open a session on this
+// machine, and through which service.
+type HbacRule struct {
 	Principal string `json:"principal"`
 	Service   string `json:"service"`
 	Access    string `json:"access"`

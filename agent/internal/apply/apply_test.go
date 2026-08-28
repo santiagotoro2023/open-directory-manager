@@ -307,12 +307,12 @@ func TestInvalidSudoersIsNeverInstalled(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------ logon rights --
+// -------------------------------------------------------------------- HBAC --
 
 func TestDenyRulesArePlacedBeforeAllowRules(t *testing.T) {
 	env, _ := testEnv(t)
-	applyLogonRights(context.Background(), policy.Settings{
-		LogonRights: []policy.LogonRight{
+	applyHbacRules(context.Background(), policy.Settings{
+		HbacRules: []policy.HbacRule{
 			{Principal: "%Engineers", Service: "all", Access: "allow"},
 			{Principal: "%Contractors", Service: "all", Access: "deny"},
 		},
@@ -328,8 +328,8 @@ func TestDenyRulesArePlacedBeforeAllowRules(t *testing.T) {
 
 func TestAnAllowListNeverLocksOutRoot(t *testing.T) {
 	env, _ := testEnv(t)
-	applyLogonRights(context.Background(), policy.Settings{
-		LogonRights: []policy.LogonRight{
+	applyHbacRules(context.Background(), policy.Settings{
+		HbacRules: []policy.HbacRule{
 			{Principal: "%Engineers", Service: "all", Access: "allow"},
 		},
 	}, env)
@@ -347,8 +347,8 @@ func TestAnAllowListNeverLocksOutRoot(t *testing.T) {
 
 func TestSshUsersAndGroupsUseTheirOwnDirectives(t *testing.T) {
 	env, _ := testEnv(t)
-	applyLogonRights(context.Background(), policy.Settings{
-		LogonRights: []policy.LogonRight{
+	applyHbacRules(context.Background(), policy.Settings{
+		HbacRules: []policy.HbacRule{
 			{Principal: "%Engineers", Service: "ssh", Access: "allow"},
 			{Principal: "contractor1", Service: "ssh", Access: "deny"},
 		},

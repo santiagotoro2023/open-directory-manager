@@ -36,7 +36,7 @@ export interface PolicySettings {
   firewall?: Record<string, unknown>[];
   drive_maps?: Record<string, unknown>[];
   sudo_rules?: Record<string, unknown>[];
-  logon_rights?: Record<string, unknown>[];
+  hbac_rules?: Record<string, unknown>[];
   admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
   wallpaper?: { uri: string; picture_options: string; for_principal?: string };

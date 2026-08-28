@@ -35,7 +35,7 @@ UF_ACCOUNTDISABLE = 0x0002
 UF_NORMAL_ACCOUNT = 0x0200
 UF_WORKSTATION_TRUST_ACCOUNT = 0x1000
 
-# groupType bit 0x80000000 marks a security group; the low bits are scope.
+# groupType bit 0x80000000 marks a security group; the low bits set the scope.
 GROUP_TYPES = {
     "global-security": -2147483646,
     "domain-local-security": -2147483644,

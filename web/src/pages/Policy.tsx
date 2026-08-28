@@ -289,7 +289,7 @@ function GpoDetail({
           <Field label="IP ranges" hint="Comma separated CIDR, e.g. 10.10.0.0/16">
             <input value={ipRanges} onChange={(e) => setIpRanges(e.target.value)} />
           </Field>
-          <Field label="Security groups" hint="One distinguished name per line">
+          <Field label="Groups" hint="One distinguished name per line">
             <textarea rows={3} className="mono" value={groups} onChange={(e) => setGroups(e.target.value)} />
           </Field>
         </div>

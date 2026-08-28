@@ -32,7 +32,7 @@ var appliers = []applier{
 	{"wallpaper", applyWallpaper},
 	{"firewall", applyFirewall},
 	{"sudo_rules", applySudo},
-	{"logon_rights", applyLogonRights},
+	{"hbac_rules", applyHbacRules},
 }
 
 // userScoped are the only appliers a per-user policy may drive. A GPO linked

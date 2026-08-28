@@ -35,7 +35,7 @@ uses it throughout.
 | Browser policy | Chromium `policies/managed/odm.json`, Firefox `policies.json` |
 | Desktop background | dconf system database plus locks, then `dconf update` |
 | Sudo rules | `/etc/sudoers.d/odm-*`, validated with `visudo -cf` before install |
-| Logon rights | `pam_access` block in `/etc/security/access.conf` plus an sshd drop-in; deny overrides allow |
+| HBAC rules | `pam_access` block in `/etc/security/access.conf` plus an sshd drop-in; deny overrides allow |
 
 A PAM session hook is installed on every machine: at login it runs any logon
 scripts and, in the background behind a timeout, applies the logging-on
@@ -50,8 +50,8 @@ from a GPO removes the file it produced on the next run.
 
 ## Safety properties
 
-- An allow-list of logon rights always keeps `root` and local administrators,
-  so a policy mistake cannot strand a machine.
+- An HBAC allow-list always keeps `root` and local administrators, so a
+  policy mistake cannot strand a machine.
 - A sudoers fragment that fails `visudo` is never installed.
 - One failing applier does not stop the others; each reports its own status.
 - Writes are atomic, so a reader never sees a half-written policy file.

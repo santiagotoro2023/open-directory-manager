@@ -1,8 +1,9 @@
 """LDAP access to the Samba AD DC.
 
-This is the only module that speaks LDAP. It does two things in Phase 1:
-verify a credential with a bind, and answer "is this principal a member of
-the Domain-Admins-equivalent group, including through nested groups".
+This is the only module that speaks LDAP. It verifies credentials with a
+bind, and answers who a principal is: the groups it belongs to, including
+through nesting, and whether one of them is the Domain-Admins-equivalent
+group the console is gated on.
 
 All binds are LDAPS with certificate validation against the DC's CA
 (CLAUDE.md §6 — no plaintext LDAP, no custom crypto).
@@ -12,9 +13,10 @@ from __future__ import annotations
 
 import re
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ldap3 import KERBEROS, SASL, SIMPLE, SUBTREE, Connection, Server, Tls
+from ldap3.protocol.formatters.formatters import format_sid
 from ldap3.utils.conv import escape_filter_chars
 
 from .config import Settings
@@ -48,6 +50,22 @@ class DirectoryUser:
     user_principal_name: str
     display_name: str
     sid: str | None
+    # Every group the account is in, nesting included. Delegated-administration
+    # assignments are matched against these.
+    group_sids: tuple[str, ...] = ()
+    group_dns: tuple[str, ...] = ()
+    is_domain_admin: bool = False
+
+
+def read_sid(value: object) -> str | None:
+    """objectSid comes back as a binary blob; ldap3 knows how to render it."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        formatted = format_sid(value)
+        return str(formatted) if formatted else None
+    text = str(value)
+    return text or None
 
 
 def validate_username(username: str) -> str:
@@ -68,12 +86,11 @@ def to_upn(username: str, realm: str) -> str:
     return username if "@" in username else f"{username}@{realm}"
 
 
-def nested_member_filter(user_dn: str, group_dn: str) -> str:
-    """Filter that matches user_dn only if it is in group_dn, nesting included."""
+def nested_groups_filter(dn: str) -> str:
+    """Every group containing dn, walked server-side through nesting."""
     return (
-        "(&(objectClass=user)"
-        f"(distinguishedName={escape_filter_chars(user_dn)})"
-        f"(memberOf:{MATCHING_RULE_IN_CHAIN}:={escape_filter_chars(group_dn)}))"
+        "(&(objectClass=group)"
+        f"(member:{MATCHING_RULE_IN_CHAIN}:={escape_filter_chars(dn)}))"
     )
 
 
@@ -110,7 +127,11 @@ def _connect(settings: Settings, user: str, password: str) -> Connection:
 
 
 def authenticate(settings: Settings, username: str, password: str) -> DirectoryUser:
-    """Bind as the user, then require membership of settings.admin_group.
+    """Bind as the user and resolve who they are.
+
+    Membership of the admin group is reported rather than required: whether a
+    session is issued is decided above, so a delegated administrator with a
+    scoped assignment can sign in without being a domain admin.
 
     Blocking; call through run_in_threadpool.
     """
@@ -123,11 +144,7 @@ def authenticate(settings: Settings, username: str, password: str) -> DirectoryU
     upn = to_upn(username, settings.realm)
     conn = _connect(settings, upn, password)
     try:
-        user = _lookup_user(settings, conn, upn, username)
-        group_dn = _lookup_group_dn(settings, conn, settings.admin_group)
-        if not _is_member(settings, conn, user.dn, group_dn):
-            raise NotAuthorized(f"not a member of {settings.admin_group}")
-        return user
+        return _describe(settings, conn, _lookup_user(settings, conn, upn, username))
     finally:
         conn.unbind()
 
@@ -163,21 +180,32 @@ def service_connection(settings: Settings, *, read_only: bool = True) -> Connect
 
 
 def authorize_principal(settings: Settings, upn: str) -> DirectoryUser:
-    """Resolve an already-authenticated Kerberos principal and gate on the group.
+    """Resolve an already-authenticated Kerberos principal.
 
-    Used by the SPNEGO path, where no password ever reaches ODM.
+    Used by the SPNEGO path, where no password ever reaches ODM, and by the
+    periodic re-check that keeps a live session honest.
     Blocking; call through run_in_threadpool.
     """
     validate_username(upn)
     conn = service_connection(settings)
     try:
-        user = _lookup_user(settings, conn, upn, upn.partition("@")[0])
-        group_dn = _lookup_group_dn(settings, conn, settings.admin_group)
-        if not _is_member(settings, conn, user.dn, group_dn):
-            raise NotAuthorized(f"not a member of {settings.admin_group}")
-        return user
+        return _describe(settings, conn, _lookup_user(settings, conn, upn, upn.partition("@")[0]))
     finally:
         conn.unbind()
+
+
+def _describe(settings: Settings, conn: Connection, user: DirectoryUser) -> DirectoryUser:
+    """Fill in group membership and the domain-admin flag."""
+    groups = nested_groups(conn, settings, user.dn)
+    admin = settings.admin_group.lower()
+    return replace(
+        user,
+        group_dns=tuple(group["dn"] for group in groups),
+        group_sids=tuple(group["sid"] for group in groups if group["sid"]),
+        is_domain_admin=any(
+            str(group.get("sam_account_name", "")).lower() == admin for group in groups
+        ),
+    )
 
 
 def _search(conn: Connection, base: str, filt: str, attributes: list[str]) -> list[dict]:
@@ -224,39 +252,26 @@ def _lookup_user(
         sam_account_name=str(attrs.get("sAMAccountName") or sam),
         user_principal_name=str(attrs.get("userPrincipalName") or upn),
         display_name=str(attrs.get("displayName") or attrs.get("sAMAccountName") or sam),
-        sid=str(attrs["objectSid"]) if attrs.get("objectSid") else None,
+        sid=read_sid(attrs.get("objectSid")),
     )
 
 
-def nested_groups(conn: Connection, settings: Settings, dn: str) -> list[str]:
+def nested_groups(conn: Connection, settings: Settings, dn: str) -> list[dict[str, str | None]]:
     """Every group the object belongs to, including through nesting.
 
     Blocking; call through run_in_threadpool.
     """
-    filt = (
-        "(&(objectClass=group)"
-        f"(member:{MATCHING_RULE_IN_CHAIN}:={escape_filter_chars(dn)}))"
-    )
-    return [entry["dn"] for entry in _search(conn, settings.base_dn, filt, ["distinguishedName"])]
-
-
-def _lookup_group_dn(settings: Settings, conn: Connection, group_name: str) -> str:
-    filt = f"(&(objectClass=group)(sAMAccountName={escape_filter_chars(group_name)}))"
-    entries = _search(conn, settings.base_dn, filt, ["distinguishedName"])
-    if len(entries) != 1:
-        raise DirectoryError(f"admin group {group_name!r} did not resolve to one object")
-    return entries[0]["dn"]
-
-
-def _is_member(settings: Settings, conn: Connection, user_dn: str, group_dn: str) -> bool:
-    # ponytail: does not cover the case where the admin group is the user's
-    # *primary* group (primaryGroupID), which memberOf never reflects. That
-    # configuration is pathological for Domain Admins; add objectSid/RID
-    # comparison here if a deployment actually needs it.
     entries = _search(
         conn,
         settings.base_dn,
-        nested_member_filter(user_dn, group_dn),
-        ["distinguishedName"],
+        nested_groups_filter(dn),
+        ["distinguishedName", "sAMAccountName", "objectSid"],
     )
-    return len(entries) == 1
+    return [
+        {
+            "dn": entry["dn"],
+            "sam_account_name": str(entry["attributes"].get("sAMAccountName") or ""),
+            "sid": read_sid(entry["attributes"].get("objectSid")),
+        }
+        for entry in entries
+    ]

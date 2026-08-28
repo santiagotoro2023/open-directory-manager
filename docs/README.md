@@ -20,7 +20,7 @@ belongs in these pages.
 | 1 | Samba AD DC provisioning, Postgres schema, FastAPI + Kerberos/LDAP auth with the domain-admin gate, React shell and login | Implemented |
 | 2 | Users/Groups/Computers/OUs CRUD, audit logging wired into every write | Implemented |
 | 3 | GPO object model, precedence resolution, agent pull/apply/report loop, file/script/systemd appliers | Implemented |
-| 4 | Drive maps, browser policy, wallpaper, sudo and logon scope, cron | Implemented |
+| 4 | Drive maps, browser policy, wallpaper, sudo scope, HBAC, cron | Implemented |
 | 5 | ADMX/ADML importer and dynamic settings UI | Implemented |
 | 6 | DNS management, DHCP role via Kea, DDNS sync, HA pairing | Implemented |
 | 7 | Recycle bin, roles/extensibility framework | Implemented |
@@ -56,10 +56,10 @@ cannot reach, and the chosen route is an equally standard Debian mechanism:
   needs the sudo schema loaded into Samba's directory; the agent route works
   on a stock domain and is naturally machine-scoped, because each machine
   receives its own resolved policy.
-- **Logon rights** are enforced by the agent through `pam_access` and an sshd
-  drop-in rather than by SSSD's `ad_gpo_access_control` reading GPOs from
-  SYSVOL. Deny-overrides-allow semantics are preserved, and local
-  administrators are never locked out.
+- **HBAC rules** (host-based access control) are enforced by the agent through
+  `pam_access` and an sshd drop-in rather than by SSSD's
+  `ad_gpo_access_control` reading GPOs from SYSVOL. Deny-overrides-allow
+  semantics are preserved, and local administrators are never locked out.
 
 Both are agent-side, so switching to the SSSD-native path later changes the
 appliers, not the policy model or the UI.

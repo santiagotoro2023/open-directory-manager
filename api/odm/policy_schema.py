@@ -174,8 +174,11 @@ class SudoRule(Strict):
         return values
 
 
-class LogonRight(Strict):
-    """Deny overrides allow, matching AD semantics."""
+class HbacRule(Strict):
+    """Host-based access control: who may open a session, and how.
+
+    Deny overrides allow.
+    """
 
     principal: str
     service: Literal["local", "ssh", "rdp", "all"] = "all"
@@ -246,7 +249,7 @@ class PolicySettings(Strict):
     firewall: Annotated[list[FirewallRule], Field(default_factory=list, max_length=200)]
     drive_maps: Annotated[list[DriveMap], Field(default_factory=list, max_length=100)]
     sudo_rules: Annotated[list[SudoRule], Field(default_factory=list, max_length=100)]
-    logon_rights: Annotated[list[LogonRight], Field(default_factory=list, max_length=200)]
+    hbac_rules: Annotated[list[HbacRule], Field(default_factory=list, max_length=200)]
     admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None

@@ -16,9 +16,9 @@ const (
 	sshdDropIn     = "/etc/ssh/sshd_config.d/50-odm.conf"
 )
 
-// alwaysAllowed can never be locked out by policy. Writing a logon-rights
-// policy that excludes root would strand the machine, and no policy mistake
-// should cost an operator physical access to a server.
+// alwaysAllowed can never be locked out by policy. An HBAC rule set that
+// excludes root would strand the machine, and no policy mistake should cost
+// an operator access to a server.
 var alwaysAllowed = []string{"root", "(sudo)"}
 
 // Sudo command scope (CLAUDE.md §3.5).
@@ -66,13 +66,14 @@ func applySudo(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 	return results
 }
 
-// Logon rights (CLAUDE.md §3.5): who may log on locally, over SSH, or over
-// RDP, on this machine. Deny overrides allow, as in AD.
+// Host-based access control (CLAUDE.md §3.5): who may open a session on this
+// machine — locally, over SSH, or over RDP — and through which service. Deny
+// overrides allow.
 //
 // Local and RDP sessions are gated with pam_access; SSH additionally gets an
 // sshd drop-in so denied principals are refused before PAM runs.
-func applyLogonRights(ctx context.Context, s policy.Settings, env Env) []policy.Result {
-	if len(s.LogonRights) == 0 {
+func applyHbacRules(ctx context.Context, s policy.Settings, env Env) []policy.Result {
+	if len(s.HbacRules) == 0 {
 		return nil
 	}
 
@@ -82,7 +83,7 @@ func applyLogonRights(ctx context.Context, s policy.Settings, env Env) []policy.
 
 	// pam_access takes the first matching rule, so every deny is written
 	// before any allow.
-	for _, right := range s.LogonRights {
+	for _, right := range s.HbacRules {
 		if right.Access != "deny" {
 			continue
 		}
@@ -95,7 +96,7 @@ func applyLogonRights(ctx context.Context, s policy.Settings, env Env) []policy.
 			}
 		}
 	}
-	for _, right := range s.LogonRights {
+	for _, right := range s.HbacRules {
 		if right.Access == "deny" {
 			continue
 		}
@@ -119,13 +120,13 @@ func applyLogonRights(ctx context.Context, s policy.Settings, env Env) []policy.
 	}
 
 	if err := env.ReplaceBlock(accessConf, strings.Join(lines, "\n")+"\n", 0o644); err != nil {
-		results = append(results, policy.Fail("logon_rights:access", err))
+		results = append(results, policy.Fail("hbac:access", err))
 	} else if err := env.ReplaceBlock(
 		pamAccountPath, "account required pam_access.so\n", 0o644,
 	); err != nil {
-		results = append(results, policy.Fail("logon_rights:access", err))
+		results = append(results, policy.Fail("hbac:access", err))
 	} else {
-		results = append(results, policy.Ok("logon_rights:access"))
+		results = append(results, policy.Ok("hbac:access"))
 	}
 
 	// sshd keeps users and groups in separate directives, and an Allow*
@@ -147,10 +148,10 @@ func applyLogonRights(ctx context.Context, s policy.Settings, env Env) []policy.
 		}
 	}
 	if err := env.WriteFile(sshdDropIn, sshd.String(), 0o644, "root", "root"); err != nil {
-		results = append(results, policy.Fail("logon_rights:ssh", err))
+		results = append(results, policy.Fail("hbac:ssh", err))
 		return results
 	}
-	results = append(results, runAll(ctx, env, "logon_rights:ssh",
+	results = append(results, runAll(ctx, env, "hbac:ssh",
 		[]string{"sshd", "-t"},
 		[]string{"systemctl", "reload-or-restart", "ssh"},
 	))

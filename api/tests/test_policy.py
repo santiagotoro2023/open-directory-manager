@@ -227,7 +227,7 @@ def test_settings_reject_dangerous_input():
         {"sudo_rules": [{"name": "x", "users": ["ada"], "commands": ["rm -rf /"]}]},
         {"sudo_rules": [{"name": "x", "users": ["ada) ALL=(ALL"], "commands": ["ALL"]}]},
         {"drive_maps": [{"name": "s", "unc": "not-a-share", "mount_point": "/mnt/s"}]},
-        {"logon_rights": [{"principal": "ada\\nroot"}]},
+        {"hbac_rules": [{"principal": "ada\\nroot"}]},
         {"files": [{"path": "/etc/motd", "unexpected": "field"}]},
     ):
         with pytest.raises(ValidationError):
@@ -244,7 +244,7 @@ def test_settings_accept_a_realistic_policy():
         sudo_rules=[
             {"name": "helpdesk", "users": ["%Helpdesk"], "commands": ["/usr/bin/systemctl"]}
         ],
-        logon_rights=[{"principal": "%Engineers", "service": "ssh", "access": "allow"}],
+        hbac_rules=[{"principal": "%Engineers", "service": "ssh", "access": "allow"}],
         browser={"chromium": {"HomepageLocation": "https://intranet.example.org"}},
         wallpaper={"uri": "file:///usr/share/backgrounds/corp.png"},
     )

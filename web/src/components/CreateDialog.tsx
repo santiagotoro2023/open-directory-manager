@@ -2,19 +2,23 @@ import { useState } from "react";
 import { ApiError, api, type NewUser, type ObjectType } from "../api";
 import { Field, Modal } from "./Modal";
 
-const GROUP_TYPES = [
-  ["global-security", "Global security"],
-  ["domain-local-security", "Domain local security"],
-  ["universal-security", "Universal security"],
-  ["global-distribution", "Global distribution"],
-  ["domain-local-distribution", "Domain local distribution"],
-  ["universal-distribution", "Universal distribution"],
+// A group's identifier on the wire combines its scope and its kind; the form
+// asks for them separately.
+const GROUP_SCOPES = [
+  ["global", "Global"],
+  ["domain-local", "Domain local"],
+  ["universal", "Universal"],
+] as const;
+
+const GROUP_KINDS = [
+  ["security", "Security — can be granted access"],
+  ["distribution", "Distribution — mailing list only"],
 ] as const;
 
 const TITLES: Record<ObjectType, string> = {
   user: "New user",
   group: "New group",
-  computer: "New computer",
+  computer: "New host",
   ou: "New organizational unit",
 };
 
@@ -31,7 +35,8 @@ export function CreateDialog({
 }) {
   const [form, setForm] = useState<Record<string, string>>({});
   const [mustChange, setMustChange] = useState(true);
-  const [groupType, setGroupType] = useState<string>("global-security");
+  const [groupScope, setGroupScope] = useState<string>("global");
+  const [groupKind, setGroupKind] = useState<string>("security");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +62,7 @@ export function CreateDialog({
         await api.directory.createGroup({
           container,
           name: form.name ?? "",
-          group_type: groupType,
+          group_type: `${groupScope}-${groupKind}`,
           description: form.description,
         });
       } else if (type === "computer") {
@@ -94,7 +99,7 @@ export function CreateDialog({
 
       {type === "user" && (
         <>
-          <Field label="User logon name">
+          <Field label="Account name">
             <input value={form.sam ?? ""} required onChange={set("sam")} />
           </Field>
           <Field label="Full name" hint="Used as the object's common name">
@@ -133,9 +138,18 @@ export function CreateDialog({
           <Field label="Group name">
             <input value={form.name ?? ""} required onChange={set("name")} />
           </Field>
-          <Field label="Group scope and type">
-            <select value={groupType} onChange={(e) => setGroupType(e.target.value)}>
-              {GROUP_TYPES.map(([value, label]) => (
+          <Field label="Group scope" hint="Where the group can be used across the forest">
+            <select value={groupScope} onChange={(e) => setGroupScope(e.target.value)}>
+              {GROUP_SCOPES.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Group kind">
+            <select value={groupKind} onChange={(e) => setGroupKind(e.target.value)}>
+              {GROUP_KINDS.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
@@ -150,7 +164,7 @@ export function CreateDialog({
 
       {type === "computer" && (
         <>
-          <Field label="Computer name">
+          <Field label="Host name">
             <input value={form.name ?? ""} required onChange={set("name")} />
           </Field>
           <Field label="DNS host name">

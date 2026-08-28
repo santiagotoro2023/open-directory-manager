@@ -7,7 +7,7 @@
 Open-source Linux replacement for the core of Windows Active Directory —
 directory, Kerberos, DNS, Group Policy, DHCP and the admin console that
 drives them, with the terminology and object model a Windows admin already
-knows (Organizational Unit, GPO, Security Group, Sudo Rule, HBAC).
+knows: Organizational Unit, Group Policy Object, Sudo Rule, HBAC.
 
 ## Architecture
 
