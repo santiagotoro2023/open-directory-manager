@@ -78,24 +78,37 @@ WantedBy=multi-user.target
 		}
 	}
 
-	if triggers["logon"] || triggers["logoff"] {
-		hook := "#!/bin/sh\n" + Header + `case "$PAM_TYPE" in
-  open_session)  exec /bin/run-parts --report ` + scriptDir + `/logon ;;
-  close_session) exec /bin/run-parts --report ` + scriptDir + `/logoff ;;
+	results = append(results, installSessionHook(env))
+	return results
+}
+
+// installSessionHook wires the agent into PAM sessions. It always runs, not
+// only when logon scripts exist, because it is also how a user's own policy
+// (per-user drive maps, desktop background) reaches the machine at login.
+//
+// The user apply is backgrounded behind a timeout: a slow or unreachable
+// control plane must never hold up somebody logging in.
+func installSessionHook(env Env) policy.Result {
+	hook := "#!/bin/sh\n" + Header + `case "$PAM_TYPE" in
+  open_session)
+    [ -d ` + scriptDir + `/logon ] && /bin/run-parts --report ` + scriptDir + `/logon
+    [ -n "$PAM_USER" ] && timeout 60 /usr/sbin/odm-agent apply --user "$PAM_USER" >/dev/null 2>&1 &
+    ;;
+  close_session)
+    [ -d ` + scriptDir + `/logoff ] && /bin/run-parts --report ` + scriptDir + `/logoff
+    ;;
 esac
 exit 0
 `
-		if err := env.WriteFile(pamHookPath, hook, 0o755, "root", "root"); err != nil {
-			results = append(results, policy.Fail("scripts:pam-hook", err))
-		} else if err := env.ReplaceBlock(
-			pamSessionPath, "session optional pam_exec.so "+pamHookPath+"\n", 0o644,
-		); err != nil {
-			results = append(results, policy.Fail("scripts:pam-hook", err))
-		} else {
-			results = append(results, policy.Ok("scripts:pam-hook"))
-		}
+	if err := env.WriteFile(pamHookPath, hook, 0o755, "root", "root"); err != nil {
+		return policy.Fail("scripts:pam-hook", err)
 	}
-	return results
+	if err := env.ReplaceBlock(
+		pamSessionPath, "session optional pam_exec.so "+pamHookPath+"\n", 0o644,
+	); err != nil {
+		return policy.Fail("scripts:pam-hook", err)
+	}
+	return policy.Ok("scripts:pam-hook")
 }
 
 // systemd unit state (CLAUDE.md §3.5).

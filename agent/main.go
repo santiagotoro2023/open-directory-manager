@@ -128,7 +128,13 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 		return nil
 	}
 
-	results := apply.Apply(ctx, document.Settings, env)
+	// A user document only drives the user-scoped appliers; logging in must
+	// not be able to reconfigure the whole machine.
+	applyFn := apply.Apply
+	if username != "" {
+		applyFn = apply.ApplyUser
+	}
+	results := applyFn(ctx, document.Settings, env)
 	failed := 0
 	for _, result := range results {
 		if result.Status == "failed" {

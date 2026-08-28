@@ -512,3 +512,68 @@ func TestCorruptStateIsIgnoredRatherThanFatal(t *testing.T) {
 		t.Fatal("corrupt state should degrade to an empty state")
 	}
 }
+
+// ------------------------------------------------------------- user scope --
+
+func TestUserPolicyCannotReconfigureTheMachine(t *testing.T) {
+	env, runner := testEnv(t)
+	settings := policy.Settings{
+		SystemdUnits: []policy.SystemdUnit{{Unit: "ssh.service", State: "stopped"}},
+		SudoRules: []policy.SudoRule{
+			{Name: "escalate", Users: []string{"mallory"}, Commands: []string{"ALL"}},
+		},
+		Firewall:  []policy.Firewall{{Name: "open", Action: "allow", Protocol: "tcp", Port: 1}},
+		Wallpaper: &policy.Wallpaper{URI: "file:///usr/share/backgrounds/corp.png"},
+	}
+
+	results := ApplyUser(context.Background(), settings, env)
+
+	if runner.ran("systemctl", "stop") {
+		t.Error("a user policy stopped a system service")
+	}
+	if _, err := os.Stat(env.Path("/etc/sudoers.d/odm-escalate")); !os.IsNotExist(err) {
+		t.Error("a user policy wrote a sudoers rule")
+	}
+	if _, err := os.Stat(env.Path(firewallPath)); !os.IsNotExist(err) {
+		t.Error("a user policy rewrote the firewall")
+	}
+	if statuses(results)["wallpaper"] != "success" {
+		t.Fatalf("user-scoped settings did not apply: %+v", results)
+	}
+}
+
+func TestUserApplyNeverPrunesMachinePolicy(t *testing.T) {
+	root := t.TempDir()
+	runner := newRunner()
+	runner.output["systemd-escape"] = "mnt-shared\n"
+
+	machine := Env{Root: root, Run: runner, State: NewState()}
+	Apply(context.Background(), policy.Settings{
+		Files: []policy.File{{Path: "/etc/motd", Content: "managed"}},
+	}, machine)
+
+	user := Env{Root: root, Run: runner, State: NewState()}
+	ApplyUser(context.Background(), policy.Settings{
+		Wallpaper: &policy.Wallpaper{URI: "file:///corp.png"},
+	}, user)
+
+	if _, err := os.Stat(filepath.Join(root, "etc/motd")); err != nil {
+		t.Fatal("a user login deleted machine policy")
+	}
+}
+
+func TestSessionHookAppliesUserPolicyWithoutBlockingLogin(t *testing.T) {
+	env, _ := testEnv(t)
+	applyScripts(context.Background(), policy.Settings{}, env)
+
+	hook := read(t, env, pamHookPath)
+	if !strings.Contains(hook, `odm-agent apply --user "$PAM_USER"`) {
+		t.Fatalf("hook does not apply user policy:\n%s", hook)
+	}
+	if !strings.Contains(hook, "timeout 60") {
+		t.Fatalf("user apply is not bounded by a timeout:\n%s", hook)
+	}
+	if !strings.Contains(hook, ">/dev/null 2>&1 &") {
+		t.Fatalf("user apply must be backgrounded so a slow API cannot block login:\n%s", hook)
+	}
+}

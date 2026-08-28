@@ -35,14 +35,35 @@ var appliers = []applier{
 	{"logon_rights", applyLogonRights},
 }
 
+// userScoped are the only appliers a per-user policy may drive. A GPO linked
+// where users live must not be able to mask a systemd unit or rewrite the
+// firewall the moment somebody logs in.
+var userScoped = map[string]bool{"drive_maps": true, "wallpaper": true}
+
 // Apply runs every applier over one resolved policy document and returns the
 // Resultant Set of Policy. It never aborts on the first failure: a broken
 // setting must not stop the rest of the policy from being applied.
 func Apply(ctx context.Context, settings policy.Settings, env Env) []policy.Result {
-	previous := LoadState(env)
+	return run(ctx, settings, env, false)
+}
+
+// ApplyUser applies the policy resolved for one logging-on user. It shares
+// no state file with the machine run, so it never prunes machine policy.
+func ApplyUser(ctx context.Context, settings policy.Settings, env Env) []policy.Result {
+	return run(ctx, settings, env, true)
+}
+
+func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) []policy.Result {
+	var previous *State
+	if !userOnly {
+		previous = LoadState(env)
+	}
 	results := []policy.Result{}
 
 	for _, item := range appliers {
+		if userOnly && !userScoped[item.name] {
+			continue
+		}
 		func() {
 			defer func() {
 				if recovered := recover(); recovered != nil {
@@ -57,6 +78,9 @@ func Apply(ctx context.Context, settings policy.Settings, env Env) []policy.Resu
 		}()
 	}
 
+	if userOnly {
+		return results
+	}
 	for _, removed := range env.Prune(previous) {
 		results = append(results, policy.Result{
 			Setting: "removed:" + removed,

@@ -37,6 +37,13 @@ uses it throughout.
 | Sudo rules | `/etc/sudoers.d/odm-*`, validated with `visudo -cf` before install |
 | Logon rights | `pam_access` block in `/etc/security/access.conf` plus an sshd drop-in; deny overrides allow |
 
+A PAM session hook is installed on every machine: at login it runs any logon
+scripts and, in the background behind a timeout, applies the logging-on
+user's own policy — per-user drive maps and desktop background — so a slow
+control plane can never hold up a login. A user document drives only the
+user-scoped appliers; logging in cannot mask a systemd unit, write a sudoers
+rule or rewrite the firewall.
+
 Every file the agent owns carries a managed header, and the paths it wrote
 are recorded in `/var/lib/odm/managed-state.json` so that removing a setting
 from a GPO removes the file it produced on the next run.
