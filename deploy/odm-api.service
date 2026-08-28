@@ -1,0 +1,47 @@
+[Unit]
+Description=Open Directory Manager control-plane API
+Documentation=https://example.org/odm
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=odm
+Group=odm
+# All configuration and secrets come from this mode-0640 file, never the unit.
+Environment=ODM_SECRETS_FILE=/etc/odm/odm.env
+WorkingDirectory=/opt/odm
+ExecStart=/opt/odm/venv/bin/uvicorn odm.main:app \
+    --host 0.0.0.0 \
+    --port 8443 \
+    --ssl-certfile /etc/odm/tls/api.crt \
+    --ssl-keyfile /etc/odm/tls/api.key \
+    --proxy-headers \
+    --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+
+# Hardening (CLAUDE.md §6)
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/odm
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

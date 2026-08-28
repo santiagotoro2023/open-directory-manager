@@ -1,0 +1,122 @@
+"""Runtime configuration.
+
+Secrets never live in the repo or in the unit file: they come from a
+mode-0600 secrets file (CLAUDE.md §6) whose KEY=VALUE lines are loaded into
+the environment before settings are read. Anything already present in the
+environment wins, so a secrets manager can inject values instead.
+"""
+
+from __future__ import annotations
+
+import os
+import stat
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+SECRETS_FILE_ENV = "ODM_SECRETS_FILE"
+
+
+def derive_base_dn(domain: str) -> str:
+    """corp.example.internal -> DC=corp,DC=example,DC=internal"""
+    labels = [label for label in domain.strip(".").split(".") if label]
+    if not labels:
+        raise ValueError("domain must contain at least one label")
+    return ",".join(f"DC={label}" for label in labels)
+
+
+def load_secrets_file(path: Path) -> dict[str, str]:
+    """Parse a KEY=VALUE secrets file.
+
+    Group *read* is allowed so the file can be root-owned and readable by the
+    service user (0640 root:odm); anything wider is refused.
+    """
+    mode = path.stat().st_mode
+    if mode & (stat.S_IWGRP | stat.S_IXGRP | stat.S_IRWXO):
+        raise PermissionError(
+            f"{path} must not be group-writable or world-accessible (chmod 640)"
+        )
+    values: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep:
+            raise ValueError(f"malformed line in {path}: {raw!r}")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="ODM_", extra="ignore")
+
+    # --- Domain ---
+    realm: str = Field(description="Kerberos realm, e.g. CORP.EXAMPLE.INTERNAL")
+    domain: str = Field(description="DNS domain, e.g. corp.example.internal")
+    base_dn: str = ""
+    admin_group: str = Field(
+        default="Domain Admins",
+        description="Group whose members may sign in to the ODM web UI",
+    )
+
+    # --- LDAP ---
+    ldap_uri: str = Field(description="ldaps:// URI of a domain controller")
+    ldap_ca_cert: Path = Field(description="CA certificate that signs the DC's LDAPS cert")
+    ldap_timeout_seconds: int = 10
+
+    # --- Kerberos (agent/SSO SPNEGO) ---
+    keytab: Path | None = None
+    service_name: str = "HTTP"
+
+    # --- Database ---
+    database_url: str = Field(description="postgresql://user:pass@host/db")
+    db_pool_min: int = 1
+    db_pool_max: int = 10
+
+    # --- Sessions / login hardening ---
+    session_ttl_minutes: int = 480
+    session_idle_minutes: int = 60
+    session_cookie_name: str = "odm_session"
+    cookie_secure: bool = True
+    login_max_failures: int = 5
+    login_lockout_minutes: int = 15
+
+    # --- Web ---
+    allowed_origins: list[str] = Field(
+        default_factory=list,
+        description="Exact origins allowed to call the API (the UI's own origin)",
+    )
+
+    # --- Recycle bin (CLAUDE.md §3.9 / §10) ---
+    retention_days: int = 180
+
+    @field_validator("realm")
+    @classmethod
+    def _upper_realm(cls, v: str) -> str:
+        return v.strip().upper()
+
+    @field_validator("ldap_uri")
+    @classmethod
+    def _require_tls(cls, v: str) -> str:
+        # CLAUDE.md §6: no plaintext LDAP, ever.
+        if not v.startswith("ldaps://"):
+            raise ValueError("ldap_uri must use ldaps://")
+        return v
+
+    @model_validator(mode="after")
+    def _defaults(self) -> Settings:
+        if not self.base_dn:
+            self.base_dn = derive_base_dn(self.domain)
+        return self
+
+
+@lru_cache
+def get_settings() -> Settings:
+    secrets_path = os.environ.get(SECRETS_FILE_ENV)
+    if secrets_path:
+        for key, value in load_secrets_file(Path(secrets_path)).items():
+            os.environ.setdefault(key, value)
+    return Settings()  # type: ignore[call-arg]

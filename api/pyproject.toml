@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools==75.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "odm-api"
+version = "0.1.0"
+description = "Open Directory Manager control-plane API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Open Directory Manager Contributors", email = "hello@example.org" }]
+
+# Pinned exactly — CLAUDE.md §6 requires pinned versions and dependency scanning.
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.34.0",
+    "pydantic==2.10.4",
+    "pydantic-settings==2.7.0",
+    "asyncpg==0.30.0",
+    "ldap3==2.9.1",
+    "gssapi==1.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.25.0",
+    "httpx==0.28.1",
+    "ruff==0.8.4",
+]
+
+[project.scripts]
+odm-db = "odm.db:main"
+
+[tool.setuptools.packages.find]
+include = ["odm*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom; not a mutable default.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

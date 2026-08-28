@@ -1,0 +1,42 @@
+# --- Secrets (never commit; see CLAUDE.md §6) ---
+*.keytab
+*.pem
+*.key
+*.crt
+odm.env
+secrets/
+!deploy/odm.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Go ---
+/agent/odm-agent
+/client-join/odm-client-install
+/client-join/odm-join-gui
+*.test
+*.out
+
+# --- Node ---
+node_modules/
+web/dist/
+npm-debug.log*
+.vite/
+
+# --- Editors / OS ---
+.DS_Store
+*.swp
+.idea/
+.vscode/
