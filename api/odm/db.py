@@ -16,7 +16,10 @@ import asyncpg
 
 from .config import get_settings
 
-MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+# Inside the package, so an installed copy carries its own schema. Resolved
+# from the source tree it also worked one directory up, which is why an
+# installed control plane silently found nothing to apply.
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migration (
@@ -38,6 +41,10 @@ async def create_pool() -> asyncpg.Pool:
 
 async def migrate(pool: asyncpg.Pool) -> list[str]:
     """Apply pending migrations; return the filenames applied."""
+    # A missing directory globs to nothing, which is indistinguishable from an
+    # up-to-date database. Say so instead of reporting success on an empty one.
+    if not MIGRATIONS_DIR.is_dir():
+        raise RuntimeError(f"no migrations directory at {MIGRATIONS_DIR}")
     applied: list[str] = []
     async with pool.acquire() as conn:
         await conn.execute(_BOOTSTRAP)

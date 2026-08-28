@@ -8,6 +8,7 @@ deliberately public endpoints changes.
 from __future__ import annotations
 
 import conftest  # noqa: F401  (environment setup ordering)
+import pytest
 from fastapi.routing import APIRoute
 
 from odm import authz
@@ -113,7 +114,7 @@ def test_every_permission_is_held_by_at_least_one_built_in_role():
     import re
 
     seeded = set()
-    for migration in sorted(pathlib.Path("migrations").glob("*.sql")):
+    for migration in sorted(pathlib.Path("odm/migrations").glob("*.sql")):
         seeded.update(re.findall(r"'[a-z-]+', '([a-z.*]+)'\)", migration.read_text()))
     # Domain-administrator-only actions are deliberately not in any role.
     reserved = {"rbac.write", "role.install"}
@@ -146,7 +147,7 @@ def test_every_migration_is_numbered_in_sequence():
 
     numbers = sorted(
         int(path.name.split("_", 1)[0])
-        for path in pathlib.Path("migrations").glob("*.sql")
+        for path in pathlib.Path("odm/migrations").glob("*.sql")
     )
     assert numbers == list(range(1, len(numbers) + 1)), numbers
 
@@ -309,8 +310,6 @@ def test_the_built_console_has_no_inline_script_for_the_policy_to_block():
     import pathlib
     import re
 
-    import pytest
-
     index = pathlib.Path("..") / "web" / "dist" / "index.html"
     if not index.is_file():
         pytest.skip("console not built here")
@@ -347,3 +346,39 @@ async def test_an_html_response_really_gets_the_console_policy():
 
     assert "script-src 'self'" in document.headers["content-security-policy"]
     assert "script-src" not in payload.headers["content-security-policy"]
+
+
+def test_the_package_carries_its_own_migrations():
+    """An installed control plane must find its schema inside itself.
+
+    Resolved one directory up it worked from a source tree and found nothing
+    once installed, so setup reported a migrated database that was empty."""
+    import pathlib
+
+    import odm
+    from odm.db import MIGRATIONS_DIR
+
+    package = pathlib.Path(odm.__file__).resolve().parent
+    assert MIGRATIONS_DIR.is_relative_to(package), (
+        f"{MIGRATIONS_DIR} is outside the package, so an install leaves it behind"
+    )
+    assert sorted(MIGRATIONS_DIR.glob("*.sql")), "no migrations found"
+
+    # Being inside the package is not enough; the build has to be told to ship
+    # non-Python files.
+    pyproject = (pathlib.Path("pyproject.toml")).read_text()
+    assert 'odm = ["migrations/*.sql"]' in pyproject, (
+        "pyproject does not declare the migrations as package data"
+    )
+
+
+async def test_migrating_without_a_schema_is_an_error_not_a_success(monkeypatch):
+    """Silence was the actual defect: a missing directory globs to nothing,
+    which looks exactly like an up-to-date database."""
+    import pathlib
+
+    from odm import db
+
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", pathlib.Path("/nonexistent/migrations"))
+    with pytest.raises(RuntimeError, match="no migrations directory"):
+        await db.migrate(pool=None)

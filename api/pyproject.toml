@@ -38,6 +38,9 @@ odm-db = "odm.db:main"
 [tool.setuptools.packages.find]
 include = ["odm*"]
 
+[tool.setuptools.package-data]
+odm = ["migrations/*.sql"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

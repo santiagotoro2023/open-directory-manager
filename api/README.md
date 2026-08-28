@@ -42,7 +42,7 @@ the directory directly (CLAUDE.md §2).
 | `odm/routes_policy.py` | `/api/v1/policy/*` |
 | `odm/routes_agent.py` | `/api/v1/agent/*`, SPNEGO machine authentication |
 | `odm/audit.py` | Append-only audit writes and the `audited` wrapper |
-| `migrations/` | Numbered SQL, applied in order |
+| `odm/migrations/` | Numbered SQL, applied in order |
 
 ## Development
 
