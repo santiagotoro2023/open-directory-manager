@@ -108,15 +108,21 @@ export function Content() {
               ["domain-admin", "Everything."],
               [
                 "helpdesk",
-                "Read the directory; create and edit users and hosts; reset passwords; edit group membership; move objects; read the recycle bin and the audit log.",
+                "Read the directory; create and edit users, groups and hosts; reset passwords; edit group membership; move and delete objects; restore from the recycle bin; read the audit log.",
               ],
               [
                 "auditor",
                 "Read-only across the directory, policy, DNS, DHCP, roles, replication, backups and the audit log.",
               ],
+              [
+                "directory-admin",
+                "Full directory management within the scope: users, groups, hosts, organizational units, moves, deletes, restores and purges.",
+              ],
               ["dns-admin", "Read the directory; read and write DNS."],
               ["dhcp-admin", "Read the directory; read and write DHCP."],
               ["policy-admin", "Read the directory; read and write policy objects and administrative templates."],
+              ["ca-admin", "Issue and revoke certificates from the domain authority."],
+              ["backup-operator", "Take backups and force replication between controllers."],
             ]}
           />
           <p>Built-in roles cannot be edited or deleted. Create a custom role instead.</p>
@@ -151,8 +157,9 @@ export function Content() {
           />
           <Note>
             Some actions are reserved for domain administrators regardless of permissions:
-            managing delegation, installing and deregistering roles, creating the certificate
-            authority, publishing its root and replacing the console certificate.
+            managing delegation, installing and deregistering server roles, creating the
+            certificate authority, publishing its root and replacing the console certificate.
+            Every other permission is held by at least one built-in role.
           </Note>
         </Section>
 

@@ -167,6 +167,11 @@ factory.
 - A session is issued to a member of the admin group, or to a principal
   holding a delegated assignment; anyone else is refused and the refusal is
   audited.
+- The API surface is itself tested: exactly four endpoints answer without a
+  session (login, negotiate, enrolment redemption, the liveness probe), every
+  other endpoint carries an authorisation gate, agent endpoints use Kerberos
+  rather than a session, and every permission a route names is one the model
+  defines and at least one built-in role can hold.
 - Every route declares the permission it needs. Scoped actions check it
   against the object's distinguished name, so an assignment at an OU reaches
   that OU and everything beneath it and nothing else. Moves are checked at
