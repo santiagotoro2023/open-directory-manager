@@ -73,17 +73,19 @@ echo "==> Installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 
-# Debian moved the domain-controller pieces between releases:
+# Debian spreads a domain controller across several packages, and moved two
+# of them between releases:
 #
-#              samba-tool             samba-ad-dc.service
-#   Debian 12  samba-common-bin       samba
-#   Debian 13  python3-samba          samba-ad-dc   (new package)
+#                       samba-tool          samba-ad-dc.service
+#   Debian 12           samba-common-bin    samba
+#   Debian 13           python3-samba       samba-ad-dc  (new package)
 #
-# Ask for the union and keep whatever this release actually has, so the same
-# script works on both.
+# The Active Directory schema that provisioning reads lives in
+# samba-ad-provision on both. Ask for the union and keep whatever this
+# release actually has.
 WANTED=(
-    samba samba-common-bin python3-samba samba-ad-dc smbclient
-    krb5-user krb5-config winbind libnss-winbind libpam-winbind
+    samba samba-common-bin python3-samba samba-ad-dc samba-ad-provision
+    smbclient krb5-user krb5-config winbind libnss-winbind libpam-winbind
     ldb-tools dnsutils chrony acl attr
 )
 PACKAGES=()
@@ -94,7 +96,11 @@ for package in "${WANTED[@]}"; do
         echo "    ${package} is not in this release; skipping"
     fi
 done
-apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+# Recommends are installed deliberately: Samba's packaging relies on them for
+# a working domain controller, and a controller is not the place to run a
+# minimal install.
+apt-get install -y "${PACKAGES[@]}"
 
 # Provisioning is samba-tool's job, and everything ODM does against the
 # directory afterwards goes through it. Stop here rather than half-way in.
@@ -121,6 +127,21 @@ nothing to run it.
 It ships in the samba-ad-dc package on Debian 13 and in samba on Debian 12:
 
     sudo apt-get install samba-ad-dc
+
+MISSING
+    exit 1
+fi
+
+# Provisioning reads the Active Directory schema from disk. Missing, it
+# fails several minutes in with a Python traceback; catch it here instead.
+if ! compgen -G "/usr/share/samba/setup/ad-schema/*.ldf" >/dev/null; then
+    cat >&2 <<'MISSING'
+
+The Active Directory schema needed to provision a domain is not installed.
+
+It ships in samba-ad-provision. Install it and run this again:
+
+    sudo apt-get install samba-ad-provision
 
 MISSING
     exit 1

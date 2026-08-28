@@ -66,10 +66,13 @@ GSS_HOOK="$HOOKS_DIR/libddns_gss_tsig.so"
 if [[ -f "$GSS_HOOK" ]]; then
     echo "==> GSS-TSIG hook found; dynamic updates will be authenticated"
 else
-    echo "==> WARNING: $GSS_HOOK is missing." >&2
-    echo "    kea-dhcp-ddns will be configured without GSS-TSIG, and Samba will" >&2
-    echo "    reject its updates until the hook is installed and this script" >&2
-    echo "    is re-run. Secure dynamic update is required for production." >&2
+    echo "==> NOTE: $GSS_HOOK is not present." >&2
+    echo "    Debian does not package the GSS-TSIG hook, so authenticated" >&2
+    echo "    dynamic DNS updates are unavailable from the archive alone." >&2
+    echo "    kea-dhcp-ddns is configured without it; Samba's AD zones reject" >&2
+    echo "    unauthenticated updates, so DHCP leases will not appear in DNS." >&2
+    echo "    Either build the hook from ISC's sources and re-run this script," >&2
+    echo "    or register hosts in DNS another way." >&2
 fi
 
 echo "==> Generating the Control Agent credential"

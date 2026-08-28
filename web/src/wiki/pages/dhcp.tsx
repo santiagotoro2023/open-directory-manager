@@ -107,8 +107,11 @@ export function Content() {
             <li>Re-run the role installer so it configures the authenticated update path.</li>
           </Steps>
           <Note>
-            The installer reports when the GSS-TSIG hook is missing, rather than configuring
-            unauthenticated updates the domain controllers will reject.
+            Debian does not package the GSS-TSIG hook, so on a stock install this path is
+            unavailable and the role installer says so. Samba&rsquo;s zones reject unauthenticated
+            updates, so leases do not appear in DNS until the hook is built from ISC&rsquo;s
+            sources and the installer re-run, or hosts are registered another way — a domain-joined
+            machine registers itself.
           </Note>
         </Section>
 
