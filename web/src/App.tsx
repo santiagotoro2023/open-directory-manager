@@ -8,6 +8,7 @@ import { Delegation } from "./pages/Delegation";
 import { Dhcp } from "./pages/Dhcp";
 import { Directory } from "./pages/Directory";
 import { Dns } from "./pages/Dns";
+import { Health } from "./pages/Health";
 import { Overview } from "./pages/Overview";
 import { Policy } from "./pages/Policy";
 import { RecycleBin } from "./pages/RecycleBin";
@@ -53,6 +54,7 @@ export function App() {
           <Route path="roles" element={<Roles />} />
           <Route path="delegation" element={<Delegation />} />
           <Route path="certificates" element={<Certificates />} />
+          <Route path="operations" element={<Health />} />
           <Route path="recyclebin" element={<RecycleBin />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 from . import (
     auth,
+    backup,
     ca,
     db,
     directory,
@@ -31,6 +32,7 @@ from . import (
     routes_dhcp,
     routes_directory,
     routes_dns,
+    routes_operations,
     routes_policy,
     routes_rbac,
     routes_recyclebin,
@@ -51,13 +53,18 @@ async def lifespan(app: FastAPI):
     app.state.pool = await db.create_pool()
     # The recycle bin's retention window is only real if something enforces
     # it, so the sweep runs with the application (CLAUDE.md §5.3).
-    sweeper = asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool))
+    background = [
+        asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool)),
+        asyncio.create_task(routes_operations.backup_loop(app.state.pool, settings)),
+    ]
     try:
         yield
     finally:
-        sweeper.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await sweeper
+        for task in background:
+            task.cancel()
+        for task in background:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await app.state.pool.close()
 
 
@@ -100,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_roles.router)
     app.include_router(routes_rbac.router)
     app.include_router(routes_ca.router)
+    app.include_router(routes_operations.router)
     app.include_router(routes_audit.router)
 
     # Directory failures map to HTTP once, here, instead of a try/except in
@@ -114,6 +122,7 @@ def create_app() -> FastAPI:
         (dns.DnsError, status.HTTP_400_BAD_REQUEST),
         (kea.KeaUnavailable, status.HTTP_501_NOT_IMPLEMENTED),
         (kea.KeaError, status.HTTP_502_BAD_GATEWAY),
+        (backup.BackupError, status.HTTP_400_BAD_REQUEST),
         (roles.RoleError, status.HTTP_400_BAD_REQUEST),
         (ca.CaNotInitialised, status.HTTP_501_NOT_IMPLEMENTED),
         (ca.CaError, status.HTTP_400_BAD_REQUEST),

@@ -267,6 +267,49 @@ export interface IssuedCertificate {
   private_key_pem?: string;
 }
 
+export interface HealthReport {
+  domain: string;
+  directory: { available?: boolean; controllers?: number; names?: string[]; detail?: string };
+  replication: {
+    available?: boolean;
+    healthy?: boolean;
+    server?: string;
+    inbound?: {
+      naming_context: string;
+      partner: string;
+      last_attempt: string;
+      succeeded: boolean | null;
+      failures: number;
+    }[];
+    detail?: string;
+  };
+  dhcp: { configured?: boolean; statistics?: Record<string, number>; detail?: string };
+  certificates: { initialised?: boolean; not_after?: string; expiring_soon?: number };
+  agents: {
+    checked_in: number;
+    fresh: number;
+    stale: number;
+    failing_settings: number;
+    stale_after_minutes: number;
+  };
+  backups: {
+    configured: boolean;
+    interval_hours?: number;
+    last?: { started_at: string; size_bytes: number } | null;
+  };
+}
+
+export interface BackupRecord {
+  id: string;
+  path: string;
+  state: string;
+  size_bytes: number;
+  started_at: string;
+  finished_at: string | null;
+  taken_by: string;
+  detail: string | null;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -608,6 +651,42 @@ export const api = {
       ),
 
     rootUrl: "/api/v1/ca/root",
+  },
+
+  operations: {
+    health: () => request<HealthReport>("/health"),
+
+    replication: () =>
+      request<{
+        controllers: { name: string; dns_host_name: string; operating_system: string }[];
+        server: string;
+        healthy: boolean;
+        inbound: {
+          naming_context: string;
+          partner: string;
+          last_attempt: string;
+          succeeded: boolean | null;
+          failures: number;
+        }[];
+      }>("/replication"),
+
+    replicate: (destination: string, source: string, naming_context: string) =>
+      request<{ output: string }>(
+        "/replication/replicate",
+        json({ destination, source, naming_context }),
+      ),
+
+    backups: () =>
+      request<{
+        configured: boolean;
+        directory: string | null;
+        interval_hours: number;
+        keep: number;
+        history: BackupRecord[];
+        archives: { path: string; size_bytes: number }[];
+      }>("/backups"),
+
+    takeBackup: () => request<{ id: string; state: string }>("/backups", json({})),
   },
 
   audit: {

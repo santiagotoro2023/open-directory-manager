@@ -17,6 +17,9 @@ the directory directly (CLAUDE.md §2).
 | `odm/routes_rbac.py` | `/api/v1/rbac/*` — roles and assignments |
 | `odm/ca.py` | Certificate authority: issuance, profiles, revocation lists |
 | `odm/routes_ca.py` | `/api/v1/ca/*` |
+| `odm/replication.py` | Multi-controller replication state and forced runs |
+| `odm/backup.py` | Domain backup archives and retention |
+| `odm/routes_operations.py` | `/api/v1/health`, `/replication/*`, `/backups` |
 | `odm/objects.py` | Directory object CRUD, DN guard, protected-object guard |
 | `odm/auth.py` | `/api/v1/auth/*` |
 | `odm/routes_directory.py` | `/api/v1/directory/*` |
@@ -129,6 +132,12 @@ controller is needed to run them.
 | `POST` | `/api/v1/ca/revoke` | Revoke one |
 | `POST` | `/api/v1/ca/publish` | Distribute the root through group policy |
 | `POST` | `/api/v1/ca/console-certificate` | Re-issue and install the console's own |
+| `POST` | `/api/v1/policy/bootstrap` | Create the two default policies |
+| `GET` | `/api/v1/replication` | Controllers and inbound replication state |
+| `POST` | `/api/v1/replication/replicate` | Force one replication run |
+| `GET` | `/api/v1/backups` | Backup history and archives on disk |
+| `POST` | `/api/v1/backups` | Take a backup now (202; poll the list) |
+| `GET` | `/api/v1/health` | Directory, replication, DHCP, certificates, agents, backups |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
 DNS and DHCP routers arrive in later phases.

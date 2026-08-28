@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     # role as not configured.
     ca_dir: Path | None = None
 
+    # --- Backups ---
+    backup_dir: Path | None = None
+    backup_interval_hours: int = 24
+    backup_keep: int = 14
+
     # --- Database ---
     database_url: str = Field(description="postgresql://user:pass@host/db")
     db_pool_min: int = 1

@@ -830,3 +830,43 @@ textarea.mono,
 .button-link:hover {
   background: var(--surface-recessed);
 }
+
+/* -------------------------------------------------------------- operations -- */
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.health-card {
+  padding: 16px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.health-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.health-card p {
+  margin: 0 0 6px;
+}
+
+.metric {
+  font-size: 28px;
+  font-weight: 600;
+}
+
+ul.plain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}

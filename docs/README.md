@@ -24,7 +24,7 @@ belongs in these pages.
 | 5 | ADMX/ADML importer and dynamic settings UI | Implemented |
 | 6 | DNS management, DHCP role via Kea, DDNS sync, HA pairing | Implemented |
 | 7 | Recycle bin, roles/extensibility framework | Implemented |
-| 8 | Hardening pass, delegated admin, backup/restore, replication topology | In progress |
+| 8 | Hardening pass, delegated admin, backup, replication topology, health | Implemented |
 
 Phase 1 lays groundwork for later phases in the database schema (RBAC and
 delegation, recycle bin, role registry, GPO links) so those phases add code,

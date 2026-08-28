@@ -413,6 +413,109 @@ async def set_inheritance(
         return {"ou_dn": body.ou_dn, "block_inheritance": body.block_inheritance}
 
 
+# --------------------------------------------------------------- bootstrap ---
+
+# The two policies a domain starts with. Both are ordinary group policy
+# objects afterwards: they can be edited, linked elsewhere, enforced or
+# unlinked like any other.
+DEFAULT_DOMAIN_POLICY = "Default Domain Policy"
+DEFAULT_DC_POLICY = "Default Domain Controllers Policy"
+
+
+def _default_domain_settings(settings: Settings) -> dict[str, Any]:
+    return {
+        "agent": {"refresh_minutes": settings.agent_refresh_minutes},
+        "files": [
+            {
+                "path": "/etc/issue.net",
+                "content": (
+                    f"Authorised use only. Activity on this system is logged.\n"
+                    f"{settings.domain}\n"
+                ),
+                "mode": "0644",
+                "owner": "root",
+                "group": "root",
+            }
+        ],
+    }
+
+
+def _default_dc_settings(settings: Settings) -> dict[str, Any]:
+    return {
+        "systemd_units": [{"unit": "ssh.service", "state": "enabled"}],
+        "hbac_rules": [
+            {"principal": f"%{settings.admin_group}", "service": "all", "access": "allow"}
+        ],
+    }
+
+
+@router.post("/bootstrap", dependencies=[Depends(requires("gpo.write"))])
+async def bootstrap(
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Create the two default policies and link them, if they are absent.
+
+    Safe to run repeatedly: policies that already exist are left untouched.
+    """
+    async with _audit_context(
+        request, session, pool, "gpo.bootstrap", object_type="gpo"
+    ) as entry:
+        dc_ou = f"OU=Domain Controllers,{settings.base_dn}"
+        created: list[dict[str, str]] = []
+
+        for name, description, document, target in (
+            (
+                DEFAULT_DOMAIN_POLICY,
+                "Baseline applied to every machine in the domain",
+                _default_domain_settings(settings),
+                settings.base_dn,
+            ),
+            (
+                DEFAULT_DC_POLICY,
+                "Baseline applied to the domain controllers",
+                _default_dc_settings(settings),
+                dc_ou,
+            ),
+        ):
+            if await pool.fetchval("SELECT 1 FROM gpo WHERE display_name = $1", name):
+                continue
+            guid = uuid.uuid4()
+            if sysvol.enabled(settings):
+                async with _bound(settings, write=True) as conn:
+                    await run_in_threadpool(sysvol.create, conn, settings, str(guid), name)
+            await pool.execute(
+                """
+                INSERT INTO gpo (guid, display_name, description, settings, created_by)
+                VALUES ($1, $2, $3, $4::jsonb, $5)
+                """,
+                guid,
+                name,
+                description,
+                json.dumps(document),
+                session.principal,
+            )
+            await pool.execute(
+                """
+                INSERT INTO gpo_link (gpo_guid, target_dn, link_order, enforced, enabled)
+                VALUES ($1, $2,
+                        (SELECT coalesce(max(link_order), 0) + 1 FROM gpo_link
+                         WHERE target_dn = $2),
+                        false, true)
+                ON CONFLICT (gpo_guid, target_dn) DO NOTHING
+                """,
+                guid,
+                target,
+            )
+            await _mirror_links(pool, settings, target)
+            created.append({"guid": str(guid), "display_name": name, "linked_to": target})
+
+        entry.after = {"created": created}
+        return {"created": created}
+
+
 # -------------------------------------------------------------------- RSoP ---
 
 

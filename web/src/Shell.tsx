@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  Activity,
   KeyRound,
   ScrollText,
   Server,
@@ -25,6 +26,7 @@ const NAV = [
   { label: "Certificates", to: "/certificates", icon: KeyRound, permission: "ca.read" },
   { label: "Server Roles", to: "/roles", icon: Server, permission: "role.read" },
   { label: "Delegation", to: "/delegation", icon: ShieldCheck, domainAdmin: true },
+  { label: "Operations", to: "/operations", icon: Activity, permission: "health.read" },
   { label: "Deleted Objects", to: "/recyclebin", icon: Trash2, permission: "recyclebin.read" },
   { label: "Audit Log", to: "/audit", icon: ScrollText, permission: "audit.read" },
 ];

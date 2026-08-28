@@ -44,6 +44,8 @@ PERMISSIONS: tuple[str, ...] = (
     "rbac.write",
     "ca.read",
     "ca.issue",
+    "replication.replicate",
+    "health.read",
 )
 
 WILDCARD = "*"
