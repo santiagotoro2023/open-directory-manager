@@ -57,6 +57,28 @@ ruff check .
 The tests stub the directory and the pool, so neither PostgreSQL nor a domain
 controller is needed to run them.
 
+### Against a real database
+
+A stubbed pool never lets PostgreSQL see a statement, so a query can be wrong
+in a way that only shows up on a running install. `tests/test_integration_db.py`
+runs the same application against a real database, with only the directory
+stubbed, and skips when there is none:
+
+```
+docker run -d --name odm-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:17-alpine
+export ODM_TEST_DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55432/postgres
+pytest
+```
+
+It migrates into a schema of its own, rebuilt per test, and covers sign-in,
+lockout, the audit trail, a write that converts arrays and addresses, and
+every parameterless GET the console can call — discovered from the route
+table, so a new endpoint is covered without being listed. It also prepares
+every SQL literal in `odm/` against the migrated schema, which is where
+PostgreSQL reports an unknown column or a parameter it cannot type.
+
+CI runs it with a PostgreSQL service, and fails if it was skipped.
+
 ## Endpoints
 
 | Method | Path | Notes |

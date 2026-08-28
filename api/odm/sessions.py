@@ -52,7 +52,7 @@ async def recent_failures(
         SELECT count(*) FROM login_attempt
         WHERE succeeded = false
           AND occurred_at > now() - ($3 || ' minutes')::interval
-          AND (lower(username) = lower($1) OR ($2 IS NOT NULL AND source_ip = $2::inet))
+          AND (lower(username) = lower($1) OR ($2::inet IS NOT NULL AND source_ip = $2::inet))
         """,
         username,
         source_ip,

@@ -17,6 +17,21 @@ jobs:
   api:
     name: api (lint + test)
     runs-on: ubuntu-latest
+    # The suite fakes the pool, so a query can be wrong in a way only
+    # PostgreSQL reports. A real one runs the integration tests against the
+    # actual schema.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,7 +48,79 @@ jobs:
         run: ruff check .
       - name: Test
         working-directory: api
+        env:
+          ODM_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
         run: pytest -q
+      - name: Fail if the database tests were skipped
+        working-directory: api
+        env:
+          ODM_TEST_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
+        run: |
+          # A silently skipped integration suite is the same as not having one.
+          pytest tests/test_integration_db.py -q --no-header -rs 2>&1 | tee result.txt
+          grep -qE "^[0-9]+ passed" result.txt
+
+  installed:
+    name: installed package (not the source tree)
+    runs-on: ubuntu-latest
+    # Two bugs reached a real install because the package and the source tree
+    # are not the same thing: migrations that were never packaged, and a path
+    # that resolved differently once installed. This job runs from an install.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install Kerberos/SASL headers
+        run: sudo apt-get update && sudo apt-get install -y libkrb5-dev libsasl2-dev
+      - name: Install the package, not the working tree
+        working-directory: api
+        run: pip install .
+      - name: Migrate from the installed copy, outside the source tree
+        env:
+          ODM_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
+          ODM_REALM: corp.example.internal
+          ODM_DOMAIN: corp.example.internal
+          ODM_LDAP_URI: ldaps://dc1.corp.example.internal
+          ODM_LDAP_CA_CERT: /nonexistent/ca.pem
+        run: |
+          # Run from / so nothing can resolve a path relative to the checkout.
+          cd /
+          odm-db migrate | tee applied.txt
+          # An install that finds no migrations used to print exactly this.
+          if grep -q "no pending migrations" applied.txt; then
+            echo "the installed package shipped no migrations" >&2
+            exit 1
+          fi
+          test "$(grep -c '\.sql$' applied.txt)" -ge 10
+      - name: The console must be servable from the installed copy
+        env:
+          ODM_DATABASE_URL: postgresql://postgres:ci@127.0.0.1:5432/postgres
+          ODM_REALM: corp.example.internal
+          ODM_DOMAIN: corp.example.internal
+          ODM_LDAP_URI: ldaps://dc1.corp.example.internal
+          ODM_LDAP_CA_CERT: /nonexistent/ca.pem
+        run: |
+          cd /
+          python -c "
+          from odm.main import app
+          paths = {getattr(r, 'path', None) for r in app.routes}
+          assert '/api/v1/healthz' in paths, sorted(p for p in paths if p)
+          print('installed app imports,', len(app.routes), 'routes')
+          "
 
   web:
     name: web (lint + build)
