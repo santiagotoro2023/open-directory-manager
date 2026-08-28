@@ -43,6 +43,7 @@ type Settings struct {
 	SudoRules    []SudoRule    `json:"sudo_rules,omitempty"`
 	HbacRules    []HbacRule    `json:"hbac_rules,omitempty"`
 	TrustedCerts []TrustedCert `json:"trusted_certificates,omitempty"`
+	Packages     []Package     `json:"packages,omitempty"`
 	Browser      *Browser      `json:"browser,omitempty"`
 	Wallpaper    *Wallpaper    `json:"wallpaper,omitempty"`
 	Agent        *AgentConfig  `json:"agent,omitempty"`
@@ -106,6 +107,12 @@ type HbacRule struct {
 	Principal string `json:"principal"`
 	Service   string `json:"service"`
 	Access    string `json:"access"`
+}
+
+// Package is an apt package the machine should have, or should not.
+type Package struct {
+	Name  string `json:"name"`
+	State string `json:"state"` // present | latest | absent
 }
 
 // TrustedCert is a certificate to install into the system trust store.

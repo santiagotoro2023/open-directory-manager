@@ -133,6 +133,22 @@ export const CATEGORIES: CategorySpec[] = [
     blank: { principal: "", service: "all", access: "allow" },
   },
   {
+    key: "packages",
+    title: "Software deployment",
+    note: "apt packages the machine should have, keep current, or not have.",
+    fields: [
+      { key: "name", label: "Package", placeholder: "cifs-utils" },
+      {
+        key: "state",
+        label: "State",
+        kind: "select",
+        options: ["present", "latest", "absent"],
+        width: "130px",
+      },
+    ],
+    blank: { name: "", state: "present" },
+  },
+  {
     key: "firewall",
     title: "Firewall rules",
     fields: [

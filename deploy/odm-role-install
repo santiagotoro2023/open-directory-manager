@@ -19,6 +19,7 @@ case "$ROLE" in
     dhcp)                  INSTALLER="$ROLES_DIR/install-dhcp-role.sh" ;;
     file-server)           INSTALLER="$ROLES_DIR/install-file-server-role.sh" ;;
     certificate-authority) INSTALLER="$ROLES_DIR/install-ca-role.sh" ;;
+    pxe)                   INSTALLER="$ROLES_DIR/install-pxe-role.sh" ;;
     *)           echo "unknown role: $ROLE" >&2; exit 2 ;;
 esac
 

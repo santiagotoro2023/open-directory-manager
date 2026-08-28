@@ -621,3 +621,45 @@ func TestSomethingThatIsNotACertificateIsSkipped(t *testing.T) {
 		t.Error("the bundle should not be rebuilt when nothing was installed")
 	}
 }
+
+// ------------------------------------------------------------------ packages --
+
+func TestPackagesAreInstalledUpgradedAndRemovedInOneRunEach(t *testing.T) {
+	env, runner := testEnv(t)
+	results := applyPackages(context.Background(), policy.Settings{
+		Packages: []policy.Package{
+			{Name: "cifs-utils", State: "present"},
+			{Name: "curl", State: ""},
+			{Name: "openssh-server", State: "latest"},
+			{Name: "telnetd", State: "absent"},
+		},
+	}, env)
+
+	if !runner.ran("apt-get", "update") {
+		t.Error("the package index was not refreshed")
+	}
+	if !runner.ran("apt-get", "install cifs-utils curl") {
+		t.Errorf("install batch wrong: %v", runner.commands)
+	}
+	if !runner.ran("apt-get", "install --only-upgrade openssh-server") {
+		t.Errorf("upgrade batch wrong: %v", runner.commands)
+	}
+	if !runner.ran("apt-get", "remove telnetd") {
+		t.Errorf("remove batch wrong: %v", runner.commands)
+	}
+	for setting, status := range statuses(results) {
+		if status != "success" {
+			t.Errorf("%s = %s", setting, status)
+		}
+	}
+}
+
+func TestNoPackagesMeansNoAptRun(t *testing.T) {
+	env, runner := testEnv(t)
+	if results := applyPackages(context.Background(), policy.Settings{}, env); results != nil {
+		t.Fatalf("results = %+v", results)
+	}
+	if len(runner.commands) != 0 {
+		t.Fatalf("apt was run with nothing to do: %v", runner.commands)
+	}
+}

@@ -28,6 +28,11 @@ repository itself.
 | 7 | Recycle bin, roles/extensibility framework | Implemented |
 | 8 | Hardening pass, delegated admin, backup, replication topology, health | Implemented |
 
+Beyond the phases, from CLAUDE.md §4: a certificate-authority role with
+trust distribution and console certificate rollover, software deployment as
+a policy category, a PXE client-enrolment role, and the domain-join client
+in both its command-line and desktop forms.
+
 Phase 1 lays groundwork for later phases in the database schema (RBAC and
 delegation, recycle bin, role registry, GPO links) so those phases add code,
 not migrations that rewrite what is already deployed.

@@ -30,6 +30,8 @@ uses it throughout.
 | Scripts | `odm-scripts.service` for startup/shutdown, a `pam_exec` hook for logon/logoff |
 | systemd units | `systemctl enable/disable/mask/start/stop` |
 | Scheduled tasks | `/etc/cron.d/odm-*` |
+| Software deployment | `apt-get` install, upgrade or remove, batched per run |
+| Trusted certificates | `/usr/local/share/ca-certificates`, then `update-ca-certificates` |
 | Firewall | A dedicated `inet odm` nftables table plus `odm-firewall.service` |
 | Drive maps | `.mount`/`.automount` units machine-wide, pam_mount per user or group — always `cifs` with `sec=krb5`, never a stored credential |
 | Browser policy | Chromium `policies/managed/odm.json`, Firefox `policies.json` |

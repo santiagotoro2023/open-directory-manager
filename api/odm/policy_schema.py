@@ -192,6 +192,23 @@ class HbacRule(Strict):
         return value
 
 
+PACKAGE_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]{0,127}$")
+
+
+class Package(Strict):
+    """An apt package to install, upgrade or remove."""
+
+    name: str
+    state: Literal["present", "latest", "absent"] = "present"
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not PACKAGE_RE.match(value):
+            raise ValueError("not a Debian package name")
+        return value
+
+
 class TrustedCertificate(Strict):
     """A certificate to install into the machine's system trust store."""
 
@@ -276,6 +293,7 @@ class PolicySettings(Strict):
     trusted_certificates: Annotated[
         list[TrustedCertificate], Field(default_factory=list, max_length=32)
     ]
+    packages: Annotated[list[Package], Field(default_factory=list, max_length=200)]
     admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None

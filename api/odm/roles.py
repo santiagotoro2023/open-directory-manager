@@ -97,6 +97,23 @@ REGISTRY: dict[str, Role] = {
             "publish it so agents install it into the system trust store."
         ),
     ),
+    "pxe": Role(
+        name="pxe",
+        title="Client enrolment (PXE)",
+        summary=(
+            "Unattended Debian installation over the network. Installed "
+            "machines join the domain on first boot with an enrolment token."
+        ),
+        arguments=("interface", "domain", "enrolment_token", "suite"),
+        optional_arguments=frozenset({"suite"}),
+        packages=("dnsmasq", "nginx-light"),
+        ui_section="pxe",
+        notes=(
+            "Runs as proxy DHCP, so address assignment stays with the DHCP "
+            "role or an existing server. Create a multi-use enrolment token "
+            "under Directory first."
+        ),
+    ),
     "file-server": Role(
         name="file-server",
         title="File server",

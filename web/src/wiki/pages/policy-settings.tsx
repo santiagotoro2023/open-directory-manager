@@ -35,6 +35,10 @@ export function Content() {
           <strong>Sudo rules</strong> → users <C>%Helpdesk</C>, commands{" "}
           <C>/usr/bin/systemctl</C>, NOPASSWD ticked.
         </Example>
+        <Example title="Install software everywhere">
+          <strong>Software deployment</strong> → <strong>Add</strong> → package{" "}
+          <C>cifs-utils</C>, state <C>present</C>.
+        </Example>
         <Example title="Restrict who may log in">
           <strong>HBAC rules</strong> → principal <C>%Engineers</C>, service{" "}
           <C>ssh</C>, access <C>allow</C>. Root and local administrators are always kept.
@@ -52,6 +56,7 @@ export function Content() {
               ["Scripts", "trigger and name", "Executable scripts run at startup, shutdown, logon or logoff."],
               ["systemd units", "unit", "A unit is enabled, disabled, masked, started or stopped."],
               ["Scheduled tasks", "name", "An entry in /etc/cron.d."],
+              ["Software deployment", "package name", "An apt package installed, upgraded or removed."],
               ["Firewall rules", "name", "Rules in a dedicated nftables table."],
               ["Drive maps", "mount point", "A mounted SMB share, machine-wide or per user."],
               ["Sudo rules", "name", "A file in /etc/sudoers.d."],
@@ -119,6 +124,25 @@ export function Content() {
 schedule  0 3 * * 0
 command   /usr/sbin/fstrim -a
 user      root`}</Code>
+        </Section>
+
+        <Section title="Software deployment">
+          <p>
+            Packages are collected across the whole effective policy and applied in one run: the
+            index is refreshed once, then one install, one upgrade and one removal command.
+          </p>
+          <Reference
+            headers={["State", "Effect"]}
+            rows={[
+              ["present", "Installed if it is not already. Not upgraded."],
+              ["latest", "Installed, and upgraded to the newest available version each run."],
+              ["absent", "Removed if present."],
+            ]}
+          />
+          <p>
+            Package names are validated as Debian package names. Nothing the policy did not name
+            is installed or removed, and no package is upgraded unless its state says so.
+          </p>
         </Section>
 
         <Section title="Firewall rules">

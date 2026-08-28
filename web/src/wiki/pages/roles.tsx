@@ -61,6 +61,11 @@ export function Content() {
                 "An internal CA that issues certificates and publishes its root through policy.",
                 "Optionally a CA directory.",
               ],
+              [
+                "Client enrolment (PXE)",
+                "Unattended Debian installation over the network, joining the domain on first boot.",
+                "Interface, domain, a multi-use enrolment token, optionally the Debian suite.",
+              ],
             ]}
           />
         </Section>
@@ -78,6 +83,27 @@ export function Content() {
           <Note>
             Installing a role means package installation and service restarts, so it takes minutes.
             The request returns immediately and the state is polled.
+          </Note>
+        </Section>
+
+        <Section title="Client enrolment (PXE)">
+          <p>
+            The role serves network boot as a proxy DHCP server, so address assignment stays with
+            the DHCP role or whatever already provides it. Machines installed this way run the
+            join client on first boot with the enrolment token given at install time.
+          </p>
+          <Reference
+            headers={["Path", "Holds"]}
+            rows={[
+              [<C key="1">/srv/tftp</C>, "The Debian netboot images."],
+              [<C key="2">/srv/odm-preseed/odm.cfg</C>, "The unattended installation answers."],
+              [<C key="3">/srv/odm-preseed/odm-client-install</C>, "The join binary the installed machine fetches."],
+            ]}
+          />
+          <Note>
+            Create a multi-use enrolment token under <strong>Directory</strong> first, place the
+            join binary where the preseed expects it, and set a real local administrator password
+            hash in the preseed before using this outside a lab.
           </Note>
         </Section>
 
