@@ -139,6 +139,42 @@ export interface AdmxSelection {
   values: Record<string, unknown>;
 }
 
+export interface DnsZone {
+  name: string;
+  type?: string;
+  flags?: string;
+  dynamic_update?: boolean;
+}
+
+export interface DnsRecord {
+  name: string;
+  type: string;
+  data: string;
+  ttl: number;
+  serial: number;
+  flags: string;
+}
+
+export interface DhcpScope {
+  id: number;
+  subnet: string;
+  pools: { pool: string }[];
+  "option-data"?: { name: string; data: string }[];
+  reservations?: { "hw-address": string; "ip-address": string; hostname?: string }[];
+  "valid-lifetime"?: number;
+  "user-context"?: { comment?: string };
+}
+
+export interface DhcpLease {
+  "ip-address": string;
+  "hw-address": string;
+  hostname?: string;
+  "subnet-id": number;
+  "valid-lft": number;
+  cltt: number;
+  state: number;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -331,6 +367,64 @@ export const api = {
           applicable_only: params.applicable_only === false ? "false" : undefined,
         })}`,
       ),
+  },
+
+  dns: {
+    status: () => request<{ available: boolean; server: string }>("/dns/status"),
+
+    zones: () => request<{ zones: DnsZone[] }>("/dns/zones"),
+
+    zone: (zone: string) =>
+      request<{ zone: Record<string, string>; records: DnsRecord[] }>(`/dns/zone${qs({ zone })}`),
+
+    createZone: (zone: string) => request<{ zone: string }>("/dns/zones", json({ zone })),
+
+    deleteZone: (zone: string) => request<void>(`/dns/zone${qs({ zone })}`, { method: "DELETE" }),
+
+    addRecord: (body: { zone: string; name: string; type: string; data: string }) =>
+      request<DnsRecord>("/dns/records", json(body)),
+
+    updateRecord: (body: {
+      zone: string;
+      name: string;
+      type: string;
+      old_data: string;
+      new_data: string;
+    }) => request<DnsRecord>("/dns/record", { method: "PATCH", body: JSON.stringify(body) }),
+
+    deleteRecord: (zone: string, name: string, type: string, data: string) =>
+      request<void>(`/dns/record${qs({ zone, name, type, data })}`, { method: "DELETE" }),
+  },
+
+  dhcp: {
+    status: () =>
+      request<{
+        configured: boolean;
+        high_availability?: unknown;
+        statistics?: Record<string, number>;
+      }>("/dhcp/status"),
+
+    scopes: () => request<{ scopes: DhcpScope[] }>("/dhcp/scopes"),
+
+    createScope: (body: Record<string, unknown>) =>
+      request<DhcpScope>("/dhcp/scopes", json(body)),
+
+    updateScope: (body: Record<string, unknown>) =>
+      request<DhcpScope>("/dhcp/scope", { method: "PATCH", body: JSON.stringify(body) }),
+
+    deleteScope: (id: number) => request<void>(`/dhcp/scope${qs({ id })}`, { method: "DELETE" }),
+
+    addReservation: (body: {
+      subnet_id: number;
+      hw_address: string;
+      ip_address: string;
+      hostname?: string;
+    }) => request<unknown>("/dhcp/reservations", json(body)),
+
+    deleteReservation: (subnet_id: number, hw_address: string) =>
+      request<void>(`/dhcp/reservation${qs({ subnet_id, hw_address })}`, { method: "DELETE" }),
+
+    leases: () => request<{ leases: DhcpLease[] }>("/dhcp/leases"),
   },
 
   audit: {

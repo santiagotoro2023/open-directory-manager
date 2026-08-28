@@ -17,11 +17,15 @@ from . import (
     auth,
     db,
     directory,
+    dns,
+    kea,
     objects,
     routes_admx,
     routes_agent,
     routes_audit,
+    routes_dhcp,
     routes_directory,
+    routes_dns,
     routes_policy,
 )
 from .config import get_settings
@@ -76,6 +80,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_policy.router)
     app.include_router(routes_admx.router)
     app.include_router(routes_agent.router)
+    app.include_router(routes_dns.router)
+    app.include_router(routes_dhcp.router)
     app.include_router(routes_audit.router)
 
     # Directory failures map to HTTP once, here, instead of a try/except in
@@ -86,6 +92,10 @@ def create_app() -> FastAPI:
         (objects.ObjectError, status.HTTP_400_BAD_REQUEST),
         (directory.NotAuthorized, status.HTTP_403_FORBIDDEN),
         (directory.DirectoryError, status.HTTP_503_SERVICE_UNAVAILABLE),
+        (dns.DnsUnavailable, status.HTTP_501_NOT_IMPLEMENTED),
+        (dns.DnsError, status.HTTP_400_BAD_REQUEST),
+        (kea.KeaUnavailable, status.HTTP_501_NOT_IMPLEMENTED),
+        (kea.KeaError, status.HTTP_502_BAD_GATEWAY),
     ):
         app.add_exception_handler(exception, _problem(code))
 

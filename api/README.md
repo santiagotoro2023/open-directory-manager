@@ -21,6 +21,10 @@ the directory directly (CLAUDE.md §2).
 | `odm/policy_schema.py` | Typed, validated policy settings |
 | `odm/admx.py` | ADMX/ADML parser and expansion into browser policy |
 | `odm/routes_admx.py` | `/api/v1/admx/*` |
+| `odm/dns.py` | Samba DNS via samba-tool, with per-type record validation |
+| `odm/kea.py` | ISC Kea Control Agent client |
+| `odm/routes_dns.py` | `/api/v1/dns/*` |
+| `odm/routes_dhcp.py` | `/api/v1/dhcp/*` |
 | `odm/rsop.py` | Effective-policy assembly from PostgreSQL plus LDAP facts |
 | `odm/sysvol.py` | LDAP/SYSVOL mirror for GPMC interoperability |
 | `odm/routes_policy.py` | `/api/v1/policy/*` |
@@ -79,6 +83,21 @@ controller is needed to run them.
 | `DELETE` | `/api/v1/admx/template` | Remove a template |
 | `GET` | `/api/v1/admx/policies` | Search parsed settings |
 | `GET` | `/api/v1/admx/categories` | Category tree for the picker |
+| `GET` | `/api/v1/dns/zones` | Zones, with dynamic-update status |
+| `GET` | `/api/v1/dns/zone` | One zone and its records |
+| `POST` | `/api/v1/dns/zones` | Create a zone |
+| `DELETE` | `/api/v1/dns/zone` | Delete a zone |
+| `POST` | `/api/v1/dns/records` | Add a record |
+| `PATCH` | `/api/v1/dns/record` | Change a record |
+| `DELETE` | `/api/v1/dns/record` | Delete a record |
+| `GET` | `/api/v1/dhcp/status` | Role state, failover state, pool utilisation |
+| `GET` | `/api/v1/dhcp/scopes` | Scopes with pools, options and reservations |
+| `POST` | `/api/v1/dhcp/scopes` | Create a scope |
+| `PATCH` | `/api/v1/dhcp/scope` | Change a scope |
+| `DELETE` | `/api/v1/dhcp/scope` | Delete a scope |
+| `POST` | `/api/v1/dhcp/reservations` | Reserve an address |
+| `DELETE` | `/api/v1/dhcp/reservation` | Release a reservation |
+| `GET` | `/api/v1/dhcp/leases` | Current leases |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
 DNS and DHCP routers arrive in later phases.
@@ -115,6 +134,11 @@ factory.
 - Uploaded ADMX/ADML is parsed with defusedxml, so entity expansion,
   external entities and DTD retrieval are refused, and both files are size
   and element bounded.
+- DNS arguments are validated per record type — addresses parsed, MX and SRV
+  field shapes checked — and passed as argv elements; samba-tool is never
+  invoked through a shell.
+- Kea changes are config-tested before they are set, and only then written to
+  disk. The Control Agent URL must be https unless it is on the loopback.
 - Agents authenticate with SPNEGO only; there is no session cookie or CSRF
   token on `/api/v1/agent/*`, and the Kerberos principal names the computer
   object whose policy is served.

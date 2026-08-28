@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     sysvol_path: Path | None = None
     agent_refresh_minutes: int = 15
 
+    # --- DHCP (ISC Kea Control Agent) ---
+    # Unset until the DHCP role is installed; the endpoints then report the
+    # role as unavailable rather than failing obscurely.
+    kea_url: str | None = None
+    kea_user: str | None = None
+    kea_password: str | None = None
+    kea_ca_cert: Path | None = None
+
     # --- Database ---
     database_url: str = Field(description="postgresql://user:pass@host/db")
     db_pool_min: int = 1
@@ -113,6 +121,19 @@ class Settings(BaseSettings):
         if not v.startswith("ldaps://"):
             raise ValueError("ldap_uri must use ldaps://")
         return v
+
+    @field_validator("kea_url")
+    @classmethod
+    def _kea_transport(cls, v: str | None) -> str | None:
+        """Plaintext only over the loopback, where there is no wire to sniff."""
+        if v is None:
+            return None
+        if v.startswith("https://"):
+            return v
+        host = v.removeprefix("http://").split("/")[0].split(":")[0]
+        if v.startswith("http://") and host in ("127.0.0.1", "::1", "localhost"):
+            return v
+        raise ValueError("kea_url must use https, or http on the loopback address")
 
     @model_validator(mode="after")
     def _defaults(self) -> Settings:

@@ -3,7 +3,9 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Login } from "./Login";
 import { Shell } from "./Shell";
 import { Audit } from "./pages/Audit";
+import { Dhcp } from "./pages/Dhcp";
 import { Directory } from "./pages/Directory";
+import { Dns } from "./pages/Dns";
 import { Overview } from "./pages/Overview";
 import { Policy } from "./pages/Policy";
 import { api, type SessionInfo } from "./api";
@@ -42,6 +44,8 @@ export function App() {
           <Route index element={<Overview session={session} />} />
           <Route path="directory" element={<Directory />} />
           <Route path="policy" element={<Policy />} />
+          <Route path="dns" element={<Dns />} />
+          <Route path="dhcp" element={<Dhcp />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

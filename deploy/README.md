@@ -89,6 +89,26 @@ If the API runs on the domain controller, set `ODM_SYSVOL_PATH` so group
 policy objects are mirrored into LDAP and SYSVOL for GPMC/RSAT; without it
 they are ODM-only and live in PostgreSQL.
 
+### 6. DHCP role (optional, added after the base install)
+
+Run on both nodes of the failover pair:
+
+```
+sudo ./install-dhcp-role.sh \
+    --ha-role primary \
+    --this-url http://dhcp1.corp.example.internal:8080/ \
+    --peer-url http://dhcp2.corp.example.internal:8080/ \
+    --realm CORP.EXAMPLE.INTERNAL \
+    --dns-server 10.10.0.10
+```
+
+The script configures a hot-standby Kea pair, a Control Agent bound to the
+loopback behind a generated credential, and `kea-dhcp-ddns` pushing leases
+into Samba's AD-integrated zones. It prints the `ODM_KEA_*` lines to add to
+the secrets file. Secure dynamic update needs the GSS-TSIG hook and a DDNS
+keytab; the script tells you if the hook is missing rather than leaving you
+with updates Samba silently rejects.
+
 ## Verifying Phase 1
 
 ```

@@ -17,8 +17,8 @@ const NAV = [
   { label: "Overview", to: "/", icon: LayoutDashboard, ready: true, end: true },
   { label: "Directory", to: "/directory", icon: Users, ready: true },
   { label: "Group Policy", to: "/policy", icon: ClipboardList, ready: true },
-  { label: "DNS", to: "/dns", icon: Globe, ready: false },
-  { label: "DHCP", to: "/dhcp", icon: Network, ready: false },
+  { label: "DNS", to: "/dns", icon: Globe, ready: true },
+  { label: "DHCP", to: "/dhcp", icon: Network, ready: true },
   { label: "Server Roles", to: "/roles", icon: Server, ready: false },
   { label: "Audit Log", to: "/audit", icon: ScrollText, ready: true },
 ];

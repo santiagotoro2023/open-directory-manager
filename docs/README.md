@@ -22,7 +22,7 @@ belongs in these pages.
 | 3 | GPO object model, precedence resolution, agent pull/apply/report loop, file/script/systemd appliers | Implemented |
 | 4 | Drive maps, browser policy, wallpaper, sudo and logon scope, cron | Implemented |
 | 5 | ADMX/ADML importer and dynamic settings UI | Implemented |
-| 6 | DHCP role via Kea, DDNS sync, HA pairing | Not started |
+| 6 | DNS management, DHCP role via Kea, DDNS sync, HA pairing | Implemented |
 | 7 | Recycle bin, roles/extensibility framework | Not started |
 | 8 | Hardening pass, delegated admin, backup/restore, replication topology | Not started |
 
@@ -48,6 +48,14 @@ cannot reach, and the chosen route is an equally standard Debian mechanism:
 
 Both are agent-side, so switching to the SSSD-native path later changes the
 appliers, not the policy model or the UI.
+
+DNS is managed through `samba-tool dns` rather than by writing dnsRecord
+blobs into the directory: the binary record format is exactly the kind of
+protocol code §6 rules out reimplementing, and samba-tool is the supported
+interface to the same data. Every argument is validated against a strict
+pattern and passed as an argv element, never through a shell. DNS management
+therefore needs the API to run on a domain controller; the UI says so
+plainly when it does not.
 
 Administrative templates are parsed from the vendor's own ADMX and ADML, and
 the settings UI is generated from that schema rather than hand-written per
