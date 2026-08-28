@@ -13,6 +13,7 @@ import { Overview } from "./pages/Overview";
 import { Policy } from "./pages/Policy";
 import { RecycleBin } from "./pages/RecycleBin";
 import { Roles } from "./pages/Roles";
+import { Wiki } from "./wiki/Wiki";
 import { api, type SessionInfo } from "./api";
 
 export function App() {
@@ -56,6 +57,7 @@ export function App() {
           <Route path="certificates" element={<Certificates />} />
           <Route path="operations" element={<Health />} />
           <Route path="recyclebin" element={<RecycleBin />} />
+          <Route path="wiki/*" element={<Wiki />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

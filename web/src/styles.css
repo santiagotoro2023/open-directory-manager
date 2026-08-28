@@ -870,3 +870,242 @@ ul.plain {
   list-style: none;
   font-size: 12px;
 }
+
+/* -------------------------------------------------------------------- wiki -- */
+
+.wiki {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+}
+
+.wiki-nav {
+  flex: 0 0 260px;
+  padding: 16px 12px;
+  overflow: auto;
+  background: var(--surface-recessed);
+  border-right: 1px solid var(--border);
+}
+
+.wiki-nav .search {
+  margin-bottom: 14px;
+}
+
+.wiki-nav .search input {
+  min-width: 0;
+  width: 100%;
+}
+
+.wiki-nav h3 {
+  margin: 16px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.wiki-nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wiki-link {
+  display: block;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.wiki-link small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.wiki-link:hover {
+  background: #eef2ff;
+}
+
+.wiki-link.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.wiki-link.active small {
+  color: #e0e7ff;
+}
+
+.wiki-page {
+  flex: 1;
+  min-width: 0;
+  max-width: 940px;
+  padding: 26px 34px 60px;
+  overflow: auto;
+  line-height: 1.6;
+}
+
+.wiki-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.wiki-page h1 {
+  margin: 6px 0 4px;
+  font-size: 26px;
+}
+
+.wiki-summary {
+  margin: 0 0 22px;
+  font-size: 15px;
+  color: var(--text-muted);
+}
+
+.wiki-quickstart {
+  padding: 18px 22px;
+  margin-bottom: 28px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+.wiki-quickstart > h2,
+.wiki-details > h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.wiki-details > h2 {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.wiki-section {
+  margin-bottom: 26px;
+}
+
+.wiki-section h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.wiki-page p {
+  margin: 0 0 12px;
+}
+
+.wiki-steps {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.wiki-steps li {
+  margin-bottom: 6px;
+}
+
+.wiki-example {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.wiki-quickstart .wiki-example {
+  background: #ffffff;
+}
+
+.wiki-example h4 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.wiki-example > :last-child {
+  margin-bottom: 0;
+}
+
+.wiki-code {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.wiki-inline {
+  padding: 1px 5px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.wiki-note {
+  padding: 10px 14px;
+  margin: 0 0 12px;
+  background: #eef2ff;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.wiki-where {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.wiki-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 14px;
+}
+
+.wiki-table-wrap table.data {
+  min-width: 460px;
+}
+
+.wiki-table-wrap td:first-child {
+  font-weight: 600;
+}
+
+.wiki-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.wiki-pager a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .wiki-nav {
+    flex-basis: 190px;
+  }
+
+  .wiki-page {
+    padding: 20px;
+  }
+}

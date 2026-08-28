@@ -1,12 +1,13 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
+  Activity,
+  BookOpen,
   ClipboardList,
   Globe,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Network,
-  Activity,
-  KeyRound,
   ScrollText,
   Server,
   ShieldCheck,
@@ -29,6 +30,7 @@ const NAV = [
   { label: "Operations", to: "/operations", icon: Activity, permission: "health.read" },
   { label: "Deleted Objects", to: "/recyclebin", icon: Trash2, permission: "recyclebin.read" },
   { label: "Audit Log", to: "/audit", icon: ScrollText, permission: "audit.read" },
+  { label: "Wiki", to: "/wiki", icon: BookOpen },
 ];
 
 export function Shell({

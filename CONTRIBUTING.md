@@ -52,3 +52,37 @@ CI (`.github/workflows/ci.yml`) runs all of the above plus `pip-audit`,
 ## License
 
 Contributions are made under AGPL-3.0-or-later.
+
+## Documentation
+
+Every user-visible change — a feature, a server role, a policy category, an
+endpoint, a configuration option — ships with its wiki page in the same
+commit. The wiki lives in `web/src/wiki/` and is the source of truth for
+operators.
+
+House style, applied to every page:
+
+- Open with a **Quickstart**: a short run-down and concrete examples, enough
+  to act on immediately.
+- Follow with **Details** covering everything there is to know about that
+  component.
+- Professional documentation tone. Describe what the system does and how to
+  work with it. Do not justify architectural decisions or compare them with
+  alternatives; the wiki documents the state of the system.
+- Use the components in `web/src/wiki/components.tsx` rather than raw markup,
+  so pages stay consistent as the wiki grows.
+
+Adding a page:
+
+1. Create `web/src/wiki/pages/<id>.tsx` exporting `meta` and `Content`.
+2. Add it to `MODULES` in `web/src/wiki/index.ts`.
+
+The sidebar, search and routing are driven from that registry; nothing else
+needs to change. A new section is created by naming it in `meta.section` and
+adding it to `SECTION_ORDER`.
+
+Terminology follows the console: Hosts rather than computers, Groups
+described by scope and kind rather than "security groups", HBAC rules rather
+than logon rights. Active Directory terms are kept where they are the
+clearest: Organizational Unit, Group Policy Object, Distinguished Name,
+Sudo Rule, security filtering, enforced link, block inheritance.

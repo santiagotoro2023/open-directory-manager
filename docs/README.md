@@ -1,8 +1,9 @@
 # Documentation
 
-Operator documentation lives here. The product itself stays uncluttered — no
-inline tooltips explaining why a setting exists (CLAUDE.md §1); explanation
-belongs in these pages.
+Operator documentation ships inside the console, under **Wiki**. It is
+written in `web/src/wiki/` and covers every component, with a Quickstart at
+the top of each page and full detail below. The files here describe the
+repository itself.
 
 | Document | Contents |
 |---|---|
@@ -12,6 +13,7 @@ belongs in these pages.
 | [../agent/README.md](../agent/README.md) | Policy agent |
 | [../client-join/README.md](../client-join/README.md) | Domain-join CLI and GUI |
 | [../branding/BRAND.md](../branding/BRAND.md) | Logo usage, palette, typography |
+| `web/src/wiki/` | The operator wiki, served inside the console under **Wiki** |
 
 ## Build status against CLAUDE.md §7
 
