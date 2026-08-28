@@ -268,3 +268,80 @@ def test_the_unit_gives_the_service_a_home_it_can_read():
     assert any(home[0] == path or home[0].startswith(path + "/") for path in writable), (
         f"HOME is {home[0]}, which is outside ReadWritePaths {writable}"
     )
+
+
+async def test_json_responses_forbid_every_source(client):
+    """The API answers with JSON and needs no sources at all."""
+    response = await client.get("/api/v1/healthz")
+    csp = response.headers["content-security-policy"]
+    assert csp.startswith("default-src 'none'")
+    assert "script-src" not in csp
+
+
+def test_documents_may_load_the_console_they_are_served_with():
+    """A document served by this app is the console shell, and a CSP of
+    default-src 'none' stops the browser fetching its script at all: a blank
+    page, with no request in the access log to explain it."""
+    from odm.security import _CONSOLE_CSP
+
+    directives = dict(
+        part.strip().split(" ", 1) for part in _CONSOLE_CSP.split(";") if part.strip()
+    )
+
+    # What the built index.html actually references.
+    assert directives["script-src"] == "'self'"
+    assert directives["style-src"] == "'self'"
+    assert "'self'" in directives["img-src"]
+    # The console talks to its own API.
+    assert directives["connect-src"] == "'self'"
+    # Same-origin only, and no inline execution anywhere.
+    assert directives["default-src"] == "'none'"
+    assert "unsafe-inline" not in _CONSOLE_CSP
+    assert "unsafe-eval" not in _CONSOLE_CSP
+    assert directives["frame-ancestors"] == "'none'"
+    assert directives["base-uri"] == "'none'"
+
+
+def test_the_built_console_has_no_inline_script_for_the_policy_to_block():
+    """script-src 'self' is only sufficient while the build stays free of
+    inline script. If a build starts inlining one, this fails rather than the
+    console silently going blank."""
+    import pathlib
+    import re
+
+    index = pathlib.Path("..") / "web" / "dist" / "index.html"
+    if not index.is_file():
+        pytest.skip("console not built here")
+    html = index.read_text()
+    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>\s*\S", html), (
+        "the built console inlines a script, which script-src 'self' blocks"
+    )
+
+
+async def test_an_html_response_really_gets_the_console_policy():
+    """The constant is only useful if the middleware applies it to documents.
+    Exercised through the middleware rather than by reading its source."""
+    import httpx
+    from fastapi import FastAPI
+    from fastapi.responses import HTMLResponse
+
+    from odm.security import SecurityHeadersMiddleware
+
+    app = FastAPI()
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    @app.get("/shell")
+    async def shell():
+        return HTMLResponse("<!doctype html><html></html>")
+
+    @app.get("/data")
+    async def data():
+        return {"ok": True}
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="https://odm.invalid") as http:
+        document = await http.get("/shell")
+        payload = await http.get("/data")
+
+    assert "script-src 'self'" in document.headers["content-security-policy"]
+    assert "script-src" not in payload.headers["content-security-policy"]

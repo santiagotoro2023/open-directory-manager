@@ -27,6 +27,22 @@ _RESPONSE_HEADERS = {
     "Cache-Control": "no-store",
 }
 
+# The API answers with JSON, which needs no sources at all. A document has to
+# be allowed to load the console: its script, its stylesheet, the brand marks
+# and its own API. Everything stays same-origin, and the built console carries
+# no inline script or style, so nothing here relaxes to 'unsafe-inline'.
+_CONSOLE_CSP = (
+    "default-src 'none'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "base-uri 'none'; "
+    "form-action 'none'; "
+    "frame-ancestors 'none'"
+)
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Adds hardening headers and rejects cross-origin state changes.
@@ -47,6 +63,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response: Response = await call_next(request)
         for key, value in _RESPONSE_HEADERS.items():
             response.headers.setdefault(key, value)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Content-Security-Policy"] = _CONSOLE_CSP
         return response
 
 
