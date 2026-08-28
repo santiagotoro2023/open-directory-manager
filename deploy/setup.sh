@@ -1,0 +1,501 @@
+#!/usr/bin/env bash
+# Guided setup for Open Directory Manager.
+#
+# Takes a fresh Debian server to a working domain with the console running,
+# asking for what it cannot work out and explaining each step as it goes.
+#
+# Run as root. This reconfigures Samba, DNS and networking on the machine it
+# runs on — use a dedicated server or virtual machine.
+
+set -Eeuo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
+
+REALM=""
+NETBIOS=""
+FORWARDER=""
+CONSOLE_FQDN=""
+ADMIN_PASSWORD=""
+ADMIN_GROUP="Domain Admins"
+PORT="8443"
+VENV="/opt/odm/venv"
+CONSOLE_DIR="/opt/odm/console"
+SECRETS_FILE="/etc/odm/odm.env"
+SERVICE_USER="odm"
+SKIP_DC="no"
+SKIP_CONSOLE="no"
+ASSUME_YES="no"
+
+STEP=0
+STEPS=8
+CURRENT="starting up"
+
+usage() {
+    cat >&2 <<'USAGE'
+usage: setup.sh [options]
+
+Sets up a domain and the ODM console on this machine. Anything not given on
+the command line is asked for.
+
+  --realm <dns.domain>     domain to create, e.g. corp.example.internal
+  --netbios <SHORTNAME>    NetBIOS domain name, e.g. EXAMPLE
+  --forwarder <ip>         upstream resolver for non-domain queries
+  --console-fqdn <name>    the name operators reach the console at
+  --admin-group <name>     group whose members may sign in (default: Domain Admins)
+  --port <n>               console and API port (default: 8443)
+  --skip-dc                this machine is not the domain controller
+  --skip-console           do not build the console here
+  --yes                    accept the summary without pausing
+USAGE
+    exit 2
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --realm) REALM="${2:?}"; shift 2 ;;
+        --netbios) NETBIOS="${2:?}"; shift 2 ;;
+        --forwarder) FORWARDER="${2:?}"; shift 2 ;;
+        --console-fqdn) CONSOLE_FQDN="${2:?}"; shift 2 ;;
+        --admin-group) ADMIN_GROUP="${2:?}"; shift 2 ;;
+        --port) PORT="${2:?}"; shift 2 ;;
+        --skip-dc) SKIP_DC="yes"; shift ;;
+        --skip-console) SKIP_CONSOLE="yes"; shift ;;
+        --yes) ASSUME_YES="yes"; shift ;;
+        -h|--help) usage ;;
+        *) echo "unknown argument: $1" >&2; usage ;;
+    esac
+done
+
+# ------------------------------------------------------------------ output --
+
+if [[ -t 1 ]]; then
+    B=$'\033[1m'; DIM=$'\033[2m'; BLUE=$'\033[1;34m'; GREEN=$'\033[1;32m'
+    YELLOW=$'\033[33m'; RED=$'\033[31m'; R=$'\033[0m'
+else
+    B=""; DIM=""; BLUE=""; GREEN=""; YELLOW=""; RED=""; R=""
+fi
+
+step()  { STEP=$((STEP + 1)); CURRENT="$1"; printf '\n%s[%d/%d]%s %s%s%s\n' "$BLUE" "$STEP" "$STEPS" "$R" "$B" "$1" "$R"; }
+info()  { printf '      %s\n' "$*"; }
+note()  { printf '      %s%s%s\n' "$DIM" "$*" "$R"; }
+warn()  { printf '      %s%s%s\n' "$YELLOW" "$*" "$R" >&2; }
+ok()    { printf '      %s✓%s %s\n' "$GREEN" "$R" "$*"; }
+fail()  { printf '\n%sSetup stopped: %s%s\n' "$RED" "$*" "$R" >&2; exit 1; }
+
+on_error() {
+    printf '\n%sSetup failed during: %s%s\n' "$RED" "$CURRENT" "$R" >&2
+    printf '%sNothing after this point ran. Fix the problem and run setup again;%s\n' "$DIM" "$R" >&2
+    printf '%ssteps that already completed are skipped on a second run.%s\n' "$DIM" "$R" >&2
+}
+trap on_error ERR
+
+ask() {
+    local prompt="$1" default="${2:-}" answer
+    if [[ -n "$default" ]]; then
+        read -rp "      $prompt [$default]: " answer
+        printf '%s' "${answer:-$default}"
+    else
+        read -rp "      $prompt: " answer
+        printf '%s' "$answer"
+    fi
+}
+
+# Asks until the answer matches, so a typo does not end the run.
+ask_until() {
+    local prompt="$1" default="$2" pattern="$3" complaint="$4" answer
+    while true; do
+        answer="$(ask "$prompt" "$default")"
+        [[ "$answer" =~ $pattern ]] && { printf '%s' "$answer"; return; }
+        warn "$complaint"
+    done
+}
+
+ask_yes_no() {
+    local prompt="$1" default="${2:-no}" answer
+    [[ "$ASSUME_YES" == "yes" ]] && { printf 'yes'; return; }
+    while true; do
+        answer="$(ask "$prompt (yes/no)" "$default")"
+        case "${answer,,}" in
+            y|yes) printf 'yes'; return ;;
+            n|no)  printf 'no'; return ;;
+            *) warn "Answer yes or no." ;;
+        esac
+    done
+}
+
+ask_secret() {
+    local prompt="$1" first second
+    while true; do
+        read -rsp "      $prompt: " first; echo
+        [[ ${#first} -ge 8 ]] || { warn "Use at least 8 characters."; continue; }
+        read -rsp "      Repeat it: " second; echo
+        [[ "$first" == "$second" ]] || { warn "They do not match. Try again."; continue; }
+        printf '%s' "$first"
+        return
+    done
+}
+
+# ---------------------------------------------------------------- hostname --
+
+set_hostname() {
+    local fqdn="$1" short="${1%%.*}" address resolved
+    address="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+    hostnamectl set-hostname "$fqdn"
+
+    # Debian ships a 127.0.1.1 line for the short name. A domain controller
+    # needs its real address to resolve to the fully-qualified name instead.
+    cp -a /etc/hosts "/etc/hosts.pre-odm.$(date +%s)"
+    sed -i '/^127\.0\.1\.1[[:space:]]/d' /etc/hosts
+    if [[ -n "$address" ]]; then
+        sed -i "/[[:space:]]$fqdn\([[:space:]]\|$\)/d" /etc/hosts
+        printf '%s\t%s %s\n' "$address" "$fqdn" "$short" >> /etc/hosts
+        ok "$address now resolves to $fqdn"
+    else
+        warn "No address found on this machine; add $fqdn to /etc/hosts yourself."
+    fi
+
+    systemctl restart systemd-hostnamed >/dev/null 2>&1 || true
+    systemctl try-restart rsyslog >/dev/null 2>&1 || true
+
+    resolved="$(hostname -f 2>/dev/null || true)"
+    if [[ "$resolved" == "$fqdn" ]]; then
+        ok "This machine is now $fqdn"
+    else
+        warn "hostname -f still reports \"$resolved\" rather than \"$fqdn\"."
+        warn "The domain will not provision until that is fixed in /etc/hosts."
+        [[ "$(ask_yes_no "Continue anyway?" "no")" == "yes" ]] ||
+            fail "fix /etc/hosts and run setup again"
+    fi
+}
+
+# ---------------------------------------------------------------- welcome --
+
+clear 2>/dev/null || true
+cat <<BANNER
+${B}Open Directory Manager — setup${R}
+
+  This sets up an Active Directory domain on this machine and starts the
+  administration console. It will:
+
+    1. check this machine is ready
+    2. ask what the domain should be called
+    3. provision the domain controller
+    4. create the control plane's own account
+    5. install the control plane
+    6. set up TLS and the database
+    7. build the console
+    8. start everything and tell you where to sign in
+
+  ${YELLOW}This reconfigures Samba, DNS and networking here. Use a dedicated
+  server or virtual machine.${R}
+
+BANNER
+
+[[ $EUID -eq 0 ]] || fail "run this as root: sudo deploy/setup.sh"
+[[ -d "$REPO/api" && -d "$REPO/web" ]] || fail "run this from inside a checkout of the repository"
+
+# ---------------------------------------------------------------- step 1 --
+
+step "Checking this machine"
+
+if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    info "Operating system: ${PRETTY_NAME:-unknown}"
+    case "${VERSION_CODENAME:-}" in
+        bookworm|trixie) ok "Supported release" ;;
+        *) warn "ODM targets Debian 12 and 13. Continuing, but this is untested." ;;
+    esac
+fi
+
+HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
+HOSTNAME_SHORT="$(hostname -s 2>/dev/null || hostname)"
+info "Machine name: $HOSTNAME_FQDN"
+info "Address: $(hostname -I 2>/dev/null | awk '{print $1}' || echo unknown)"
+
+if [[ -f /var/lib/samba/private/sam.ldb ]]; then
+    note "A domain already exists here; provisioning will be skipped."
+fi
+
+command -v systemctl >/dev/null || fail "this needs systemd"
+ok "Ready to continue"
+
+# ---------------------------------------------------------------- step 2 --
+
+step "Naming the domain"
+
+if [[ -z "$REALM" ]]; then
+    note "The domain name is what machines and users belong to, for example"
+    note "corp.example.internal. Use a name you control, not a public one you"
+    note "do not."
+    DEFAULT_REALM=""
+    [[ "$HOSTNAME_FQDN" == *.* ]] && DEFAULT_REALM="${HOSTNAME_FQDN#*.}"
+    REALM="$(ask_until "Domain name" "${DEFAULT_REALM:-corp.example.internal}" \
+        '^[A-Za-z0-9.-]+\.[A-Za-z0-9-]+$' "That is not a domain name, e.g. corp.example.internal")"
+fi
+REALM="${REALM,,}"
+REALM_UPPER="${REALM^^}"
+ok "Domain: $REALM"
+
+# A machine with only a short name needs a fully-qualified one: it becomes
+# this controller's identity in the directory and on its certificate.
+if [[ "$HOSTNAME_FQDN" != *.* ]]; then
+    echo
+    info "This machine is called \"$HOSTNAME_FQDN\" and has no domain part yet."
+    NEW_HOSTNAME="$(ask_until "Full name for this machine" "$HOSTNAME_SHORT.$REALM" \
+        '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$' "Include the domain, e.g. $HOSTNAME_SHORT.$REALM")"
+    set_hostname "${NEW_HOSTNAME,,}"
+    HOSTNAME_FQDN="${NEW_HOSTNAME,,}"
+    HOSTNAME_SHORT="${HOSTNAME_FQDN%%.*}"
+fi
+
+if [[ "$SKIP_DC" == "no" && ! -f /var/lib/samba/private/sam.ldb ]]; then
+    [[ -n "$NETBIOS" ]] || {
+        note "The NetBIOS name is the domain's short name, used by older tools."
+        NETBIOS="$(ask_until "NetBIOS name" \
+            "$(printf '%s' "${REALM%%.*}" | tr '[:lower:]' '[:upper:]' | cut -c1-15)" \
+            '^[A-Z0-9-]{1,15}$' "Up to 15 characters, upper case, letters digits and dashes")"
+    }
+    [[ -n "$FORWARDER" ]] || {
+        note "Queries for names outside the domain are passed to this resolver."
+        FORWARDER="$(ask_until "Upstream DNS forwarder" "9.9.9.9" \
+            '^[0-9a-fA-F.:]+$' "That is not an IP address")"
+    }
+fi
+
+[[ -n "$CONSOLE_FQDN" ]] || {
+    note "The console is served over HTTPS at this name."
+    CONSOLE_FQDN="$(ask_until "Console address" "$HOSTNAME_FQDN" \
+        '^[A-Za-z0-9.-]{1,253}$' "That is not a host name")"
+}
+[[ "$PORT" =~ ^[0-9]{2,5}$ ]] || fail "invalid port: $PORT"
+
+if [[ "$SKIP_DC" == "no" && ! -f /var/lib/samba/private/sam.ldb ]]; then
+    echo
+    note "This password belongs to the domain's Administrator account. It is"
+    note "what you will sign in to the console with."
+    ADMIN_PASSWORD="$(ask_secret "Domain administrator password")"
+fi
+
+cat <<SUMMARY
+
+  ${B}About to set up${R}
+
+    This machine       $HOSTNAME_FQDN
+    Domain             $REALM
+    Kerberos realm     $REALM_UPPER
+    NetBIOS name       ${NETBIOS:-(existing domain)}
+    DNS forwarder      ${FORWARDER:-(unchanged)}
+    Console            https://$CONSOLE_FQDN:$PORT/
+    Sign-in group      $ADMIN_GROUP
+    Domain controller  $([[ "$SKIP_DC" == "yes" ]] && echo "elsewhere" || echo "this machine")
+    Console build      $([[ "$SKIP_CONSOLE" == "yes" ]] && echo "skipped" || echo "$CONSOLE_DIR")
+
+SUMMARY
+
+[[ "$(ask_yes_no "Go ahead?" "yes")" == "yes" ]] || fail "nothing was changed"
+
+# ---------------------------------------------------------------- step 3 --
+
+step "Provisioning the domain controller"
+
+if [[ "$SKIP_DC" == "yes" ]]; then
+    info "Skipped: the controller is elsewhere."
+elif [[ -f /var/lib/samba/private/sam.ldb ]]; then
+    ok "Already provisioned"
+else
+    info "This takes a couple of minutes."
+    ODM_ADMIN_PASSWORD="$ADMIN_PASSWORD" "$HERE/provision-dc.sh" \
+        --realm "$REALM" --netbios "$NETBIOS" ${FORWARDER:+--forwarder "$FORWARDER"}
+    ok "Domain $REALM is up"
+fi
+
+# ---------------------------------------------------------------- step 4 --
+
+step "Creating the control plane's account"
+
+if [[ "$SKIP_DC" == "yes" ]]; then
+    warn "Run create-api-service-account.sh on a domain controller and copy"
+    warn "the keytab to /etc/odm/odm-api.keytab before starting the service."
+else
+    "$HERE/create-api-service-account.sh" --realm "$REALM" --api-host "$CONSOLE_FQDN"
+    ok "svc-odm-api created, with a keytab at /etc/odm/odm-api.keytab"
+fi
+
+# ---------------------------------------------------------------- step 5 --
+
+step "Installing the control plane"
+
+export DEBIAN_FRONTEND=noninteractive
+info "Installing build dependencies"
+apt-get install -y --no-install-recommends \
+    python3-venv python3-dev build-essential libkrb5-dev libsasl2-dev curl >/dev/null
+
+id -u "$SERVICE_USER" >/dev/null 2>&1 || \
+    useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$SERVICE_USER"
+
+install -d -m 0755 /opt/odm
+[[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
+info "Installing the control plane (this takes a minute)"
+"$VENV/bin/pip" install --quiet --upgrade pip
+"$VENV/bin/pip" install --quiet "$REPO/api"
+ok "Installed into $VENV"
+
+install -d -m 0750 -o root -g "$SERVICE_USER" /etc/odm
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/lib/odm
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" /var/backups/odm
+
+LDAP_CA="/var/lib/samba/private/tls/ca.pem"
+[[ -f "$LDAP_CA" ]] || LDAP_CA="/etc/odm/tls/dc-ca.pem"
+
+umask 077
+cat > "$SECRETS_FILE" <<ENVFILE
+# Written by deploy/setup.sh. Settings and secrets live here and nowhere else.
+# Mode 0640, root:$SERVICE_USER. Never commit this file.
+
+# --- Domain ---
+ODM_REALM=$REALM_UPPER
+ODM_DOMAIN=$REALM
+ODM_ADMIN_GROUP=$ADMIN_GROUP
+
+# --- LDAP (LDAPS only) ---
+ODM_LDAP_URI=ldaps://$HOSTNAME_FQDN
+ODM_LDAP_CA_CERT=$LDAP_CA
+
+# --- Kerberos ---
+ODM_KEYTAB=/etc/odm/odm-api.keytab
+
+# --- Group Policy ---
+# Set because the control plane runs on a domain controller: policy objects
+# are mirrored into LDAP and SYSVOL for GPMC and RSAT.
+ODM_SYSVOL_PATH=/var/lib/samba/sysvol/$REALM/Policies
+ODM_AGENT_REFRESH_MINUTES=15
+
+# --- Console ---
+ODM_CONSOLE_DIR=$CONSOLE_DIR
+ODM_ALLOWED_ORIGINS=["https://$CONSOLE_FQDN:$PORT"]
+
+# --- Sessions ---
+ODM_SESSION_TTL_MINUTES=480
+ODM_SESSION_IDLE_MINUTES=60
+ODM_LOGIN_MAX_FAILURES=5
+ODM_LOGIN_LOCKOUT_MINUTES=15
+ODM_ADMIN_RECHECK_MINUTES=5
+
+# --- Backups ---
+ODM_BACKUP_DIR=/var/backups/odm
+ODM_BACKUP_INTERVAL_HOURS=24
+ODM_BACKUP_KEEP=14
+
+# --- Recycle bin ---
+ODM_RETENTION_DAYS=180
+
+# The database URL is appended below by setup-db.sh.
+ENVFILE
+umask 022
+chown root:"$SERVICE_USER" "$SECRETS_FILE"
+chmod 0640 "$SECRETS_FILE"
+ok "Settings written to $SECRETS_FILE"
+
+# ---------------------------------------------------------------- step 6 --
+
+step "Setting up TLS and the database"
+
+"$HERE/generate-self-signed.sh" --fqdn "$CONSOLE_FQDN" >/dev/null
+ok "Console certificate created (self-signed for now)"
+
+"$HERE/setup-db.sh" --secrets-file "$SECRETS_FILE" --venv "$VENV" >/dev/null
+ok "PostgreSQL database created and migrated"
+
+# ---------------------------------------------------------------- step 7 --
+
+step "Building the console"
+
+if [[ "$SKIP_CONSOLE" == "yes" ]]; then
+    info "Skipped."
+    sed -i "s#^ODM_CONSOLE_DIR=#\# ODM_CONSOLE_DIR=#" "$SECRETS_FILE"
+else
+    command -v npm >/dev/null 2>&1 || {
+        info "Installing Node"
+        apt-get install -y --no-install-recommends nodejs npm >/dev/null
+    }
+    info "Compiling (this takes a minute)"
+    if (cd "$REPO/web" && npm install --no-audit --no-fund >/dev/null 2>&1 \
+            && npm run build >/dev/null 2>&1); then
+        rm -rf "$CONSOLE_DIR"
+        install -d -m 0755 "$CONSOLE_DIR"
+        cp -r "$REPO/web/dist/." "$CONSOLE_DIR/"
+        ok "Console installed to $CONSOLE_DIR"
+    else
+        warn "The console did not build here, so the API will serve the API only."
+        warn "Build it on another machine, copy dist/ to $CONSOLE_DIR, uncomment"
+        warn "ODM_CONSOLE_DIR in $SECRETS_FILE and restart odm-api."
+        sed -i "s#^ODM_CONSOLE_DIR=#\# ODM_CONSOLE_DIR=#" "$SECRETS_FILE"
+    fi
+fi
+
+install -d -m 0755 /opt/odm/bin /opt/odm/deploy
+install -m 0755 "$HERE/odm-role-install" "$HERE/odm-apply-console-certificate" /opt/odm/bin/
+install -m 0755 "$HERE"/install-*-role.sh /opt/odm/deploy/
+install -m 0440 -o root -g root "$HERE/odm-roles.sudoers" /etc/sudoers.d/odm-roles
+visudo -cf /etc/sudoers.d/odm-roles >/dev/null
+ok "Role framework installed"
+
+# ---------------------------------------------------------------- step 8 --
+
+step "Starting Open Directory Manager"
+
+install -m 0644 "$HERE/odm-api.service" /etc/systemd/system/odm-api.service
+[[ "$PORT" == "8443" ]] || sed -i "s#--port 8443#--port $PORT#" /etc/systemd/system/odm-api.service
+systemctl daemon-reload
+systemctl enable --now odm-api >/dev/null 2>&1 || systemctl restart odm-api
+
+READY="no"
+for _ in $(seq 1 30); do
+    if curl -fsSk "https://127.0.0.1:$PORT/api/v1/healthz" >/dev/null 2>&1; then
+        READY="yes"
+        break
+    fi
+    sleep 2
+done
+
+echo
+if [[ "$READY" == "yes" ]]; then
+    printf '%s  Open Directory Manager is running.%s\n' "$GREEN$B" "$R"
+else
+    printf '%s  Setup finished, but the control plane has not answered yet.%s\n' "$YELLOW$B" "$R"
+    printf '      Check it with: journalctl -u odm-api -n 50\n'
+fi
+
+cat <<DONE
+
+  ${B}Sign in${R}
+
+    https://$CONSOLE_FQDN:$PORT/
+
+    User      Administrator@$REALM
+    Password  the domain administrator password you chose
+
+    The certificate is self-signed, so your browser warns once. Accept it,
+    or replace the certificate later from Certificates in the console.
+
+  ${B}First things to do${R}
+
+    Wiki          → Quickstart, the whole system in one page
+    Group Policy  → create the default policies
+    Directory     → add organizational units, then users and groups
+
+  ${B}Join a client${R}
+
+    sudo odm-client-install --domain $REALM --admin-user Administrator
+
+  ${B}On this machine${R}
+
+    systemctl status odm-api
+    journalctl -u odm-api -f
+    $SECRETS_FILE   settings and secrets
+
+DONE
+trap - ERR

@@ -18,85 +18,61 @@ HBAC rule, user group, computer group.
 
 ## Quickstart
 
-Everything below runs on a **fresh Debian 12 or 13 server** with a static
-address and its final host name set. `provision-dc.sh` reconfigures Samba,
-networking and DNS — do not run it on a machine you care about.
+On a **fresh Debian 12 or 13 server** with a static address:
 
 ```bash
 git clone https://github.com/<your-org>/open-directory-manager.git
 cd open-directory-manager
+sudo deploy/setup.sh
 ```
 
-**1. Provision the domain controller**
+That is the whole install. It asks what to call the domain, sets this
+machine's name if it does not have a full one yet, provisions the domain
+controller, installs the control plane, sets up TLS and the database, builds
+the console, starts everything, and finishes by telling you the address to
+sign in at:
 
-```bash
-sudo deploy/provision-dc.sh \
-    --realm corp.example.internal \
-    --netbios EXAMPLE \
-    --forwarder 9.9.9.9
+```
+  Sign in
+
+    https://dc1.corp.example.internal:8443/
+
+    User      Administrator@corp.example.internal
+    Password  the domain administrator password you chose
 ```
 
-It prompts for the domain administrator password.
+The certificate is self-signed, so the browser warns once. Sign in, then open
+**Wiki** in the console — the full operator documentation is there, starting
+with a Quickstart for the whole system.
 
-**2. Create the control plane's service account**
+Setup takes flags for an unattended run:
 
 ```bash
-sudo deploy/create-api-service-account.sh \
-    --realm corp.example.internal \
-    --api-host odm.corp.example.internal
+sudo deploy/setup.sh \
+  --realm corp.example.internal \
+  --netbios EXAMPLE \
+  --forwarder 9.9.9.9 \
+  --yes
 ```
 
-**3. Install the control plane**
+It is safe to run again: anything already done is skipped, and a failure
+names the step it stopped at.
+
+### Joining a client
 
 ```bash
-sudo apt-get install -y python3-venv libkrb5-dev libsasl2-dev
-sudo python3 -m venv /opt/odm/venv
-sudo /opt/odm/venv/bin/pip install ./api
-
-sudo install -d -m 0750 /etc/odm
-sudo cp deploy/odm.env.example /etc/odm/odm.env   # then edit it
-sudo chown root:odm /etc/odm/odm.env && sudo chmod 640 /etc/odm/odm.env
-
-sudo deploy/generate-self-signed.sh --fqdn odm.corp.example.internal
-sudo deploy/setup-db.sh
-
-sudo install -m 0644 deploy/odm-api.service /etc/systemd/system/
-sudo systemctl enable --now odm-api
-```
-
-**4. Build the console**
-
-```bash
-cd web && npm install && npm run build
-sudo cp -r dist /opt/odm/console
-```
-
-`ODM_CONSOLE_DIR=/opt/odm/console` in `/etc/odm/odm.env` makes the control
-plane serve it, so the console and the API share an origin. Restart the
-service after setting it.
-
-**5. Sign in and finish setup**
-
-Open `https://odm.corp.example.internal:8443/` and sign in as a member of
-**Domain Admins**. Then:
-
-- **Group Policy → Create defaults** for the Default Domain Policy and
-  Default Domain Controllers Policy.
-- **Wiki** in the left-hand navigation — the full operator documentation
-  lives inside the console.
-
-**6. Join your first client**
-
-```bash
-# on the client, already resolving the domain's DNS
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 sudo odm-agent apply --force
 ```
 
-Confirm it arrived: **Directory → select the computer → Policy**.
+The machine appears under **Directory**, and **Directory → the computer →
+Policy** shows what it received.
 
-Full bring-up notes, optional roles and the verification steps are in
-[deploy/README.md](deploy/README.md).
+### Doing it by hand
+
+Each step of the guided setup is its own script under `deploy/`, and
+[deploy/README.md](deploy/README.md) walks through them individually along
+with the optional roles — DHCP, file server, certificate authority and PXE.
 
 ---
 

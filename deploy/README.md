@@ -23,6 +23,22 @@ framework, from the console or with `odm-role-install`.
 | `install-pxe-role.sh` | A boot server | Unattended installation that joins on first boot |
 | `install-agent.sh` | An already-joined machine | The policy agent alone |
 
+## Guided setup
+
+For a single-server deployment, one command does all of it:
+
+```
+sudo ./setup.sh
+```
+
+It asks what to call the domain, sets this machine's fully-qualified name if
+it does not have one, and runs the steps below in order, finishing with the
+address to sign in at. `--yes` with the flags in `setup.sh --help` makes it
+unattended. It can be run again; completed steps are skipped.
+
+The rest of this document covers the same steps individually, for
+deployments that are not a single server.
+
 ## Order of operations
 
 ### 1. Domain controller

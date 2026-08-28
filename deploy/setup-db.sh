@@ -12,10 +12,11 @@ DB_NAME="odm"
 DB_USER="odm"
 SECRETS_FILE="/etc/odm/odm.env"
 SERVICE_USER="odm"
+VENV="/opt/odm/venv"
 
 usage() {
     cat >&2 <<'EOF'
-usage: setup-db.sh [--db <name>] [--user <name>] [--secrets-file <path>]
+usage: setup-db.sh [--db <name>] [--user <name>] [--secrets-file <path>] [--venv <path>]
 EOF
     exit 2
 }
@@ -25,6 +26,7 @@ while [[ $# -gt 0 ]]; do
         --db) DB_NAME="${2:?}"; shift 2 ;;
         --user) DB_USER="${2:?}"; shift 2 ;;
         --secrets-file) SECRETS_FILE="${2:?}"; shift 2 ;;
+        --venv) VENV="${2:?}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
     esac
@@ -62,7 +64,15 @@ if [[ -n "$DB_PASSWORD" ]]; then
 fi
 
 echo "==> Applying migrations"
-ODM_SECRETS_FILE="$SECRETS_FILE" odm-db migrate
+# odm-db lives in the control plane's virtual environment, which is not on
+# PATH; fall back to whatever is if the venv is somewhere else.
+ODM_DB="$VENV/bin/odm-db"
+[[ -x "$ODM_DB" ]] || ODM_DB="$(command -v odm-db || true)"
+[[ -x "$ODM_DB" ]] || {
+    echo "cannot find odm-db; install the control plane first, or pass --venv" >&2
+    exit 1
+}
+ODM_SECRETS_FILE="$SECRETS_FILE" "$ODM_DB" migrate
 
 cat <<EOF
 

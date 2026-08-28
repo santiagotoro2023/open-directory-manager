@@ -22,24 +22,29 @@ export function Content() {
         </p>
 
         <Section title="Get to a working domain">
+          <p>
+            On a fresh Debian 12 or 13 server, one command does the whole install and finishes by
+            printing the address to sign in at.
+          </p>
+          <Code>{`git clone <repository>
+cd open-directory-manager
+sudo deploy/setup.sh`}</Code>
+          <p>
+            It asks what to call the domain, sets the machine&rsquo;s fully-qualified name if it
+            does not have one, provisions the domain controller, installs the control plane, sets
+            up TLS and the database, builds this console and starts everything. Run it again at
+            any point; completed steps are skipped.
+          </p>
           <Steps>
+            <li>Sign in as a member of the domain administrators group.</li>
             <li>
-              Provision the domain controller: <C>deploy/provision-dc.sh</C> on a fresh Debian
-              server.
+              <strong>Group Policy</strong> → create the default policies.
             </li>
             <li>
-              Create the API service account and its keytab:{" "}
-              <C>deploy/create-api-service-account.sh</C>.
+              <strong>Directory</strong> → build the organizational unit structure, then add
+              users, groups and computers.
             </li>
-            <li>
-              Generate the console certificate and set up the database:{" "}
-              <C>deploy/generate-self-signed.sh</C>, then <C>deploy/setup-db.sh</C>.
-            </li>
-            <li>Start the API and sign in here as a member of the domain administrators group.</li>
-            <li>
-              Open <strong>Group Policy</strong> and choose <strong>Create defaults</strong> to get
-              the Default Domain Policy and Default Domain Controllers Policy.
-            </li>
+            <li>Join the first client and confirm its policy report arrives.</li>
           </Steps>
         </Section>
 
@@ -132,8 +137,8 @@ export function Content() {
         <Section title="Order of operations for a new domain">
           <Steps>
             <li>
-              <strong>Provision the controller.</strong> One command on a clean Debian 12 or 13
-              server with a static address and its final host name.
+              <strong>Provision the controller.</strong> <C>deploy/setup.sh</C> on a clean
+              Debian 12 or 13 server with a static address.
             </li>
             <li>
               <strong>Create the service account.</strong> The control plane authenticates as this
@@ -167,6 +172,7 @@ export function Content() {
           <Reference
             headers={["Command", "Purpose"]}
             rows={[
+              [<C key="z">deploy/setup.sh</C>, "Guided setup: everything below, in order."],
               [<C key="a">deploy/provision-dc.sh</C>, "Provision the first domain controller."],
               [
                 <C key="b">deploy/create-api-service-account.sh</C>,
