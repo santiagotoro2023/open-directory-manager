@@ -89,7 +89,22 @@ If the API runs on the domain controller, set `ODM_SYSVOL_PATH` so group
 policy objects are mirrored into LDAP and SYSVOL for GPMC/RSAT; without it
 they are ODM-only and live in PostgreSQL.
 
-### 6. DHCP role (optional, added after the base install)
+### 6. Role framework
+
+Installing a role needs root, which the API deliberately does not have:
+
+```
+sudo install -d -m 0755 /opt/odm/bin /opt/odm/deploy
+sudo install -m 0755 odm-role-install /opt/odm/bin/
+sudo install -m 0755 install-*-role.sh /opt/odm/deploy/
+sudo install -m 0440 -o root -g root odm-roles.sudoers /etc/sudoers.d/odm-roles
+sudo visudo -cf /etc/sudoers.d/odm-roles
+```
+
+The sudoers rule grants the `odm` user exactly one command and nothing else.
+Roles can then be installed from **Server Roles** in the UI.
+
+### 7. DHCP role (optional, added after the base install)
 
 Run on both nodes of the failover pair:
 

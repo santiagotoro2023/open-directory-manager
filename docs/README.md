@@ -23,12 +23,27 @@ belongs in these pages.
 | 4 | Drive maps, browser policy, wallpaper, sudo and logon scope, cron | Implemented |
 | 5 | ADMX/ADML importer and dynamic settings UI | Implemented |
 | 6 | DNS management, DHCP role via Kea, DDNS sync, HA pairing | Implemented |
-| 7 | Recycle bin, roles/extensibility framework | Not started |
+| 7 | Recycle bin, roles/extensibility framework | Implemented |
 | 8 | Hardening pass, delegated admin, backup/restore, replication topology | Not started |
 
 Phase 1 lays groundwork for later phases in the database schema (RBAC and
 delegation, recycle bin, role registry, GPO links) so those phases add code,
 not migrations that rewrite what is already deployed.
+
+Restoring from the recycle bin recreates an object from its snapshot: the
+attributes come back, the group memberships are rejoined, and a restored
+group gets its members back. What does not come back is the original SID and
+GUID — the directory issues new ones — so access rules that named the old SID
+need re-granting, and restored accounts arrive disabled because they have no
+password. This is inherent to snapshot restore, which CLAUDE.md §5.3 chooses
+deliberately over depending on Samba's tombstone fidelity.
+
+Role installation needs root; the API does not run as root and should not.
+It invokes one fixed helper, `/opt/odm/bin/odm-role-install`, through a
+sudoers rule naming exactly that command, and passes only the arguments the
+role descriptor declares. Deregistering a role removes ODM's record of it and
+leaves the packages running — tearing down a live DHCP server should not be
+one click in a web UI.
 
 ## Deliberate implementation choices
 

@@ -7,6 +7,7 @@ import {
   Network,
   ScrollText,
   Server,
+  Trash2,
   Users,
 } from "lucide-react";
 import type { SessionInfo } from "./api";
@@ -19,7 +20,8 @@ const NAV = [
   { label: "Group Policy", to: "/policy", icon: ClipboardList, ready: true },
   { label: "DNS", to: "/dns", icon: Globe, ready: true },
   { label: "DHCP", to: "/dhcp", icon: Network, ready: true },
-  { label: "Server Roles", to: "/roles", icon: Server, ready: false },
+  { label: "Server Roles", to: "/roles", icon: Server, ready: true },
+  { label: "Deleted Objects", to: "/recyclebin", icon: Trash2, ready: true },
   { label: "Audit Log", to: "/audit", icon: ScrollText, ready: true },
 ];
 

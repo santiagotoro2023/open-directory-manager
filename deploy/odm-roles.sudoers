@@ -1,0 +1,7 @@
+# Install as /etc/sudoers.d/odm-roles, mode 0440 root:root.
+#
+# The ODM API runs as the unprivileged odm user and needs root for exactly
+# one thing: installing a server role. This grants that single command and
+# nothing else — not a shell, not apt, not the installers directly.
+odm ALL=(root) NOPASSWD: /opt/odm/bin/odm-role-install
+Defaults!/opt/odm/bin/odm-role-install !requiretty

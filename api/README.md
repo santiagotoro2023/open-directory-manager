@@ -25,6 +25,9 @@ the directory directly (CLAUDE.md §2).
 | `odm/kea.py` | ISC Kea Control Agent client |
 | `odm/routes_dns.py` | `/api/v1/dns/*` |
 | `odm/routes_dhcp.py` | `/api/v1/dhcp/*` |
+| `odm/roles.py` | Installable role registry and the privileged installer call |
+| `odm/routes_roles.py` | `/api/v1/roles/*` |
+| `odm/routes_recyclebin.py` | `/api/v1/recyclebin/*` and the retention sweep |
 | `odm/rsop.py` | Effective-policy assembly from PostgreSQL plus LDAP facts |
 | `odm/sysvol.py` | LDAP/SYSVOL mirror for GPMC interoperability |
 | `odm/routes_policy.py` | `/api/v1/policy/*` |
@@ -98,6 +101,14 @@ controller is needed to run them.
 | `POST` | `/api/v1/dhcp/reservations` | Reserve an address |
 | `DELETE` | `/api/v1/dhcp/reservation` | Release a reservation |
 | `GET` | `/api/v1/dhcp/leases` | Current leases |
+| `GET` | `/api/v1/recyclebin` | Deleted objects still inside the retention window |
+| `GET` | `/api/v1/recyclebin/item` | One snapshot, with its attributes |
+| `POST` | `/api/v1/recyclebin/restore` | Recreate an object and rejoin its groups |
+| `DELETE` | `/api/v1/recyclebin/item` | Purge one snapshot now |
+| `GET` | `/api/v1/roles` | Available roles and installed instances |
+| `POST` | `/api/v1/roles/install` | Start an installation (202; poll the instance) |
+| `GET` | `/api/v1/roles/instance` | Installation state and last error |
+| `DELETE` | `/api/v1/roles/instance` | Deregister an instance |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
 DNS and DHCP routers arrive in later phases.
@@ -139,6 +150,12 @@ factory.
   invoked through a shell.
 - Kea changes are config-tested before they are set, and only then written to
   disk. The Control Agent URL must be https unless it is on the loopback.
+- Role installers need root and the API does not have it: it calls one fixed
+  helper through a sudoers rule that names that single command, and only the
+  arguments a role descriptor declares are passed, each pattern-checked.
+- Restored objects come back disabled, and with a new SID — snapshot restore
+  is not tombstone reanimation, which CLAUDE.md §5.3 deliberately does not
+  rely on.
 - Agents authenticate with SPNEGO only; there is no session cookie or CSRF
   token on `/api/v1/agent/*`, and the Kerberos principal names the computer
   object whose policy is served.

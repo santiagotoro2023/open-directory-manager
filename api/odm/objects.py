@@ -584,6 +584,95 @@ def delete(conn: Connection, settings: Settings, dn: str) -> dict[str, Any]:
     return state
 
 
+# Attributes the directory owns. A restored object gets fresh ones; trying to
+# write them back is rejected by the DC and would fail the whole restore.
+OPERATIONAL_ATTRS = frozenset(
+    {
+        "distinguishedname",
+        "objecttype",
+        "objectguid",
+        "objectsid",
+        "objectcategory",
+        "whencreated",
+        "whenchanged",
+        "usncreated",
+        "usnchanged",
+        "instancetype",
+        "memberof",
+        "dscorepropagationdata",
+        "lastlogon",
+        "lastlogontimestamp",
+        "lastlogoff",
+        "logoncount",
+        "badpwdcount",
+        "badpasswordtime",
+        "pwdlastset",
+        "samaccounttype",
+        "primarygroupid",
+        "admincount",
+        "iscriticalsystemobject",
+        "name",
+        "unicodepwd",
+    }
+)
+
+
+def restore(conn: Connection, settings: Settings, snapshot: dict[str, Any]) -> str:
+    """Recreate a deleted object from its recycle-bin snapshot.
+
+    The object comes back with its attributes, its group memberships and, for
+    a group, its members. It does *not* come back with its old SID or GUID —
+    the directory issues fresh ones — so access rules that named the old SID
+    need re-granting. That is inherent to restoring rather than reanimating a
+    tombstone, which CLAUDE.md §5.3 deliberately does not rely on.
+    """
+    dn = normalize_dn(settings, str(snapshot["object_dn"]))
+    parent = normalize_dn(settings, str(snapshot["parent_dn"]))
+
+    # Prove the parent still exists; restoring into a deleted OU would fail
+    # with a confusing directory error.
+    get(conn, settings, parent)
+    try:
+        get(conn, settings, dn)
+    except NotFound:
+        pass
+    else:
+        raise ObjectError(f"{dn} already exists")
+
+    attributes = dict(snapshot.get("attributes") or {})
+    object_classes = attributes.get("objectClass") or []
+    if not object_classes:
+        raise ObjectError("snapshot has no objectClass; cannot restore")
+
+    payload = {
+        key: value
+        for key, value in attributes.items()
+        if key.lower() not in OPERATIONAL_ATTRS and key.lower() != "objectclass" and value != []
+    }
+    # A restored account starts disabled: it has no password, and an enabled
+    # account without one is worse than an obvious one to re-enable.
+    if any(c.lower() == "user" for c in object_classes):
+        payload["userAccountControl"] = int(
+            payload.get("userAccountControl") or UF_NORMAL_ACCOUNT
+        ) | UF_ACCOUNTDISABLE
+    payload.pop("member", None)
+
+    conn.add(dn, list(object_classes), payload)
+    _check(conn, "restore")
+
+    for group_dn in snapshot.get("memberships") or []:
+        try:
+            conn.modify(normalize_dn(settings, group_dn), {"member": [(MODIFY_ADD, [dn])]})
+        except NotFound:
+            continue  # the group itself is gone; nothing to rejoin
+
+    members = [m for m in (snapshot.get("members") or [])]
+    if members:
+        conn.modify(dn, {"member": [(MODIFY_ADD, members)]})
+        _check(conn, "restore members")
+    return dn
+
+
 def edit_members(
     conn: Connection,
     settings: Settings,

@@ -760,3 +760,36 @@ textarea.mono,
 .admx-row .field textarea {
   width: 100%;
 }
+
+/* ------------------------------------------------------------ server roles -- */
+
+.role-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.role-card {
+  padding: 16px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.role-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.role-card p {
+  margin: 0 0 10px;
+}
+
+.content h2 {
+  margin: 22px 0 10px;
+  font-size: 16px;
+}

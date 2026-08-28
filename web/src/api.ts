@@ -175,6 +175,44 @@ export interface DhcpLease {
   state: number;
 }
 
+export interface DeletedObject {
+  id: string;
+  object_dn: string;
+  object_type: string;
+  display_name: string | null;
+  parent_dn: string;
+  deleted_by: string;
+  deleted_at: string;
+  purge_after: string;
+  restored_at: string | null;
+  memberships: string[];
+  members: string[];
+}
+
+export interface RoleDescriptor {
+  name: string;
+  title: string;
+  summary: string;
+  core: boolean;
+  arguments: string[];
+  optional_arguments: string[];
+  packages: string[];
+  produces_settings: string[];
+  notes: string;
+}
+
+export interface RoleInstance {
+  id: string;
+  role_name: string;
+  node_fqdn: string;
+  state: "pending" | "installing" | "active" | "failed" | "removed";
+  config: Record<string, string>;
+  last_error: string | null;
+  installed_by: string | null;
+  installed_at: string | null;
+  updated_at: string;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -425,6 +463,38 @@ export const api = {
       request<void>(`/dhcp/reservation${qs({ subnet_id, hw_address })}`, { method: "DELETE" }),
 
     leases: () => request<{ leases: DhcpLease[] }>("/dhcp/leases"),
+  },
+
+  recyclebin: {
+    list: (params: { query?: string; object_type?: string; include_restored?: boolean }) =>
+      request<{ items: DeletedObject[]; retention_days: number }>(
+        `/recyclebin${qs({
+          query: params.query,
+          object_type: params.object_type,
+          include_restored: params.include_restored ? "true" : undefined,
+        })}`,
+      ),
+
+    item: (id: string) =>
+      request<DeletedObject & { attributes: Record<string, unknown> }>(
+        `/recyclebin/item${qs({ id })}`,
+      ),
+
+    restore: (id: string) => request<Record<string, unknown>>("/recyclebin/restore", json({ id })),
+
+    purge: (id: string) => request<void>(`/recyclebin/item${qs({ id })}`, { method: "DELETE" }),
+  },
+
+  roles: {
+    list: () =>
+      request<{ available: RoleDescriptor[]; installed: RoleInstance[] }>("/roles"),
+
+    instance: (id: string) => request<RoleInstance>(`/roles/instance${qs({ id })}`),
+
+    install: (role: string, node_fqdn: string, config: Record<string, string>) =>
+      request<RoleInstance>("/roles/install", json({ role, node_fqdn, config })),
+
+    remove: (id: string) => request<void>(`/roles/instance${qs({ id })}`, { method: "DELETE" }),
   },
 
   audit: {

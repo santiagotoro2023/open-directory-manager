@@ -6,6 +6,8 @@ DHCP routers arrive in later phases (CLAUDE.md §7).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 from contextlib import asynccontextmanager
 
@@ -20,6 +22,7 @@ from . import (
     dns,
     kea,
     objects,
+    roles,
     routes_admx,
     routes_agent,
     routes_audit,
@@ -27,6 +30,8 @@ from . import (
     routes_directory,
     routes_dns,
     routes_policy,
+    routes_recyclebin,
+    routes_roles,
 )
 from .config import get_settings
 from .security import CSRF_HEADER, SecurityHeadersMiddleware
@@ -41,9 +46,15 @@ async def lifespan(app: FastAPI):
         os.environ.setdefault("KRB5_KTNAME", str(settings.keytab))
         os.environ.setdefault("KRB5_CLIENT_KTNAME", str(settings.keytab))
     app.state.pool = await db.create_pool()
+    # The recycle bin's retention window is only real if something enforces
+    # it, so the sweep runs with the application (CLAUDE.md §5.3).
+    sweeper = asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool))
     try:
         yield
     finally:
+        sweeper.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sweeper
         await app.state.pool.close()
 
 
@@ -82,6 +93,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_agent.router)
     app.include_router(routes_dns.router)
     app.include_router(routes_dhcp.router)
+    app.include_router(routes_recyclebin.router)
+    app.include_router(routes_roles.router)
     app.include_router(routes_audit.router)
 
     # Directory failures map to HTTP once, here, instead of a try/except in
@@ -96,6 +109,7 @@ def create_app() -> FastAPI:
         (dns.DnsError, status.HTTP_400_BAD_REQUEST),
         (kea.KeaUnavailable, status.HTTP_501_NOT_IMPLEMENTED),
         (kea.KeaError, status.HTTP_502_BAD_GATEWAY),
+        (roles.RoleError, status.HTTP_400_BAD_REQUEST),
     ):
         app.add_exception_handler(exception, _problem(code))
 
