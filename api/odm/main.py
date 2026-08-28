@@ -9,10 +9,11 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from . import auth, db
+from . import auth, db, directory, objects, routes_audit, routes_directory
 from .config import get_settings
 from .security import CSRF_HEADER, SecurityHeadersMiddleware
 
@@ -30,6 +31,15 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await app.state.pool.close()
+
+
+def _problem(status_code: int):
+    async def handler(_: Request, exc: Exception) -> JSONResponse:
+        # Directory errors carry operator-facing detail (which attribute is
+        # not editable, which object is protected); never a stack trace.
+        return JSONResponse({"detail": str(exc)}, status_code=status_code)
+
+    return handler
 
 
 def create_app() -> FastAPI:
@@ -52,6 +62,19 @@ def create_app() -> FastAPI:
             allow_headers=["Content-Type", "Authorization", CSRF_HEADER],
         )
     app.include_router(auth.router)
+    app.include_router(routes_directory.router)
+    app.include_router(routes_audit.router)
+
+    # Directory failures map to HTTP once, here, instead of a try/except in
+    # every route.
+    for exception, code in (
+        (objects.NotFound, status.HTTP_404_NOT_FOUND),
+        (objects.ProtectedObject, status.HTTP_409_CONFLICT),
+        (objects.ObjectError, status.HTTP_400_BAD_REQUEST),
+        (directory.NotAuthorized, status.HTTP_403_FORBIDDEN),
+        (directory.DirectoryError, status.HTTP_503_SERVICE_UNAVAILABLE),
+    ):
+        app.add_exception_handler(exception, _problem(code))
 
     @app.get("/api/v1/healthz", tags=["health"])
     async def healthz() -> dict[str, str]:

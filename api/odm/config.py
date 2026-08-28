@@ -83,6 +83,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     login_max_failures: int = 5
     login_lockout_minutes: int = 15
+    admin_recheck_minutes: int = 5
 
     # --- Web ---
     allowed_origins: list[str] = Field(

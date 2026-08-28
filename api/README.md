@@ -13,8 +13,11 @@ the directory directly (CLAUDE.md §2).
 | `odm/directory.py` | The only module that speaks LDAP: bind, group gate |
 | `odm/sessions.py` | Server-side sessions, login throttling |
 | `odm/security.py` | Security headers, origin checks, session/CSRF gates |
+| `odm/objects.py` | Directory object CRUD, DN guard, protected-object guard |
 | `odm/auth.py` | `/api/v1/auth/*` |
-| `odm/audit.py` | Append-only audit writes |
+| `odm/routes_directory.py` | `/api/v1/directory/*` |
+| `odm/routes_audit.py` | `/api/v1/audit/*` |
+| `odm/audit.py` | Append-only audit writes and the `audited` wrapper |
 | `migrations/` | Numbered SQL, applied in order |
 
 ## Development
@@ -30,7 +33,7 @@ ruff check .
 The tests stub the directory and the pool, so neither PostgreSQL nor a domain
 controller is needed to run them.
 
-## Endpoints (Phase 1)
+## Endpoints
 
 | Method | Path | Notes |
 |---|---|---|
@@ -39,8 +42,24 @@ controller is needed to run them.
 | `POST` | `/api/v1/auth/negotiate` | SPNEGO/Kerberos, same group gate |
 | `GET` | `/api/v1/auth/session` | Current session |
 | `POST` | `/api/v1/auth/logout` | Revokes the session; requires `X-ODM-CSRF` |
+| `GET` | `/api/v1/directory/tree` | OUs and built-in containers |
+| `GET` | `/api/v1/directory/objects` | List a container, or search the domain |
+| `GET` | `/api/v1/directory/object` | One object by DN |
+| `POST` | `/api/v1/directory/{users,groups,computers,ous}` | Create |
+| `POST` | `/api/v1/directory/users/bulk` | Bulk create, per-row results |
+| `PATCH` | `/api/v1/directory/object` | Update allow-listed attributes |
+| `POST` | `/api/v1/directory/object/move` | Move or rename |
+| `POST` | `/api/v1/directory/object/enabled` | Enable or disable an account |
+| `POST` | `/api/v1/directory/user/password` | Reset a password |
+| `POST` | `/api/v1/directory/group/members` | Bulk membership edit |
+| `DELETE` | `/api/v1/directory/object` | Soft delete via the recycle bin |
+| `GET` | `/api/v1/audit` | Filterable audit log |
 
-Directory, policy, DNS and DHCP routers arrive in later phases.
+Policy, DNS and DHCP routers arrive in later phases.
+
+DNs are passed in the query string or the body, never in the path — a DN
+contains commas, equals signs and spaces, and path-escaping them is a bug
+factory.
 
 ## Security notes
 
@@ -54,4 +73,12 @@ Directory, policy, DNS and DHCP routers arrive in later phases.
 - State-changing requests need a matching `X-ODM-CSRF` header and an allowed
   `Origin`.
 - Repeated failures lock out by username and by source address.
-- `audit_log` is append-only, enforced by a trigger.
+- Admin-group membership is re-proven against the directory every
+  `ODM_ADMIN_RECHECK_MINUTES`; a principal that lost it has its session
+  revoked on its next privileged request.
+- Every caller-supplied DN is parsed and proven to sit under the domain head.
+- Attribute writes are restricted to per-type allow-lists; the domain head,
+  built-in containers and built-in principals cannot be moved or deleted.
+- Deletes snapshot the full object into the recycle bin before removal.
+- `audit_log` is append-only, enforced by a trigger; refused writes are
+  recorded too.

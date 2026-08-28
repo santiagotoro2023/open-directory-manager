@@ -132,7 +132,7 @@ def authenticate(settings: Settings, username: str, password: str) -> DirectoryU
         conn.unbind()
 
 
-def service_connection(settings: Settings) -> Connection:
+def service_connection(settings: Settings, *, read_only: bool = True) -> Connection:
     """Read-only SASL/GSSAPI bind as ODM's own service principal.
 
     Initiator credentials come from the keytab named by KRB5_CLIENT_KTNAME
@@ -149,7 +149,7 @@ def service_connection(settings: Settings) -> Connection:
         server,
         authentication=SASL,
         sasl_mechanism=KERBEROS,
-        read_only=True,
+        read_only=read_only,
         raise_exceptions=False,
         receive_timeout=settings.ldap_timeout_seconds,
     )

@@ -2,25 +2,21 @@
 
 from __future__ import annotations
 
-import uuid
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
-
-import httpx
 import pytest
+from conftest import ADMIN
 
 from odm import directory, sessions
 from odm.config import derive_base_dn, get_settings
 from odm.directory import InvalidCredentials, nested_member_filter, validate_username
-from odm.main import create_app
 
-ADMIN = directory.DirectoryUser(
-    dn="CN=ada,OU=Example Corp,DC=corp,DC=example,DC=internal",
-    sam_account_name="ada",
-    user_principal_name="ada@CORP.EXAMPLE.INTERNAL",
-    display_name="Ada Admin",
-    sid="S-1-5-21-1-2-3-1104",
-)
+
+def _directory_returns(monkeypatch, result):
+    def fake(settings, username, password):
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(directory, "authenticate", fake)
 
 
 # --------------------------------------------------------------- pure bits ---
@@ -58,73 +54,6 @@ def test_should_lock():
     assert sessions.should_lock(5, 5)
 
 
-# ------------------------------------------------------------ fake backend ---
-
-
-class FakeConn:
-    def __init__(self, state: dict):
-        self.state = state
-
-    async def execute(self, sql, *args):
-        self.state.setdefault("executed", []).append((sql, args))
-
-    async def fetchval(self, sql, *args):
-        if "count(*)" in sql:
-            return self.state.get("failures", 0)
-        if "revoked_at = now()" in sql:
-            self.state["session"] = None
-            return ADMIN.user_principal_name
-        return None
-
-    async def fetchrow(self, sql, *args):
-        if "INSERT INTO admin_session" in sql:
-            self.state["session"] = {
-                "token_sha256": args[0],
-                "id": uuid.uuid4(),
-                "csrf_token": args[1],
-                "principal": args[2],
-                "principal_dn": args[3],
-                "principal_sid": args[4],
-                "display_name": args[5],
-                "expires_at": datetime.now(UTC) + timedelta(hours=8),
-            }
-            return self.state["session"]
-        if "last_seen_at = now()" in sql:
-            live = self.state.get("session")
-            return live if live and live["token_sha256"] == args[0] else None
-        return None
-
-
-class FakePool:
-    def __init__(self, state: dict):
-        self.state = state
-
-    @asynccontextmanager
-    async def acquire(self):
-        yield FakeConn(self.state)
-
-
-@pytest.fixture
-def client(monkeypatch):
-    state: dict = {}
-    app = create_app()
-    app.state.pool = FakePool(state)
-    transport = httpx.ASGITransport(app=app)  # no lifespan: no real DB
-    http = httpx.AsyncClient(transport=transport, base_url="https://odm.test")
-    http.state = state  # type: ignore[attr-defined]
-    http.monkeypatch = monkeypatch  # type: ignore[attr-defined]
-    return http
-
-
-def _directory_returns(monkeypatch, result):
-    def fake(settings, username, password):
-        if isinstance(result, Exception):
-            raise result
-        return result
-
-    monkeypatch.setattr(directory, "authenticate", fake)
-
-
 # ------------------------------------------------------------- login flow ---
 
 
@@ -136,8 +65,7 @@ async def test_admin_gets_a_session(client):
     assert body["principal"] == ADMIN.user_principal_name
     assert body["csrf_token"]
 
-    cookie = r.cookies["odm_session"]
-    assert cookie
+    assert r.cookies["odm_session"]
     assert "HttpOnly" in r.headers["set-cookie"] and "Secure" in r.headers["set-cookie"]
     assert r.headers["x-frame-options"] == "DENY"
 
@@ -196,3 +124,16 @@ async def test_cross_origin_state_change_is_rejected(client):
         headers={"Origin": "https://evil.example.org"},
     )
     assert r.status_code == 403
+
+
+async def test_lost_membership_revokes_the_session_mid_flight(admin_client, ldap):
+    """A privileged route re-proves group membership and revokes on loss."""
+    admin_client.state["admin_stale"] = True
+    admin_client.monkeypatch.setattr(
+        directory,
+        "authorize_principal",
+        lambda settings, upn: (_ for _ in ()).throw(directory.NotAuthorized("removed")),
+    )
+    r = await admin_client.get("/api/v1/directory/tree")
+    assert r.status_code == 403
+    assert (await admin_client.get("/api/v1/auth/session")).status_code == 401

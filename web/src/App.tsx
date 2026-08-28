@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Login } from "./Login";
 import { Shell } from "./Shell";
+import { Audit } from "./pages/Audit";
+import { Directory } from "./pages/Directory";
+import { Overview } from "./pages/Overview";
 import { api, type SessionInfo } from "./api";
 
 export function App() {
@@ -28,9 +32,18 @@ export function App() {
     );
   }
 
-  return session ? (
-    <Shell session={session} onSignOut={signOut} />
-  ) : (
-    <Login onAuthenticated={setSession} />
+  if (!session) return <Login onAuthenticated={setSession} />;
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Shell session={session} onSignOut={signOut} />}>
+          <Route index element={<Overview session={session} />} />
+          <Route path="directory" element={<Directory />} />
+          <Route path="audit" element={<Audit />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

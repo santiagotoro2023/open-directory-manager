@@ -1,3 +1,4 @@
+import { NavLink, Outlet } from "react-router-dom";
 import {
   ClipboardList,
   Globe,
@@ -13,13 +14,13 @@ import type { SessionInfo } from "./api";
 // Sections land as their phases ship (CLAUDE.md §7). Listing them keeps the
 // navigation stable instead of rearranging itself under the operator.
 const NAV = [
-  { label: "Overview", icon: LayoutDashboard, ready: true },
-  { label: "Directory", icon: Users, ready: false },
-  { label: "Group Policy", icon: ClipboardList, ready: false },
-  { label: "DNS", icon: Globe, ready: false },
-  { label: "DHCP", icon: Network, ready: false },
-  { label: "Server Roles", icon: Server, ready: false },
-  { label: "Audit Log", icon: ScrollText, ready: false },
+  { label: "Overview", to: "/", icon: LayoutDashboard, ready: true, end: true },
+  { label: "Directory", to: "/directory", icon: Users, ready: true },
+  { label: "Group Policy", to: "/policy", icon: ClipboardList, ready: false },
+  { label: "DNS", to: "/dns", icon: Globe, ready: false },
+  { label: "DHCP", to: "/dhcp", icon: Network, ready: false },
+  { label: "Server Roles", to: "/roles", icon: Server, ready: false },
+  { label: "Audit Log", to: "/audit", icon: ScrollText, ready: true },
 ];
 
 export function Shell({
@@ -47,43 +48,29 @@ export function Shell({
       <div className="body">
         <nav className="sidebar" aria-label="Sections">
           <ul>
-            {NAV.map(({ label, icon: Icon, ready }) => (
+            {NAV.map(({ label, to, icon: Icon, ready, end }) => (
               <li key={label}>
-                <a
-                  href="#"
-                  className={ready ? "nav-item active" : "nav-item disabled"}
-                  aria-current={ready ? "page" : undefined}
-                  aria-disabled={ready ? undefined : true}
-                  onClick={(e) => e.preventDefault()}
-                >
-                  <Icon size={16} aria-hidden="true" />
-                  {label}
-                </a>
+                {ready ? (
+                  <NavLink
+                    to={to}
+                    end={end}
+                    className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}
+                  >
+                    <Icon size={16} aria-hidden="true" />
+                    {label}
+                  </NavLink>
+                ) : (
+                  <span className="nav-item disabled" aria-disabled="true">
+                    <Icon size={16} aria-hidden="true" />
+                    {label}
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         </nav>
 
-        <main className="content">
-          <h1>Overview</h1>
-          <table className="data">
-            <caption className="sr-only">Current session</caption>
-            <tbody>
-              <tr>
-                <th scope="row">Signed in as</th>
-                <td>{session.principal}</td>
-              </tr>
-              <tr>
-                <th scope="row">Distinguished name</th>
-                <td className="mono">{session.distinguished_name}</td>
-              </tr>
-              <tr>
-                <th scope="row">Session expires</th>
-                <td>{new Date(session.expires_at).toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
-        </main>
+        <Outlet />
       </div>
     </div>
   );

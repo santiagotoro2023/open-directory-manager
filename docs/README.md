@@ -18,7 +18,7 @@ belongs in these pages.
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Samba AD DC provisioning, Postgres schema, FastAPI + Kerberos/LDAP auth with the domain-admin gate, React shell and login | Implemented |
-| 2 | Users/Groups/Computers/OUs CRUD, audit logging wired into every write | Not started |
+| 2 | Users/Groups/Computers/OUs CRUD, audit logging wired into every write | Implemented |
 | 3 | GPO object model, precedence resolution, agent pull/apply/report loop, file/script/systemd appliers | Not started |
 | 4 | Drive maps, browser policy, wallpaper, sudo and logon scope, cron | Not started |
 | 5 | ADMX/ADML importer and dynamic settings UI | Not started |

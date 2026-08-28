@@ -6,10 +6,11 @@ import secrets
 
 import asyncpg
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
 
-from . import sessions
+from . import audit, directory, sessions
 from .config import Settings, get_settings
 from .sessions import Session
 
@@ -95,4 +96,60 @@ async def current_session(
         supplied = request.headers.get(CSRF_HEADER, "")
         if not secrets.compare_digest(supplied, session.csrf_token):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "csrf token mismatch")
+    return session
+
+
+async def require_admin(
+    request: Request,
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> Session:
+    """Gate for every privileged route.
+
+    Membership of the admin group was proven at login, but it can be revoked
+    while a session is still valid, so it is re-proven against the directory
+    every `admin_recheck_minutes`. A principal that has lost membership has
+    its session revoked immediately.
+    """
+    async with pool.acquire() as conn:
+        stale = await conn.fetchval(
+            """
+            SELECT admin_verified_at < now() - ($2 || ' minutes')::interval
+            FROM admin_session WHERE id = $1::uuid
+            """,
+            session.id,
+            str(settings.admin_recheck_minutes),
+        )
+    if not stale:
+        return session
+
+    try:
+        await run_in_threadpool(directory.authorize_principal, settings, session.principal)
+    except directory.NotAuthorized as exc:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE admin_session SET revoked_at = now() WHERE id = $1::uuid", session.id
+            )
+            await audit.record(
+                conn,
+                actor=session.principal,
+                actor_sid=session.principal_sid,
+                source_ip=client_ip(request),
+                action="auth.revoke",
+                outcome="denied",
+                object_type="session",
+                object_dn=session.principal_dn,
+                detail=f"lost membership of {settings.admin_group}",
+            )
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, f"no longer a member of {settings.admin_group}"
+        ) from exc
+    except directory.DirectoryError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "directory unavailable") from exc
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE admin_session SET admin_verified_at = now() WHERE id = $1::uuid", session.id
+        )
     return session

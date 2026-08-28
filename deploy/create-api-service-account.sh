@@ -48,6 +48,20 @@ fi
 echo "==> Registering $SPN"
 samba-tool spn add "$SPN" "$ACCOUNT" 2>/dev/null || echo "    (already registered)"
 
+echo "==> Delegating directory write rights"
+# ODM manages users, groups, computers and OUs on behalf of an authenticated
+# domain admin, so the service account needs create/delete/read/write on child
+# objects beneath the domain head — and nothing more. It is deliberately NOT
+# granted WriteDacl, WriteOwner or Delete Tree, and it is not a Domain Admin
+# (CLAUDE.md §6).
+SID="$(wbinfo -n "$ACCOUNT" 2>/dev/null | awk '{print $1}')"
+if [[ -z "$SID" ]]; then
+    echo "could not resolve the SID for $ACCOUNT (is samba-ad-dc running?)" >&2
+    exit 1
+fi
+BASE_DN="$(printf 'DC=%s' "${REALM//./,DC=}")"
+samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(A;CI;CCDCLCRPWP;;;${SID})"
+
 echo "==> Exporting keytab to $KEYTAB"
 install -d -m 0750 "$(dirname "$KEYTAB")"
 rm -f "$KEYTAB"
@@ -60,6 +74,7 @@ Service account ready.
 
   Account   $ACCOUNT
   SPN       $SPN
+  Rights    create/delete/read/write child objects under $BASE_DN
   Keytab    $KEYTAB  (mode 0600 — copy to the API host over a secure channel,
                       chown it to the odm user, and never commit it)
 
