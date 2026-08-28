@@ -103,6 +103,44 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Setting up">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                "samba-tool: command not found",
+                <>
+                  It ships in <C key="a">python3-samba</C> on Debian 13 and{" "}
+                  <C key="b">samba-common-bin</C> on Debian 12. Setup installs whichever the
+                  release has; if it is still missing, install it and run setup again.
+                </>,
+              ],
+              [
+                "Unit samba-ad-dc.service does not exist",
+                <>
+                  The service ships in the <C key="c">samba-ad-dc</C> package on Debian 13 and in{" "}
+                  <C key="d">samba</C> on Debian 12.
+                </>,
+              ],
+              [
+                "Could not resolve the security identifier",
+                "samba-ad-dc had not finished starting. Setup waits for it; if it still fails, check systemctl status samba-ad-dc.",
+              ],
+              [
+                "Setup stopped at a step",
+                "Nothing after that point ran. Fix the cause and run setup again — completed steps are skipped.",
+              ],
+              [
+                "The console does not answer after setup",
+                <>
+                  <C key="e">journalctl -u odm-api -n 50</C>. The usual causes are a keytab or
+                  directory CA the service cannot read.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Joining">
           <Reference
             headers={["Symptom", "Check"]}

@@ -55,9 +55,26 @@ echo "==> Delegating directory write rights"
 # objects beneath the domain head — and nothing more. It is deliberately NOT
 # granted WriteDacl, WriteOwner or Delete Tree, and it is not a Domain Admin
 # (CLAUDE.md §6).
-SID="$(wbinfo -n "$ACCOUNT" 2>/dev/null | awk '{print $1}')"
+# winbind runs inside samba-ad-dc and needs a moment after a fresh
+# provision, so give it one rather than failing on a cold start.
+SID=""
+for _ in $(seq 1 15); do
+    SID="$(wbinfo -n "$ACCOUNT" 2>/dev/null | awk '{print $1}')"
+    [[ -n "$SID" ]] && break
+    sleep 2
+done
 if [[ -z "$SID" ]]; then
-    echo "could not resolve the SID for $ACCOUNT (is samba-ad-dc running?)" >&2
+    cat >&2 <<MISSING
+
+Could not resolve the security identifier for $ACCOUNT.
+
+That normally means samba-ad-dc is not running yet. Check it and run this
+again:
+
+    systemctl status samba-ad-dc
+    wbinfo -n $ACCOUNT
+
+MISSING
     exit 1
 fi
 BASE_DN="$(printf 'DC=%s' "${REALM//./,DC=}")"

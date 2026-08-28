@@ -53,6 +53,12 @@ ODM_ADMIN_PASSWORD='...' sudo ./provision-dc.sh \
 Preconditions: static IP, final fully-qualified hostname set, clock in sync.
 The script refuses to run against an already-provisioned host.
 
+Debian moved the domain-controller packages between releases — `samba-tool`
+ships in `samba-common-bin` on 12 and `python3-samba` on 13, and the
+`samba-ad-dc` service unit ships in `samba` on 12 and its own `samba-ad-dc`
+package on 13. The script installs whichever the running release has, and
+stops with an explanation if either is still missing afterwards.
+
 Afterwards, `/var/lib/samba/private/tls/ca.pem` signs the DC's LDAPS
 certificate. Replace Samba's self-signed TLS material with certificates from
 your own CA before production; the API validates the chain and will not fall

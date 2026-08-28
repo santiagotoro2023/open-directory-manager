@@ -72,9 +72,59 @@ fi
 echo "==> Installing packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends \
-    samba smbclient krb5-user krb5-config winbind libnss-winbind libpam-winbind \
+
+# Debian moved the domain-controller pieces between releases:
+#
+#              samba-tool             samba-ad-dc.service
+#   Debian 12  samba-common-bin       samba
+#   Debian 13  python3-samba          samba-ad-dc   (new package)
+#
+# Ask for the union and keep whatever this release actually has, so the same
+# script works on both.
+WANTED=(
+    samba samba-common-bin python3-samba samba-ad-dc smbclient
+    krb5-user krb5-config winbind libnss-winbind libpam-winbind
     ldb-tools dnsutils chrony acl attr
+)
+PACKAGES=()
+for package in "${WANTED[@]}"; do
+    if apt-cache show "$package" >/dev/null 2>&1; then
+        PACKAGES+=("$package")
+    else
+        echo "    ${package} is not in this release; skipping"
+    fi
+done
+apt-get install -y --no-install-recommends "${PACKAGES[@]}"
+
+# Provisioning is samba-tool's job, and everything ODM does against the
+# directory afterwards goes through it. Stop here rather than half-way in.
+if ! command -v samba-tool >/dev/null 2>&1; then
+    cat >&2 <<'MISSING'
+
+samba-tool was not installed, so the domain cannot be provisioned.
+
+It ships in python3-samba on Debian 13 and samba-common-bin on Debian 12.
+Install it and run this again:
+
+    sudo apt-get install python3-samba samba-common-bin
+
+MISSING
+    exit 1
+fi
+
+if ! systemctl cat samba-ad-dc.service >/dev/null 2>&1; then
+    cat >&2 <<'MISSING'
+
+The samba-ad-dc service is not installed, so a provisioned domain would have
+nothing to run it.
+
+It ships in the samba-ad-dc package on Debian 13 and in samba on Debian 12:
+
+    sudo apt-get install samba-ad-dc
+
+MISSING
+    exit 1
+fi
 
 echo "==> Disabling the standalone file-server daemons"
 # A DC runs everything from the single samba-ad-dc unit.
@@ -115,10 +165,33 @@ echo "==> Starting samba-ad-dc"
 systemctl enable --now samba-ad-dc
 
 echo "==> Verifying"
-sleep 3
-samba-tool domain level show
-host -t SRV "_ldap._tcp.${REALM}." 127.0.0.1
-smbclient -L localhost -N >/dev/null && echo "SMB responding"
+# The directory takes a few seconds to answer after the service starts.
+# These are checks, not steps: a slow start must not fail a provision that
+# has already succeeded.
+set +e
+for _ in $(seq 1 15); do
+    samba-tool domain level show >/dev/null 2>&1 && break
+    sleep 2
+done
+
+if samba-tool domain level show 2>/dev/null | grep -q "Domain function level"; then
+    echo "    directory responding"
+else
+    echo "    directory not answering yet — check: systemctl status samba-ad-dc" >&2
+fi
+
+if host -t SRV "_ldap._tcp.${REALM}." 127.0.0.1 >/dev/null 2>&1; then
+    echo "    service records resolving"
+else
+    echo "    service records not resolving yet — check: systemctl status samba-ad-dc" >&2
+fi
+
+if smbclient -L localhost -N >/dev/null 2>&1; then
+    echo "    SMB responding"
+else
+    echo "    SMB not answering anonymously; this is not necessarily a problem" >&2
+fi
+set -e
 
 cat <<EOF
 
