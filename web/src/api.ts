@@ -4,6 +4,33 @@ export interface SessionInfo {
   distinguished_name: string;
   csrf_token: string;
   expires_at: string;
+  domain_admin: boolean;
+  /** Permissions this operator holds; ["*"] for a domain administrator. */
+  permissions: string[];
+  scopes: { role: string; scope_dn: string }[];
+}
+
+/** True when the signed-in operator holds a permission anywhere. */
+export function holds(session: SessionInfo, permission: string): boolean {
+  return session.domain_admin || session.permissions.includes(permission);
+}
+
+export interface RbacRole {
+  name: string;
+  description: string;
+  builtin: boolean;
+  permissions: string[];
+}
+
+export interface RbacAssignment {
+  id: string;
+  role_name: string;
+  principal_sid: string;
+  principal_name: string;
+  scope_dn: string;
+  description: string;
+  granted_by: string;
+  granted_at: string;
 }
 
 export type ObjectType = "user" | "group" | "computer" | "ou";
@@ -495,6 +522,29 @@ export const api = {
       request<RoleInstance>("/roles/install", json({ role, node_fqdn, config })),
 
     remove: (id: string) => request<void>(`/roles/instance${qs({ id })}`, { method: "DELETE" }),
+  },
+
+  rbac: {
+    permissions: () => request<{ permissions: string[]; wildcard: string }>("/rbac/permissions"),
+
+    roles: () => request<{ roles: RbacRole[] }>("/rbac/roles"),
+
+    saveRole: (name: string, description: string, permissions: string[]) =>
+      request<RbacRole>("/rbac/roles", json({ name, description, permissions })),
+
+    deleteRole: (name: string) => request<void>(`/rbac/role${qs({ name })}`, { method: "DELETE" }),
+
+    assignments: () => request<{ assignments: RbacAssignment[] }>("/rbac/assignments"),
+
+    assign: (body: {
+      role_name: string;
+      principal_dn: string;
+      scope_dn: string;
+      description?: string;
+    }) => request<{ id: string }>("/rbac/assignments", json(body)),
+
+    unassign: (id: string) =>
+      request<void>(`/rbac/assignment${qs({ id })}`, { method: "DELETE" }),
   },
 
   audit: {

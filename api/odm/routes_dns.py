@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from . import dns
 from .config import Settings, get_settings
 from .routes_directory import _audit_context
-from .security import get_pool, require_admin
+from .security import get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/dns", tags=["dns"])
@@ -42,7 +42,7 @@ class UpdateRecordRequest(BaseModel):
     new_data: RecordData
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(requires("dns.read"))])
 async def status(
     _: Session = Depends(require_admin),
     settings: Settings = Depends(get_settings),
@@ -50,7 +50,7 @@ async def status(
     return {"available": dns.available(), "server": dns.server(settings)}
 
 
-@router.get("/zones")
+@router.get("/zones", dependencies=[Depends(requires("dns.read"))])
 async def list_zones(
     _: Session = Depends(require_admin),
     settings: Settings = Depends(get_settings),
@@ -58,7 +58,7 @@ async def list_zones(
     return {"zones": await run_in_threadpool(dns.list_zones, settings)}
 
 
-@router.get("/zone")
+@router.get("/zone", dependencies=[Depends(requires("dns.read"))])
 async def zone_info(
     zone: Annotated[str, Query(max_length=253)],
     _: Session = Depends(require_admin),
@@ -69,7 +69,7 @@ async def zone_info(
     return {"zone": info, "records": [record.as_json() for record in records]}
 
 
-@router.post("/zones", status_code=201)
+@router.post("/zones", status_code=201, dependencies=[Depends(requires("dns.write"))])
 async def create_zone(
     body: ZoneRequest,
     request: Request,
@@ -85,7 +85,7 @@ async def create_zone(
         return {"zone": body.zone}
 
 
-@router.delete("/zone", status_code=204)
+@router.delete("/zone", status_code=204, dependencies=[Depends(requires("dns.write"))])
 async def delete_zone(
     request: Request,
     zone: Annotated[str, Query(max_length=253)],
@@ -101,7 +101,7 @@ async def delete_zone(
         await run_in_threadpool(dns.delete_zone, settings, zone)
 
 
-@router.post("/records", status_code=201)
+@router.post("/records", status_code=201, dependencies=[Depends(requires("dns.write"))])
 async def add_record(
     body: RecordRequest,
     request: Request,
@@ -124,7 +124,7 @@ async def add_record(
         return {"name": body.name, "zone": body.zone, "type": body.type, "data": body.data}
 
 
-@router.patch("/record")
+@router.patch("/record", dependencies=[Depends(requires("dns.write"))])
 async def update_record(
     body: UpdateRecordRequest,
     request: Request,
@@ -149,7 +149,7 @@ async def update_record(
         return {"name": body.name, "zone": body.zone, "type": body.type, "data": body.new_data}
 
 
-@router.delete("/record", status_code=204)
+@router.delete("/record", status_code=204, dependencies=[Depends(requires("dns.write"))])
 async def delete_record(
     request: Request,
     zone: Annotated[str, Query(max_length=253)],

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from . import kea
 from .config import Settings, get_settings
 from .routes_directory import _audit_context
-from .security import get_pool, require_admin
+from .security import get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/dhcp", tags=["dhcp"])
@@ -66,7 +66,7 @@ class Reservation(BaseModel):
         }
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(requires("dhcp.read"))])
 async def status(
     _: Session = Depends(require_admin),
     settings: Settings = Depends(get_settings),
@@ -81,7 +81,7 @@ async def status(
     }
 
 
-@router.get("/scopes")
+@router.get("/scopes", dependencies=[Depends(requires("dhcp.read"))])
 async def list_scopes(
     _: Session = Depends(require_admin),
     settings: Settings = Depends(get_settings),
@@ -89,7 +89,7 @@ async def list_scopes(
     return {"scopes": await run_in_threadpool(kea.subnets, settings)}
 
 
-@router.post("/scopes", status_code=201)
+@router.post("/scopes", status_code=201, dependencies=[Depends(requires("dhcp.write"))])
 async def create_scope(
     body: Scope,
     request: Request,
@@ -106,7 +106,7 @@ async def create_scope(
         return created
 
 
-@router.patch("/scope")
+@router.patch("/scope", dependencies=[Depends(requires("dhcp.write"))])
 async def update_scope(
     body: UpdateScope,
     request: Request,
@@ -125,7 +125,7 @@ async def update_scope(
         return updated
 
 
-@router.delete("/scope", status_code=204)
+@router.delete("/scope", status_code=204, dependencies=[Depends(requires("dhcp.write"))])
 async def delete_scope(
     request: Request,
     id: Annotated[int, Query(ge=1)],
@@ -140,7 +140,7 @@ async def delete_scope(
         entry.before = removed
 
 
-@router.post("/reservations", status_code=201)
+@router.post("/reservations", status_code=201, dependencies=[Depends(requires("dhcp.write"))])
 async def add_reservation(
     body: Reservation,
     request: Request,
@@ -159,7 +159,7 @@ async def add_reservation(
         return created
 
 
-@router.delete("/reservation", status_code=204)
+@router.delete("/reservation", status_code=204, dependencies=[Depends(requires("dhcp.write"))])
 async def delete_reservation(
     request: Request,
     subnet_id: Annotated[int, Query(ge=1)],
@@ -176,7 +176,7 @@ async def delete_reservation(
         await run_in_threadpool(kea.delete_reservation, settings, subnet_id, hw_address)
 
 
-@router.get("/leases")
+@router.get("/leases", dependencies=[Depends(requires("dhcp.read"))])
 async def list_leases(
     _: Session = Depends(require_admin),
     settings: Settings = Depends(get_settings),

@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import admx, objects
 from .routes_directory import _audit_context
-from .security import get_pool, require_admin
+from .security import get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/admx", tags=["admx"])
@@ -42,7 +42,7 @@ def _decode(field: str, payload: str) -> bytes:
         raise objects.ObjectError(f"{field} is not valid base64") from exc
 
 
-@router.get("/templates")
+@router.get("/templates", dependencies=[Depends(requires("gpo.read"))])
 async def list_templates(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -57,7 +57,7 @@ async def list_templates(
     return {"templates": [{**dict(row), "id": str(row["id"])} for row in rows]}
 
 
-@router.post("/templates", status_code=201)
+@router.post("/templates", status_code=201, dependencies=[Depends(requires("admx.write"))])
 async def upload_template(
     body: UploadTemplate,
     request: Request,
@@ -151,7 +151,7 @@ async def upload_template(
         }
 
 
-@router.delete("/template", status_code=204)
+@router.delete("/template", status_code=204, dependencies=[Depends(requires("admx.write"))])
 async def delete_template(
     request: Request,
     id: str = Query(max_length=64),
@@ -171,7 +171,7 @@ async def delete_template(
         await pool.execute("DELETE FROM admx_template WHERE id = $1::uuid", id)
 
 
-@router.get("/categories")
+@router.get("/categories", dependencies=[Depends(requires("gpo.read"))])
 async def list_categories(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -189,7 +189,7 @@ async def list_categories(
     return {"categories": [dict(row) for row in rows]}
 
 
-@router.get("/policies")
+@router.get("/policies", dependencies=[Depends(requires("gpo.read"))])
 async def list_policies(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),

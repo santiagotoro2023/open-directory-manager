@@ -13,13 +13,13 @@ from typing import Annotated, Any, Literal
 import asyncpg
 from fastapi import APIRouter, Depends, Query
 
-from .security import get_pool, require_admin
+from .security import get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/audit", tags=["audit"])
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(requires("audit.read"))])
 async def list_audit(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -71,7 +71,7 @@ async def list_audit(
     }
 
 
-@router.get("/actions")
+@router.get("/actions", dependencies=[Depends(requires("audit.read"))])
 async def known_actions(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),

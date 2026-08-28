@@ -30,6 +30,7 @@ from . import (
     routes_directory,
     routes_dns,
     routes_policy,
+    routes_rbac,
     routes_recyclebin,
     routes_roles,
 )
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_dhcp.router)
     app.include_router(routes_recyclebin.router)
     app.include_router(routes_roles.router)
+    app.include_router(routes_rbac.router)
     app.include_router(routes_audit.router)
 
     # Directory failures map to HTTP once, here, instead of a try/except in

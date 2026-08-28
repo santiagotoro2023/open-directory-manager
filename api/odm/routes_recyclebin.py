@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from . import audit, objects
 from .config import Settings, get_settings
 from .routes_directory import _audit_context, _bound
-from .security import get_pool, require_admin
+from .security import get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/recyclebin", tags=["recyclebin"])
@@ -49,7 +49,7 @@ def _row(row: asyncpg.Record) -> dict[str, Any]:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(requires("recyclebin.read"))])
 async def list_deleted(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -78,7 +78,7 @@ async def list_deleted(
     return {"items": [_row(row) for row in rows], "retention_days": settings.retention_days}
 
 
-@router.get("/item")
+@router.get("/item", dependencies=[Depends(requires("recyclebin.read"))])
 async def read_deleted(
     id: Annotated[str, Query(min_length=36, max_length=36)],
     _: Session = Depends(require_admin),
@@ -90,7 +90,7 @@ async def read_deleted(
     return {**_row(row), "attributes": json.loads(row["attributes"])}
 
 
-@router.post("/restore")
+@router.post("/restore", dependencies=[Depends(requires("recyclebin.restore"))])
 async def restore(
     body: RestoreRequest,
     request: Request,
@@ -134,7 +134,7 @@ async def restore(
         return restored
 
 
-@router.delete("/item", status_code=204)
+@router.delete("/item", status_code=204, dependencies=[Depends(requires("recyclebin.purge"))])
 async def purge(
     request: Request,
     id: Annotated[str, Query(min_length=36, max_length=36)],

@@ -24,10 +24,19 @@ from pydantic import BaseModel, Field
 
 from . import audit, directory, objects
 from .config import Settings, get_settings
-from .security import client_ip, get_pool, require_admin
+from .security import Authz, authorization, client_ip, get_pool, require_admin
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/directory", tags=["directory"])
+
+# Delegation is per object type: a helpdesk role that may reset passwords is
+# not thereby allowed to rewrite an organizational unit.
+WRITE_PERMISSION = {
+    "user": "user.write",
+    "group": "group.write",
+    "computer": "computer.write",
+    "ou": "ou.write",
+}
 
 Name = Annotated[str, Field(min_length=1, max_length=104)]
 Dn = Annotated[str, Field(min_length=3, max_length=1024)]
@@ -75,17 +84,18 @@ def _audit_context(request: Request, session: Session, pool: asyncpg.Pool, actio
 
 @router.get("/tree")
 async def tree(
-    _: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Every OU and built-in container, plus the domain head."""
+    authz.require("directory.read", settings.base_dn)
     nodes = await _read(settings, objects.containers)
     return {"base_dn": settings.base_dn, "nodes": nodes}
 
 
 @router.get("/objects")
 async def list_objects(
-    _: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     settings: Settings = Depends(get_settings),
     object_type: Literal["user", "group", "computer", "ou"] | None = None,
     container: str | None = Query(default=None, max_length=1024),
@@ -93,6 +103,7 @@ async def list_objects(
     scope: Literal["level", "subtree"] = "level",
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> dict[str, Any]:
+    authz.require("directory.read", container or settings.base_dn)
     found, truncated = await _read(
         settings,
         objects.search,
@@ -108,9 +119,10 @@ async def list_objects(
 @router.get("/object")
 async def read_object(
     dn: str = Query(max_length=1024),
-    _: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
+    authz.require("directory.read", dn)
     return await _read(settings, objects.get, dn)
 
 
@@ -175,11 +187,13 @@ async def create_user(
     body: CreateUser,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     # Audited state is re-read from the directory, so the password in the
     # request body never reaches the audit log.
+    authz.require("user.write", body.container)
     return await _create(
         request,
         session,
@@ -197,9 +211,11 @@ async def create_group(
     body: CreateGroup,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
+    authz.require("group.write", body.container)
     return await _create(
         request,
         session,
@@ -217,9 +233,11 @@ async def create_computer(
     body: CreateComputer,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
+    authz.require("computer.write", body.container)
     return await _create(
         request,
         session,
@@ -237,9 +255,11 @@ async def create_ou(
     body: CreateOu,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
+    authz.require("ou.write", body.container)
     return await _create(
         request, session, pool, settings, "ou.create", "ou", objects.create_ou, body.model_dump()
     )
@@ -254,6 +274,7 @@ async def bulk_create_users(
     body: BulkUsers,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
@@ -262,6 +283,9 @@ async def bulk_create_users(
     One bad row does not abort the import — the operator gets a result per
     row, the same way a CSV import in ADUC behaves.
     """
+    for row in body.users:
+        authz.require("user.write", row.container)
+
     results: list[dict[str, Any]] = []
     for row in body.users:
         try:
@@ -303,6 +327,7 @@ async def update_object(
     body: UpdateRequest,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
@@ -311,6 +336,7 @@ async def update_object(
     ) as entry:
         async with _bound(settings, write=True) as conn:
             before = await run_in_threadpool(objects.get, conn, settings, body.dn)
+            authz.require(WRITE_PERMISSION.get(before.get("objectType"), "*"), body.dn)
             after = await run_in_threadpool(
                 objects.update, conn, settings, body.dn, body.changes
             )
@@ -331,9 +357,14 @@ async def move_object(
     body: MoveRequest,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
+    # A move needs the right at both ends, or an operator could shuttle
+    # objects out of their own scope.
+    authz.require("object.move", body.dn)
+    authz.require("object.move", body.target_container)
     async with _audit_context(request, session, pool, "object.move", object_dn=body.dn) as entry:
         async with _bound(settings, write=True) as conn:
             before = await run_in_threadpool(objects.get, conn, settings, body.dn)
@@ -357,12 +388,15 @@ async def set_enabled(
     body: EnabledRequest,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     action = "object.enable" if body.enabled else "object.disable"
     async with _audit_context(request, session, pool, action, object_dn=body.dn) as entry:
         async with _bound(settings, write=True) as conn:
+            existing = await run_in_threadpool(objects.get, conn, settings, body.dn)
+            authz.require(WRITE_PERMISSION.get(existing.get("objectType"), "*"), body.dn)
             await run_in_threadpool(
                 objects.set_enabled, conn, settings, body.dn, enabled=body.enabled
             )
@@ -383,10 +417,12 @@ async def set_password(
     body: PasswordRequest,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ):
     """Reset a password. The password itself is never audited or logged."""
+    authz.require("user.password.reset", body.dn)
     async with _audit_context(
         request, session, pool, "user.password.reset", object_type="user", object_dn=body.dn
     ) as entry:
@@ -405,9 +441,11 @@ async def edit_members(
     body: MembersRequest,
     request: Request,
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
+    authz.require("group.member.write", body.dn)
     async with _audit_context(
         request, session, pool, "group.members.edit", object_type="group", object_dn=body.dn
     ) as entry:
@@ -429,6 +467,7 @@ async def delete_object(
     request: Request,
     dn: str = Query(max_length=1024),
     session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ):
@@ -439,6 +478,7 @@ async def delete_object(
     restorable (CLAUDE.md §5.3). Restore and purge ship with the recycle-bin
     UI in Phase 7.
     """
+    authz.require("object.delete", dn)
     async with _audit_context(request, session, pool, "object.delete", object_dn=dn) as entry:
         state = await _write(settings, objects.delete, dn)
         entry.object_type = state["object_type"]

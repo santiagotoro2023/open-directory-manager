@@ -12,7 +12,13 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from . import audit, objects, roles
-from .security import client_ip, get_pool, require_admin
+from .security import (
+    client_ip,
+    get_pool,
+    require_admin,
+    requires,
+    requires_domain_admin,
+)
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/roles", tags=["roles"])
@@ -54,7 +60,7 @@ def _instance(row: asyncpg.Record) -> dict[str, Any]:
     }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(requires("role.read"))])
 async def list_roles(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -66,7 +72,7 @@ async def list_roles(
     }
 
 
-@router.get("/instance")
+@router.get("/instance", dependencies=[Depends(requires("role.read"))])
 async def read_instance(
     id: Annotated[str, Query(min_length=36, max_length=36)],
     _: Session = Depends(require_admin),
@@ -78,7 +84,8 @@ async def read_instance(
     return _instance(row)
 
 
-@router.post("/install", status_code=202)
+@router.post("/install", status_code=202,
+             dependencies=[Depends(requires_domain_admin())])
 async def install(
     body: InstallRequest,
     request: Request,
@@ -176,7 +183,8 @@ async def _run_install(
         )
 
 
-@router.delete("/instance", status_code=204)
+@router.delete("/instance", status_code=204,
+               dependencies=[Depends(requires_domain_admin())])
 async def remove_instance(
     request: Request,
     id: Annotated[str, Query(min_length=36, max_length=36)],

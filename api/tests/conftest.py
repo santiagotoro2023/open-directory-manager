@@ -38,6 +38,22 @@ ADMIN = directory.DirectoryUser(
     user_principal_name="ada@CORP.EXAMPLE.INTERNAL",
     display_name="Ada Admin",
     sid="S-1-5-21-1-2-3-1104",
+    group_sids=("S-1-5-21-1-2-3-512",),
+    group_dns=(f"CN=Domain Admins,CN=Users,{BASE_DN}",),
+    is_domain_admin=True,
+)
+
+# A delegated administrator: no admin-group membership, so everything they
+# can do comes from an rbac_assignment.
+DELEGATE = directory.DirectoryUser(
+    dn=f"CN=hank,OU=Example Corp,{BASE_DN}",
+    sam_account_name="hank",
+    user_principal_name="hank@CORP.EXAMPLE.INTERNAL",
+    display_name="Hank Helpdesk",
+    sid="S-1-5-21-1-2-3-2201",
+    group_sids=("S-1-5-21-1-2-3-1601",),
+    group_dns=(f"CN=Helpdesk,OU=Example Corp,{BASE_DN}",),
+    is_domain_admin=False,
 )
 
 
@@ -55,6 +71,8 @@ class FakeConn:
 
     async def fetch(self, sql, *args):
         self.state.setdefault("executed", []).append((sql, args))
+        if "FROM rbac_assignment" in sql:
+            return self.state.get("grants", [])
         return self.state.get("rows", [])
 
     async def fetchval(self, sql, *args):
@@ -78,6 +96,8 @@ class FakeConn:
                 "principal_sid": args[4],
                 "display_name": args[5],
                 "expires_at": datetime.now(UTC) + timedelta(hours=8),
+                "is_domain_admin": args[9],
+                "group_sids": list(args[10]),
             }
             return self.state["session"]
         if "last_seen_at = now()" in sql:
@@ -96,6 +116,15 @@ class FakePool:
 
     async def fetch(self, sql, *args):
         return await FakeConn(self.state).fetch(sql, *args)
+
+    async def fetchval(self, sql, *args):
+        return await FakeConn(self.state).fetchval(sql, *args)
+
+    async def fetchrow(self, sql, *args):
+        return await FakeConn(self.state).fetchrow(sql, *args)
+
+    async def execute(self, sql, *args):
+        return await FakeConn(self.state).execute(sql, *args)
 
 
 def audit_rows(state: dict) -> list[dict]:
@@ -285,15 +314,30 @@ def client(state, monkeypatch) -> httpx.AsyncClient:
     return http
 
 
-@pytest.fixture
-async def admin_client(client) -> httpx.AsyncClient:
-    """A client that has already signed in as a member of the admin group."""
+async def _sign_in(client, user: directory.DirectoryUser) -> httpx.AsyncClient:
     client.monkeypatch.setattr(
-        directory, "authenticate", lambda settings, username, password: ADMIN
+        directory, "authenticate", lambda settings, username, password: user
     )
     response = await client.post(
-        "/api/v1/auth/login", json={"username": "ada", "password": "pw"}
+        "/api/v1/auth/login",
+        json={"username": user.sam_account_name, "password": "pw"},
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     client.headers["X-ODM-CSRF"] = response.json()["csrf_token"]
     return client
+
+
+@pytest.fixture
+async def admin_client(client) -> httpx.AsyncClient:
+    """A client signed in as a member of the admin group."""
+    return await _sign_in(client, ADMIN)
+
+
+def grant(role: str, scope_dn: str, permissions: list[str], sid: str) -> dict:
+    """One row shaped like the delegation query returns."""
+    return {
+        "role_name": role,
+        "scope_dn": scope_dn,
+        "permissions": permissions,
+        "principal_sid": sid,
+    }

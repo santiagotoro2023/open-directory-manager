@@ -27,6 +27,8 @@ class Session:
     display_name: str
     csrf_token: str
     expires_at: datetime
+    is_domain_admin: bool = True
+    group_sids: tuple[str, ...] = ()
 
 
 def new_token() -> str:
@@ -93,8 +95,9 @@ async def create(
     row = await conn.fetchrow(
         """
         INSERT INTO admin_session (token_sha256, csrf_token, principal, principal_dn,
-                                   principal_sid, display_name, source_ip, user_agent, expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, $9)
+                                   principal_sid, display_name, source_ip, user_agent, expires_at,
+                                   is_domain_admin, group_sids)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, $9, $10, $11::text[])
         RETURNING id
         """,
         token_hash(token),
@@ -106,6 +109,8 @@ async def create(
         source_ip,
         (user_agent or "")[:512],
         expires_at,
+        user.is_domain_admin,
+        list(user.group_sids),
     )
     session = Session(
         id=str(row["id"]),
@@ -115,6 +120,8 @@ async def create(
         display_name=user.display_name,
         csrf_token=csrf,
         expires_at=expires_at,
+        is_domain_admin=user.is_domain_admin,
+        group_sids=user.group_sids,
     )
     return token, session
 
@@ -129,7 +136,7 @@ async def load(conn: asyncpg.Connection, settings: Settings, token: str) -> Sess
           AND expires_at > now()
           AND last_seen_at > now() - ($2 || ' minutes')::interval
         RETURNING id, principal, principal_dn, principal_sid, display_name,
-                  csrf_token, expires_at
+                  csrf_token, expires_at, is_domain_admin, group_sids
         """,
         token_hash(token),
         str(settings.session_idle_minutes),
@@ -144,6 +151,8 @@ async def load(conn: asyncpg.Connection, settings: Settings, token: str) -> Sess
         display_name=row["display_name"],
         csrf_token=row["csrf_token"],
         expires_at=row["expires_at"],
+        is_domain_admin=bool(row["is_domain_admin"]),
+        group_sids=tuple(row["group_sids"] or ()),
     )
 
 

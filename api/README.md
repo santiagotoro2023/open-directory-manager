@@ -12,7 +12,9 @@ the directory directly (CLAUDE.md §2).
 | `odm/db.py` | asyncpg pool and the migration runner (`odm-db migrate`) |
 | `odm/directory.py` | The only module that speaks LDAP: bind, group gate |
 | `odm/sessions.py` | Server-side sessions, login throttling |
-| `odm/security.py` | Security headers, origin checks, session/CSRF gates |
+| `odm/security.py` | Security headers, origin checks, session/CSRF gates, authorization |
+| `odm/authz.py` | Permissions, scopes and the delegation model |
+| `odm/routes_rbac.py` | `/api/v1/rbac/*` — roles and assignments |
 | `odm/objects.py` | Directory object CRUD, DN guard, protected-object guard |
 | `odm/auth.py` | `/api/v1/auth/*` |
 | `odm/routes_directory.py` | `/api/v1/directory/*` |
@@ -109,6 +111,13 @@ controller is needed to run them.
 | `POST` | `/api/v1/roles/install` | Start an installation (202; poll the instance) |
 | `GET` | `/api/v1/roles/instance` | Installation state and last error |
 | `DELETE` | `/api/v1/roles/instance` | Deregister an instance |
+| `GET` | `/api/v1/rbac/permissions` | Every permission a role can hold |
+| `GET` | `/api/v1/rbac/roles` | Roles and their permissions |
+| `POST` | `/api/v1/rbac/roles` | Define or redefine a custom role |
+| `DELETE` | `/api/v1/rbac/role` | Delete a custom role |
+| `GET` | `/api/v1/rbac/assignments` | Who holds what, where |
+| `POST` | `/api/v1/rbac/assignments` | Grant a role at a scope |
+| `DELETE` | `/api/v1/rbac/assignment` | Revoke an assignment |
 | `GET` | `/api/v1/audit` | Filterable audit log |
 
 DNS and DHCP routers arrive in later phases.
@@ -129,6 +138,13 @@ factory.
 - State-changing requests need a matching `X-ODM-CSRF` header and an allowed
   `Origin`.
 - Repeated failures lock out by username and by source address.
+- A session is issued to a member of the admin group, or to a principal
+  holding a delegated assignment; anyone else is refused and the refusal is
+  audited.
+- Every route declares the permission it needs. Scoped actions check it
+  against the object's distinguished name, so an assignment at an OU reaches
+  that OU and everything beneath it and nothing else. Moves are checked at
+  both ends. Managing delegation is reserved for domain administrators.
 - Admin-group membership is re-proven against the directory every
   `ODM_ADMIN_RECHECK_MINUTES`; a principal that lost it has its session
   revoked on its next privileged request.

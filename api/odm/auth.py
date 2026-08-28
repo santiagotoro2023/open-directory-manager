@@ -1,9 +1,9 @@
 """Authentication endpoints.
 
-Two ways in, one gate: whoever you are, you only get a session if the
-directory says you are a member of the configured Domain-Admins-equivalent
-group. ODM stores no passwords and has no user table of its own
-(CLAUDE.md §3.1).
+Two ways in, one gate: a session is issued only to a member of the
+configured Domain-Admins-equivalent group, or to a principal holding a
+delegated assignment. ODM stores no passwords and has no user table of its
+own (CLAUDE.md §3.1, §4).
 
   POST /api/v1/auth/login      username + password, LDAPS bind against Samba
   POST /api/v1/auth/negotiate  SPNEGO/Kerberos, for SSO and domain-joined callers
@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, directory, sessions
+from . import audit, authz, directory, sessions
 from .config import Settings, get_settings
 from .security import clear_session_cookie, current_session, get_pool, set_session_cookie
 from .sessions import Session
@@ -41,15 +41,23 @@ class SessionResponse(BaseModel):
     distinguished_name: str
     csrf_token: str
     expires_at: datetime
+    domain_admin: bool = True
+    # What this operator may do, so the console can hide what they cannot.
+    permissions: list[str] = []
+    scopes: list[dict[str, str]] = []
 
 
-def _response(session: Session) -> SessionResponse:
+def _response(session: Session, grants: list[authz.Grant] | None = None) -> SessionResponse:
+    reach = authz.describe(grants or [], domain_admin=session.is_domain_admin)
     return SessionResponse(
         principal=session.principal,
         display_name=session.display_name,
         distinguished_name=session.principal_dn,
         csrf_token=session.csrf_token,
         expires_at=session.expires_at,
+        domain_admin=session.is_domain_admin,
+        permissions=list(reach["permissions"]),  # type: ignore[arg-type]
+        scopes=list(reach["scopes"]),  # type: ignore[arg-type]
     )
 
 
@@ -61,6 +69,7 @@ async def _issue(
     user: directory.DirectoryUser,
     source_ip: str | None,
     method: str,
+    grants: list[authz.Grant] | None = None,
 ) -> SessionResponse:
     token, session = await sessions.create(
         conn,
@@ -81,10 +90,10 @@ async def _issue(
         outcome="success",
         object_type="session",
         object_dn=user.dn,
-        detail=method,
+        detail=f"{method}; domain admin" if user.is_domain_admin else f"{method}; delegated",
     )
     set_session_cookie(response, settings, token)
-    return _response(session)
+    return _response(session, grants)
 
 
 @router.post("/login", response_model=SessionResponse)
@@ -148,8 +157,54 @@ async def login(
     except directory.DirectoryError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "directory unavailable") from exc
 
+    grants = await _admissible(pool, settings, user, source_ip, request)
     async with pool.acquire() as conn:
-        return await _issue(conn, settings, request, response, user, source_ip, "password")
+        return await _issue(
+            conn, settings, request, response, user, source_ip, "password", grants
+        )
+
+
+async def _admissible(
+    pool: asyncpg.Pool,
+    settings: Settings,
+    user: directory.DirectoryUser,
+    source_ip: str | None,
+    request: Request,
+) -> list[authz.Grant]:
+    """Decide whether this principal may open a console session.
+
+    Membership of the admin group admits unconditionally. Everyone else needs
+    at least one delegated assignment (CLAUDE.md §4).
+    """
+    grants = [] if user.is_domain_admin else await authz.grants_for(
+        pool, user.sid, user.group_sids
+    )
+    if user.is_domain_admin or grants:
+        return grants
+
+    async with pool.acquire() as conn:
+        await sessions.record_attempt(
+            conn,
+            username=user.user_principal_name,
+            source_ip=source_ip,
+            succeeded=False,
+            reason="no administrative rights",
+        )
+        await audit.record(
+            conn,
+            actor=user.user_principal_name,
+            actor_sid=user.sid,
+            source_ip=source_ip,
+            action="auth.login",
+            outcome="denied",
+            object_type="session",
+            object_dn=user.dn,
+            detail=f"not in {settings.admin_group} and holds no delegated assignment",
+        )
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        f"not a member of {settings.admin_group}, and nothing is delegated to this account",
+    )
 
 
 @router.post("/negotiate", response_model=SessionResponse)
@@ -200,8 +255,11 @@ async def negotiate(
     except directory.DirectoryError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "directory unavailable") from exc
 
+    grants = await _admissible(pool, settings, user, source_ip, request)
     async with pool.acquire() as conn:
-        return await _issue(conn, settings, request, response, user, source_ip, "kerberos")
+        return await _issue(
+            conn, settings, request, response, user, source_ip, "kerberos", grants
+        )
 
 
 def _accept_spnego(settings: Settings, token: bytes) -> tuple[str, bytes | None]:
@@ -225,8 +283,16 @@ def _accept_spnego(settings: Settings, token: bytes) -> tuple[str, bytes | None]
 
 
 @router.get("/session", response_model=SessionResponse)
-async def read_session(session: Session = Depends(current_session)) -> SessionResponse:
-    return _response(session)
+async def read_session(
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> SessionResponse:
+    grants = (
+        []
+        if session.is_domain_admin
+        else await authz.grants_for(pool, session.principal_sid, session.group_sids)
+    )
+    return _response(session, grants)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

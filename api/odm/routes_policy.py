@@ -15,7 +15,7 @@ from . import objects, rsop, sysvol
 from .config import Settings, get_settings
 from .policy_schema import PolicySettings, Targeting
 from .routes_directory import _audit_context, _bound
-from .security import get_pool, require_admin
+from .security import get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/policy", tags=["policy"])
@@ -87,7 +87,7 @@ async def _mirror_links(pool: asyncpg.Pool, settings: Settings, target_dn: str) 
 # -------------------------------------------------------------------- GPOs ---
 
 
-@router.get("/gpos")
+@router.get("/gpos", dependencies=[Depends(requires("gpo.read"))])
 async def list_gpos(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -104,7 +104,7 @@ async def list_gpos(
     }
 
 
-@router.get("/gpo")
+@router.get("/gpo", dependencies=[Depends(requires("gpo.read"))])
 async def read_gpo(
     guid: uuid.UUID,
     _: Session = Depends(require_admin),
@@ -124,7 +124,7 @@ async def read_gpo(
     }
 
 
-@router.post("/gpos", status_code=201)
+@router.post("/gpos", status_code=201, dependencies=[Depends(requires("gpo.write"))])
 async def create_gpo(
     body: CreateGpo,
     request: Request,
@@ -155,7 +155,7 @@ async def create_gpo(
         return _gpo_json(row)
 
 
-@router.patch("/gpo")
+@router.patch("/gpo", dependencies=[Depends(requires("gpo.write"))])
 async def update_gpo(
     body: UpdateGpo,
     request: Request,
@@ -209,7 +209,7 @@ async def update_gpo(
         return _gpo_json(row)
 
 
-@router.delete("/gpo", status_code=204)
+@router.delete("/gpo", status_code=204, dependencies=[Depends(requires("gpo.write"))])
 async def delete_gpo(
     request: Request,
     guid: uuid.UUID,
@@ -241,7 +241,7 @@ async def delete_gpo(
 # ------------------------------------------------------------------- links ---
 
 
-@router.get("/links")
+@router.get("/links", dependencies=[Depends(requires("gpo.read"))])
 async def list_links(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
@@ -264,7 +264,7 @@ async def list_links(
     }
 
 
-@router.post("/links", status_code=201)
+@router.post("/links", status_code=201, dependencies=[Depends(requires("gpo.write"))])
 async def create_link(
     body: CreateLink,
     request: Request,
@@ -302,7 +302,7 @@ async def create_link(
         return {"id": str(row["id"]), "link_order": row["link_order"]}
 
 
-@router.patch("/link")
+@router.patch("/link", dependencies=[Depends(requires("gpo.write"))])
 async def update_link(
     body: UpdateLink,
     request: Request,
@@ -355,7 +355,7 @@ async def _reorder(conn: asyncpg.Connection, target_dn: str, link_id: uuid.UUID,
         await conn.execute("UPDATE gpo_link SET link_order = $2 WHERE id = $1", current, index)
 
 
-@router.delete("/link", status_code=204)
+@router.delete("/link", status_code=204, dependencies=[Depends(requires("gpo.write"))])
 async def delete_link(
     request: Request,
     id: uuid.UUID,
@@ -383,7 +383,7 @@ async def delete_link(
         await _mirror_links(pool, settings, row["target_dn"])
 
 
-@router.post("/inheritance")
+@router.post("/inheritance", dependencies=[Depends(requires("gpo.write"))])
 async def set_inheritance(
     body: Inheritance,
     request: Request,
@@ -416,7 +416,7 @@ async def set_inheritance(
 # -------------------------------------------------------------------- RSoP ---
 
 
-@router.get("/effective")
+@router.get("/effective", dependencies=[Depends(requires("gpo.read"))])
 async def effective(
     dn: Annotated[str, Query(max_length=1024)],
     _: Session = Depends(require_admin),
@@ -428,7 +428,7 @@ async def effective(
         return await rsop.build(pool, settings, conn, dn)
 
 
-@router.get("/reports")
+@router.get("/reports", dependencies=[Depends(requires("gpo.read"))])
 async def reports(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
