@@ -51,6 +51,19 @@ const PLUMBING = new Set([
   "deleted objects",
 ]);
 
+// Organizational units the directory creates for itself. Together with the
+// containers (Users, Computers, Builtin) these are the structure that was
+// always there, as opposed to the structure an operator built.
+const BUILTIN_OUS = new Set(["domain controllers"]);
+
+function isBuiltin(node: DirectoryObject, name: string): boolean {
+  return (
+    node.objectType === "container" ||
+    node.objectType === "domain" ||
+    BUILTIN_OUS.has(name.toLowerCase())
+  );
+}
+
 function parentOf(dn: string): string {
   const comma = dn.indexOf(",");
   return comma === -1 ? "" : dn.slice(comma + 1);
@@ -146,12 +159,33 @@ export function Directory() {
     const isOu = node.objectType === "ou";
     return [
       { label: label(node), heading: true },
-      { label: "New user", onSelect: () => { setContainer(dn); setCreating("user"); } },
-      { label: "New group", onSelect: () => { setContainer(dn); setCreating("group"); } },
-      { label: "New computer", onSelect: () => { setContainer(dn); setCreating("computer"); } },
+      {
+        label: "New user",
+        onSelect: () => {
+          setContainer(dn);
+          setCreating("user");
+        },
+      },
+      {
+        label: "New group",
+        onSelect: () => {
+          setContainer(dn);
+          setCreating("group");
+        },
+      },
+      {
+        label: "New computer",
+        onSelect: () => {
+          setContainer(dn);
+          setCreating("computer");
+        },
+      },
       {
         label: "New organizational unit",
-        onSelect: () => { setContainer(dn); setCreating("ou"); },
+        onSelect: () => {
+          setContainer(dn);
+          setCreating("ou");
+        },
       },
       { separator: true },
       { label: "Link a policy object…", onSelect: () => setLinking(dn) },
@@ -196,12 +230,7 @@ export function Directory() {
   );
 
   return (
-    <Split
-      id="directory"
-      label="Resize the directory tree"
-      initial={260}
-      side={tree}
-    >
+    <Split id="directory" label="Resize the directory tree" initial={260} side={tree}>
       <section className="objects">
         <div className="page-header">
           <div className="search">
@@ -332,9 +361,7 @@ export function Directory() {
         />
       )}
 
-      {enrolling && (
-        <EnrolmentTokens container={container} onClose={() => setEnrolling(false)} />
-      )}
+      {enrolling && <EnrolmentTokens container={container} onClose={() => setEnrolling(false)} />}
 
       {menu}
 
@@ -397,10 +424,7 @@ function TreeNode({
 
   return (
     <div className="tree-node">
-      <div
-        className={selected === dn ? "tree-row active" : "tree-row"}
-        {...bind(menuFor(self))}
-      >
+      <div className={selected === dn ? "tree-row active" : "tree-row"} {...bind(menuFor(self))}>
         <button
           type="button"
           className="icon"
@@ -415,7 +439,15 @@ function TreeNode({
           )}
         </button>
         <button type="button" className="tree-label" onClick={() => onSelect(dn)}>
-          <Folder size={14} aria-hidden="true" />
+          {/* Filled for what the directory brought with it, outline for what
+              somebody here made. Which is which matters when deciding what is
+              safe to move or rename. */}
+          <Folder
+            size={14}
+            aria-hidden="true"
+            className={isBuiltin(self, name) ? "folder-builtin" : "folder-custom"}
+            fill={isBuiltin(self, name) ? "currentColor" : "none"}
+          />
           <span className="truncate">{name}</span>
         </button>
       </div>

@@ -37,6 +37,9 @@ async def replication_status(
     """Domain controllers and the state of inbound replication."""
     async with _bound(settings, write=False) as conn:
         dcs = await run_in_threadpool(replication.controllers, conn, settings)
+    if len(dcs) < 2:
+        return {"controllers": dcs, "healthy": True, "inbound": [], "single": True,
+                "server": server or ""}
     status = await run_in_threadpool(replication.status, settings, server)
     return {"controllers": dcs, **status}
 
@@ -190,9 +193,16 @@ async def health(
     report: dict[str, Any] = {"domain": settings.domain}
 
     report["directory"] = await _section(_directory_health, settings)
-    report["replication"] = await _section(
-        lambda: run_in_threadpool(replication.status, settings)
-    )
+    # A domain with one controller has nothing to replicate, and asking anyway
+    # produced a red banner on the dashboard of every new install. The count
+    # comes from the directory read just above, so this costs nothing.
+    if report["directory"].get("controllers", 0) < 2:
+        report["replication"] = {"available": True, "healthy": True, "inbound": [],
+                                 "single": True}
+    else:
+        report["replication"] = await _section(
+            lambda: run_in_threadpool(replication.status, settings)
+        )
     report["dhcp"] = (
         {"configured": False}
         if not kea.configured(settings)

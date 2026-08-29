@@ -13,7 +13,12 @@
   --radius-sm: 8px;
   --radius-lg: 14px;
 
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   font-size: 14px;
   color: var(--text);
 }
@@ -50,19 +55,104 @@ body {
 
 /* ------------------------------------------------------------- controls -- */
 
-input {
-  padding: 9px 11px;
+/* One height, one padding, one radius for everything an operator types into
+   or picks from. line-height is explicit because the browser default clips
+   the descender of a g or a y at the top of a field. */
+input,
+select,
+textarea {
+  min-height: 38px;
+  padding: 8px 11px;
   font: inherit;
+  line-height: 1.45;
   color: inherit;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 
-input:focus {
+input:focus,
+select:focus,
+textarea:focus {
   border-color: var(--accent);
   outline: 2px solid rgb(79 70 229 / 0.25);
   outline-offset: 0;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: var(--surface-recessed);
+  color: var(--text-muted);
+}
+
+/* A native select renders as an OS widget that matches nothing else here.
+   The arrow is drawn instead, so the control is ours on every platform. */
+select {
+  appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+}
+
+/* Same for tick boxes: the native one is a different size and colour in every
+   browser, which is most of why the pages read as mismatched. */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  flex: none;
+  min-height: 0;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  background: var(--surface);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+}
+
+input[type="radio"] {
+  border-radius: 50%;
+}
+
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border: 2px solid #ffffff;
+  border-top: 0;
+  border-right: 0;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+
+input[type="radio"]:checked::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  background: var(--surface-recessed);
+  border-color: var(--border);
+  cursor: default;
 }
 
 button {
@@ -82,6 +172,20 @@ button {
 button.icon {
   min-height: 0;
   padding: 4px;
+}
+
+/* A button is centred content — except where it is a row in a list, and then
+   centring makes every label start at a different place because each one is
+   centred on its own width. Every full-width list row lives here rather than
+   each one rediscovering the override. */
+.category-list button,
+.picker li button,
+.picker-results button,
+.role-row,
+.wiki-link,
+.tree-label {
+  justify-content: flex-start;
+  text-align: left;
 }
 
 button.primary {
@@ -176,18 +280,86 @@ button.ghost:hover {
 }
 
 .topbar-logo {
-  height: 34px;
+  height: 30px;
   width: auto;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 14px;
 }
 
 .principal {
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------- account menu -- */
+
+.account {
+  position: relative;
+}
+
+.avatar {
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  padding: 0;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.avatar:hover {
+  background: var(--accent-hover);
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  min-width: 260px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgb(17 24 39 / 0.12);
+}
+
+.account-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-who .mono {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-who .badge {
+  align-self: flex-start;
+  margin: 4px 0 0;
+}
+
+.account-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 12px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+.account-menu button:hover {
+  background: var(--surface-recessed);
 }
 
 .body {
@@ -330,9 +502,25 @@ button.ghost:hover {
 }
 
 .search input {
-  border: none;
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
   padding: 8px 0;
-  min-width: 240px;
+  border: none;
+  background: none;
+}
+
+/* In a dialog the field is the width of the dialog: a search box narrower
+   than the list it filters reads as an unfinished form. */
+.modal .search,
+.picker-field .search,
+.wiki-nav .search {
+  width: 100%;
+}
+
+.toolbar .search {
+  flex: 1 1 260px;
+  max-width: 420px;
 }
 
 .search input:focus {
@@ -430,16 +618,10 @@ button.ghost:hover {
 .checkbox {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  padding: 2px 0;
   margin-top: 10px;
-}
-
-select {
-  padding: 8px 10px;
-  font: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
 button.danger {
@@ -703,12 +885,7 @@ table.data.compact td {
 }
 
 textarea {
-  padding: 9px 11px;
-  font: inherit;
-  color: inherit;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  min-height: 72px;
   resize: vertical;
 }
 
@@ -847,6 +1024,81 @@ textarea.mono,
 }
 
 /* -------------------------------------------------------------- operations -- */
+
+/* Four tiles of the same size holding four numbers. Nothing that can grow
+   into a paragraph goes in here — that is what the table below is for. */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.stat {
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.stat.attention {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.stat-value {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat.attention .stat-value {
+  color: var(--danger);
+}
+
+.stat-label {
+  margin: 2px 0 0;
+  font-weight: 500;
+}
+
+.stat-note {
+  margin: 1px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.state .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.state-ok {
+  color: #047857;
+}
+
+.state-attention {
+  color: var(--danger);
+}
+
+.state-off {
+  color: var(--text-muted);
+}
+
+.signed-in {
+  margin-top: 16px;
+  font-size: 12px;
+}
 
 .health-grid {
   display: grid;
@@ -1317,11 +1569,8 @@ ul.plain {
   color: var(--text-muted);
 }
 
-.empty {
-  padding: 28px 16px;
-  text-align: center;
-  color: var(--text-muted);
-}
+/* See the consolidated rule further down: this one centred every empty state
+   in the middle of its panel, which read as a page that had not loaded. */
 
 /* ---------------------------------------------------- policy categories -- */
 
@@ -1390,6 +1639,13 @@ ul.plain {
   padding: 18px 22px;
   overflow: auto;
   flex: 1;
+}
+
+/* A line of explanation running the full width of a wide monitor is a line
+   nobody finishes. Tables and fields still take the space they need. */
+.category-editor > p.muted,
+.content > .page-header + p.muted {
+  max-width: 78ch;
 }
 
 .category-editor > header {
@@ -1613,8 +1869,33 @@ ul.plain {
 .actions-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin: 14px 0;
+}
+
+/* The bar that appears when rows are ticked. It is a strip, not a row of
+   loose buttons with a pill floating above their centre line. */
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: var(--radius-sm);
+}
+
+.selection-bar .count {
+  margin-right: 4px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.selection-bar .spacer {
+  flex: 1;
 }
 
 .picker-results button.active {
@@ -1707,4 +1988,111 @@ ul.plain {
 .site-card .badge .icon {
   margin-left: 4px;
   color: inherit;
+}
+
+/* ------------------------------------------------------------ empty state -- */
+
+/* "Nothing configured" centred in a third of a blank page is what an
+   unfinished screen looks like. It belongs in the table that will hold the
+   rows, so the shape of the thing is visible before there is one. */
+td.empty,
+.empty {
+  padding: 18px 12px;
+  text-align: left;
+  color: var(--text-muted);
+}
+
+/* A setting with no value yet: a bordered placeholder the shape of what will
+   be there, with the action that creates it inside it. */
+.empty-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  background: var(--surface-recessed);
+  border: 1px dashed #cbd5e1;
+  border-radius: var(--radius-lg);
+}
+
+.empty-setting p {
+  margin: 0;
+  flex: 1 1 240px;
+  color: var(--text-muted);
+}
+
+.setting-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setting-panel > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.setting-panel > header h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.setting-panel > header p {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--text-muted);
+}
+
+.setting-panel > header .spacer {
+  flex: 1;
+}
+
+/* ------------------------------------------------------------------ roles -- */
+
+/* A failed installer's output, under the row it belongs to rather than
+   inside a narrow cell. */
+tr.detail-row td {
+  padding-top: 0;
+  background: var(--surface-recessed);
+}
+
+.failure-output {
+  margin: 0;
+  max-height: 220px;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--danger);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+}
+
+.role-details {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.role-details p {
+  margin: 0 0 4px;
+}
+
+/* A built-in container is filled, one an operator created is an outline. The
+   fill is the icon's own colour, so it stays legible on the active row. */
+.folder-builtin {
+  color: var(--accent);
+}
+
+.tree-row.active .folder-builtin,
+.tree-row.active .folder-custom {
+  color: inherit;
+}
+
+.folder-custom {
+  color: var(--text-muted);
 }

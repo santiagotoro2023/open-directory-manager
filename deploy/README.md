@@ -7,7 +7,7 @@ networking and DNS on the host it runs on.
 Bring-up installs the core role only: Active Directory, Group Policy and
 DNS, plus the ODM control plane and its console. DHCP, file-server,
 certificate-authority and PXE are installed afterwards through the role
-framework, from the console or with `odm-role-install`.
+framework, from **Server Roles** in the console.
 
 | Script | Runs on | Purpose |
 |---|---|---|
@@ -15,7 +15,6 @@ framework, from the console or with `odm-role-install`.
 | `create-api-service-account.sh` | A domain controller | The control plane's account, SPN, keytab and delegated rights |
 | `generate-self-signed.sh` | The control-plane host | The console's first TLS certificate |
 | `setup-db.sh` | The control-plane host | PostgreSQL role, database and schema |
-| `odm-role-install` + `odm-roles.sudoers` | The control-plane host | Lets the service install roles without being root |
 | `odm-apply-console-certificate` | The control-plane host | Installs a console certificate issued by the domain authority |
 | `install-dhcp-role.sh` | Each DHCP node | ISC Kea failover pair with dynamic DNS |
 | `install-file-server-role.sh` | A file server | Kerberos SMB shares for drive maps |
@@ -163,26 +162,22 @@ PostgreSQL and agents are unaffected.
 
 ### 6. Role framework
 
-Installing a role needs root, which the API deliberately does not have:
+Installing a role means `apt` and service restarts. The control plane runs
+under `ProtectSystem=strict` with `NoNewPrivileges`, so it cannot do that even
+on its own host — sudo would not help, because the read-only mount namespace
+is inherited by anything it starts. Every install is handed to the agent on
+the target machine, which runs as root:
 
 ```
-sudo install -d -m 0755 /opt/odm/bin /opt/odm/deploy
-sudo install -m 0755 odm-role-install /opt/odm/bin/
-sudo install -m 0755 install-*-role.sh /opt/odm/deploy/
-sudo install -m 0440 -o root -g root odm-roles.sudoers /etc/sudoers.d/odm-roles
-sudo visudo -cf /etc/sudoers.d/odm-roles
+sudo ./install-agent.sh --api-url https://<console fqdn>:8443 --binary ./odm-agent
 ```
 
-The sudoers rule grants the `odm` user exactly one command and nothing else.
-Roles can then be installed from **Server Roles** in the UI.
+`setup.sh` does this for the controller as its last step. A controller with no
+agent shows up in the console but nothing can be installed on it.
 
 ### 7. Certificate-authority role (optional)
 
-```
-sudo /opt/odm/bin/odm-role-install certificate-authority --ca-dir /var/lib/odm/ca
-```
-
-Or install it from **Server Roles** in the console. Add the printed
+Install it from **Server Roles** in the console. Add the printed
 `ODM_CA_DIR` to the secrets file and restart the API, then open
 **Certificates** and create the root. **Publish to domain** writes the root
 into a group policy object linked at the domain head, so agents install it

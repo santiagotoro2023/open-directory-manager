@@ -66,8 +66,8 @@ export function Servers() {
           authorised on its own, so a scope that reaches some and not the rest
           does the part it may and says what it skipped. */}
       {chosen.size > 0 && (
-        <div className="actions-row">
-          <span className="badge">{chosen.size} selected</span>
+        <div className="selection-bar">
+          <span className="count">{chosen.size} selected</span>
           <button type="button" className="ghost" onClick={() => setBulk("update-check")}>
             Check for updates
           </button>
@@ -80,6 +80,7 @@ export function Servers() {
           <button type="button" className="danger" onClick={() => setBulk("restart")}>
             Restart
           </button>
+          <span className="spacer" />
           <button type="button" className="ghost" onClick={() => setChosen(new Set())}>
             Clear
           </button>
@@ -139,9 +140,7 @@ export function Servers() {
               <td>
                 {server.roles.length === 0
                   ? "—"
-                  : server.roles
-                      .map((role) => ROLE_LABELS[role.role] ?? role.role)
-                      .join(", ")}
+                  : server.roles.map((role) => ROLE_LABELS[role.role] ?? role.role).join(", ")}
                 {server.pending_tasks > 0 && (
                   <span className="badge">{server.pending_tasks} queued</span>
                 )}

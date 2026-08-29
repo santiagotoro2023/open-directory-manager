@@ -52,6 +52,11 @@ install -d -m 0755 /usr/lib/odm/roles
 for INSTALLER in "$(dirname "$0")"/install-*-role.sh; do
     [[ -f "$INSTALLER" ]] && install -m 0755 "$INSTALLER" /usr/lib/odm/roles/
 done
+# On a controller the agent is also what installs a re-issued console
+# certificate, for the same reason: the control plane may not write /etc or
+# restart itself.
+HELPER="$(dirname "$0")/odm-apply-console-certificate"
+[[ -f "$HELPER" ]] && install -m 0755 "$HELPER" /usr/lib/odm/roles/
 install -d -m 0750 /etc/odm /var/lib/odm
 
 if [[ -n "$CA_CERT" ]]; then

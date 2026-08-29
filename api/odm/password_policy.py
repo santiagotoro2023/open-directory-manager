@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from .dns import SAMBA_TOOL, DnsUnavailable, available
+from .dns import SAMBA_TOOL, DnsUnavailable, available, connection_flags
 
 TIMEOUT_SECONDS = 60
 
@@ -50,14 +50,14 @@ def validate_name(name: str) -> str:
     return name
 
 
-def _run(*args: str) -> str:
+def _run(settings, *args: str) -> str:
     if not available():
         raise DnsUnavailable(
             "samba-tool is not installed on the API host; password policies "
             "require the control plane to run on a domain controller"
         )
     completed = subprocess.run(  # noqa: S603 - fixed argv, no shell, validated arguments
-        [SAMBA_TOOL, "domain", "passwordsettings", "pso", *args],
+        [SAMBA_TOOL, "domain", "passwordsettings", "pso", *args, *connection_flags(settings)],
         capture_output=True,
         text=True,
         timeout=TIMEOUT_SECONDS,
@@ -83,33 +83,33 @@ def settings_arguments(definition: Definition) -> list[str]:
     ]
 
 
-def exists(name: str) -> bool:
+def exists(settings, name: str) -> bool:
     try:
-        _run("show", validate_name(name))
+        _run(settings, "show", validate_name(name))
     except PasswordPolicyError:
         return False
     return True
 
 
-def upsert(definition: Definition) -> None:
+def upsert(settings, definition: Definition) -> None:
     """Create the policy, or bring an existing one in line with it."""
     name = validate_name(definition.name)
     arguments = settings_arguments(definition)
-    if exists(name):
-        _run("set", name, "--precedence", str(definition.precedence), *arguments)
+    if exists(settings, name):
+        _run(settings, "set", name, "--precedence", str(definition.precedence), *arguments)
     else:
-        _run("create", name, str(definition.precedence), *arguments)
+        _run(settings, "create", name, str(definition.precedence), *arguments)
 
 
-def delete(name: str) -> None:
-    _run("delete", validate_name(name))
+def delete(settings, name: str) -> None:
+    _run(settings, "delete", validate_name(name))
 
 
-def applied_to(name: str) -> list[str]:
+def applied_to(settings, name: str) -> list[str]:
     """Who the directory currently says this policy reaches."""
     applied: list[str] = []
     inside = False
-    for line in _run("show", validate_name(name)).splitlines():
+    for line in _run(settings, "show", validate_name(name)).splitlines():
         stripped = line.strip()
         if stripped.lower().startswith("applies to"):
             inside = True
@@ -121,14 +121,14 @@ def applied_to(name: str) -> list[str]:
     return applied
 
 
-def apply_to(name: str, principals: list[str]) -> None:
+def apply_to(settings, name: str, principals: list[str]) -> None:
     for principal in principals:
-        _run("apply", validate_name(name), principal)
+        _run(settings, "apply", validate_name(name), principal)
 
 
-def unapply_from(name: str, principals: list[str]) -> None:
+def unapply_from(settings, name: str, principals: list[str]) -> None:
     for principal in principals:
-        _run("unapply", validate_name(name), principal)
+        _run(settings, "unapply", validate_name(name), principal)
 
 
 def reconcile(name: str, wanted: list[str], current: list[str]) -> dict[str, list[str]]:

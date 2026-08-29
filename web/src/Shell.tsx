@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   BookOpen,
@@ -117,13 +117,7 @@ function recall(): boolean {
   }
 }
 
-export function Shell({
-  session,
-  onSignOut,
-}: {
-  session: SessionInfo;
-  onSignOut: () => void;
-}) {
+export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut: () => void }) {
   const [collapsed, setCollapsed] = useState(recall);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [selfService, setSelfService] = useState(false);
@@ -166,27 +160,14 @@ export function Shell({
   return (
     <div className="shell">
       <header className="topbar">
-        <img src="/odm-logo-compact.svg" alt="Open Directory Manager" className="topbar-logo" />
-        <div className="topbar-right">
-          <span className="principal" title={session.distinguished_name}>
-            {session.display_name}
-            {!session.domain_admin && <span className="badge">delegated</span>}
-          </span>
-          <button type="button" className="ghost" onClick={() => setSecondFactor(true)}>
-            <ShieldCheck size={16} aria-hidden="true" />
-            Second factor
-          </button>
-          {selfService && (
-            <button type="button" className="ghost" onClick={() => setChanging(true)}>
-              <KeyRound size={16} aria-hidden="true" />
-              Change password
-            </button>
-          )}
-          <button type="button" className="ghost" onClick={onSignOut}>
-            <LogOut size={16} aria-hidden="true" />
-            Sign out
-          </button>
-        </div>
+        <img src="/odm-logo-full.svg" alt="Open Directory Manager" className="topbar-logo" />
+        <AccountMenu
+          session={session}
+          selfService={selfService}
+          onChangePassword={() => setChanging(true)}
+          onSecondFactor={() => setSecondFactor(true)}
+          onSignOut={onSignOut}
+        />
       </header>
 
       <div className="body">
@@ -235,6 +216,102 @@ export function Shell({
   );
 }
 
+/** Two letters and a menu, instead of a row of buttons across the bar.
+ *
+ * Signing out, changing a password and enrolling a second factor are all
+ * things done to one account, so they belong under that account rather than
+ * spread across the width of the window competing with the product name. */
+function AccountMenu({
+  session,
+  selfService,
+  onChangePassword,
+  onSecondFactor,
+  onSignOut,
+}: {
+  session: SessionInfo;
+  selfService: boolean;
+  onChangePassword: () => void;
+  onSecondFactor: () => void;
+  onSignOut: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const holder = useRef<HTMLDivElement>(null);
+
+  // Anywhere else, and away: a menu that stays open behind what you clicked
+  // next is a menu in the way.
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: MouseEvent) => {
+      if (!holder.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  function choose(action: () => void) {
+    setOpen(false);
+    action();
+  }
+
+  return (
+    <div className="account" ref={holder}>
+      <button
+        type="button"
+        className="avatar"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Account: ${session.display_name}`}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {initials(session.display_name)}
+      </button>
+
+      {open && (
+        <div className="account-menu" role="menu">
+          <div className="account-who">
+            <strong>{session.display_name}</strong>
+            <span className="mono" title={session.distinguished_name}>
+              {session.distinguished_name}
+            </span>
+            {!session.domain_admin && <span className="badge">delegated</span>}
+          </div>
+          {selfService && (
+            <button type="button" role="menuitem" onClick={() => choose(onChangePassword)}>
+              <KeyRound size={15} aria-hidden="true" />
+              Change password
+            </button>
+          )}
+          <button type="button" role="menuitem" onClick={() => choose(onSecondFactor)}>
+            <ShieldCheck size={15} aria-hidden="true" />
+            Second factor
+          </button>
+          <button type="button" role="menuitem" onClick={() => choose(onSignOut)}>
+            <LogOut size={15} aria-hidden="true" />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** First letters of the first two words: "Ada Lovelace" is AL, and an account
+ *  with one name is its first letter rather than a blank circle. */
+function initials(name: string): string {
+  const parts = (name || "?")
+    .trim()
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+  if (parts.length === 0) return "?";
+  const letters = parts.slice(0, 2).map((part) => part[0]);
+  return letters.join("").toUpperCase();
+}
+
 function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -273,8 +350,8 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
     >
       {done ? (
         <p>
-          Changed. Anywhere you are signed in with the old password — a workstation, a mail
-          client — will ask for the new one.
+          Changed. Anywhere you are signed in with the old password — a workstation, a mail client —
+          will ask for the new one.
         </p>
       ) : (
         <>

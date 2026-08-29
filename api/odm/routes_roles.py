@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import json
-import socket
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 
 import asyncpg
@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, directory, objects, replication, roles, tasks
+from . import audit, directory, enrolment, objects, replication, roles, tasks
+from . import dns as dns_module
 from .config import Settings, get_settings
 from .security import (
     client_ip,
@@ -126,6 +127,7 @@ async def install(
     request: Request,
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Start an installation and return immediately.
 
@@ -136,8 +138,20 @@ async def install(
     role = roles.get(roles.validate_name(body.role))
     if role.core:
         raise objects.ObjectError("the core role is always installed")
+    # The realm, the domain and a controller are things the console knows.
+    config = roles.derive(role, dict(body.config), {
+        "realm": settings.realm,
+        "domain": settings.domain,
+        "dc_host": dns_module.server(settings),
+    })
+    # Network boot has to hand installed machines something to join with. An
+    # operator who was never asked for a token has not got one, so issue a
+    # long-lived multi-use one here rather than failing on a missing field.
+    if role.name == "pxe" and not config.get("enrolment_token"):
+        config["enrolment_token"] = await _issue_boot_token(pool, settings, session.principal)
+
     # Fail fast on a bad configuration, before anything is recorded.
-    roles.build_command(role, body.config)
+    roles.build_command(role, config)
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -152,21 +166,25 @@ async def install(
             """,
             role.name,
             body.node_fqdn,
-            json.dumps(body.config),
+            json.dumps(config),
             session.principal,
         )
-        if not _is_this_host(body.node_fqdn):
-            await tasks.enqueue(
-                conn,
-                node_fqdn=body.node_fqdn,
-                kind="role-install",
-                payload={
-                    "role": role.name,
-                    "arguments": roles.installer_arguments(role, body.config),
-                },
-                subject=str(row["id"]),
-                requested_by=session.principal,
-            )
+        # Every install runs on the target machine's agent, including when
+        # that machine is this one. The control plane runs sandboxed and
+        # unprivileged by design, so it cannot install packages even on its
+        # own host — and a second, privileged path just for the local case is
+        # a second thing to get wrong.
+        await tasks.enqueue(
+            conn,
+            node_fqdn=body.node_fqdn,
+            kind="role-install",
+            payload={
+                "role": role.name,
+                "arguments": roles.installer_arguments(role, config),
+            },
+            subject=str(row["id"]),
+            requested_by=session.principal,
+        )
         await audit.record(
             conn,
             actor=session.principal,
@@ -176,65 +194,34 @@ async def install(
             outcome="success",
             object_type="role",
             object_dn=f"{role.name}@{body.node_fqdn}",
-            after={"config": body.config, "on_this_host": _is_this_host(body.node_fqdn)},
+            after={"config": config},
         )
 
-    if _is_this_host(body.node_fqdn):
-        asyncio.create_task(  # noqa: RUF006
-            _run_install(pool, role, dict(body.config), str(row["id"]))
-        )
     return {**_instance(row), "poll": "/api/v1/roles/instance"}
 
 
-def _is_this_host(node_fqdn: str) -> bool:
-    return node_fqdn.strip().lower().rstrip(".") == socket.getfqdn().lower().rstrip(".")
-
-
-async def _run_install(
-    pool: asyncpg.Pool, role: roles.Role, config: dict[str, str], instance_id: str
-) -> None:
-    """Run the installer and record the outcome, whichever way it goes."""
-    try:
-        output = await run_in_threadpool(roles.install, role, config)
-    except roles.RoleError as exc:
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE server_role SET state = 'failed', last_error = $2, updated_at = now()
-                WHERE id = $1::uuid
-                """,
-                instance_id,
-                str(exc)[:2000],
-            )
-            await audit.record(
-                conn,
-                actor="system",
-                action="role.install",
-                outcome="failure",
-                object_type="role",
-                object_dn=f"{role.name}@{instance_id}",
-                detail=str(exc)[:500],
-            )
-        return
-
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE server_role
-            SET state = 'active', last_error = NULL, installed_at = now(), updated_at = now()
-            WHERE id = $1::uuid
-            """,
-            instance_id,
-        )
-        await audit.record(
-            conn,
-            actor="system",
-            action="role.install",
-            outcome="success",
-            object_type="role",
-            object_dn=f"{role.name}@{instance_id}",
-            detail=output.strip().splitlines()[-1][:500] if output.strip() else None,
-        )
+async def _issue_boot_token(
+    pool: asyncpg.Pool, settings: Settings, actor: str
+) -> str:
+    """A multi-use enrolment token for machines installed over the network."""
+    token = enrolment.new_token()
+    expires_at = datetime.now().astimezone() + timedelta(days=365)
+    await pool.execute(
+        """
+        INSERT INTO join_token (token_sha256, label, container_dn, uses_allowed,
+                                expires_at, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        """,
+        hashlib.sha256(token.encode()).hexdigest(),
+        "Network boot",
+        f"CN=Computers,{settings.base_dn}",
+        # The schema caps a token at a thousand uses; network boot is the one
+        # place that wants the whole allowance rather than a single machine.
+        1000,
+        expires_at,
+        actor,
+    )
+    return token
 
 
 @router.delete("/instance", status_code=204,

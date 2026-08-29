@@ -8,6 +8,7 @@ with.
 from __future__ import annotations
 
 import json
+import socket
 from typing import Annotated, Any
 
 import asyncpg
@@ -15,7 +16,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import ca, objects, roles
+from . import ca, objects, roles, tasks
 from .config import Settings, get_settings
 from .routes_directory import _audit_context
 from .security import get_pool, require_admin, requires, requires_domain_admin
@@ -338,13 +339,29 @@ async def console_certificate(
         )
         entry.after = {"serial": issued.serial, "not_after": str(issued.not_after)}
 
-    # Applied after the response is sent: the helper restarts the service.
+    # Installing it means writing /etc and restarting a service, which the
+    # sandboxed control plane cannot do to its own host. The agent on this
+    # machine does it, the same way it installs a role. The certificate is
+    # already staged on disk, so nothing private travels through the queue.
+    async with pool.acquire() as conn:
+        await tasks.enqueue(
+            conn,
+            node_fqdn=socket.getfqdn(),
+            kind="console-certificate",
+            payload={},
+            subject=issued.serial,
+            requested_by=session.principal,
+        )
+
     return {
         "serial": issued.serial,
         "fingerprint": issued.fingerprint,
         "not_after": issued.not_after,
-        "applied": await run_in_threadpool(roles.apply_console_certificate),
-        "note": "the console restarts to pick up the new certificate",
+        "applied": False,
+        "note": (
+            "queued for the agent on this controller; the console restarts to "
+            "pick up the new certificate"
+        ),
     }
 
 

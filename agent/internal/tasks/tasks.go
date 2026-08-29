@@ -62,6 +62,8 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 	switch task.Kind {
 	case "role-install":
 		output, err = installRole(ctx, task.Payload, env)
+	case "console-certificate":
+		output, err = applyConsoleCertificate(ctx, env)
 	case "share-apply":
 		output, err = applyShare(ctx, task.Payload, env)
 	case "share-remove":
@@ -121,6 +123,27 @@ func installRole(ctx context.Context, payload map[string]any, env apply.Env) (st
 		return "", fmt.Errorf("no command runner")
 	}
 	return env.Run.Run(ctx, installer, arguments...)
+}
+
+// applyConsoleCertificate installs a certificate the control plane has already
+// staged on this machine and restarts it.
+//
+// The control plane runs sandboxed and unprivileged, so it cannot write /etc
+// or restart a service even on its own host. It writes the pair where it may
+// and asks the agent — which is root here — to put it where the service reads
+// it. Nothing private travels through the task queue: the payload is empty and
+// the helper takes no arguments.
+func applyConsoleCertificate(ctx context.Context, env apply.Env) (string, error) {
+	helper := env.Path(filepath.Join(RoleDir, "odm-apply-console-certificate"))
+	if _, err := os.Stat(helper); err != nil {
+		return "", fmt.Errorf(
+			"%s is not installed on this machine; reinstall the agent package", helper,
+		)
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	return env.Run.Run(ctx, helper)
 }
 
 // checkUpdates refreshes the package index and reports what an upgrade would

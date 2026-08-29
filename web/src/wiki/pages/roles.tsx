@@ -1,11 +1,22 @@
-import { C, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
   id: "server-roles",
   title: "Server roles",
   section: "Administration",
-  summary: "What is installed where, and how to add DHCP, file-server and certificate-authority roles.",
+  summary:
+    "What is installed where, and how to add DHCP, file-server and certificate-authority roles.",
   keywords: ["role", "install", "dhcp", "file server", "ca", "extend", "plugin", "node"],
 };
 
@@ -14,8 +25,8 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          A fresh install runs the core role: the directory, Group Policy and DNS. Everything
-          else is added afterwards without redeploying anything.
+          A fresh install runs the core role: the directory, Group Policy and DNS. Everything else
+          is added afterwards without redeploying anything.
         </p>
 
         <Example title="Add a role">
@@ -24,19 +35,21 @@ export function Content() {
               <strong>Server Roles</strong> → click the role → <strong>Install on a server</strong>.
             </li>
             <li>
-              <strong>Select…</strong> and choose the server. Any joined machine can carry a
-              role, not only a controller.
+              <strong>Select…</strong> and choose the server. Any joined machine can carry a role,
+              not only a controller.
             </li>
             <li>
-              Fill in what installing needs. How the service then behaves —
-              pairing two DHCP nodes for failover, for instance — is set afterwards
-              under that service&rsquo;s own section.
+              Fill in what installing needs. How the service then behaves — pairing two DHCP nodes
+              for failover, for instance — is set afterwards under that service&rsquo;s own section.
             </li>
             <li>
               The role&rsquo;s row lists every server it runs on and the state of each. It moves
               from <C>installing</C> to <C>active</C>.
             </li>
-            <li>Add any settings the installer prints to the secrets file, then restart the control plane.</li>
+            <li>
+              Add any settings the installer prints to the secrets file, then restart the control
+              plane.
+            </li>
           </Steps>
         </Example>
 
@@ -111,17 +124,20 @@ export function Content() {
           </p>
           <p>
             What it installs is configuration, not part of installing the role:{" "}
-            <strong>Client Enrolment</strong> sets the release, the mirror, the domain and
-            container joined machines land in, the enrolment token and the local administrator
-            account. Changing any of it rewrites the preseed and fetches the right netboot image;
-            nothing is reinstalled.
+            <strong>Client Enrolment</strong> sets the release, the mirror, the domain and container
+            joined machines land in, the enrolment token and the local administrator account.
+            Changing any of it rewrites the preseed and fetches the right netboot image; nothing is
+            reinstalled.
           </p>
           <Reference
             headers={["Path", "Holds"]}
             rows={[
               [<C key="1">/srv/tftp</C>, "The Debian netboot images."],
               [<C key="2">/srv/odm-preseed/odm.cfg</C>, "The unattended installation answers."],
-              [<C key="3">/srv/odm-preseed/odm-client-install</C>, "The join binary, published by the installer."],
+              [
+                <C key="3">/srv/odm-preseed/odm-client-install</C>,
+                "The join binary, published by the installer.",
+              ],
             ]}
           />
           <Reference
@@ -145,10 +161,10 @@ export function Content() {
           />
           <Note>
             Client Enrolment appears only once both this role and DHCP are installed: boot is
-            advertised over DHCP, so without a DHCP server there is nothing to attach a
-            deployment to. Create a multi-use enrolment token under <strong>Directory</strong>{" "}
-            first. The join binary is published by the installer, which refuses to run without it
-            rather than leaving machines that install and never join.
+            advertised over DHCP, so without a DHCP server there is nothing to attach a deployment
+            to. Create a multi-use enrolment token under <strong>Directory</strong> first. The join
+            binary is published by the installer, which refuses to run without it rather than
+            leaving machines that install and never join.
           </Note>
         </Section>
 
@@ -159,20 +175,27 @@ export function Content() {
           </p>
         </Section>
 
-        <Section title="Prerequisites on the control plane host">
+        <Section title="What actually installs it">
           <p>
-            Role installation needs root, which the control plane does not have. The deployment
-            installs one privileged helper and a rule granting the service user exactly that
-            command.
+            The agent on the target machine, always &mdash; including when the target is the
+            controller the console runs on. The control plane runs sandboxed and unprivileged, so it
+            cannot install a package even on its own host, and a second privileged path just for the
+            local case would be a second thing to get wrong.
           </p>
           <Reference
             headers={["File", "Purpose"]}
             rows={[
-              [<C key="1">/opt/odm/bin/odm-role-install</C>, "Maps a role name to its installer."],
-              [<C key="2">/opt/odm/deploy/install-*-role.sh</C>, "The installers themselves."],
-              [<C key="3">/etc/sudoers.d/odm-roles</C>, "Grants the service user those commands and nothing else."],
+              [
+                <C key="1">/usr/lib/odm/roles/install-*-role.sh</C>,
+                "The installers, shipped with the agent.",
+              ],
+              [<C key="2">odm-agent</C>, "Runs them as root when the console asks."],
             ]}
           />
+          <Note>
+            A server with no agent can be seen in the console but nothing can be installed on it.{" "}
+            <C>setup.sh</C> installs the agent on the first controller as its last step.
+          </Note>
         </Section>
 
         <Section title="Adding a new role">

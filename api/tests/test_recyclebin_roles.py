@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 from conftest import BASE_DN, FakeLdap, sample_directory
 
@@ -144,14 +146,21 @@ def test_install_command_passes_only_declared_arguments():
             "extra": "--wipe-everything",  # not declared, so never passed
         },
     )
-    assert command[:4] == [roles.SUDO, "-n", roles.ROLE_HELPER, "dhcp"]
     assert "--extra" not in command and "--wipe-everything" not in command
-    assert command[4:6] == ["--ha-role", "primary"]
+    assert command[:2] == ["--ha-role", "primary"]
 
 
 def test_missing_required_argument_is_refused_before_anything_runs():
+    # No role asks for one today — the test above enforces that — so this
+    # holds the rule itself, for the next role that does.
+    role = roles.Role(
+        name="example",
+        title="Example",
+        summary="",
+        arguments=(roles.Argument(name="needed", label="Needed"),),
+    )
     with pytest.raises(roles.RoleError):
-        roles.build_command(roles.get("dhcp"), {"ha_role": "primary"})
+        roles.build_command(role, {})
 
 
 def test_optional_argument_may_be_omitted():
@@ -179,24 +188,51 @@ def test_hostile_argument_values_never_reach_the_installer(value):
         )
 
 
-def test_the_helper_is_invoked_by_absolute_path():
-    # A relative name could be shadowed by anything on PATH.
-    assert roles.SUDO.startswith("/")
-    assert roles.ROLE_HELPER.startswith("/")
-    assert roles.CONSOLE_CERT_HELPER.startswith("/")
+def test_the_control_plane_never_runs_an_installer_itself():
+    # Installers need root and a writable /usr; the API runs under
+    # ProtectSystem=strict with NoNewPrivileges and must never grow a path
+    # that tries anyway. Every install goes to the target machine's agent,
+    # including when the target is the machine the console runs on.
+    source = (pathlib.Path(__file__).parents[1] / "odm" / "roles.py").read_text()
+    code = "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    )
+    for forbidden in ("import subprocess", "subprocess.run", "SUDO"):
+        assert forbidden not in code, f"{forbidden} is back in roles.py"
 
 
-def test_every_registered_role_has_an_installer_case():
-    # The privileged helper matches role names in a fixed case statement; a
-    # descriptor without one would fail at install time rather than here.
-    import pathlib
+def test_what_the_console_already_knows_is_not_asked_for():
+    # An operator signed in to a domain should not be retyping its realm.
+    known = {"realm": "CORP.EXAMPLE.INTERNAL", "domain": "corp.example.internal",
+             "dc_host": "dc1.corp.example.internal"}
+    filled = roles.derive(roles.get("dhcp"), {}, known)
+    assert filled["realm"] == "CORP.EXAMPLE.INTERNAL"
+    assert filled["dns_server"] == "dc1.corp.example.internal"
+    # An explicit value still wins: a second server may use another controller.
+    kept = roles.derive(roles.get("dhcp"), {"dns_server": "dc2.example.org"}, known)
+    assert kept["dns_server"] == "dc2.example.org"
 
-    helper = pathlib.Path(__file__).resolve().parents[2] / "deploy" / "odm-role-install"
-    body = helper.read_text()
+
+def test_installing_a_role_asks_for_nothing_but_the_server():
+    # Every field the install dialog would draw is one the operator has to
+    # answer before anything happens. None of them are answerable at that
+    # point: the realm is derived, the storage directory has a default, and
+    # what a service does belongs in the section that manages the service.
+    for role in roles.REGISTRY.values():
+        asked = [a.name for a in role.arguments if not a.configuration]
+        assert asked == [], f"{role.name} still asks for {asked} at install time"
+
+
+def test_every_registered_role_has_an_installer_script():
+    # The agent runs deploy/install-<role>-role.sh. A descriptor without one
+    # would fail on the target machine minutes after the operator clicked
+    # Install, rather than here.
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "deploy"
     for role in roles.REGISTRY.values():
         if role.core:
             continue
-        assert f"{role.name})" in body, f"{role.name} has no case in odm-role-install"
+        script = deploy / f"install-{role.name}-role.sh"
+        assert script.exists(), f"{role.name} has no {script.name}"
 
 
 def test_a_choice_argument_only_accepts_its_choices():

@@ -181,6 +181,18 @@ def server(settings: Settings) -> str:
     return settings.ldap_uri.removeprefix("ldaps://").split(":")[0]
 
 
+def connection_flags(settings: Settings) -> list[str]:
+    """Reach the directory over the wire, as the control plane's account.
+
+    Without these samba-tool opens /var/lib/samba/private/sam.ldb directly,
+    which only root may read — and the control plane deliberately does not run
+    as root. Every subcommand that took this path failed with "Unable to open
+    tdb ... Permission denied" rather than doing its work over LDAP the way
+    the DNS commands already did.
+    """
+    return ["-H", settings.ldap_uri, "-k", "yes"]
+
+
 # ------------------------------------------------------------------- zones ---
 
 

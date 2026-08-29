@@ -87,9 +87,17 @@ echo "==> Delegating replication monitoring"
 # rights, and neither comes with the object rights above. Without them the
 # Operations page reports WERR_DS_DRA_ACCESS_DENIED. Granted individually
 # rather than by making the account a Domain Admin.
+# All four, because a DRSUAPI bind is checked before the operation is: showrepl
+# opens the connection, then reads topology, and being granted only the second
+# still fails at the first with WERR_DS_DRA_ACCESS_DENIED.
 #   f98340fb-…  Monitor Active Directory Replication  (read the topology)
 #   1131f6ab-…  Replication Synchronization           (force a run)
-for RIGHT in f98340fb-7c5b-4cdb-a00b-2ebdfa115a96 1131f6ab-9c07-11d1-f79f-00c04fc2dcd2; do
+#   1131f6aa-…  Replicating Directory Changes         (bind)
+#   1131f6ac-…  Manage Replication Topology           (read what showrepl reads)
+for RIGHT in f98340fb-7c5b-4cdb-a00b-2ebdfa115a96 \
+             1131f6ab-9c07-11d1-f79f-00c04fc2dcd2 \
+             1131f6aa-9c07-11d1-f79f-00c04fc2dcd2 \
+             1131f6ac-9c07-11d1-f79f-00c04fc2dcd2; do
     samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(OA;;CR;${RIGHT};;${SID})"
 done
 

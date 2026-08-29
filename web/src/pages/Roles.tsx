@@ -1,12 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { ChevronRight, Server } from "lucide-react";
-import {
-  ApiError,
-  api,
-  type RoleArgument,
-  type RoleDescriptor,
-  type RoleInstance,
-} from "../api";
+import { ApiError, api, type RoleArgument, type RoleDescriptor, type RoleInstance } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 
@@ -156,41 +150,56 @@ function RoleDetail({
         <thead>
           <tr>
             <th scope="col">Server</th>
-            <th scope="col">State</th>
-            <th scope="col">Installed</th>
-            <th scope="col">
+            <th scope="col" style={{ width: "110px" }}>
+              State
+            </th>
+            <th scope="col" style={{ width: "100px" }}>
+              Installed
+            </th>
+            <th scope="col" style={{ width: "110px" }}>
               <span className="sr-only">Actions</span>
             </th>
           </tr>
         </thead>
         <tbody>
           {instances.map((instance) => (
-            <tr key={instance.id}>
-              <td className="mono">{instance.node_fqdn}</td>
-              <td>
-                <span className={`badge ${STATE_BADGE[instance.state] ?? ""}`}>
-                  {instance.state}
-                </span>
-                {instance.last_error && <p className="muted">{instance.last_error}</p>}
-              </td>
-              <td>
-                {instance.installed_at
-                  ? new Date(instance.installed_at).toLocaleDateString()
-                  : "—"}
-              </td>
-              <td>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={async () => {
-                    await api.roles.remove(instance.id).catch(() => undefined);
-                    onChanged();
-                  }}
-                >
-                  Deregister
-                </button>
-              </td>
-            </tr>
+            <Fragment key={instance.id}>
+              <tr>
+                <td className="mono">{instance.node_fqdn}</td>
+                <td>
+                  <span className={`badge ${STATE_BADGE[instance.state] ?? ""}`}>
+                    {instance.state}
+                  </span>
+                </td>
+                <td>
+                  {instance.installed_at
+                    ? new Date(instance.installed_at).toLocaleDateString()
+                    : "—"}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={async () => {
+                      await api.roles.remove(instance.id).catch(() => undefined);
+                      onChanged();
+                    }}
+                  >
+                    Deregister
+                  </button>
+                </td>
+              </tr>
+              {/* An installer's last words are often several lines of shell
+                  output. Squeezed into the state column it turned a table into
+                  a wall one word wide, so it gets the full width underneath. */}
+              {instance.last_error && (
+                <tr className="detail-row">
+                  <td colSpan={4}>
+                    <pre className="failure-output">{instance.last_error}</pre>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
           {instances.length === 0 && (
             <tr>
@@ -203,23 +212,14 @@ function RoleDetail({
       </table>
 
       {(role.packages.length > 0 || role.notes) && (
-        <>
-          <h3 className="section-title">Details</h3>
-          <dl className="definition">
-            {role.packages.length > 0 && (
-              <>
-                <dt>Packages</dt>
-                <dd className="mono">{role.packages.join(", ")}</dd>
-              </>
-            )}
-            {role.notes && (
-              <>
-                <dt>Note</dt>
-                <dd>{role.notes}</dd>
-              </>
-            )}
-          </dl>
-        </>
+        <div className="role-details">
+          {role.packages.length > 0 && (
+            <p className="muted">
+              Installs <span className="mono">{role.packages.join(", ")}</span>
+            </p>
+          )}
+          {role.notes && <p className="muted">{role.notes}</p>}
+        </div>
       )}
     </Modal>
   );

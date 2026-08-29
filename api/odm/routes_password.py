@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from . import audit, directory, objects, password_policy, rsop
 from .config import Settings, get_settings
-from .dns import SAMBA_TOOL, DnsUnavailable, available
+from .dns import SAMBA_TOOL, DnsUnavailable, available, connection_flags
 from .routes_directory import _bound, _read, _write
 from .security import client_ip, get_pool, require_admin, requires, requires_domain_admin
 from .sessions import Session
@@ -63,14 +63,14 @@ class ChangeRequest(BaseModel):
     new_password: Annotated[str, Field(min_length=1, max_length=256)]
 
 
-def _run(*args: str) -> str:
+def _run(settings, *args: str) -> str:
     if not available():
         raise DnsUnavailable(
             "samba-tool is not installed on the API host; password policy "
             "management requires the control plane to run on a domain controller"
         )
     completed = subprocess.run(  # noqa: S603 - fixed argv, no shell, validated arguments
-        [SAMBA_TOOL, "domain", "passwordsettings", *args],
+        [SAMBA_TOOL, "domain", "passwordsettings", *args, *connection_flags(settings)],
         capture_output=True,
         text=True,
         timeout=TIMEOUT_SECONDS,
@@ -82,10 +82,10 @@ def _run(*args: str) -> str:
     return completed.stdout
 
 
-def read_policy() -> dict[str, Any]:
+def read_policy(settings) -> dict[str, Any]:
     """The domain's password policy, as the directory holds it."""
     settings: dict[str, Any] = {}
-    for line in _run("show").splitlines():
+    for line in _run(settings, "show").splitlines():
         match = _SETTING_RE.match(line)
         if not match:
             continue
@@ -97,9 +97,10 @@ def read_policy() -> dict[str, Any]:
 @router.get("/policy")
 async def policy(
     _: Session = Depends(require_admin),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """What a password in this domain has to be."""
-    return {"policy": await run_in_threadpool(read_policy)}
+    return {"policy": await run_in_threadpool(read_policy, settings)}
 
 
 @router.patch("/policy", dependencies=[Depends(requires_domain_admin())])
@@ -108,13 +109,14 @@ async def update_policy(
     request: Request,
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Change the domain's password policy.
 
     Applied through samba-tool so the directory is the only place the rule
     lives, and so it is enforced identically however a password is changed.
     """
-    before = await run_in_threadpool(read_policy)
+    before = await run_in_threadpool(read_policy, settings)
 
     arguments: list[str] = []
     if body.complexity is not None:
@@ -126,8 +128,8 @@ async def update_policy(
     if not arguments:
         raise objects.ObjectError("nothing to change")
 
-    await run_in_threadpool(_run, "set", *arguments)
-    after = await run_in_threadpool(read_policy)
+    await run_in_threadpool(_run, settings, "set", *arguments)
+    after = await run_in_threadpool(read_policy, settings)
 
     async with pool.acquire() as conn:
         await audit.record(
@@ -315,16 +317,18 @@ async def sync_policy(
         lockout_minutes=row["lockout_minutes"],
     )
     try:
-        await run_in_threadpool(password_policy.upsert, definition)
+        await run_in_threadpool(password_policy.upsert, settings, definition)
         wanted = await resolve_targets(
             settings, list(row["group_dns"]), list(row["container_dns"])
         )
-        current = await run_in_threadpool(password_policy.applied_to, row["name"])
+        current = await run_in_threadpool(password_policy.applied_to, settings, row["name"])
         change = password_policy.reconcile(row["name"], wanted, current)
         if change["add"]:
-            await run_in_threadpool(password_policy.apply_to, row["name"], change["add"])
+            await run_in_threadpool(password_policy.apply_to, settings, row["name"], change["add"])
         if change["remove"]:
-            await run_in_threadpool(password_policy.unapply_from, row["name"], change["remove"])
+            await run_in_threadpool(
+                password_policy.unapply_from, settings, row["name"], change["remove"]
+            )
     except Exception as exc:  # noqa: BLE001 - recorded against the policy, not raised
         await pool.execute(
             "UPDATE password_policy SET state = 'failed', last_error = $2, updated_at = now()"
@@ -442,13 +446,14 @@ async def delete_policy_object(
     id: Annotated[str, Query(min_length=36, max_length=36)],
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ) -> None:
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM password_policy WHERE id = $1::uuid", id)
         if row is None:
             raise objects.NotFound("no such policy")
         try:
-            await run_in_threadpool(password_policy.delete, row["name"])
+            await run_in_threadpool(password_policy.delete, settings, row["name"])
         except password_policy.PasswordPolicyError:
             # Already gone from the directory; removing our record is still right.
             pass

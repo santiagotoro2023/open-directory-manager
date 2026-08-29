@@ -240,8 +240,20 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     fields: [
       { key: "name", label: "Name", width: "140px" },
-      { key: "action", label: "Action", kind: "select", options: ["allow", "deny"], width: "110px" },
-      { key: "direction", label: "Direction", kind: "select", options: ["in", "out"], width: "110px" },
+      {
+        key: "action",
+        label: "Action",
+        kind: "select",
+        options: ["allow", "deny"],
+        width: "110px",
+      },
+      {
+        key: "direction",
+        label: "Direction",
+        kind: "select",
+        options: ["in", "out"],
+        width: "110px",
+      },
       {
         key: "protocol",
         label: "Protocol",
@@ -252,7 +264,14 @@ export const CATEGORIES: CategorySpec[] = [
       { key: "port", label: "Port", kind: "number", width: "100px" },
       { key: "source", label: "Source", placeholder: "10.0.0.0/8" },
     ],
-    blank: { name: "", action: "allow", direction: "in", protocol: "tcp", port: null, source: "any" },
+    blank: {
+      name: "",
+      action: "allow",
+      direction: "in",
+      protocol: "tcp",
+      port: null,
+      source: "any",
+    },
   },
 ];
 
@@ -298,9 +317,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "browser") {
     const browser = settings.browser;
     if (!browser) return 0;
-    return (
-      Object.keys(browser.chromium ?? {}).length + Object.keys(browser.firefox ?? {}).length
-    );
+    return Object.keys(browser.chromium ?? {}).length + Object.keys(browser.firefox ?? {}).length;
   }
   const value = settings[key as keyof PolicySettings];
   return Array.isArray(value) ? value.length : 0;
@@ -368,9 +385,7 @@ export function SettingsEditor({
     <div className="settings-editor">
       <Split id="policy-categories" label="Resize the category list" initial={230} side={tree}>
         <div className="category-editor">
-          {category && (
-            <RowsEditor category={category} settings={settings} onChange={onChange} />
-          )}
+          {category && <RowsEditor category={category} settings={settings} onChange={onChange} />}
           {selected === "updates" && <UpdatesEditor settings={settings} onChange={onChange} />}
           {selected === "login_screen" && (
             <LoginScreenEditor settings={settings} onChange={onChange} />
@@ -381,9 +396,7 @@ export function SettingsEditor({
           {selected === "password_self_service" && (
             <SelfServiceEditor settings={settings} onChange={onChange} />
           )}
-          {selected === "wallpaper" && (
-            <WallpaperEditor settings={settings} onChange={onChange} />
-          )}
+          {selected === "wallpaper" && <WallpaperEditor settings={settings} onChange={onChange} />}
           {selected === "browser" && <BrowserEditor settings={settings} onChange={onChange} />}
           {selected === "admx" && (
             <>
@@ -398,6 +411,23 @@ export function SettingsEditor({
           )}
         </div>
       </Split>
+    </div>
+  );
+}
+
+/** What a setting looks like before it has a value.
+ *
+ * A bordered placeholder rather than a sentence in the middle of an empty
+ * panel: the shape shows something belongs here, and the button that creates
+ * it is inside the shape rather than floating below it. */
+function EmptySetting({ onAdd, message }: { onAdd: () => void; message?: string }) {
+  return (
+    <div className="empty-setting">
+      <p>{message ?? "Nothing configured. This policy leaves the setting alone."}</p>
+      <button type="button" className="primary" onClick={onAdd}>
+        <Plus size={15} aria-hidden="true" />
+        Add
+      </button>
     </div>
   );
 }
@@ -434,67 +464,70 @@ function RowsEditor({
       </header>
       {category.note && <p className="muted">{category.note}</p>}
 
-      {current.length === 0 ? (
-        <p className="empty">Not configured.</p>
-      ) : (
-        <table className="data compact">
-          <thead>
-            <tr>
+      {/* The table is drawn whether or not it has rows. A bare "Not
+          configured" in the middle of an empty panel shows nothing about what
+          would go there; the column headings do. */}
+      <table className="data compact">
+        <thead>
+          <tr>
+            {category.fields.map((field) => (
+              <th key={field.key} style={field.width ? { width: field.width } : undefined}>
+                {field.label}
+              </th>
+            ))}
+            {TARGETABLE.has(String(category.key)) && <th style={{ width: "120px" }}>Applies to</th>}
+            <th style={{ width: "44px" }}>
+              <span className="sr-only">Remove</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {current.map((row, index) => (
+            <tr key={index}>
               {category.fields.map((field) => (
-                <th key={field.key} style={field.width ? { width: field.width } : undefined}>
-                  {field.label}
-                </th>
+                <td key={field.key}>
+                  <Cell
+                    field={field}
+                    value={row[field.key]}
+                    onChange={(value) => {
+                      const next = [...current];
+                      next[index] = { ...row, [field.key]: value };
+                      update(next);
+                    }}
+                  />
+                </td>
               ))}
               {TARGETABLE.has(String(category.key)) && (
-                <th style={{ width: "120px" }}>Applies to</th>
-              )}
-              <th style={{ width: "44px" }}>
-                <span className="sr-only">Remove</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {current.map((row, index) => (
-              <tr key={index}>
-                {category.fields.map((field) => (
-                  <td key={field.key}>
-                    <Cell
-                      field={field}
-                      value={row[field.key]}
-                      onChange={(value) => {
-                        const next = [...current];
-                        next[index] = { ...row, [field.key]: value };
-                        update(next);
-                      }}
-                    />
-                  </td>
-                ))}
-                {TARGETABLE.has(String(category.key)) && (
-                  <td>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => setTargeting(index)}
-                    >
-                      {row.targeting ? "Some" : "Everyone"}
-                    </button>
-                  </td>
-                )}
                 <td>
-                  <button
-                    type="button"
-                    className="icon"
-                    aria-label={`Remove ${category.title} entry ${index + 1}`}
-                    onClick={() => update(current.filter((_, i) => i !== index))}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
+                  <button type="button" className="ghost" onClick={() => setTargeting(index)}>
+                    {row.targeting ? "Some" : "Everyone"}
                   </button>
                 </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+              )}
+              <td>
+                <button
+                  type="button"
+                  className="icon"
+                  aria-label={`Remove ${category.title} entry ${index + 1}`}
+                  onClick={() => update(current.filter((_, i) => i !== index))}
+                >
+                  <Trash2 size={14} aria-hidden="true" />
+                </button>
+              </td>
+            </tr>
+          ))}
+          {current.length === 0 && (
+            <tr>
+              <td
+                className="empty"
+                colSpan={category.fields.length + (TARGETABLE.has(String(category.key)) ? 2 : 1)}
+              >
+                Nothing configured. Add creates the first entry.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
 
       {targeting !== null && current[targeting] && (
         <ItemTargetingDialog
@@ -562,8 +595,8 @@ function ItemTargetingDialog({
       }}
     >
       <p className="muted">
-        Leave everything empty and the entry applies wherever the policy object does. Anything
-        set here narrows it further — it can never widen it.
+        Leave everything empty and the entry applies wherever the policy object does. Anything set
+        here narrows it further — it can never widen it.
       </p>
 
       <label className="field">
@@ -576,11 +609,7 @@ function ItemTargetingDialog({
       </label>
       <label className="field">
         <span>Host name pattern</span>
-        <input
-          value={hostname}
-          placeholder="ws-*"
-          onChange={(e) => setHostname(e.target.value)}
-        />
+        <input value={hostname} placeholder="ws-*" onChange={(e) => setHostname(e.target.value)} />
       </label>
       <label className="field">
         <span>Groups</span>
@@ -665,15 +694,7 @@ function UpdatesEditor({
       </header>
 
       {!current ? (
-        <>
-          <p className="empty">Not configured.</p>
-          <div className="actions-row">
-            <button type="button" className="primary" onClick={() => set({})}>
-              <Plus size={15} aria-hidden="true" />
-              Add
-            </button>
-          </div>
-        </>
+        <EmptySetting onAdd={() => set({})} />
       ) : (
         <>
           <label className="checkbox">
@@ -786,15 +807,7 @@ function LoginScreenEditor({
       </p>
 
       {!current ? (
-        <>
-          <p className="empty">Not configured.</p>
-          <div className="actions-row">
-            <button type="button" className="primary" onClick={() => set({})}>
-              <Plus size={15} aria-hidden="true" />
-              Add
-            </button>
-          </div>
-        </>
+        <EmptySetting onAdd={() => set({})} />
       ) : (
         <>
           <label className="field">
@@ -879,30 +892,20 @@ function AlwaysOnVpnEditor({
         )}
       </header>
       <p className="muted">
-        The machine holds this tunnel up from boot, before anyone signs in, and the person using
-        it cannot turn it off. Each machine needs a peer on the tunnel under Remote Access; the
-        key is delivered to that machine alone.
+        The machine holds this tunnel up from boot, before anyone signs in, and the person using it
+        cannot turn it off. Each machine needs a peer on the tunnel under Remote Access; the key is
+        delivered to that machine alone.
       </p>
 
       {!current ? (
-        <>
-          <p className="empty">Not configured.</p>
-          <div className="actions-row">
-            <button
-              type="button"
-              className="primary"
-              onClick={() =>
-                onChange({
-                  ...settings,
-                  always_on_vpn: { tunnel: "", block_until_connected: false },
-                })
-              }
-            >
-              <Plus size={15} aria-hidden="true" />
-              Add
-            </button>
-          </div>
-        </>
+        <EmptySetting
+          onAdd={() =>
+            onChange({
+              ...settings,
+              always_on_vpn: { tunnel: "", block_until_connected: false },
+            })
+          }
+        />
       ) : (
         <>
           <label className="field">
@@ -964,14 +967,14 @@ function SelfServiceEditor({
         )}
       </header>
       <p className="muted">
-        Whether these people may change their own password from the console. Not configured
-        anywhere means yes — changing your own password is ordinary, and a policy object is how
-        it is taken away. The current password is always required, whatever this says.
+        Whether these people may change their own password from the console. Not configured anywhere
+        means yes — changing your own password is ordinary, and a policy object is how it is taken
+        away. The current password is always required, whatever this says.
       </p>
 
       {!current ? (
         <>
-          <p className="empty">Not configured. People may change their own password.</p>
+          <p className="empty">Not configured here, so people may change their own password.</p>
           <div className="actions-row">
             <button
               type="button"
@@ -1019,8 +1022,8 @@ function SelfServiceEditor({
               }
             />
             <small>
-              Checked before the change is attempted. The domain&rsquo;s own policy is enforced
-              by the directory on top of this.
+              Checked before the change is attempted. The domain&rsquo;s own policy is enforced by
+              the directory on top of this.
             </small>
           </label>
         </>

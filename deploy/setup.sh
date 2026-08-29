@@ -490,12 +490,7 @@ else
     fi
 fi
 
-install -d -m 0755 /opt/odm/bin /opt/odm/deploy
-install -m 0755 "$HERE/odm-role-install" "$HERE/odm-apply-console-certificate" /opt/odm/bin/
-install -m 0755 "$HERE"/install-*-role.sh /opt/odm/deploy/
-install -m 0440 -o root -g root "$HERE/odm-roles.sudoers" /etc/sudoers.d/odm-roles
-visudo -cf /etc/sudoers.d/odm-roles >/dev/null
-ok "Role framework installed"
+ok "Console step complete"
 
 # ---------------------------------------------------------------- step 8 --
 
@@ -554,6 +549,47 @@ for _ in $(seq 1 30); do
     fi
     sleep 2
 done
+
+# ---------------------------------------------------------------- step 9 --
+
+step "Installing the policy agent on this controller"
+
+# The controller is a managed machine like any other, and until it runs the
+# agent the console can see it but do nothing with it: no roles installed on
+# it, no inventory, no re-issued console certificate. Installing a role means
+# apt and service restarts, which the control plane cannot do even to its own
+# host — it runs under ProtectSystem=strict with NoNewPrivileges, which is
+# what an identity system should look like. The agent is what does that work,
+# here exactly as on every other server.
+AGENT_BINARY="$REPO/agent/odm-agent"
+if [[ ! -x "$AGENT_BINARY" ]]; then
+    if command -v go >/dev/null 2>&1; then
+        info "Building the agent"
+        (cd "$REPO/agent" && go build -o odm-agent .) >/dev/null 2>&1 || true
+    else
+        info "Installing Go to build the agent"
+        apt-get install -y --no-install-recommends golang-go >/dev/null 2>&1 || true
+        (cd "$REPO/agent" && go build -o odm-agent .) >/dev/null 2>&1 || true
+    fi
+fi
+
+if [[ -x "$AGENT_BINARY" ]]; then
+    if "$HERE/install-agent.sh" --api-url "https://$CONSOLE_FQDN:$PORT" \
+            --binary "$AGENT_BINARY" \
+            ${LDAP_CA:+--ca-cert "/etc/odm/tls/api.crt"} >/dev/null 2>&1; then
+        ok "The agent is running on this controller"
+    else
+        warn "The agent did not install. Roles cannot be installed on this"
+        warn "machine until it does:"
+        warn "  $HERE/install-agent.sh --api-url https://$CONSOLE_FQDN:$PORT \\"
+        warn "      --binary $AGENT_BINARY"
+    fi
+else
+    warn "The agent could not be built here, so this controller carries no"
+    warn "agent and no role can be installed on it. Build it on any machine"
+    warn "with Go and run:"
+    warn "  $HERE/install-agent.sh --api-url https://$CONSOLE_FQDN:$PORT --binary ./odm-agent"
+fi
 
 echo
 if [[ "$READY" == "yes" ]]; then

@@ -6,27 +6,21 @@ an installer script under deploy/, and a UI module that lights up once the
 role reports active; adding a new one means adding a descriptor and a script,
 not touching the core.
 
-Installers need root, and the API deliberately does not. It invokes one fixed
-helper through sudo, whose sudoers drop-in names that single command, and the
-role name is validated against this registry before it can become an
-argument.
+Installers need root and a writable filesystem; the control plane has neither.
+It runs under ProtectSystem=strict with NoNewPrivileges, which is what an
+identity system should look like — and which means apt can never run from it,
+sudo or no sudo. So every install is handed to the agent on the target machine,
+including when that machine is the controller the console runs on. One path,
+the same on every server, and the API keeps its sandbox.
 """
 
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-# Absolute, so the helper cannot be shadowed by anything on PATH.
-SUDO = shutil.which("sudo") or "/usr/bin/sudo"
-ROLE_HELPER = "/opt/odm/bin/odm-role-install"
-CONSOLE_CERT_HELPER = "/opt/odm/bin/odm-apply-console-certificate"
 STAGING_DIR = "/var/lib/odm/tls-staging"
-INSTALL_TIMEOUT_SECONDS = 900
-HELPER_TIMEOUT_SECONDS = 60
 
 _ROLE_RE = re.compile(r"^[a-z][a-z0-9-]{1,31}$")
 _ARG_RE = re.compile(r"^[A-Za-z0-9@:/._-]{1,253}$")
@@ -69,6 +63,10 @@ class Argument:
     # Set once the role exists, from the section that manages the service,
     # rather than asked for while installing it.
     configuration: bool = False
+    # Named when the control plane already knows the answer: "realm", "domain"
+    # or "dc_host". Asking an operator to retype the realm of the domain they
+    # are signed in to is a question with one possible right answer.
+    derived: str = ""
 
 
 @dataclass(frozen=True)
@@ -129,6 +127,9 @@ REGISTRY: dict[str, Role] = {
                 label="Kerberos realm",
                 kind="text",
                 placeholder="CORP.EXAMPLE.INTERNAL",
+                optional=True,
+                configuration=True,
+                derived="realm",
             ),
             Argument(
                 name="dns_server",
@@ -136,6 +137,9 @@ REGISTRY: dict[str, Role] = {
                 help="A domain controller holding the zones leases are written into.",
                 kind="host",
                 placeholder="dc1.corp.example.internal",
+                optional=True,
+                configuration=True,
+                derived="dc_host",
             ),
         ),
         packages=("kea-dhcp4-server", "kea-ctrl-agent", "kea-dhcp-ddns-server"),
@@ -157,10 +161,12 @@ REGISTRY: dict[str, Role] = {
             Argument(
                 name="ca_dir",
                 label="Storage directory",
+                help="Where issued certificates and the private key are kept.",
                 kind="path",
                 default="/var/lib/odm/ca",
                 placeholder="/var/lib/odm/ca",
                 optional=True,
+                configuration=True,
             ),
         ),
         packages=(),
@@ -179,19 +185,25 @@ REGISTRY: dict[str, Role] = {
             Argument(
                 name="interface",
                 label="Network interface",
-                help="The interface installs are served on.",
+                help="The interface installs are served on. The default route's when unset.",
                 placeholder="eth0",
+                optional=True,
+                configuration=True,
             ),
             Argument(
                 name="domain",
                 label="Domain to join",
                 kind="host",
                 placeholder="corp.example.internal",
+                optional=True,
+                configuration=True,
+                derived="domain",
             ),
             Argument(
                 name="enrolment_token",
                 label="Enrolment token",
-                help="A multi-use token, created under Directory.",
+                help="What installed machines join with. One is issued if you do not set it.",
+                optional=True,
                 configuration=True,
             ),
             Argument(
@@ -336,25 +348,36 @@ def validate_name(name: str) -> str:
 
 
 def build_command(role: Role, config: dict[str, str]) -> list[str]:
-    """Turn a validated config into the helper's argv.
+    """Validate a configuration and return the installer's argv.
 
-    Only the arguments the descriptor declares are passed, in the order it
-    declares them, and each is pattern-checked. A caller cannot introduce an
-    argument the role does not have.
+    Kept as the fail-fast check a request runs before anything is recorded, so
+    a bad value is a 400 rather than a role stuck in "installing" until an
+    agent picks it up and refuses it.
     """
     if role.core:
         raise RoleError("the core role is always installed")
+    return installer_arguments(role, config)
 
-    return [SUDO, "-n", ROLE_HELPER, role.name, *installer_arguments(role, config)]
+
+def derive(role: Role, config: dict[str, str], known: dict[str, str]) -> dict[str, str]:
+    """Fill in the arguments the control plane can answer itself.
+
+    The realm, the domain and a controller's name are not things to ask for:
+    the console is signed in to that domain. An explicit value still wins, so
+    a second DHCP server can be pointed at a different controller.
+    """
+    filled = dict(config)
+    for argument in role.arguments:
+        if not argument.derived or filled.get(argument.name):
+            continue
+        value = known.get(argument.derived, "")
+        if value:
+            filled[argument.name] = value
+    return filled
 
 
 def installer_arguments(role: Role, config: dict[str, str]) -> list[str]:
-    """The validated flags the role's installer takes, in declared order.
-
-    Separate from build_command because a role installed on another machine is
-    run by that machine's agent, which needs the arguments without this host's
-    sudo wrapper around them.
-    """
+    """The validated flags the role's installer takes, in declared order."""
     command: list[str] = []
     for argument in role.arguments:
         value = str(config.get(argument.name, "")).strip() or argument.default
@@ -369,10 +392,6 @@ def installer_arguments(role: Role, config: dict[str, str]) -> list[str]:
             raise RoleError(f"{argument.label.lower()} must be one of {allowed}")
         command += [f"--{argument.name.replace('_', '-')}", value]
     return command
-
-
-def available() -> bool:
-    return shutil.which("sudo") is not None
 
 
 def stage_console_certificate(settings, certificate_pem: str, private_key_pem: str) -> None:
@@ -393,46 +412,3 @@ def stage_console_certificate(settings, certificate_pem: str, private_key_pem: s
     cert_file.chmod(0o644)
 
 
-def apply_console_certificate() -> bool:
-    """Ask the privileged helper to install the staged pair and restart.
-
-    Returns False when the helper is not installed, so the console can tell
-    the operator to install it rather than reporting a silent success.
-    """
-    if not Path(CONSOLE_CERT_HELPER).exists():
-        return False
-    try:
-        completed = subprocess.run(  # noqa: S603 - fixed helper, no arguments, no shell
-            [SUDO, "-n", CONSOLE_CERT_HELPER],
-            capture_output=True,
-            text=True,
-            timeout=HELPER_TIMEOUT_SECONDS,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RoleError(f"could not apply the console certificate: {exc}") from exc
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()[-3:]
-        raise RoleError("\n".join(detail) or "the helper refused the certificate")
-    return True
-
-
-def install(role: Role, config: dict[str, str]) -> str:
-    """Run the installer. Blocking, and slow — call it in the background."""
-    command = build_command(role, config)
-    try:
-        completed = subprocess.run(  # noqa: S603 - fixed helper, validated argv, no shell
-            command,
-            capture_output=True,
-            text=True,
-            timeout=INSTALL_TIMEOUT_SECONDS,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RoleError(f"installer did not complete: {exc}") from exc
-
-    output = (completed.stdout or "") + (completed.stderr or "")
-    if completed.returncode != 0:
-        tail = output.strip().splitlines()[-5:]
-        raise RoleError("\n".join(tail) or "installer failed")
-    return output[-8000:]

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Activity, Archive, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Archive, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
   ApiError,
   api,
@@ -13,6 +13,185 @@ import { ContainerPicker, PickerDialog } from "../components/Picker";
 
 type Tab = "health" | "replication" | "backups" | "passwords";
 
+/** What a row in the services table is saying, at a glance. */
+type State = "ok" | "attention" | "off";
+
+const STATE_LABEL: Record<State, string> = {
+  ok: "Healthy",
+  attention: "Needs attention",
+  off: "Not installed",
+};
+
+function ago(value: string): string {
+  const minutes = Math.round((Date.now() - new Date(value).getTime()) / 60000);
+  if (minutes < 2) return "just now";
+  if (minutes < 90) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? `${hours} hours ago` : `${Math.round(hours / 24)} days ago`;
+}
+
+/**
+ * The dashboard: four numbers worth knowing, then one row per subsystem.
+ *
+ * The previous version was a grid of cards each holding a paragraph, so every
+ * card was a different height, a long error ran out of its box, and a domain
+ * with nothing wrong with it filled a third of the window with white space.
+ * Counts belong in tiles that are all the same size; prose belongs in a table
+ * cell, where a long sentence wraps instead of overflowing.
+ */
+function Health({ report, session }: { report: HealthReport; session: SessionInfo }) {
+  const certificates = report.certificates;
+  const services: {
+    name: string;
+    state: State;
+    detail: ReactNode;
+  }[] = [
+    {
+      name: "Directory",
+      state: report.directory.available === false ? "attention" : "ok",
+      detail:
+        report.directory.available === false
+          ? (report.directory.detail ?? "unavailable")
+          : (report.directory.names ?? []).join(", ") || "—",
+    },
+    {
+      name: "Replication",
+      state:
+        report.replication.available === false
+          ? "attention"
+          : report.replication.healthy === false
+            ? "attention"
+            : "ok",
+      detail:
+        report.replication.available === false
+          ? report.replication.detail
+          : (report.replication.inbound ?? []).length === 0
+            ? "One controller. Nothing to replicate."
+            : `${(report.replication.inbound ?? []).length} inbound partnerships`,
+    },
+    {
+      name: "DHCP",
+      state: report.dhcp.configured === false ? "off" : "ok",
+      detail:
+        report.dhcp.configured === false
+          ? "Add the role under Server Roles to hand out addresses."
+          : Object.entries(report.dhcp.statistics ?? {})
+              .filter(([key]) => key.includes("assigned") || key.includes("total"))
+              .slice(0, 3)
+              .map(([key, value]) => `${key} ${value}`)
+              .join(" · ") || "running",
+    },
+    {
+      name: "Certificate authority",
+      state: certificates.initialised
+        ? (certificates.expiring_soon ?? 0) > 0
+          ? "attention"
+          : "ok"
+        : "off",
+      detail: certificates.initialised
+        ? `Valid until ${certificates.not_after ? new Date(certificates.not_after).toLocaleDateString() : "—"}` +
+          ((certificates.expiring_soon ?? 0) > 0
+            ? ` · ${certificates.expiring_soon} expiring within 30 days`
+            : "")
+        : "No authority created.",
+    },
+    {
+      name: "Backups",
+      state: !report.backups.configured ? "off" : report.backups.last ? "ok" : "attention",
+      detail: !report.backups.configured
+        ? "Set ODM_BACKUP_DIR in the secrets file to enable them."
+        : report.backups.last
+          ? `Last ${ago(report.backups.last.started_at)} · ${bytes(
+              report.backups.last.size_bytes,
+            )} · every ${report.backups.interval_hours}h`
+          : `No backup has completed yet · every ${report.backups.interval_hours}h`,
+    },
+  ];
+
+  return (
+    <>
+      <div className="stat-row">
+        <Stat
+          value={
+            report.directory.available === false ? "—" : String(report.directory.controllers ?? 0)
+          }
+          label="Domain controllers"
+        />
+        <Stat
+          value={`${report.agents.fresh}/${report.agents.checked_in}`}
+          label="Agents reporting"
+          note={`within ${report.agents.stale_after_minutes} min`}
+          attention={report.agents.stale > 0}
+        />
+        <Stat
+          value={String(report.agents.failing_settings)}
+          label="Settings failing"
+          attention={report.agents.failing_settings > 0}
+        />
+        <Stat
+          value={certificates.initialised ? String(certificates.expiring_soon ?? 0) : "—"}
+          label="Certificates expiring"
+          note="within 30 days"
+          attention={(certificates.expiring_soon ?? 0) > 0}
+        />
+      </div>
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col" style={{ width: "200px" }}>
+              Service
+            </th>
+            <th scope="col" style={{ width: "160px" }}>
+              State
+            </th>
+            <th scope="col">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {services.map((service) => (
+            <tr key={service.name}>
+              <th scope="row">{service.name}</th>
+              <td>
+                <span className={`state state-${service.state}`}>
+                  <span className="dot" aria-hidden="true" />
+                  {STATE_LABEL[service.state]}
+                </span>
+              </td>
+              <td>{service.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="muted signed-in">
+        Signed in as {session.display_name} · session ends{" "}
+        {new Date(session.expires_at).toLocaleString()}
+      </p>
+    </>
+  );
+}
+
+function Stat({
+  value,
+  label,
+  note,
+  attention,
+}: {
+  value: string;
+  label: string;
+  note?: string;
+  attention?: boolean;
+}) {
+  return (
+    <div className={attention ? "stat attention" : "stat"}>
+      <p className="stat-value">{value}</p>
+      <p className="stat-label">{label}</p>
+      {note && <p className="stat-note">{note}</p>}
+    </div>
+  );
+}
+
 function bytes(value: number): string {
   if (value > 1_073_741_824) return `${(value / 1_073_741_824).toFixed(1)} GB`;
   if (value > 1_048_576) return `${(value / 1_048_576).toFixed(1)} MB`;
@@ -25,9 +204,9 @@ export function Overview({ session }: { session: SessionInfo }) {
   const [replication, setReplication] = useState<Awaited<
     ReturnType<typeof api.operations.replication>
   > | null>(null);
-  const [backups, setBackups] = useState<Awaited<
-    ReturnType<typeof api.operations.backups>
-  > | null>(null);
+  const [backups, setBackups] = useState<Awaited<ReturnType<typeof api.operations.backups>> | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -84,116 +263,7 @@ export function Overview({ session }: { session: SessionInfo }) {
       )}
       {notice && <p className="muted">{notice}</p>}
 
-      {tab === "health" && report && (
-        <div className="health-grid">
-          <Card title="Directory" icon={<Activity size={15} aria-hidden="true" />}>
-            {report.directory.available ? (
-              <>
-                <p className="metric">{report.directory.controllers}</p>
-                <p className="muted">
-                  domain controller{report.directory.controllers === 1 ? "" : "s"}:{" "}
-                  {(report.directory.names ?? []).join(", ")}
-                </p>
-              </>
-            ) : (
-              <p className="muted">{report.directory.detail ?? "unavailable"}</p>
-            )}
-          </Card>
-
-          <Card title="Replication">
-            {report.replication.available === false ? (
-              <p className="muted">{report.replication.detail}</p>
-            ) : (
-              <>
-                <span className={`badge ${report.replication.healthy ? "success" : "failure"}`}>
-                  {report.replication.healthy ? "healthy" : "attention needed"}
-                </span>
-                <p className="muted">
-                  {(report.replication.inbound ?? []).length} inbound partnerships
-                </p>
-              </>
-            )}
-          </Card>
-
-          <Card title="Signed in as">
-            <p>{session.display_name}</p>
-            <p className="mono muted">{session.distinguished_name}</p>
-            <p className="muted">
-              session ends {new Date(session.expires_at).toLocaleString()}
-            </p>
-          </Card>
-
-          <Card title="Agents">
-            <p className="metric">
-              {report.agents.fresh} / {report.agents.checked_in}
-            </p>
-            <p className="muted">
-              reporting within {report.agents.stale_after_minutes} minutes
-              {report.agents.stale > 0 && (
-                <>
-                  {" · "}
-                  <span className="badge failure">{report.agents.stale} stale</span>
-                </>
-              )}
-            </p>
-            {report.agents.failing_settings > 0 && (
-              <p className="muted">{report.agents.failing_settings} settings failing to apply</p>
-            )}
-          </Card>
-
-          <Card title="DHCP">
-            {report.dhcp.configured === false ? (
-              <p className="muted">role not installed</p>
-            ) : (
-              <ul className="plain">
-                {Object.entries(report.dhcp.statistics ?? {})
-                  .filter(([key]) => key.includes("assigned") || key.includes("total"))
-                  .slice(0, 6)
-                  .map(([key, value]) => (
-                    <li key={key} className="mono">
-                      {key}: {value}
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </Card>
-
-          <Card title="Certificates">
-            {report.certificates.initialised ? (
-              <>
-                <p className="muted">
-                  authority valid until{" "}
-                  {report.certificates.not_after &&
-                    new Date(report.certificates.not_after).toLocaleDateString()}
-                </p>
-                {(report.certificates.expiring_soon ?? 0) > 0 && (
-                  <span className="badge failure">
-                    {report.certificates.expiring_soon} expiring within 30 days
-                  </span>
-                )}
-              </>
-            ) : (
-              <p className="muted">no authority created</p>
-            )}
-          </Card>
-
-          <Card title="Backups" icon={<Archive size={15} aria-hidden="true" />}>
-            {report.backups.configured ? (
-              <p className="muted">
-                {report.backups.last
-                  ? `last ${new Date(report.backups.last.started_at).toLocaleString()} · ${bytes(
-                      report.backups.last.size_bytes,
-                    )}`
-                  : "no completed backup yet"}
-                {" · every "}
-                {report.backups.interval_hours}h
-              </p>
-            ) : (
-              <p className="muted">not configured</p>
-            )}
-          </Card>
-        </div>
-      )}
+      {tab === "health" && report && <Health report={report} session={session} />}
 
       {tab === "replication" && replication && (
         <>
@@ -217,7 +287,11 @@ export function Overview({ session }: { session: SessionInfo }) {
             </tbody>
           </table>
 
-          <h2>Inbound replication on {replication.server}</h2>
+          <h2>
+            {replication.controllers.length < 2
+              ? "Inbound replication"
+              : `Inbound replication on ${replication.server}`}
+          </h2>
           <table className="data">
             <thead>
               <tr>
@@ -268,8 +342,10 @@ export function Overview({ session }: { session: SessionInfo }) {
               ))}
               {replication.inbound.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
-                    No inbound partnerships. A single-controller domain has nothing to replicate.
+                  <td colSpan={5} className="empty">
+                    {replication.controllers.length < 2
+                      ? "One controller. Nothing to replicate — add a second under Domain Controllers."
+                      : "No inbound partnerships."}
                   </td>
                 </tr>
               )}
@@ -363,27 +439,6 @@ function BackupTable({ history }: { history: BackupRecord[] }) {
   );
 }
 
-function Card({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <article className="health-card">
-      <h3>
-        {icon}
-        {title}
-      </h3>
-      {children}
-    </article>
-  );
-}
-
-
 /**
  * What a password in this domain has to be.
  *
@@ -416,7 +471,11 @@ function PasswordPolicy() {
     { key: "history_length", label: "Passwords remembered", hint: "Cannot be reused" },
     { key: "min_pwd_age", label: "Minimum age (days)", hint: "Before it can be changed again" },
     { key: "max_pwd_age", label: "Maximum age (days)", hint: "0 means it never expires" },
-    { key: "account_lockout_threshold", label: "Lock out after", hint: "Failed attempts; 0 is never" },
+    {
+      key: "account_lockout_threshold",
+      label: "Lock out after",
+      hint: "Failed attempts; 0 is never",
+    },
     { key: "account_lockout_duration", label: "Locked out for (minutes)" },
     { key: "reset_account_lockout_after", label: "Reset the count after (minutes)" },
   ];
@@ -428,7 +487,9 @@ function PasswordPolicy() {
           {error}
         </p>
       )}
-      {saved && <p className="muted">Saved. It applies to the next password set, not existing ones.</p>}
+      {saved && (
+        <p className="muted">Saved. It applies to the next password set, not existing ones.</p>
+      )}
 
       <h3 className="section-title">As the directory holds it</h3>
       <table className="data compact">
@@ -509,10 +570,10 @@ function PasswordPolicy() {
 
       <h3 className="section-title">Policies for particular people</h3>
       <p className="muted">
-        The settings above are the domain&rsquo;s. A policy here overrides them for the accounts
-        it reaches — tighter for administrators, say. Active Directory applies these to users and
-        groups, never to a container, so an organizational unit is resolved to the users beneath
-        it and re-resolved as people are added.
+        The settings above are the domain&rsquo;s. A policy here overrides them for the accounts it
+        reaches — tighter for administrators, say. Active Directory applies these to users and
+        groups, never to a container, so an organizational unit is resolved to the users beneath it
+        and re-resolved as people are added.
       </p>
       <FineGrainedPolicies />
 
@@ -651,13 +712,7 @@ function FineGrainedPolicies() {
   );
 }
 
-function PasswordPolicyDialog({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+function PasswordPolicyDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [precedence, setPrecedence] = useState(50);
@@ -740,7 +795,11 @@ function PasswordPolicyDialog({
         </label>
         <label className="field">
           <span>Lock out after</span>
-          <input type="number" value={lockout} onChange={(e) => setLockout(Number(e.target.value))} />
+          <input
+            type="number"
+            value={lockout}
+            onChange={(e) => setLockout(Number(e.target.value))}
+          />
           <small>Failed attempts; 0 is never</small>
         </label>
         <label className="field">

@@ -59,7 +59,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -n "$INTERFACE" && -n "$DOMAIN" && -n "$TOKEN" ]] || usage
+# The interface installs are served on is a property of this machine, not a
+# decision an operator should have to look up: default to the one carrying the
+# default route, which on a single-homed server is the only one there is.
+if [[ -z "$INTERFACE" ]]; then
+    INTERFACE="$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')"
+    [[ -n "$INTERFACE" ]] || {
+        echo "no default route to pick an interface from; pass --interface" >&2
+        exit 1
+    }
+    echo "==> Serving boot on $INTERFACE (the default route's interface)"
+fi
+
+[[ -n "$DOMAIN" && -n "$TOKEN" ]] || usage
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 [[ "$INTERFACE" =~ ^[A-Za-z0-9._-]{1,32}$ ]] || { echo "invalid --interface" >&2; exit 1; }
 [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || { echo "invalid --domain" >&2; exit 1; }

@@ -46,12 +46,15 @@ need re-granting, and restored accounts arrive disabled because they have no
 password. This is inherent to snapshot restore, which CLAUDE.md §5.3 chooses
 deliberately over depending on Samba's tombstone fidelity.
 
-Role installation needs root; the API does not run as root and should not.
-It invokes one fixed helper, `/opt/odm/bin/odm-role-install`, through a
-sudoers rule naming exactly that command, and passes only the arguments the
-role descriptor declares. Deregistering a role removes ODM's record of it and
-leaves the packages running — tearing down a live DHCP server should not be
-one click in a web UI.
+Role installation needs root and a writable filesystem; the API has neither,
+and should not. It runs under `ProtectSystem=strict` with `NoNewPrivileges`,
+which makes `apt` impossible from it regardless of sudo — a read-only mount
+namespace is inherited by every child. So an install is queued as a task for
+the agent on the target machine, including when that machine is the controller
+the console runs on: one path, the same on every server, and the control plane
+keeps its sandbox. Only the arguments the role descriptor declares are passed.
+Deregistering a role removes ODM's record of it and leaves the packages
+running — tearing down a live DHCP server should not be one click in a web UI.
 
 ## Deliberate implementation choices
 
