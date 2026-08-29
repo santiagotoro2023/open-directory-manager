@@ -1621,3 +1621,17 @@ ul.plain {
   background: #eef2ff;
   font-weight: 600;
 }
+
+/* A page has room for two columns of fields where a dialog had one. */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px 20px;
+  margin-bottom: 8px;
+}
+
+.page-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

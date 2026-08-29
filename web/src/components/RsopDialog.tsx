@@ -11,10 +11,13 @@ export function RsopDialog({
   dn,
   isComputer,
   onClose,
+  inline,
 }: {
   dn: string;
   isComputer: boolean;
   onClose: () => void;
+  /** Render as a section of a page rather than as a dialog over one. */
+  inline?: boolean;
 }) {
   const [policy, setPolicy] = useState<EffectivePolicy | null>(null);
   const [report, setReport] = useState<AgentReport | null>(null);
@@ -33,15 +36,13 @@ export function RsopDialog({
     }
   }, [dn, isComputer]);
 
-  return (
-    <Modal
-      title="Resultant Set of Policy"
-      submitLabel="Close"
-      error={error}
-      onClose={onClose}
-      onSubmit={onClose}
-    >
-      <p className="mono muted">{dn}</p>
+  const body = (
+    <>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
 
       <h3>Applied, lowest precedence first</h3>
       <ol className="rsop-list">
@@ -102,6 +103,19 @@ export function RsopDialog({
           )}
         </>
       )}
+    </>
+  );
+
+  if (inline) return body;
+  return (
+    <Modal
+      title="Resultant Set of Policy"
+      submitLabel="Close"
+      error={error}
+      onClose={onClose}
+      onSubmit={onClose}
+    >
+      {body}
     </Modal>
   );
 }

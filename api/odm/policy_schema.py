@@ -277,6 +277,23 @@ class AdmxSelection(Strict):
         return values
 
 
+class SystemUpdates(Strict):
+    """Unattended apt updates.
+
+    Rendered into the two apt configuration files unattended-upgrades reads,
+    which is Debian's own mechanism for this rather than a timer of ODM's.
+    """
+
+    enabled: bool = True
+    # Security updates only is the safe default: everything else can change
+    # behaviour on a machine nobody is watching.
+    security_only: bool = True
+    schedule: Literal["daily", "weekly"] = "daily"
+    auto_reboot: bool = False
+    reboot_time: Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")] = "03:00"
+    remove_unused: bool = True
+
+
 class AgentSettings(Strict):
     refresh_minutes: Annotated[int, Field(ge=1, le=1440)] = 15
 
@@ -297,6 +314,7 @@ class PolicySettings(Strict):
     admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None
+    updates: SystemUpdates | None = None
     agent: AgentSettings | None = None
 
     def stored(self) -> dict[str, Any]:

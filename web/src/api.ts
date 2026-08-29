@@ -55,6 +55,15 @@ export interface AuditEntry {
   after_state: Record<string, unknown> | null;
 }
 
+export interface SystemUpdates {
+  enabled: boolean;
+  security_only: boolean;
+  schedule: "daily" | "weekly";
+  auto_reboot: boolean;
+  reboot_time: string;
+  remove_unused: boolean;
+}
+
 export interface PolicySettings {
   files?: Record<string, unknown>[];
   scripts?: Record<string, unknown>[];
@@ -69,6 +78,7 @@ export interface PolicySettings {
   admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
   wallpaper?: { uri: string; picture_options: string; for_principal?: string };
+  updates?: SystemUpdates;
   agent?: { refresh_minutes: number };
 }
 
@@ -229,6 +239,34 @@ export interface ManagedServer {
   pending_tasks: number;
 }
 
+export interface ComputerFacts {
+  hostname: string;
+  operating_system: string;
+  kernel: string;
+  booted_at: string | null;
+  local_users: { name: string; uid: number; shell: string; home: string; groups: string[] }[];
+  sessions: { user: string; line: string; since: string }[];
+  pending_updates: number;
+  security_updates: number;
+  updates: string[];
+  updates_checked_at: string | null;
+  reported_at: string;
+}
+
+export interface ComputerDetail {
+  known: boolean;
+  facts: ComputerFacts | null;
+  events: { kind: string; principal: string; occurred_at: string; detail: string | null }[];
+  tasks: {
+    id: string;
+    kind: string;
+    state: string;
+    output: string | null;
+    created_at: string;
+    finished_at: string | null;
+  }[];
+}
+
 export type ShareAccess = "read" | "change" | "full";
 
 export interface ShareEntry {
@@ -276,6 +314,7 @@ export interface RoleArgument {
   placeholder: string;
   default: string;
   optional: boolean;
+  configuration: boolean;
 }
 
 export interface RoleDescriptor {
@@ -601,12 +640,20 @@ export const api = {
     zone: (zone: string) =>
       request<{ zone: Record<string, string>; records: DnsRecord[] }>(`/dns/zone${qs({ zone })}`),
 
+    createReverseZone: (network: string) =>
+      request<{ zone: string; network: string }>("/dns/zones/reverse", json({ network })),
+
     createZone: (zone: string) => request<{ zone: string }>("/dns/zones", json({ zone })),
 
     deleteZone: (zone: string) => request<void>(`/dns/zone${qs({ zone })}`, { method: "DELETE" }),
 
-    addRecord: (body: { zone: string; name: string; type: string; data: string }) =>
-      request<DnsRecord>("/dns/records", json(body)),
+    addRecord: (body: {
+      zone: string;
+      name: string;
+      type: string;
+      data: string;
+      create_pointer?: boolean;
+    }) => request<DnsRecord & { pointer: string | null }>("/dns/records", json(body)),
 
     updateRecord: (body: {
       zone: string;
@@ -687,6 +734,11 @@ export const api = {
 
   servers: {
     list: () => request<{ servers: ManagedServer[] }>("/servers"),
+
+    computer: (dn: string) => request<ComputerDetail>(`/servers/computer${qs({ dn })}`),
+
+    action: (dn: string, action: "update-check" | "update-install") =>
+      request<{ task: string; node: string }>("/servers/computer/action", json({ dn, action })),
   },
 
   shares: {

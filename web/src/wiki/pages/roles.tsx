@@ -27,7 +27,11 @@ export function Content() {
               <strong>Select…</strong> and choose the server. Any joined machine can carry a
               role, not only a controller.
             </li>
-            <li>Fill in the role&rsquo;s settings and install.</li>
+            <li>
+              Fill in what installing needs. How the service then behaves —
+              pairing two DHCP nodes for failover, for instance — is set afterwards
+              under that service&rsquo;s own section.
+            </li>
             <li>
               The role&rsquo;s row lists every server it runs on and the state of each. It moves
               from <C>installing</C> to <C>active</C>.

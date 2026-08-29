@@ -14,8 +14,9 @@ import { BulkImport, CreateDialog } from "../components/CreateDialog";
 import { useContextMenu, type MenuItem } from "../components/ContextMenu";
 import { EnrolmentTokens } from "../components/EnrolmentTokens";
 import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
-import { ObjectPanel, isDisabled } from "../components/ObjectPanel";
+import { isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
+import { useNavigate } from "react-router-dom";
 
 const ICONS = {
   user: User,
@@ -73,13 +74,13 @@ export function Directory() {
   const [typeFilter, setTypeFilter] = useState<ObjectType | "">("");
   const [search, setSearch] = useState("");
   const [showPlumbing, setShowPlumbing] = useState(false);
-  const [selected, setSelected] = useState<DirectoryObject | null>(null);
   const [creating, setCreating] = useState<ObjectType | null>(null);
   const [importing, setImporting] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [renaming, setRenaming] = useState<DirectoryObject | null>(null);
   const { bind, menu } = useContextMenu();
 
@@ -124,6 +125,12 @@ export function Directory() {
     return () => clearTimeout(timer);
   }, [loadObjects, search]);
 
+  const open = useCallback(
+    (node: DirectoryObject) =>
+      navigate(`/directory/object?dn=${encodeURIComponent(node.distinguishedName)}`),
+    [navigate],
+  );
+
   const refresh = useCallback(async () => {
     await loadTree();
     await loadObjects();
@@ -132,11 +139,6 @@ export function Directory() {
   const visible = useMemo(
     () => (showPlumbing ? nodes : nodes.filter((node) => !isPlumbing(node))),
     [nodes, showPlumbing],
-  );
-
-  const containers = useMemo(
-    () => nodes.filter((n) => n.objectType !== "domain" || n.distinguishedName === baseDn),
-    [nodes, baseDn],
   );
 
   function containerMenu(node: DirectoryObject): MenuItem[] {
@@ -159,7 +161,7 @@ export function Directory() {
         label: "Delete",
         danger: true,
         disabled: !isOu,
-        onSelect: () => setSelected(node),
+        onSelect: () => open(node),
       },
     ];
   }
@@ -177,7 +179,6 @@ export function Directory() {
           onSelect={(dn) => {
             setSearch("");
             setContainer(dn);
-            setSelected(null);
           }}
         />
       </nav>
@@ -200,23 +201,6 @@ export function Directory() {
       label="Resize the directory tree"
       initial={260}
       side={tree}
-      aside={
-        selected && (
-          <ObjectPanel
-            object={selected}
-            containers={containers}
-            onClose={() => setSelected(null)}
-            onChanged={(updated) => {
-              setSelected(updated);
-              void refresh();
-            }}
-            onDeleted={() => {
-              setSelected(null);
-              void refresh();
-            }}
-          />
-        )
-      }
     >
       <section className="objects">
         <div className="page-header">
@@ -284,18 +268,15 @@ export function Directory() {
               return (
                 <tr
                   key={object.distinguishedName}
-                  className={
-                    selected?.distinguishedName === object.distinguishedName ? "selected" : ""
-                  }
-                  onClick={() => setSelected(object)}
+                  onClick={() => open(object)}
                   onDoubleClick={() =>
                     object.objectType === "ou" && setContainer(object.distinguishedName)
                   }
                   {...bind([
                     { label: label(object), heading: true },
-                    { label: "Properties…", onSelect: () => setSelected(object) },
+                    { label: "Open", onSelect: () => open(object) },
                     {
-                      label: "Open",
+                      label: "Show contents",
                       disabled: object.objectType !== "ou",
                       onSelect: () => setContainer(object.distinguishedName),
                     },
@@ -307,7 +288,7 @@ export function Directory() {
                       onSelect: () => setLinking(object.distinguishedName),
                     },
                     { separator: true },
-                    { label: "Delete", danger: true, onSelect: () => setSelected(object) },
+                    { label: "Delete", danger: true, onSelect: () => open(object) },
                   ])}
                 >
                   <td>

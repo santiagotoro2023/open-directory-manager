@@ -2,9 +2,10 @@
 # Install the DHCP role: ISC Kea with a failover pair and dynamic DNS into
 # Samba's AD-integrated zones (CLAUDE.md §3.8, §5.4).
 #
-# Run this on each of the two DHCP nodes, once with --ha-role primary and
-# once with --ha-role standby. ODM talks only to the Control Agent; do not
-# hand-edit kea-dhcp4.conf afterwards.
+# Installing the role gives one node a working DHCP server. Pairing two of
+# them for failover is configuration, done afterwards under DHCP in the
+# console, which re-runs this with --ha-role. ODM talks only to the Control
+# Agent; do not hand-edit kea-dhcp4.conf afterwards.
 
 set -euo pipefail
 
@@ -18,14 +19,16 @@ CA_USER="odm"
 
 usage() {
     cat >&2 <<'USAGE'
-usage: install-dhcp-role.sh --ha-role primary|standby \
-                            --this-url http://<this node>:8080/ \
-                            --peer-url http://<other node>:8080/ \
-                            --realm CORP.EXAMPLE.INTERNAL \
-                            --dns-server <dc ip> [--ca-port 8000]
+usage: install-dhcp-role.sh --realm CORP.EXAMPLE.INTERNAL --dns-server <dc ip>
+                            [--ca-port 8000]
+                            [--ha-role primary|standby
+                             --this-url http://<this node>:8080/
+                             --peer-url http://<other node>:8080/]
 
-  --this-url / --peer-url  the HA (not Control Agent) endpoints of the pair
   --dns-server             a domain controller running Samba's internal DNS
+  --ha-role / --this-url / --peer-url
+                           pair this node with another for failover. Omit for
+                           a single server; add them later from the console.
 USAGE
     exit 2
 }
@@ -43,13 +46,24 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -n "$HA_ROLE" && -n "$THIS_URL" && -n "$PEER_URL" && -n "$REALM" && -n "$DNS_SERVER" ]] || usage
-[[ "$HA_ROLE" == "primary" || "$HA_ROLE" == "standby" ]] || { echo "--ha-role must be primary or standby" >&2; exit 1; }
+[[ -n "$REALM" && -n "$DNS_SERVER" ]] || usage
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 
+# Failover is all three or none of them.
+HA_COUNT=0
+for VALUE in "$HA_ROLE" "$THIS_URL" "$PEER_URL"; do
+    [[ -n "$VALUE" ]] && HA_COUNT=$((HA_COUNT + 1))
+done
+if [[ "$HA_COUNT" -ne 0 && "$HA_COUNT" -ne 3 ]]; then
+    echo "failover needs --ha-role, --this-url and --peer-url together" >&2
+    exit 1
+fi
+if [[ -n "$HA_ROLE" && "$HA_ROLE" != "primary" && "$HA_ROLE" != "standby" ]]; then
+    echo "--ha-role must be primary or standby" >&2
+    exit 1
+fi
+
 THIS_NAME="$(hostname -s)"
-PEER_NAME="$(printf '%s' "$PEER_URL" | sed -E 's#^https?://##; s#[:/].*##')"
-PEER_ROLE=$([[ "$HA_ROLE" == "primary" ]] && echo standby || echo primary)
 DOMAIN="$(printf '%s' "$REALM" | tr '[:upper:]' '[:lower:]')"
 
 echo "==> Installing Kea"
@@ -90,6 +104,45 @@ chmod 0640 "$CA_USER_FILE" "$CA_PASSWORD_FILE"
 
 backup() { [[ -f "$1" ]] && cp -a "$1" "$1.pre-odm.$(date +%s)"; return 0; }
 
+# A single server has no failover section at all: an empty peer list is not
+# the same thing, and Kea refuses one.
+HA_HOOK=""
+if [[ -n "$HA_ROLE" ]]; then
+    PEER_NAME="$(printf '%s' "$PEER_URL" | sed -E 's#^https?://##; s#[:/].*##')"
+    PEER_ROLE=$([[ "$HA_ROLE" == "primary" ]] && echo standby || echo primary)
+    HA_HOOK=$(cat <<JSON
+,
+      {
+        "library": "$HOOKS_DIR/libdhcp_ha.so",
+        "parameters": {
+          "high-availability": [ {
+            "this-server-name": "$THIS_NAME",
+            "mode": "hot-standby",
+            "heartbeat-delay": 10000,
+            "max-response-delay": 60000,
+            "max-ack-delay": 5000,
+            "max-unacked-clients": 5,
+            "peers": [
+              {
+                "name": "$THIS_NAME",
+                "url": "$THIS_URL",
+                "role": "$HA_ROLE",
+                "auto-failover": true
+              },
+              {
+                "name": "$PEER_NAME",
+                "url": "$PEER_URL",
+                "role": "$PEER_ROLE",
+                "auto-failover": true
+              }
+            ]
+          } ]
+        }
+      }
+JSON
+)
+fi
+
 echo "==> Writing /etc/kea/kea-dhcp4.conf"
 backup /etc/kea/kea-dhcp4.conf
 cat > /etc/kea/kea-dhcp4.conf <<JSON
@@ -124,34 +177,7 @@ cat > /etc/kea/kea-dhcp4.conf <<JSON
     "hooks-libraries": [
       {
         "library": "$HOOKS_DIR/libdhcp_lease_cmds.so"
-      },
-      {
-        "library": "$HOOKS_DIR/libdhcp_ha.so",
-        "parameters": {
-          "high-availability": [ {
-            "this-server-name": "$THIS_NAME",
-            "mode": "hot-standby",
-            "heartbeat-delay": 10000,
-            "max-response-delay": 60000,
-            "max-ack-delay": 5000,
-            "max-unacked-clients": 5,
-            "peers": [
-              {
-                "name": "$THIS_NAME",
-                "url": "$THIS_URL",
-                "role": "$HA_ROLE",
-                "auto-failover": true
-              },
-              {
-                "name": "$PEER_NAME",
-                "url": "$PEER_URL",
-                "role": "$PEER_ROLE",
-                "auto-failover": true
-              }
-            ]
-          } ]
-        }
-      }
+      }$HA_HOOK
     ],
 
     "subnet4": [],
@@ -264,7 +290,7 @@ systemctl is-active --quiet kea-ctrl-agent || { echo "kea-ctrl-agent did not sta
 
 cat <<SUMMARY
 
-DHCP role installed on $THIS_NAME ($HA_ROLE of the failover pair).
+DHCP role installed on $THIS_NAME${HA_ROLE:+ ($HA_ROLE of the failover pair)}.
 
 Add to the ODM secrets file on the API host:
 

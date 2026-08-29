@@ -227,6 +227,7 @@ function fromInput(field: FieldSpec, raw: string): unknown {
 
 // Categories with no repeating rows; each renders its own editor.
 const SPECIAL = [
+  { key: "updates", title: "System updates", half: "Computer" as Half },
   { key: "wallpaper", title: "Desktop background", half: "User" as Half },
   { key: "browser", title: "Browser policy", half: "Computer" as Half },
   { key: "admx", title: "Administrative templates", half: "Computer" as Half },
@@ -235,6 +236,7 @@ const SPECIAL = [
 type Selected = string;
 
 function countOf(settings: PolicySettings, key: string): number {
+  if (key === "updates") return settings.updates ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
@@ -312,6 +314,7 @@ export function SettingsEditor({
           {category && (
             <RowsEditor category={category} settings={settings} onChange={onChange} />
           )}
+          {selected === "updates" && <UpdatesEditor settings={settings} onChange={onChange} />}
           {selected === "wallpaper" && (
             <WallpaperEditor settings={settings} onChange={onChange} />
           )}
@@ -410,6 +413,124 @@ function RowsEditor({
             ))}
           </tbody>
         </table>
+      )}
+    </>
+  );
+}
+
+function UpdatesEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.updates;
+
+  function set(changes: Partial<NonNullable<PolicySettings["updates"]>>) {
+    onChange({
+      ...settings,
+      updates: {
+        enabled: true,
+        security_only: true,
+        schedule: "daily",
+        auto_reboot: false,
+        reboot_time: "03:00",
+        remove_unused: true,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <header>
+        <h3>System updates</h3>
+        <span className="spacer" />
+        {current && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onChange({ ...settings, updates: undefined })}
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Remove
+          </button>
+        )}
+      </header>
+
+      {!current ? (
+        <>
+          <p className="empty">Not configured.</p>
+          <div className="actions-row">
+            <button type="button" className="primary" onClick={() => set({})}>
+              <Plus size={15} aria-hidden="true" />
+              Add
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.enabled}
+              onChange={(e) => set({ enabled: e.target.checked })}
+            />
+            Install updates without being asked
+          </label>
+
+          <div className="inline-fields">
+            <label className="field">
+              <span>What to install</span>
+              <select
+                value={current.security_only ? "security" : "all"}
+                onChange={(e) => set({ security_only: e.target.value === "security" })}
+              >
+                <option value="security">Security updates only</option>
+                <option value="all">Every available update</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>How often</span>
+              <select
+                value={current.schedule}
+                onChange={(e) => set({ schedule: e.target.value as "daily" | "weekly" })}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.remove_unused}
+              onChange={(e) => set({ remove_unused: e.target.checked })}
+            />
+            Remove packages nothing needs any more
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.auto_reboot}
+              onChange={(e) => set({ auto_reboot: e.target.checked })}
+            />
+            Restart the machine when an update needs it
+          </label>
+          {current.auto_reboot && (
+            <label className="field">
+              <span>Restart at</span>
+              <input
+                type="time"
+                value={current.reboot_time}
+                onChange={(e) => set({ reboot_time: e.target.value })}
+              />
+            </label>
+          )}
+        </>
       )}
     </>
   );

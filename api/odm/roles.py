@@ -53,6 +53,9 @@ class Argument:
     placeholder: str = ""
     default: str = ""
     optional: bool = False
+    # Set once the role exists, from the section that manages the service,
+    # rather than asked for while installing it.
+    configuration: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,22 +89,27 @@ REGISTRY: dict[str, Role] = {
             Argument(
                 name="ha_role",
                 label="Failover role",
-                help="Install once as primary and once as standby.",
+                help="This node's part in the pair. Leave unset for a single server.",
                 kind="choice",
                 choices=("primary", "standby"),
-                default="primary",
+                optional=True,
+                configuration=True,
             ),
             Argument(
                 name="this_url",
-                label="Control address of this node",
+                label="Failover address of this node",
                 kind="url",
-                placeholder="http://dhcp1.corp.example.internal:8000/",
+                placeholder="http://dhcp1.corp.example.internal:8080/",
+                optional=True,
+                configuration=True,
             ),
             Argument(
                 name="peer_url",
-                label="Control address of the other node",
+                label="Failover address of the other node",
                 kind="url",
-                placeholder="http://dhcp2.corp.example.internal:8000/",
+                placeholder="http://dhcp2.corp.example.internal:8080/",
+                optional=True,
+                configuration=True,
             ),
             Argument(
                 name="realm",
@@ -120,7 +128,10 @@ REGISTRY: dict[str, Role] = {
         packages=("kea-dhcp4-server", "kea-ctrl-agent", "kea-dhcp-ddns-server"),
         produces_settings=("ODM_KEA_URL", "ODM_KEA_USER", "ODM_KEA_PASSWORD"),
         ui_section="dhcp",
-        notes="Add the ODM_KEA_* lines the installer prints to the secrets file.",
+        notes=(
+            "Add the ODM_KEA_* lines the installer prints to the secrets file. "
+            "Pair two nodes for failover under DHCP once both are installed."
+        ),
     ),
     "certificate-authority": Role(
         name="certificate-authority",

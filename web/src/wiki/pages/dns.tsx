@@ -37,6 +37,21 @@ export function Content() {
       </Quickstart>
 
       <Details>
+        <Section title="Forward and reverse zones">
+          <p>
+            A forward zone answers names with addresses; a reverse zone answers addresses with
+            names. <strong>New zone</strong> asks which, and a reverse zone is named from the
+            network it covers — <C>10.10.0.0/24</C> becomes{" "}
+            <C>0.10.10.in-addr.arpa</C> — rather than needing the octets reversed by hand. A
+            reverse zone covers a /8, /16 or /24.
+          </p>
+          <p>
+            When a reverse zone exists, adding an <C>A</C> record offers to create the matching
+            pointer record with it. Without a reverse zone the forward record is created on its
+            own and the console says so.
+          </p>
+        </Section>
+
         <Section title="Record types">
           <Reference
             headers={["Type", "Data format", "Example"]}

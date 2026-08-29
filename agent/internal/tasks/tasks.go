@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"odm.example.org/agent/internal/apply"
+	"odm.example.org/agent/internal/inventory"
 )
 
 // Where install-agent.sh puts the role installers it ships alongside the agent.
@@ -65,6 +66,10 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 		output, err = applyShare(ctx, task.Payload, env)
 	case "share-remove":
 		output, err = removeShare(ctx, task.Payload, env)
+	case "update-check":
+		output, err = checkUpdates(ctx, env)
+	case "update-install":
+		output, err = installUpdates(ctx, env)
 	default:
 		err = fmt.Errorf("unknown task kind %q", task.Kind)
 	}
@@ -96,6 +101,48 @@ func installRole(ctx context.Context, payload map[string]any, env apply.Env) (st
 		return "", fmt.Errorf("no command runner")
 	}
 	return env.Run.Run(ctx, installer, arguments...)
+}
+
+// checkUpdates refreshes the package index and reports what an upgrade would
+// do. It changes nothing: the count it produces is what the console shows
+// before an operator decides.
+func checkUpdates(ctx context.Context, env apply.Env) (string, error) {
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
+		return out, fmt.Errorf("refreshing the package index: %w", err)
+	}
+	pending, security, names := inventory.PendingUpdates(ctx, env)
+	if pending == 0 {
+		return "everything is up to date", nil
+	}
+	return fmt.Sprintf(
+		"%d updates waiting (%d from security): %s",
+		pending, security, strings.Join(names, ", "),
+	), nil
+}
+
+// installUpdates is the equivalent of apt update && apt upgrade -y, held to
+// packages already installed: an upgrade never pulls in something new, and
+// never answers a configuration-file prompt on an operator's behalf.
+func installUpdates(ctx context.Context, env apply.Env) (string, error) {
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
+		return out, fmt.Errorf("refreshing the package index: %w", err)
+	}
+	out, err := env.Run.Run(ctx,
+		"apt-get", "upgrade", "-y",
+		"-o", "Dpkg::Options::=--force-confold",
+		"-o", "Dpkg::Options::=--force-confdef",
+	)
+	if err != nil {
+		return out, fmt.Errorf("upgrading: %w", err)
+	}
+	pending, _, _ := inventory.PendingUpdates(ctx, env)
+	return fmt.Sprintf("%s\n%d updates still waiting", strings.TrimSpace(out), pending), nil
 }
 
 // Share is the definition the control plane stores, as the agent receives it.

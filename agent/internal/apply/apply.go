@@ -29,6 +29,7 @@ var appliers = []applier{
 	{"cron", applyCron},
 	{"drive_maps", applyDriveMaps},
 	{"packages", applyPackages},
+	{"updates", applyUpdates},
 	{"trusted_certificates", applyTrustedCertificates},
 	{"browser", applyBrowser},
 	{"wallpaper", applyWallpaper},

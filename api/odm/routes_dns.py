@@ -27,11 +27,21 @@ class ZoneRequest(BaseModel):
     zone: ZoneName
 
 
+class ReverseZoneRequest(BaseModel):
+    """A reverse zone is named after the network it answers for, so ODM works
+    the name out rather than making an operator reverse the octets by hand."""
+
+    network: Annotated[str, Field(min_length=7, max_length=64)]
+
+
 class RecordRequest(BaseModel):
     zone: ZoneName
     name: RecordName
     type: RecordType
     data: RecordData
+    # Windows offers this on the record itself, and it is the step most often
+    # forgotten: a host with no pointer record fails reverse lookups.
+    create_pointer: bool = False
 
 
 class UpdateRecordRequest(BaseModel):
@@ -85,6 +95,24 @@ async def create_zone(
         return {"zone": body.zone}
 
 
+@router.post("/zones/reverse", status_code=201, dependencies=[Depends(requires("dns.write"))])
+async def create_reverse_zone(
+    body: ReverseZoneRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Create the reverse lookup zone for a network."""
+    zone = dns.reverse_zone_name(body.network)
+    async with _audit_context(
+        request, session, pool, "dns.zone.create", object_type="dns_zone", object_dn=zone
+    ) as entry:
+        await run_in_threadpool(dns.create_zone, settings, zone)
+        entry.after = {"zone": zone, "network": body.network}
+        return {"zone": zone, "network": body.network}
+
+
 @router.delete("/zone", status_code=204, dependencies=[Depends(requires("dns.write"))])
 async def delete_zone(
     request: Request,
@@ -120,8 +148,35 @@ async def add_record(
         await run_in_threadpool(
             dns.add_record, settings, body.zone, body.name, body.type, body.data
         )
-        entry.after = {"type": body.type, "data": body.data}
-        return {"name": body.name, "zone": body.zone, "type": body.type, "data": body.data}
+        pointer = None
+        if body.create_pointer and body.type == "A":
+            pointer = await _add_pointer(settings, body.zone, body.name, body.data)
+        entry.after = {"type": body.type, "data": body.data, "pointer": pointer}
+        return {
+            "name": body.name,
+            "zone": body.zone,
+            "type": body.type,
+            "data": body.data,
+            "pointer": pointer,
+        }
+
+
+async def _add_pointer(
+    settings: Settings, zone: str, name: str, address: str
+) -> str | None:
+    """Add the matching pointer record, when a reverse zone covers the address.
+
+    No reverse zone is not a failure: the forward record stands on its own, and
+    saying so is more useful than refusing the whole request.
+    """
+    zones = await run_in_threadpool(dns.list_zones, settings)
+    placement = dns.pointer_for(address, [str(entry["name"]) for entry in zones])
+    if placement is None:
+        return None
+    reverse_zone, relative = placement
+    host = f"{name}.{zone}." if name not in ("@", "") else f"{zone}."
+    await run_in_threadpool(dns.add_record, settings, reverse_zone, relative, "PTR", host)
+    return f"{relative}.{reverse_zone}"
 
 
 @router.patch("/record", dependencies=[Depends(requires("dns.write"))])

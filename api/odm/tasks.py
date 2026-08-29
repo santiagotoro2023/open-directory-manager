@@ -16,7 +16,13 @@ from typing import Any
 
 import asyncpg
 
-KINDS = ("role-install", "share-apply", "share-remove")
+KINDS = (
+    "role-install",
+    "share-apply",
+    "share-remove",
+    "update-check",
+    "update-install",
+)
 
 
 async def enqueue(

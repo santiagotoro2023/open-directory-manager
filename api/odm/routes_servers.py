@@ -8,15 +8,17 @@ logging into each one.
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, Field
 
-from . import objects
+from . import audit, objects, tasks
 from .config import Settings, get_settings
 from .routes_directory import _read
-from .security import get_pool, require_admin, requires
+from .security import client_ip, get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/servers", tags=["servers"])
@@ -95,3 +97,118 @@ async def list_servers(
             if machine["fqdn"]
         ]
     }
+
+
+# ------------------------------------------------------- one machine's state --
+
+
+@router.get("/computer", dependencies=[Depends(requires("server.read"))])
+async def computer_detail(
+    dn: Annotated[str, Query(min_length=3, max_length=1024)],
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Everything the machine has told us about itself."""
+    fact = await pool.fetchrow(
+        "SELECT * FROM computer_fact WHERE lower(computer_dn) = lower($1)", dn
+    )
+    events = await pool.fetch(
+        """
+        SELECT kind, principal, occurred_at, detail
+        FROM computer_event WHERE lower(computer_dn) = lower($1)
+        ORDER BY occurred_at DESC LIMIT 200
+        """,
+        dn,
+    )
+    queued = await pool.fetch(
+        """
+        SELECT id, kind, state, output, created_at, finished_at
+        FROM node_task
+        WHERE lower(node_fqdn) = lower(COALESCE($1, ''))
+        ORDER BY created_at DESC LIMIT 20
+        """,
+        fact["hostname"] if fact else None,
+    )
+
+    return {
+        "known": fact is not None,
+        "facts": None
+        if fact is None
+        else {
+            "hostname": fact["hostname"],
+            "operating_system": fact["operating_system"],
+            "kernel": fact["kernel"],
+            "booted_at": fact["booted_at"],
+            "local_users": json.loads(fact["local_users"]),
+            "sessions": json.loads(fact["sessions"]),
+            "pending_updates": fact["pending_updates"],
+            "security_updates": fact["security_updates"],
+            "updates": json.loads(fact["updates"]),
+            "updates_checked_at": fact["updates_checked_at"],
+            "reported_at": fact["reported_at"],
+        },
+        "events": [
+            {
+                "kind": row["kind"],
+                "principal": row["principal"],
+                "occurred_at": row["occurred_at"],
+                "detail": row["detail"],
+            }
+            for row in events
+        ],
+        "tasks": [
+            {
+                "id": str(row["id"]),
+                "kind": row["kind"],
+                "state": row["state"],
+                "output": row["output"],
+                "created_at": row["created_at"],
+                "finished_at": row["finished_at"],
+            }
+            for row in queued
+        ],
+    }
+
+
+class ComputerAction(BaseModel):
+    dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    action: Annotated[str, Field(pattern="^(update-check|update-install)$")]
+
+
+@router.post("/computer/action", status_code=202,
+             dependencies=[Depends(requires("computer.manage"))])
+async def run_action(
+    body: ComputerAction,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Ask a machine to do something now, rather than at its next refresh."""
+    async with pool.acquire() as conn:
+        fact = await conn.fetchrow(
+            "SELECT hostname FROM computer_fact WHERE lower(computer_dn) = lower($1)", body.dn
+        )
+        if fact is None:
+            raise objects.NotFound(
+                "this machine has not reported yet, so there is nowhere to send the request"
+            )
+        task_id = await tasks.enqueue(
+            conn,
+            node_fqdn=fact["hostname"],
+            kind=body.action,
+            payload={},
+            subject=body.dn,
+            requested_by=session.principal,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action=f"computer.{body.action.replace('-', '.')}",
+            outcome="success",
+            object_type="computer",
+            object_dn=body.dn,
+            detail=f"queued for {fact['hostname']}",
+        )
+    return {"task": task_id, "node": fact["hostname"]}

@@ -48,6 +48,7 @@ def _descriptor(role: roles.Role) -> dict[str, Any]:
                 "placeholder": argument.placeholder,
                 "default": argument.default,
                 "optional": argument.optional,
+                "configuration": argument.configuration,
             }
             for argument in role.arguments
         ],

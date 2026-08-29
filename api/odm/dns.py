@@ -213,6 +213,53 @@ def create_zone(settings: Settings, zone: str) -> None:
     _run(settings, "zonecreate", server(settings), validate_zone(zone))
 
 
+def reverse_zone_name(network: str) -> str:
+    """The in-addr.arpa or ip6.arpa zone that answers for a network.
+
+    Given 10.10.0.0/24 this is 0.10.10.in-addr.arpa: the octets the prefix
+    covers, reversed. Only /8, /16 and /24 have a zone of their own; anything
+    else needs classless delegation, which is not something to guess at.
+    """
+    address, _, prefix = network.strip().partition("/")
+    try:
+        network_object = ipaddress.ip_network(f"{address}/{prefix or '24'}", strict=False)
+    except ValueError as exc:
+        raise DnsError(f"{network!r} is not a network") from exc
+
+    if network_object.version == 6:
+        if network_object.prefixlen % 4:
+            raise DnsError("an IPv6 reverse zone needs a prefix that is a multiple of 4")
+        nibbles = network_object.network_address.exploded.replace(":", "")
+        keep = network_object.prefixlen // 4
+        return ".".join(reversed(nibbles[:keep])) + ".ip6.arpa"
+
+    if network_object.prefixlen not in (8, 16, 24):
+        raise DnsError("a reverse zone covers a /8, /16 or /24")
+    octets = str(network_object.network_address).split(".")[: network_object.prefixlen // 8]
+    return ".".join(reversed(octets)) + ".in-addr.arpa"
+
+
+def pointer_for(address: str, zones: list[str]) -> tuple[str, str] | None:
+    """Where the pointer record for this address belongs, if a zone holds it.
+
+    Returns (zone, name-within-the-zone). None when no reverse zone covers the
+    address, which is not an error: the forward record is still valid.
+    """
+    try:
+        parsed = ipaddress.ip_address(address.strip())
+    except ValueError:
+        return None
+    if parsed.version != 4:
+        return None
+
+    octets = str(parsed).split(".")
+    for width in (24, 16, 8):
+        zone = ".".join(reversed(octets[: width // 8])) + ".in-addr.arpa"
+        if zone in zones:
+            return zone, ".".join(reversed(octets[width // 8 :]))
+    return None
+
+
 def delete_zone(settings: Settings, zone: str) -> None:
     _run(settings, "zonedelete", server(settings), validate_zone(zone), "--force")
 

@@ -21,6 +21,7 @@ import (
 	"odm.example.org/agent/internal/apply"
 	"odm.example.org/agent/internal/client"
 	"odm.example.org/agent/internal/config"
+	"odm.example.org/agent/internal/inventory"
 	"odm.example.org/agent/internal/policy"
 	"odm.example.org/agent/internal/tasks"
 )
@@ -127,6 +128,7 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	if !force && username == "" && document.Serial == lastSerial(env) {
 		fmt.Println("policy unchanged")
 		runTasks(ctx, api, env)
+		reportInventory(ctx, api, env)
 		return nil
 	}
 
@@ -150,6 +152,7 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	// Work queued for this machine — a role to install, a share to render —
 	// is collected on the same visit rather than needing a poll of its own.
 	runTasks(ctx, api, env)
+	reportInventory(ctx, api, env)
 
 	if err := api.Report(ctx, policy.Report{
 		PolicySerial: document.Serial,
@@ -182,6 +185,15 @@ func runTasks(ctx context.Context, api *client.Client, env apply.Env) {
 		if err := api.TaskResult(ctx, result); err != nil {
 			fmt.Fprintln(os.Stderr, "odm-agent: reporting task:", err)
 		}
+	}
+}
+
+// reportInventory tells the control plane what this machine looks like. It is
+// never fatal: a machine that cannot report its local users has still applied
+// its policy, and saying nothing about that would be worse than saying this.
+func reportInventory(ctx context.Context, api *client.Client, env apply.Env) {
+	if err := api.Inventory(ctx, inventory.Collect(ctx, env)); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: reporting inventory:", err)
 	}
 }
 

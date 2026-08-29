@@ -24,6 +24,7 @@ import (
 	"github.com/jcmturner/gokrb5/v8/spnego"
 
 	agentconfig "odm.example.org/agent/internal/config"
+	"odm.example.org/agent/internal/inventory"
 	"odm.example.org/agent/internal/policy"
 	"odm.example.org/agent/internal/tasks"
 )
@@ -260,6 +261,31 @@ func (c *Client) TaskResult(ctx context.Context, result tasks.Result) error {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("task result: %s", response.Status)
+	}
+	return nil
+}
+
+// Inventory reports what the directory cannot know about this machine: its
+// local accounts, who is on it, when it booted, what updates are waiting.
+func (c *Client) Inventory(ctx context.Context, report inventory.Report) error {
+	body, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+"/api/v1/agent/inventory", bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("inventory: %s", response.Status)
 	}
 	return nil
 }

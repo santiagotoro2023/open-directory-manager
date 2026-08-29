@@ -17,6 +17,7 @@ export function Dns() {
   const [available, setAvailable] = useState(true);
   const [dialog, setDialog] = useState<"zone" | "record" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const { bind, menu } = useContextMenu();
 
   const loadZones = useCallback(async () => {
@@ -130,6 +131,7 @@ export function Dns() {
             {error}
           </p>
         )}
+        {notice && <p className="muted">{notice}</p>}
 
         <table className="data">
           <thead>
@@ -202,9 +204,15 @@ export function Dns() {
         <RecordDialog
           zone={selected}
           onClose={() => setDialog(null)}
-          onCreated={() => {
+          onCreated={(pointer) => {
             setDialog(null);
+            setNotice(
+              pointer
+                ? `Pointer record created in ${pointer.split(".").slice(1).join(".")}.`
+                : null,
+            );
             void loadRecords();
+            void loadZones();
           }}
         />
       )}
@@ -219,7 +227,9 @@ function ZoneDialog({
   onClose: () => void;
   onCreated: (zone: string) => void;
 }) {
+  const [kind, setKind] = useState<"forward" | "reverse">("forward");
   const [zone, setZone] = useState("");
+  const [network, setNetwork] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -234,8 +244,13 @@ function ZoneDialog({
         setBusy(true);
         setError(null);
         try {
-          await api.dns.createZone(zone);
-          onCreated(zone);
+          if (kind === "forward") {
+            await api.dns.createZone(zone);
+            onCreated(zone);
+          } else {
+            const created = await api.dns.createReverseZone(network);
+            onCreated(created.zone);
+          }
         } catch (err) {
           setError(err instanceof ApiError ? err.message : String(err));
         } finally {
@@ -243,9 +258,30 @@ function ZoneDialog({
         }
       }}
     >
-      <Field label="Zone name" hint="Forward, e.g. lab.example.internal, or 10.in-addr.arpa">
-        <input value={zone} required onChange={(e) => setZone(e.target.value)} />
+      <Field label="Zone type">
+        <select value={kind} onChange={(e) => setKind(e.target.value as "forward" | "reverse")}>
+          <option value="forward">Forward lookup — names to addresses</option>
+          <option value="reverse">Reverse lookup — addresses to names</option>
+        </select>
       </Field>
+
+      {kind === "forward" ? (
+        <Field label="Zone name" hint="For example lab.example.internal">
+          <input value={zone} required onChange={(e) => setZone(e.target.value)} />
+        </Field>
+      ) : (
+        <Field
+          label="Network"
+          hint="For example 10.10.0.0/24. The zone name is worked out from it."
+        >
+          <input
+            value={network}
+            required
+            placeholder="10.10.0.0/24"
+            onChange={(e) => setNetwork(e.target.value)}
+          />
+        </Field>
+      )}
     </Modal>
   );
 }
@@ -268,11 +304,12 @@ function RecordDialog({
 }: {
   zone: string;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (pointer: string | null) => void;
 }) {
   const [name, setName] = useState("");
   const [type, setType] = useState("A");
   const [data, setData] = useState("");
+  const [pointer, setPointer] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -287,8 +324,14 @@ function RecordDialog({
         setBusy(true);
         setError(null);
         try {
-          await api.dns.addRecord({ zone, name, type, data });
-          onCreated();
+          const created = await api.dns.addRecord({
+            zone,
+            name,
+            type,
+            data,
+            create_pointer: type === "A" && pointer,
+          });
+          onCreated(created.pointer);
         } catch (err) {
           setError(err instanceof ApiError ? err.message : String(err));
         } finally {
@@ -316,6 +359,16 @@ function RecordDialog({
           onChange={(e) => setData(e.target.value)}
         />
       </Field>
+      {type === "A" && (
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={pointer}
+            onChange={(e) => setPointer(e.target.checked)}
+          />
+          Create the matching pointer record
+        </label>
+      )}
     </Modal>
   );
 }

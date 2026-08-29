@@ -12,6 +12,7 @@ import base64
 import binascii
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated, Any
 
 import asyncpg
@@ -233,3 +234,105 @@ async def agent_task_result(
             object_dn=task["subject"],
             detail=detail,
         )
+
+
+# -------------------------------------------------------------- inventory ---
+# What the directory cannot know about a machine: who is on it, when it
+# booted, which local accounts it carries, what updates are waiting.
+
+
+class LocalUser(BaseModel):
+    name: Annotated[str, Field(max_length=64)]
+    uid: int
+    shell: Annotated[str, Field(max_length=128)] = ""
+    home: Annotated[str, Field(max_length=255)] = ""
+    groups: Annotated[list[Annotated[str, Field(max_length=64)]], Field(max_length=64)] = []
+
+
+class LoginSession(BaseModel):
+    user: Annotated[str, Field(max_length=64)]
+    line: Annotated[str, Field(max_length=64)] = ""
+    since: Annotated[str, Field(max_length=64)] = ""
+
+
+class MachineEvent(BaseModel):
+    kind: Annotated[str, Field(pattern="^(logon|logoff|boot|shutdown|update)$")]
+    principal: Annotated[str, Field(max_length=64)] = ""
+    occurred_at: datetime
+    detail: Annotated[str, Field(max_length=500)] | None = None
+
+
+class Inventory(BaseModel):
+    operating_system: Annotated[str, Field(max_length=128)] = ""
+    kernel: Annotated[str, Field(max_length=128)] = ""
+    booted_at: datetime | None = None
+    local_users: Annotated[list[LocalUser], Field(max_length=500)] = []
+    sessions: Annotated[list[LoginSession], Field(max_length=200)] = []
+    pending_updates: int = 0
+    security_updates: int = 0
+    updates: Annotated[list[Annotated[str, Field(max_length=128)]], Field(max_length=500)] = []
+    updates_checked: bool = False
+    events: Annotated[list[MachineEvent], Field(max_length=500)] = []
+
+
+@router.post("/inventory", status_code=204)
+async def agent_inventory(
+    body: Inventory,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """Record what the machine reports about itself."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO computer_fact (
+                computer_dn, hostname, operating_system, kernel, booted_at,
+                local_users, sessions, pending_updates, security_updates,
+                updates, updates_checked_at, reported_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
+                    CASE WHEN $11 THEN now() ELSE NULL END, now())
+            ON CONFLICT (computer_dn) DO UPDATE SET
+                hostname           = excluded.hostname,
+                operating_system   = excluded.operating_system,
+                kernel             = excluded.kernel,
+                booted_at          = excluded.booted_at,
+                local_users        = excluded.local_users,
+                sessions           = excluded.sessions,
+                pending_updates    = excluded.pending_updates,
+                security_updates   = excluded.security_updates,
+                updates            = excluded.updates,
+                updates_checked_at = COALESCE(excluded.updates_checked_at,
+                                              computer_fact.updates_checked_at),
+                reported_at        = now()
+            """,
+            machine.dn,
+            machine.hostname,
+            body.operating_system,
+            body.kernel,
+            body.booted_at,
+            json.dumps([user.model_dump() for user in body.local_users]),
+            json.dumps([session.model_dump() for session in body.sessions]),
+            body.pending_updates,
+            body.security_updates,
+            json.dumps(body.updates),
+            body.updates_checked,
+        )
+
+        # A report covers a window, so the same login arrives more than once.
+        # The unique constraint is what makes that harmless.
+        for event in body.events:
+            await conn.execute(
+                """
+                INSERT INTO computer_event
+                    (computer_dn, hostname, kind, principal, occurred_at, detail)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (computer_dn, kind, principal, occurred_at) DO NOTHING
+                """,
+                machine.dn,
+                machine.hostname,
+                event.kind,
+                event.principal,
+                event.occurred_at,
+                event.detail,
+            )

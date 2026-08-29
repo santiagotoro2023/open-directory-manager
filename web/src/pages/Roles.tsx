@@ -311,14 +311,16 @@ function InstallDialog({
         />
       </Field>
 
-      {role.arguments.map((argument) => (
-        <ArgumentField
-          key={argument.name}
-          argument={argument}
-          value={config[argument.name] ?? ""}
-          onChange={(value) => setConfig({ ...config, [argument.name]: value })}
-        />
-      ))}
+      {role.arguments
+        .filter((argument) => !argument.configuration)
+        .map((argument) => (
+          <ArgumentField
+            key={argument.name}
+            argument={argument}
+            value={config[argument.name] ?? ""}
+            onChange={(value) => setConfig({ ...config, [argument.name]: value })}
+          />
+        ))}
 
       {role.produces_settings.length > 0 && (
         <p className="muted">

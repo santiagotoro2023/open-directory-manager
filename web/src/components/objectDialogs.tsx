@@ -1,11 +1,28 @@
 import { useEffect, useState } from "react";
 import { ApiError, api, type DirectoryObject } from "../api";
 import { Field, Modal } from "./Modal";
-import { RsopDialog } from "./RsopDialog";
+
+const UF_ACCOUNTDISABLE = 0x0002;
+
+export function isDisabled(object: DirectoryObject): boolean {
+  const uac = Number(object.userAccountControl ?? 0);
+  return Boolean(uac & UF_ACCOUNTDISABLE);
+}
+
+export const GROUP_SCOPES: Record<number, string> = {
+  [-2147483646]: "Global",
+  [-2147483644]: "Domain local",
+  [-2147483640]: "Universal",
+};
+
+export const GROUP_KIND_LABELS: Record<string, string> = {
+  user: "User group",
+  computer: "Computer group",
+};
 
 // Mirrors the per-type allow-lists the API enforces; anything else is
 // rejected server-side, so the form never offers it.
-const EDITABLE: Record<string, { attribute: string; label: string }[]> = {
+export const EDITABLE: Record<string, { attribute: string; label: string }[]> = {
   user: [
     { attribute: "givenName", label: "First name" },
     { attribute: "sn", label: "Last name" },
@@ -30,232 +47,12 @@ const EDITABLE: Record<string, { attribute: string; label: string }[]> = {
   ou: [{ attribute: "description", label: "Description" }],
 };
 
-const GROUP_SCOPES: Record<number, string> = {
-  [-2147483646]: "Global",
-  [-2147483644]: "Domain local",
-  [-2147483640]: "Universal",
-};
-
-const GROUP_KIND_LABELS: Record<string, string> = {
-  user: "User group",
-  computer: "Computer group",
-};
-
-const UF_ACCOUNTDISABLE = 0x0002;
-
-export function isDisabled(object: DirectoryObject): boolean {
-  const uac = Number(object.userAccountControl ?? 0);
-  return Boolean(uac & UF_ACCOUNTDISABLE);
-}
-
-function text(value: unknown): string {
+export function text(value: unknown): string {
   if (value === undefined || value === null) return "";
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
-export function ObjectPanel({
-  object,
-  containers,
-  onChanged,
-  onDeleted,
-  onClose,
-}: {
-  object: DirectoryObject;
-  containers: DirectoryObject[];
-  onChanged: (updated: DirectoryObject) => void;
-  onDeleted: () => void;
-  onClose: () => void;
-}) {
-  const dn = object.distinguishedName;
-  const fields = EDITABLE[object.objectType] ?? [];
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<
-    "password" | "move" | "members" | "delete" | "rsop" | null
-  >(null);
-  const [blocked, setBlocked] = useState(false);
-
-  useEffect(() => {
-    setDraft(Object.fromEntries(fields.map((f) => [f.attribute, text(object[f.attribute])])));
-    setError(null);
-  }, [dn]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function run<T>(action: () => Promise<T>, after?: (result: T) => void) {
-    setBusy(true);
-    setError(null);
-    try {
-      after?.(await action());
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function save() {
-    const changes: Record<string, string | null> = {};
-    for (const { attribute } of fields) {
-      const next = draft[attribute] ?? "";
-      if (next !== text(object[attribute])) changes[attribute] = next === "" ? null : next;
-    }
-    if (Object.keys(changes).length === 0) return;
-    void run(() => api.directory.update(dn, changes), onChanged);
-  }
-
-  const isAccount = object.objectType === "user" || object.objectType === "computer";
-
-  return (
-    <Modal
-      title={text(object.displayName || object.cn || object.ou)}
-      submitLabel="Save"
-      busy={busy}
-      onClose={onClose}
-      onSubmit={save}
-      wide
-    >
-      <p className="mono muted">{dn}</p>
-
-      {object.objectType === "group" && (
-        <>
-          <p className="muted">
-            {GROUP_KIND_LABELS[String(object.groupKind ?? "user")]} ·{" "}
-            {GROUP_SCOPES[Number(object.groupType)] ?? "unknown scope"} ·{" "}
-            {(object.member as string[] | undefined)?.length ?? 0} members
-          </p>
-          <label className="field">
-            <span>Group type</span>
-            <select
-              value={String(object.groupKind ?? "user")}
-              disabled={busy}
-              onChange={(e) =>
-                void run(
-                  () => api.directory.setGroupKind(dn, e.target.value as "user" | "computer"),
-                  onChanged,
-                )
-              }
-            >
-              <option value="user">User group</option>
-              <option value="computer">Computer group</option>
-            </select>
-          </label>
-        </>
-      )}
-      {isAccount && (
-        <p className="muted">
-          {text(object.sAMAccountName)} · {isDisabled(object) ? "Disabled" : "Enabled"}
-        </p>
-      )}
-
-      <div className="panel-fields">
-        {fields.map(({ attribute, label }) => (
-          <Field key={attribute} label={label}>
-            <input
-              value={draft[attribute] ?? ""}
-              onChange={(e) => setDraft({ ...draft, [attribute]: e.target.value })}
-            />
-          </Field>
-        ))}
-      </div>
-
-      {error && (
-        <p className="alert" role="alert">
-          {error}
-        </p>
-      )}
-
-      <div className="actions-row">
-        {object.objectType === "group" && (
-          <button type="button" className="ghost" onClick={() => setDialog("members")}>
-            Members
-          </button>
-        )}
-        {object.objectType === "user" && (
-          <button type="button" className="ghost" onClick={() => setDialog("password")}>
-            Reset password
-          </button>
-        )}
-        {isAccount && (
-          <button
-            type="button"
-            className="ghost"
-            disabled={busy}
-            onClick={() =>
-              void run(() => api.directory.setEnabled(dn, isDisabled(object)), onChanged)
-            }
-          >
-            {isDisabled(object) ? "Enable" : "Disable"}
-          </button>
-        )}
-        <button type="button" className="ghost" onClick={() => setDialog("rsop")}>
-          Policy
-        </button>
-        {object.objectType === "ou" && (
-          <button
-            type="button"
-            className="ghost"
-            disabled={busy}
-            onClick={() =>
-              void run(
-                () => api.policy.setInheritance(dn, !blocked),
-                (result) => setBlocked(result.block_inheritance),
-              )
-            }
-          >
-            {blocked ? "Allow inheritance" : "Block inheritance"}
-          </button>
-        )}
-        <button type="button" className="ghost" onClick={() => setDialog("move")}>
-          Move
-        </button>
-        <button type="button" className="danger" onClick={() => setDialog("delete")}>
-          Delete
-        </button>
-      </div>
-
-      {dialog === "rsop" && (
-        <RsopDialog
-          dn={dn}
-          isComputer={object.objectType === "computer"}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog === "password" && (
-        <PasswordDialog dn={dn} onClose={() => setDialog(null)} />
-      )}
-      {dialog === "move" && (
-        <MoveDialog
-          object={object}
-          containers={containers}
-          onClose={() => setDialog(null)}
-          onMoved={(moved) => {
-            setDialog(null);
-            onChanged(moved);
-          }}
-        />
-      )}
-      {dialog === "members" && (
-        <MembersDialog
-          group={object}
-          onClose={() => setDialog(null)}
-          onChanged={(updated) => onChanged(updated)}
-        />
-      )}
-      {dialog === "delete" && (
-        <DeleteDialog
-          object={object}
-          onClose={() => setDialog(null)}
-          onDeleted={() => {
-            setDialog(null);
-            onDeleted();
-          }}
-        />
-      )}
-    </Modal>
-  );
-}
-
-function useAction() {
+export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async (action: () => Promise<void>) => {
@@ -272,7 +69,7 @@ function useAction() {
   return { busy, error, run };
 }
 
-function PasswordDialog({ dn, onClose }: { dn: string; onClose: () => void }) {
+export function PasswordDialog({ dn, onClose }: { dn: string; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [mustChange, setMustChange] = useState(true);
   const { busy, error, run } = useAction();
@@ -312,7 +109,7 @@ function PasswordDialog({ dn, onClose }: { dn: string; onClose: () => void }) {
   );
 }
 
-function MoveDialog({
+export function MoveDialog({
   object,
   containers,
   onClose,
@@ -352,7 +149,7 @@ function MoveDialog({
   );
 }
 
-function MembersDialog({
+export function MembersDialog({
   group,
   onClose,
   onChanged,
@@ -461,7 +258,7 @@ function MembersDialog({
   );
 }
 
-function DeleteDialog({
+export function DeleteDialog({
   object,
   onClose,
   onDeleted,

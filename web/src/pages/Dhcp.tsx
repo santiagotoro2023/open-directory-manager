@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DhcpLease, type DhcpScope } from "../api";
 import { Field, Modal } from "../components/Modal";
+import { RoleConfiguration } from "../components/RoleConfiguration";
 
-type Tab = "scopes" | "leases";
+type Tab = "scopes" | "leases" | "configuration";
 
 interface HaPeer {
   "server-name"?: string;
@@ -107,7 +108,7 @@ export function Dhcp() {
       )}
 
       <nav className="tabs" aria-label="DHCP views">
-        {(["scopes", "leases"] as Tab[]).map((current) => (
+        {(["scopes", "leases", "configuration"] as Tab[]).map((current) => (
           <button
             key={current}
             type="button"
@@ -115,7 +116,11 @@ export function Dhcp() {
             aria-current={tab === current ? "true" : undefined}
             onClick={() => setTab(current)}
           >
-            {current === "scopes" ? "Scopes" : "Leases"}
+            {current === "scopes"
+              ? "Scopes"
+              : current === "leases"
+                ? "Leases"
+                : "Configuration"}
           </button>
         ))}
       </nav>
@@ -179,6 +184,14 @@ export function Dhcp() {
             )}
           </tbody>
         </table>
+      )}
+
+      {tab === "configuration" && (
+        <RoleConfiguration
+          role="dhcp"
+          title="Failover"
+          description="Install the role on both nodes first, then set one primary and the other standby."
+        />
       )}
 
       {tab === "leases" && (

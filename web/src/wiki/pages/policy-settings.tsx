@@ -39,6 +39,11 @@ export function Content() {
           <strong>Software deployment</strong> → <strong>Add</strong> → package{" "}
           <C>cifs-utils</C>, state <C>present</C>.
         </Example>
+        <Example title="Keep machines patched">
+          <strong>System updates</strong> → <strong>Add</strong> → security updates only,
+          daily. Tick <strong>Restart the machine when an update needs it</strong> for servers
+          that can take it.
+        </Example>
         <Example title="Restrict who may log in">
           <strong>HBAC rules</strong> → principal <C>%Engineers</C>, service{" "}
           <C>ssh</C>, access <C>allow</C>. Root and local administrators are always kept.
@@ -57,6 +62,7 @@ export function Content() {
               ["systemd units", "unit", "A unit is enabled, disabled, masked, started or stopped."],
               ["Scheduled tasks", "name", "An entry in /etc/cron.d."],
               ["Software deployment", "package name", "An apt package installed, upgraded or removed."],
+              ["System updates", "single value", "Unattended apt upgrades, through unattended-upgrades."],
               ["Firewall rules", "name", "Rules in a dedicated nftables table."],
               ["Drive maps", "mount point", "A mounted SMB share, machine-wide or per user."],
               ["Sudo rules", "name", "A file in /etc/sudoers.d."],
@@ -124,6 +130,30 @@ export function Content() {
 schedule  0 3 * * 0
 command   /usr/sbin/fstrim -a
 user      root`}</Code>
+        </Section>
+
+        <Section title="System updates">
+          <p>
+            Written as the two files <C>unattended-upgrades</C> reads, and the package is
+            installed if it is missing. Security-only is the default: everything else can change
+            behaviour on a machine nobody is watching. Turning the setting off removes the files
+            ODM wrote rather than writing &ldquo;off&rdquo; into them, so the machine&rsquo;s own
+            setting takes over again.
+          </p>
+          <Reference
+            headers={["Setting", "Effect"]}
+            rows={[
+              ["What to install", "Security origins only, or every available update."],
+              ["How often", "Daily or weekly, as APT::Periodic intervals."],
+              ["Remove packages nothing needs", "Unattended-Upgrade::Remove-Unused-Dependencies."],
+              ["Restart when needed", "Automatic-Reboot, at the time given."],
+            ]}
+          />
+          <Note>
+            A one-off update on a single machine is not a policy: use{" "}
+            <strong>Check for updates</strong> and <strong>Install updates</strong> on the
+            computer&rsquo;s own page.
+          </Note>
         </Section>
 
         <Section title="Software deployment">

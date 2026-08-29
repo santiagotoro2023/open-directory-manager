@@ -40,6 +40,17 @@ export function Content() {
       </Quickstart>
 
       <Details>
+        <Section title="Failover">
+          <p>
+            Install the DHCP role on both nodes first — a single node is a working DHCP server on
+            its own. Then pair them under <strong>DHCP</strong> →{" "}
+            <strong>Configuration</strong>: one node primary, the other standby, each with the
+            other&rsquo;s failover address. Installing a role and configuring the service it
+            provides are separate steps, so a pair can be made, changed or unmade without
+            reinstalling anything.
+          </p>
+        </Section>
+
         <Section title="Scopes">
           <Reference
             headers={["Field", "Notes"]}

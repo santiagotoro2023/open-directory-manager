@@ -43,7 +43,18 @@ export function Content() {
           and each row reports its own result.
         </Example>
         <Example title="Move an object">
-          Select it → <strong>Move</strong> → choose the destination container.
+          Open it → <strong>Move</strong> → choose the destination container.
+        </Example>
+        <Example title="See what a machine is doing">
+          Open a computer → <strong>Machine</strong> for its operating system, uptime and
+          pending updates, <strong>Local users</strong> for the accounts on it,{" "}
+          <strong>Activity</strong> for who signed in and when it booted.
+        </Example>
+        <Example title="Update a machine now">
+          Open the computer → <strong>Machine</strong> → <strong>Check for updates</strong> or{" "}
+          <strong>Install updates</strong>. The request is queued and runs at the
+          machine&rsquo;s next check-in, or immediately with{" "}
+          <C>odm-agent apply --force</C> on it.
         </Example>
 
         <Example title="Show the containers the directory keeps for itself">
@@ -52,9 +63,9 @@ export function Content() {
         </Example>
 
         <Where>
-          Directory. The tree on the left selects a container; the table lists its contents. The
-          root is the domain&rsquo;s short name. Drag the border between the tree and the table to
-          resize either.
+          Directory. The tree on the left selects a container; the table lists its contents.
+          Clicking an object opens its own page. The root is the domain&rsquo;s short name, and
+          the border between the tree and the table can be dragged.
         </Where>
       </Quickstart>
 

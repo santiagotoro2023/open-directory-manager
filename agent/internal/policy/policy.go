@@ -46,7 +46,18 @@ type Settings struct {
 	Packages     []Package     `json:"packages,omitempty"`
 	Browser      *Browser      `json:"browser,omitempty"`
 	Wallpaper    *Wallpaper    `json:"wallpaper,omitempty"`
+	Updates      *Updates      `json:"updates,omitempty"`
 	Agent        *AgentConfig  `json:"agent,omitempty"`
+}
+
+// Updates configures unattended apt upgrades.
+type Updates struct {
+	Enabled      bool   `json:"enabled"`
+	SecurityOnly bool   `json:"security_only"`
+	Schedule     string `json:"schedule"`
+	AutoReboot   bool   `json:"auto_reboot"`
+	RebootTime   string `json:"reboot_time"`
+	RemoveUnused bool   `json:"remove_unused"`
 }
 
 type File struct {

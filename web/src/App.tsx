@@ -8,6 +8,7 @@ import { Delegation } from "./pages/Delegation";
 import { Dhcp } from "./pages/Dhcp";
 import { Directory } from "./pages/Directory";
 import { Dns } from "./pages/Dns";
+import { ObjectDetail } from "./pages/ObjectDetail";
 import { Overview } from "./pages/Overview";
 import { Policy } from "./pages/Policy";
 import { RecycleBin } from "./pages/RecycleBin";
@@ -50,6 +51,7 @@ export function App() {
         <Route element={<Shell session={session} onSignOut={signOut} />}>
           <Route index element={<Overview session={session} />} />
           <Route path="directory" element={<Directory />} />
+          <Route path="directory/object" element={<ObjectDetail />} />
           <Route path="policy" element={<Policy />} />
           <Route path="dns" element={<Dns />} />
           <Route path="dhcp" element={<Dhcp />} />
