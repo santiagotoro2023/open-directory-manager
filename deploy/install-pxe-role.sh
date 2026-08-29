@@ -12,17 +12,28 @@ DOMAIN=""
 SUITE="trixie"
 TOKEN=""
 MIRROR="http://deb.debian.org/debian"
+JOIN_OU=""
+LOCAL_ADMIN="localadmin"
+PASSWORD_HASH=""
+CLIENT_BINARY="/usr/sbin/odm-client-install"
 TFTP_ROOT="/srv/tftp"
 SEED_ROOT="/srv/odm-preseed"
 
 usage() {
     cat >&2 <<'USAGE'
 usage: install-pxe-role.sh --interface <iface> --domain <domain> --enrolment-token <token>
-                           [--suite bookworm|trixie] [--mirror <url>]
+                           [--suite bookworm|trixie] [--mirror <url>] [--ou <dn>]
+                           [--local-admin <name>] [--local-password-hash <hash>]
+                           [--client-binary <path>]
 
   --interface        the network interface to serve boot requests on
   --domain           the domain installed machines join
   --enrolment-token  a multi-use token the installed machine enrols with
+  --ou               container the installed machine's account is created in
+  --mirror           a snapshot.debian.org URL pins the installed version
+  --local-password-hash
+                     crypt(3) hash for the local administrator. One is
+                     generated and printed when this is omitted.
 USAGE
     exit 2
 }
@@ -34,6 +45,10 @@ while [[ $# -gt 0 ]]; do
         --suite) SUITE="${2:?}"; shift 2 ;;
         --enrolment-token) TOKEN="${2:?}"; shift 2 ;;
         --mirror) MIRROR="${2:?}"; shift 2 ;;
+        --ou) JOIN_OU="${2:?}"; shift 2 ;;
+        --local-admin) LOCAL_ADMIN="${2:?}"; shift 2 ;;
+        --local-password-hash) PASSWORD_HASH="${2:?}"; shift 2 ;;
+        --client-binary) CLIENT_BINARY="${2:?}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
     esac
@@ -46,6 +61,29 @@ done
 [[ "$SUITE" =~ ^(bookworm|trixie)$ ]] || { echo "--suite must be bookworm or trixie" >&2; exit 1; }
 [[ "$TOKEN" =~ ^[A-Za-z0-9_-]{16,128}$ ]] || { echo "invalid --enrolment-token" >&2; exit 1; }
 [[ "$MIRROR" =~ ^https?://[A-Za-z0-9./_-]{3,200}$ ]] || { echo "invalid --mirror" >&2; exit 1; }
+[[ "$LOCAL_ADMIN" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "invalid --local-admin" >&2; exit 1; }
+# A distinguished name contains spaces, so the pattern has to be a variable:
+# an unquoted space inside [[ =~ ]] is a syntax error.
+OU_RE='^[A-Za-z0-9=,._ -]{3,512}$'
+[[ -z "$JOIN_OU" || "$JOIN_OU" =~ $OU_RE ]] || { echo "invalid --ou" >&2; exit 1; }
+
+# An installed machine has to fetch odm-client-install from somewhere, or its
+# join silently does nothing. Publishing it is part of installing the role,
+# not a note in the summary for somebody to act on later.
+if [[ ! -x "$CLIENT_BINARY" ]]; then
+    cat >&2 <<MISSING
+
+$CLIENT_BINARY is not here, so an installed machine would have nothing to
+join the domain with.
+
+Build it and point at it:
+
+    (cd client-join && go build -o /tmp/odm-client-install ./cmd/odm-client-install)
+    sudo deploy/install-pxe-role.sh ... --client-binary /tmp/odm-client-install
+
+MISSING
+    exit 1
+fi
 
 echo "==> Installing packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -58,6 +96,14 @@ NETBOOT="$MIRROR/dists/$SUITE/main/installer-amd64/current/images/netboot/netboo
 curl -fsSL "$NETBOOT" -o /tmp/netboot.tar.gz
 tar xzf /tmp/netboot.tar.gz -C "$TFTP_ROOT"
 rm -f /tmp/netboot.tar.gz
+
+# A placeholder hash is not a password: the installer either refuses it or
+# creates an account nobody can use. Generate a real one and say what it is.
+GENERATED_PASSWORD=""
+if [[ -z "$PASSWORD_HASH" ]]; then
+    GENERATED_PASSWORD="$(openssl rand -base64 18 | tr -d '\n/+=' | head -c 20)"
+    PASSWORD_HASH="$(openssl passwd -6 "$GENERATED_PASSWORD")"
+fi
 
 echo "==> Writing the preseed"
 install -d -m 0755 "$SEED_ROOT"
@@ -78,8 +124,8 @@ d-i mirror/http/proxy string
 
 d-i passwd/root-login boolean false
 d-i passwd/user-fullname string Local Administrator
-d-i passwd/username string localadmin
-d-i passwd/user-password-crypted password \$6\$odmSetMe\$changeThisOnFirstBoot
+d-i passwd/username string $LOCAL_ADMIN
+d-i passwd/user-password-crypted password $PASSWORD_HASH
 
 d-i clock-setup/utc boolean true
 d-i time/zone string Etc/UTC
@@ -105,9 +151,12 @@ d-i finish-install/reboot_in_progress note
 d-i preseed/late_command string \\
     in-target /bin/sh -c "curl -fsSL http://$(hostname -f)/odm-client-install -o /usr/sbin/odm-client-install"; \\
     in-target chmod 0755 /usr/sbin/odm-client-install; \\
-    in-target /usr/sbin/odm-client-install --domain $DOMAIN --otp $TOKEN --unattended
+    in-target /usr/sbin/odm-client-install --domain $DOMAIN --otp $TOKEN${JOIN_OU:+ --ou "$JOIN_OU"} --unattended
 PRESEED
 chmod 0644 "$SEED_ROOT/odm.cfg"
+
+echo "==> Publishing the client installer"
+install -m 0755 "$CLIENT_BINARY" "$SEED_ROOT/odm-client-install"
 
 echo "==> Serving the preseed over HTTP"
 cat > /etc/nginx/sites-available/odm-pxe <<NGINX
@@ -150,11 +199,17 @@ PXE role installed.
   Boot images   $TFTP_ROOT
   Preseed       http://$(hostname -f)/odm.cfg
   Suite         $SUITE
-  Joins         $DOMAIN with the supplied enrolment token
+  Mirror        $MIRROR
+  Joins         $DOMAIN${JOIN_OU:+ into $JOIN_OU} with the supplied enrolment token
+  Installer     $SEED_ROOT/odm-client-install (published)
+$( [[ -n "$GENERATED_PASSWORD" ]] && cat <<PASSWORD
 
-Place the odm-client-install binary at $SEED_ROOT/odm-client-install so
-installed machines can fetch it.
+  Local administrator: $LOCAL_ADMIN / $GENERATED_PASSWORD
 
-Set a real local administrator password hash in $SEED_ROOT/odm.cfg before
-using this in production; the shipped value is a placeholder.
+  This is the only time that password is shown. It is the account to use if a
+  machine finishes installing but does not join.
+PASSWORD
+)
+Boot a machine on $INTERFACE and it installs Debian $SUITE unattended, then
+joins the domain on first boot.
 SUMMARY

@@ -242,15 +242,16 @@ async def publish_trust(
     async with _audit_context(
         request, session, pool, "ca.publish", object_type="gpo", object_dn=TRUST_GPO_NAME
     ) as entry:
-        pem = ca.root_pem(settings)
-        settings_document = {
-            "trusted_certificates": [
-                {
-                    "name": "odm-root-ca",
-                    "certificate_pem": pem,
-                }
-            ]
-        }
+        trusted = []
+        if ca.initialised(settings):
+            trusted.append({"name": "odm-root-ca", "certificate_pem": ca.root_pem(settings)})
+        # Everything else the domain has been told to trust goes with it, so
+        # one policy object holds the whole trust store rather than one each.
+        for row in await pool.fetch("SELECT name, certificate_pem FROM trust_anchor ORDER BY name"):
+            trusted.append({"name": row["name"], "certificate_pem": row["certificate_pem"]})
+        if not trusted:
+            raise objects.ObjectError("there is nothing to publish yet")
+        settings_document = {"trusted_certificates": trusted}
 
         guid = await pool.fetchval(
             "SELECT guid FROM gpo WHERE display_name = $1", TRUST_GPO_NAME
@@ -263,7 +264,7 @@ async def publish_trust(
                 RETURNING guid
                 """,
                 TRUST_GPO_NAME,
-                "Installs the ODM root certificate into the system trust store",
+                "Installs the domain's trusted certificates into the system trust store",
                 json.dumps(settings_document),
                 session.principal,
             )
@@ -288,8 +289,16 @@ async def publish_trust(
             guid,
             settings.base_dn,
         )
-        entry.after = {"gpo": str(guid), "linked_to": settings.base_dn}
-        return {"gpo_guid": str(guid), "display_name": TRUST_GPO_NAME}
+        entry.after = {
+            "gpo": str(guid),
+            "linked_to": settings.base_dn,
+            "certificates": [entry["name"] for entry in trusted],
+        }
+        return {
+            "gpo_guid": str(guid),
+            "display_name": TRUST_GPO_NAME,
+            "published": [entry["name"] for entry in trusted],
+        }
 
 
 @router.post("/console-certificate", status_code=202,
@@ -337,3 +346,111 @@ async def console_certificate(
         "applied": await run_in_threadpool(roles.apply_console_certificate),
         "note": "the console restarts to pick up the new certificate",
     }
+
+
+# ------------------------------------------------------------ trust anchors ---
+
+
+class TrustAnchorRequest(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=64)]
+    description: Annotated[str, Field(max_length=255)] = ""
+    certificate_pem: Annotated[str, Field(min_length=1, max_length=32_768)]
+
+
+@router.get("/trusted", dependencies=[Depends(requires("ca.read"))])
+async def list_trusted(
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Certificates the domain trusts, whoever issued them."""
+    rows = await pool.fetch("SELECT * FROM trust_anchor ORDER BY name")
+    return {
+        "trusted": [
+            {
+                "id": str(row["id"]),
+                "name": row["name"],
+                "description": row["description"],
+                "subject": row["subject"],
+                "issuer": row["issuer"],
+                "fingerprint": row["fingerprint"],
+                "not_before": row["not_before"],
+                "not_after": row["not_after"],
+                "is_ca": row["is_ca"],
+                "added_by": row["added_by"],
+                "added_at": row["added_at"],
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.post("/trusted", status_code=201, dependencies=[Depends(requires_domain_admin())])
+async def add_trusted(
+    body: TrustAnchorRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Trust a certificate ODM did not issue.
+
+    The certificate is parsed here, so what is stored is known to be one and
+    the console can say whose it is and when it expires.
+    """
+    name = ca.validate_name(body.name)
+    described = ca.inspect_pem(body.certificate_pem)
+
+    async with _audit_context(
+        request, session, pool, "ca.trust.add", object_type="certificate", object_dn=name
+    ) as entry:
+        existing = await pool.fetchval(
+            "SELECT 1 FROM trust_anchor WHERE lower(name) = lower($1)", name
+        )
+        if existing:
+            raise objects.ObjectError(f"{name} is already trusted")
+        row = await pool.fetchrow(
+            """
+            INSERT INTO trust_anchor (name, description, certificate_pem, subject, issuer,
+                                      fingerprint, not_before, not_after, is_ca, added_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id
+            """,
+            name,
+            body.description,
+            body.certificate_pem,
+            described["subject"],
+            described["issuer"],
+            described["fingerprint"],
+            described["not_before"],
+            described["not_after"],
+            described["is_ca"],
+            session.principal,
+        )
+        entry.after = {"name": name, **{k: str(v) for k, v in described.items()}}
+        return {"id": str(row["id"]), "name": name, **described}
+
+
+@router.delete("/trusted", status_code=204, dependencies=[Depends(requires_domain_admin())])
+async def remove_trusted(
+    request: Request,
+    id: Annotated[str, Query(min_length=36, max_length=36)],
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """Stop trusting a certificate.
+
+    Removing it here takes it out of the next publish; machines keep it until
+    that policy reaches them, so publish afterwards.
+    """
+    row = await pool.fetchrow("SELECT * FROM trust_anchor WHERE id = $1::uuid", id)
+    if row is None:
+        raise objects.NotFound("no such certificate")
+    async with _audit_context(
+        request,
+        session,
+        pool,
+        "ca.trust.remove",
+        object_type="certificate",
+        object_dn=row["name"],
+    ) as entry:
+        entry.before = {"name": row["name"], "fingerprint": row["fingerprint"]}
+        await pool.execute("DELETE FROM trust_anchor WHERE id = $1::uuid", id)

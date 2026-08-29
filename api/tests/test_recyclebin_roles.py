@@ -224,3 +224,47 @@ def test_every_argument_carries_a_label_the_console_can_show():
             assert argument.label[0].isupper(), f"{role.name}.{argument.name}"
             if argument.kind == "choice":
                 assert argument.choices, f"{role.name}.{argument.name}"
+
+
+def test_a_container_argument_accepts_a_distinguished_name():
+    """The default pattern refuses commas and spaces, which every DN has."""
+    command = roles.build_command(
+        roles.get("pxe"),
+        {
+            "interface": "eth0",
+            "domain": "corp.example.internal",
+            "enrolment_token": "a" * 20,
+            "ou": "OU=Workstations,DC=corp,DC=example,DC=internal",
+        },
+    )
+    assert "OU=Workstations,DC=corp,DC=example,DC=internal" in command
+
+
+def test_a_password_hash_argument_accepts_a_crypt_hash():
+    command = roles.build_command(
+        roles.get("pxe"),
+        {
+            "interface": "eth0",
+            "domain": "corp.example.internal",
+            "enrolment_token": "a" * 20,
+            "local_password_hash": "$6$rounds=5000$abc123$Xy.Z/0abcdef",
+        },
+    )
+    assert "--local-password-hash" in command
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["OU=x;rm -rf /", "OU=x\nDC=y", "OU=$(id)", "OU=`id`"],
+)
+def test_a_container_argument_still_refuses_a_shell_metacharacter(value):
+    with pytest.raises(roles.RoleError):
+        roles.build_command(
+            roles.get("pxe"),
+            {
+                "interface": "eth0",
+                "domain": "corp.example.internal",
+                "enrolment_token": "a" * 20,
+                "ou": value,
+            },
+        )

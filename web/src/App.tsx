@@ -8,6 +8,7 @@ import { Delegation } from "./pages/Delegation";
 import { Dhcp } from "./pages/Dhcp";
 import { Directory } from "./pages/Directory";
 import { Dns } from "./pages/Dns";
+import { Enrolment } from "./pages/Enrolment";
 import { ObjectDetail } from "./pages/ObjectDetail";
 import { Overview } from "./pages/Overview";
 import { Policy } from "./pages/Policy";
@@ -58,6 +59,7 @@ export function App() {
           <Route path="roles" element={<Roles />} />
           <Route path="servers" element={<Servers />} />
           <Route path="shares" element={<Shares />} />
+          <Route path="enrolment" element={<Enrolment />} />
           <Route path="delegation" element={<Delegation />} />
           <Route path="certificates" element={<Certificates />} />
           <Route path="operations" element={<Navigate to="/" replace />} />

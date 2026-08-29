@@ -239,6 +239,20 @@ export interface ManagedServer {
   pending_tasks: number;
 }
 
+export interface TrustAnchor {
+  id: string;
+  name: string;
+  description: string;
+  subject: string;
+  issuer: string;
+  fingerprint: string;
+  not_before: string | null;
+  not_after: string | null;
+  is_ca: boolean;
+  added_by: string | null;
+  added_at: string;
+}
+
 export interface ComputerFacts {
   hostname: string;
   operating_system: string;
@@ -811,7 +825,18 @@ export const api = {
     revoke: (serial: string, reason: string) =>
       request<void>("/ca/revoke", json({ serial, reason })),
 
-    publish: () => request<{ gpo_guid: string; display_name: string }>("/ca/publish", json({})),
+    publish: () =>
+      request<{ gpo_guid: string; display_name: string; published: string[] }>(
+        "/ca/publish",
+        json({}),
+      ),
+
+    trusted: () => request<{ trusted: TrustAnchor[] }>("/ca/trusted"),
+
+    trust: (body: { name: string; description: string; certificate_pem: string }) =>
+      request<TrustAnchor>("/ca/trusted", json(body)),
+
+    untrust: (id: string) => request<void>(`/ca/trusted${qs({ id })}`, { method: "DELETE" }),
 
     consoleCertificate: (body: {
       common_name: string;

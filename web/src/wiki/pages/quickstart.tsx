@@ -133,6 +133,7 @@ sudo deploy/setup.sh`}</Code>
               ["Overview", "Health, replication between controllers, and backups."],
               ["Servers", "Every joined machine and the roles it carries."],
               ["File Shares", "Shared directories and who may reach them."],
+              ["Client Enrolment", "What a machine installed over the network gets."],
               ["Server Roles", "What is installed where, and what can be added."],
               ["Delegation", "Who may do what, and where."],
               ["Deleted Objects", "Restore or purge what has been deleted."],

@@ -71,7 +71,7 @@ export function Content() {
               [
                 "Client enrolment (PXE)",
                 "Unattended Debian installation over the network, joining the domain on first boot.",
-                "Interface, domain, a multi-use enrolment token, optionally the Debian suite.",
+                "Interface and domain to install. Everything else is set under Client Enrolment.",
               ],
             ]}
           />
@@ -96,21 +96,43 @@ export function Content() {
         <Section title="Client enrolment (PXE)">
           <p>
             The role serves network boot as a proxy DHCP server, so address assignment stays with
-            the DHCP role or whatever already provides it. Machines installed this way run the
-            join client on first boot with the enrolment token given at install time.
+            the DHCP role or whatever already provides it. A machine that boots from the network
+            installs Debian unattended, then joins the domain on first boot.
+          </p>
+          <p>
+            What it installs is configuration, not part of installing the role:{" "}
+            <strong>Client Enrolment</strong> sets the release, the mirror, the domain and
+            container joined machines land in, the enrolment token and the local administrator
+            account. Changing any of it rewrites the preseed and fetches the right netboot image;
+            nothing is reinstalled.
           </p>
           <Reference
             headers={["Path", "Holds"]}
             rows={[
               [<C key="1">/srv/tftp</C>, "The Debian netboot images."],
               [<C key="2">/srv/odm-preseed/odm.cfg</C>, "The unattended installation answers."],
-              [<C key="3">/srv/odm-preseed/odm-client-install</C>, "The join binary the installed machine fetches."],
+              [<C key="3">/srv/odm-preseed/odm-client-install</C>, "The join binary, published by the installer."],
+            ]}
+          />
+          <Reference
+            headers={["Setting", "Effect"]}
+            rows={[
+              ["Debian release", "Which netboot image is fetched and which release is installed."],
+              [
+                "Mirror",
+                "A snapshot.debian.org URL installs a fixed point release; the default installs whatever the release currently is.",
+              ],
+              ["Container", "Where the computer account is created when the machine joins."],
+              [
+                "Local administrator",
+                "An account created on every installed machine. A password is generated and printed once if none is given.",
+              ],
             ]}
           />
           <Note>
-            Create a multi-use enrolment token under <strong>Directory</strong> first, place the
-            join binary where the preseed expects it, and set a real local administrator password
-            hash in the preseed before using this outside a lab.
+            Create a multi-use enrolment token under <strong>Directory</strong> first. The join
+            binary is published by the installer, which refuses to run without it rather than
+            leaving machines that install and never join.
           </Note>
         </Section>
 

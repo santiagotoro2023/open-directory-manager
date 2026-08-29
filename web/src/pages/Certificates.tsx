@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
-import { ApiError, api, type CaStatus, type IssuedCertificate } from "../api";
+import {
+  ApiError,
+  api,
+  type CaStatus,
+  type IssuedCertificate,
+  type TrustAnchor,
+} from "../api";
 import { Field, Modal } from "../components/Modal";
 
 export function Certificates() {
   const [status, setStatus] = useState<CaStatus | null>(null);
   const [certificates, setCertificates] = useState<IssuedCertificate[]>([]);
   const [includeRevoked, setIncludeRevoked] = useState(false);
+  const [tab, setTab] = useState<"issued" | "trusted">("issued");
   const [dialog, setDialog] = useState<"issue" | "console" | null>(null);
   const [issued, setIssued] = useState<IssuedCertificate | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +92,7 @@ export function Certificates() {
           onClick={() =>
             void run(
               () => api.ca.publish(),
-              "Root published. Agents install it into the system trust store on their next refresh.",
+              "Published. Every trusted certificate is now in one policy object; agents install them on their next refresh.",
             )
           }
         >
@@ -135,6 +142,24 @@ export function Certificates() {
       )}
       {notice && <p className="muted">{notice}</p>}
 
+      <nav className="tabs" aria-label="Certificate views">
+        {(["issued", "trusted"] as const).map((current) => (
+          <button
+            key={current}
+            type="button"
+            className={tab === current ? "tab active" : "tab"}
+            aria-current={tab === current ? "true" : undefined}
+            onClick={() => setTab(current)}
+          >
+            {current === "issued" ? "Issued by this domain" : "Trusted"}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "trusted" && <TrustedTab onChanged={() => void load()} />}
+
+      {tab === "issued" && (
+        <>
       <label className="checkbox">
         <input
           type="checkbox"
@@ -199,6 +224,9 @@ export function Certificates() {
           )}
         </tbody>
       </table>
+
+        </>
+      )}
 
       {dialog === "issue" && (
         <IssueDialog
@@ -379,6 +407,163 @@ function ConsoleDialog({
           onChange={(e) => setDays(Number(e.target.value))}
         />
       </Field>
+    </Modal>
+  );
+}
+
+
+/** Certificates the domain trusts that ODM did not issue. */
+function TrustedTab({ onChanged }: { onChanged: () => void }) {
+  const [trusted, setTrusted] = useState<TrustAnchor[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setTrusted((await api.ca.trusted()).trusted);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <>
+      <p className="muted">
+        Published to every domain member together with this domain&rsquo;s own root, as one
+        policy object. Use <strong>Publish to domain</strong> above after a change.
+      </p>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="actions-row">
+        <button type="button" className="primary" onClick={() => setAdding(true)}>
+          <Plus size={15} aria-hidden="true" />
+          Trust a certificate
+        </button>
+      </div>
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Subject</th>
+            <th scope="col">Expires</th>
+            <th scope="col">Kind</th>
+            <th scope="col">
+              <span className="sr-only">Remove</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {trusted.map((anchor) => (
+            <tr key={anchor.id}>
+              <td>
+                <strong>{anchor.name}</strong>
+                {anchor.description && <p className="muted">{anchor.description}</p>}
+              </td>
+              <td className="mono">{anchor.subject}</td>
+              <td>{anchor.not_after && new Date(anchor.not_after).toLocaleDateString()}</td>
+              <td>
+                <span className="badge">{anchor.is_ca ? "authority" : "certificate"}</span>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={async () => {
+                    await api.ca.untrust(anchor.id).catch(() => undefined);
+                    await load();
+                    onChanged();
+                  }}
+                >
+                  Stop trusting
+                </button>
+              </td>
+            </tr>
+          ))}
+          {trusted.length === 0 && (
+            <tr>
+              <td colSpan={5} className="empty">
+                Only this domain&rsquo;s own authority is trusted.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {adding && (
+        <TrustDialog
+          onClose={() => setAdding(false)}
+          onAdded={() => {
+            setAdding(false);
+            void load();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function TrustDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [pem, setPem] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title="Trust a certificate"
+      submitLabel="Trust"
+      busy={busy}
+      error={error}
+      wide
+      onClose={onClose}
+      onSubmit={async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          await api.ca.trust({ name, description, certificate_pem: pem });
+          onAdded();
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Field label="Name" hint="How it appears in the trust store on each machine">
+        <input value={name} required onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="What it is for">
+        <input
+          value={description}
+          placeholder="The authority in front of the internal wiki"
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </Field>
+      <Field label="Certificate" hint="PEM, beginning with -----BEGIN CERTIFICATE-----">
+        <textarea
+          rows={10}
+          className="mono"
+          value={pem}
+          required
+          onChange={(e) => setPem(e.target.value)}
+        />
+      </Field>
+      <p className="muted">
+        It is read before it is stored, so the subject and expiry shown afterwards come from the
+        certificate itself.
+      </p>
     </Modal>
   );
 }

@@ -293,3 +293,38 @@ def build_crl(settings: Settings, revoked: list[tuple[str, dt.datetime]]) -> str
     return builder.sign(ca_key, hashes.SHA256()).public_bytes(
         serialization.Encoding.PEM
     ).decode("ascii")
+
+
+# ------------------------------------------------------------ trust anchors ---
+# Certificates the domain should trust that ODM did not issue: an existing
+# internal CA, a vendor appliance, the authority in front of some service.
+# Distributing them uses the same policy setting as ODM's own root; what is
+# added here is somewhere to keep them and a description of what each one is.
+
+
+def inspect_pem(certificate_pem: str) -> dict[str, Any]:
+    """Read a PEM certificate well enough to show what it is.
+
+    Parsing here rather than in the console means a paste that is not a
+    certificate is refused at the boundary, and the operator sees which
+    authority and which dates they are about to trust before they trust it.
+    """
+    try:
+        certificate = x509.load_pem_x509_certificate(certificate_pem.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as exc:
+        raise CaError("that is not a PEM certificate") from exc
+
+    try:
+        basic = certificate.extensions.get_extension_for_class(x509.BasicConstraints)
+        is_ca = bool(basic.value.ca)
+    except x509.ExtensionNotFound:
+        is_ca = False
+
+    return {
+        "subject": certificate.subject.rfc4514_string(),
+        "issuer": certificate.issuer.rfc4514_string(),
+        "fingerprint": certificate.fingerprint(hashes.SHA256()).hex(":"),
+        "not_before": certificate.not_valid_before_utc,
+        "not_after": certificate.not_valid_after_utc,
+        "is_ca": is_ca,
+    }

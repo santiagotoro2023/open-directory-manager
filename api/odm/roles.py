@@ -31,6 +31,16 @@ HELPER_TIMEOUT_SECONDS = 60
 _ROLE_RE = re.compile(r"^[a-z][a-z0-9-]{1,31}$")
 _ARG_RE = re.compile(r"^[A-Za-z0-9@:/._-]{1,253}$")
 
+# Some values legitimately contain characters the default pattern refuses: a
+# distinguished name has commas, equals signs and spaces; a crypt(3) hash has
+# dollars and slashes. Each kind is checked against what it may actually be,
+# rather than the loosest pattern that would let all of them through.
+_ARG_PATTERNS: dict[str, re.Pattern[str]] = {
+    "dn": re.compile(r"^[A-Za-z0-9=,._ -]{3,512}$"),
+    # $6$rounds=5000$salt$hash — the rounds prefix is optional but legal.
+    "hash": re.compile(r"^[A-Za-z0-9$./=]{1,255}$"),
+}
+
 
 class RoleError(Exception):
     """The role could not be installed, or is not one ODM knows."""
@@ -47,7 +57,8 @@ class Argument:
     name: str
     label: str
     help: str = ""
-    # text | choice | url | host | path — decides the control the console draws.
+    # text | choice | url | host | path | dn | hash — decides the control the
+    # console draws, and which characters the value may contain.
     kind: str = "text"
     choices: tuple[str, ...] = ()
     placeholder: str = ""
@@ -179,19 +190,72 @@ REGISTRY: dict[str, Role] = {
                 name="enrolment_token",
                 label="Enrolment token",
                 help="A multi-use token, created under Directory.",
+                configuration=True,
             ),
             Argument(
                 name="suite",
                 label="Debian release",
+                help="Which release is installed. The netboot image is fetched for it.",
                 kind="choice",
                 choices=("trixie", "bookworm"),
                 default="trixie",
                 optional=True,
+                configuration=True,
+            ),
+            Argument(
+                name="mirror",
+                label="Mirror",
+                help=(
+                    "A snapshot.debian.org URL installs a fixed point release; "
+                    "the default installs whatever the release currently is."
+                ),
+                kind="url",
+                default="http://deb.debian.org/debian",
+                optional=True,
+                configuration=True,
+            ),
+            Argument(
+                name="ou",
+                label="Container for installed machines",
+                help="Where the computer account is created. The default container when empty.",
+                kind="dn",
+                placeholder="OU=Workstations,DC=corp,DC=example,DC=internal",
+                optional=True,
+                configuration=True,
+            ),
+            Argument(
+                name="local_admin",
+                label="Local administrator account",
+                help="Created on every installed machine, for when a join does not finish.",
+                default="localadmin",
+                optional=True,
+                configuration=True,
+            ),
+            Argument(
+                name="local_password_hash",
+                label="Local administrator password hash",
+                help="crypt(3), as openssl passwd -6 produces. One is generated when empty.",
+                kind="hash",
+                optional=True,
+                configuration=True,
+            ),
+            Argument(
+                name="client_binary",
+                label="Client installer",
+                help="Path to odm-client-install on the PXE server. Published to installs.",
+                kind="path",
+                default="/usr/sbin/odm-client-install",
+                optional=True,
+                configuration=True,
             ),
         ),
         packages=("dnsmasq", "nginx-light"),
         ui_section="pxe",
-        notes="Runs as proxy DHCP; address assignment stays with the DHCP role.",
+        notes=(
+            "Runs as proxy DHCP, so address assignment stays with the DHCP role or an "
+            "existing server. Set which release to install, and where joined machines "
+            "land, under Client Enrolment."
+        ),
     ),
     "file-server": Role(
         name="file-server",
@@ -244,7 +308,7 @@ def installer_arguments(role: Role, config: dict[str, str]) -> list[str]:
             if argument.optional:
                 continue
             raise RoleError(f"{role.name} needs {argument.label.lower()}")
-        if not _ARG_RE.match(value):
+        if not _ARG_PATTERNS.get(argument.kind, _ARG_RE).match(value):
             raise RoleError(f"invalid value for {argument.label.lower()}")
         if argument.choices and value not in argument.choices:
             allowed = ", ".join(argument.choices)

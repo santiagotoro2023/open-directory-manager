@@ -55,6 +55,34 @@ export function Content() {
       </Quickstart>
 
       <Details>
+        <Section title="Trusting certificates this domain did not issue">
+          <p>
+            A domain trusts more than one authority in practice: an internal CA that predates
+            ODM, a vendor appliance, the authority in front of some internal service.{" "}
+            <strong>Certificates</strong> → <strong>Trusted</strong> holds them, and{" "}
+            <strong>Publish to domain</strong> sends the whole trust store — this
+            domain&rsquo;s own root and everything added there — to every member as one policy
+            object.
+          </p>
+          <Reference
+            headers={["Step", "What happens"]}
+            rows={[
+              [
+                "Trust a certificate",
+                "The PEM is parsed before it is stored, so the subject, expiry and whether it is an authority come from the certificate itself.",
+              ],
+              [
+                "Publish to domain",
+                "One policy object holds every trusted certificate, linked at the domain head. Agents install them into the system trust store.",
+              ],
+              [
+                "Stop trusting",
+                "Removes it from the next publish. Machines keep it until that policy reaches them, so publish afterwards.",
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="The root authority">
           <Reference
             headers={["Property", "Value"]}
