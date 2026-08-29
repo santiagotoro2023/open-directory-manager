@@ -170,3 +170,81 @@ func TestAnUnknownTaskKindFailsLoudly(t *testing.T) {
 		t.Fatal("an unknown kind was reported as done")
 	}
 }
+
+func TestAPackageThatKeepsTheMachineManagedIsNotRemovable(t *testing.T) {
+	env, runner := testEnv(t)
+
+	for _, name := range []string{"odm-agent", "sssd", "systemd", "sudo"} {
+		result := Run(context.Background(), Task{
+			ID: "1", Kind: "package-remove", Payload: map[string]any{"package": name},
+		}, env)
+		if result.OK {
+			t.Errorf("%s was accepted for removal", name)
+		}
+	}
+	for _, command := range runner.commands {
+		if command[0] == "apt-get" {
+			t.Errorf("apt ran for a refused removal: %v", command)
+		}
+	}
+}
+
+func TestHostilePackageNamesNeverReachApt(t *testing.T) {
+	env, runner := testEnv(t)
+
+	for _, name := range []string{"curl; rm -rf /", "$(id)", "../etc", "UPPER", ""} {
+		if result := Run(context.Background(), Task{
+			ID: "1", Kind: "package-install", Payload: map[string]any{"package": name},
+		}, env); result.OK {
+			t.Errorf("accepted %q", name)
+		}
+	}
+	if len(runner.commands) != 0 {
+		t.Fatalf("something ran anyway: %v", runner.commands)
+	}
+}
+
+func TestRemovingAPackageDoesNotPurgeItsConfiguration(t *testing.T) {
+	env, runner := testEnv(t)
+
+	result := Run(context.Background(), Task{
+		ID: "1", Kind: "package-remove", Payload: map[string]any{"package": "wireshark"},
+	}, env)
+	if !result.OK {
+		t.Fatalf("removal failed: %s", result.Output)
+	}
+	var ran []string
+	for _, command := range runner.commands {
+		if command[0] == "apt-get" {
+			ran = command
+		}
+	}
+	if len(ran) == 0 {
+		t.Fatal("apt-get never ran")
+	}
+	// "uninstall" on a button does not mean "delete the configuration too".
+	for _, argument := range ran {
+		if argument == "purge" {
+			t.Errorf("purge was used: %v", ran)
+		}
+	}
+}
+
+func TestRestartIsScheduledRatherThanImmediate(t *testing.T) {
+	env, runner := testEnv(t)
+
+	result := Run(context.Background(), Task{ID: "1", Kind: "restart"}, env)
+	if !result.OK {
+		t.Fatalf("restart failed: %s", result.Output)
+	}
+	// An immediate reboot kills the process before it can report success.
+	var found bool
+	for _, command := range runner.commands {
+		if command[0] == "shutdown" && command[1] == "-r" && command[2] == "+1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("reboot was not scheduled a minute out: %v", runner.commands)
+	}
+}

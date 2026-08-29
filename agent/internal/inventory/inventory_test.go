@@ -125,3 +125,45 @@ func TestAMissingProcUptimeIsNotAnError(t *testing.T) {
 		t.Error("a machine with no /proc/uptime reported a boot time anyway")
 	}
 }
+
+func TestOnlyPackagesSomebodyAskedForAreListed(t *testing.T) {
+	out := "curl\t7.88.1-10\tinstall ok installed\n" +
+		"libcurl4\t7.88.1-10\tinstall ok installed\n" +
+		"wireshark\t4.0.11-1\tinstall ok installed\n" +
+		"oldthing\t1.0\tdeinstall ok config-files\n"
+	wanted := map[string]bool{"curl": true, "wireshark": true}
+
+	packages, total := ParseInstalled(out, wanted)
+
+	// libcurl4 came in behind curl; a dependency list buries the answer.
+	if len(packages) != 2 {
+		t.Fatalf("expected curl and wireshark, got %v", packages)
+	}
+	// A removed package is not installed, whatever its config files say.
+	if total != 3 {
+		t.Errorf("expected three installed, got %d", total)
+	}
+	if packages[0].Name != "curl" || packages[0].Version != "7.88.1-10" {
+		t.Errorf("wrong first package: %+v", packages[0])
+	}
+}
+
+func TestSessionsSayWhetherAnAccountIsLocalOrFromTheDomain(t *testing.T) {
+	local := []LocalUser{{Name: "ada", UID: 1000}}
+	out := "ada      tty2         2025-08-29 18:04 (:0)\n" +
+		"bob      pts/1        2025-08-29 18:10 (10.10.0.5)\n"
+
+	found := ParseWho(out, local)
+
+	if len(found) != 2 {
+		t.Fatalf("expected two sessions, got %v", found)
+	}
+	if found[0].Source != "local" {
+		t.Errorf("ada is in /etc/passwd, so the session is local: %+v", found[0])
+	}
+	// A name /etc/passwd does not carry came from SSSD, which on a joined
+	// machine means the directory.
+	if found[1].Source != "domain" {
+		t.Errorf("bob is not a local account: %+v", found[1])
+	}
+}

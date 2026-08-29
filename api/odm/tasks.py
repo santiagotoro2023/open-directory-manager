@@ -22,6 +22,11 @@ KINDS = (
     "share-remove",
     "update-check",
     "update-install",
+    "package-install",
+    "package-remove",
+    "policy-refresh",
+    "restart",
+    "shutdown",
 )
 
 

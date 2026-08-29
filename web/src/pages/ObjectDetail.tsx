@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Folder,
   Monitor,
+  Power,
   RefreshCw,
   ShieldCheck,
   User,
@@ -12,10 +13,11 @@ import {
 import {
   ApiError,
   api,
+  type ComputerAction,
   type ComputerDetail,
   type DirectoryObject,
 } from "../api";
-import { Field } from "../components/Modal";
+import { Field, Modal } from "../components/Modal";
 import { RsopDialog } from "../components/RsopDialog";
 import {
   DeleteDialog,
@@ -47,7 +49,14 @@ const TYPE_LABELS: Record<string, string> = {
   domain: "Domain",
 };
 
-type Tab = "general" | "membership" | "policy" | "machine" | "users" | "activity";
+type Tab =
+  | "general"
+  | "membership"
+  | "policy"
+  | "machine"
+  | "software"
+  | "users"
+  | "activity";
 
 function when(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleString() : "—";
@@ -124,6 +133,7 @@ export function ObjectDetail() {
     ...(isComputer
       ? [
           { id: "machine" as Tab, label: "Machine" },
+          { id: "software" as Tab, label: "Software" },
           { id: "users" as Tab, label: "Local users" },
           { id: "activity" as Tab, label: "Activity" },
         ]
@@ -305,9 +315,10 @@ export function ObjectDetail() {
         <RsopDialog dn={dn} isComputer={isComputer} onClose={() => setTab("general")} inline />
       )}
 
-      {isComputer && (tab === "machine" || tab === "users" || tab === "activity") && (
-        <ComputerTabs dn={dn} tab={tab} />
-      )}
+      {isComputer &&
+        (tab === "machine" || tab === "software" || tab === "users" || tab === "activity") && (
+          <ComputerTabs dn={dn} tab={tab} />
+        )}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
       {dialog === "move" && (
@@ -402,6 +413,9 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [power, setPower] = useState<"restart" | "shutdown" | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -416,14 +430,14 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
     void load();
   }, [load]);
 
-  async function ask(action: "update-check" | "update-install") {
+  async function ask(action: ComputerAction, pkg?: string) {
     setBusy(true);
     setNotice(null);
     setError(null);
     try {
-      const result = await api.servers.action(dn, action);
+      const result = await api.servers.action(dn, action, pkg);
       setNotice(
-        `Queued for ${result.node}. It runs at the machine's next check-in, or immediately with odm-agent apply --force.`,
+        `Queued for ${result.node}. It runs at the machine's next check-in, or immediately with odm-agent apply --force on it.`,
       );
       await load();
     } catch (err) {
@@ -450,6 +464,92 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   }
 
   const facts = detail.facts!;
+
+  if (tab === "software") {
+    return (
+      <>
+        {notice && <p className="muted">{notice}</p>}
+        <div className="page-header">
+          <h3 className="section-title">
+            {facts.packages.length} installed by request, of {facts.package_count} in total
+          </h3>
+          <span className="spacer" />
+          <button type="button" className="primary" onClick={() => setInstalling(true)}>
+            Install a package
+          </button>
+        </div>
+
+        <table className="data">
+          <thead>
+            <tr>
+              <th scope="col">Package</th>
+              <th scope="col">Version</th>
+              <th scope="col">
+                <span className="sr-only">Remove</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {facts.packages.map((entry) => (
+              <tr key={entry.name}>
+                <td>{entry.name}</td>
+                <td className="mono">{entry.version}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={busy}
+                    onClick={() => setRemoving(entry.name)}
+                  >
+                    Uninstall
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {facts.packages.length === 0 && (
+              <tr>
+                <td colSpan={3} className="empty">
+                  Nothing reported yet. The machine sends this on its next check-in.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        {installing && (
+          <InstallPackageDialog
+            onClose={() => setInstalling(false)}
+            onInstall={(name) => {
+              setInstalling(false);
+              void ask("package-install", name);
+            }}
+          />
+        )}
+
+        {removing && (
+          <Modal
+            title={`Uninstall ${removing}?`}
+            submitLabel="Uninstall"
+            onClose={() => setRemoving(null)}
+            onSubmit={() => {
+              const name = removing;
+              setRemoving(null);
+              void ask("package-remove", name);
+            }}
+          >
+            <p>
+              <strong>{removing}</strong> is removed from {facts.hostname}. Its configuration
+              files are left in place.
+            </p>
+            <p className="muted">
+              Packages that depend on it go with it, as apt decides. Nothing that keeps this
+              machine joined and managed can be removed from here.
+            </p>
+          </Modal>
+        )}
+      </>
+    );
+  }
 
   if (tab === "users") {
     return (
@@ -491,7 +591,10 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
           <tbody>
             {facts.sessions.map((session, index) => (
               <tr key={index}>
-                <td>{session.user}</td>
+                <td>
+                  {session.user}
+                  <span className="badge">{session.source}</span>
+                </td>
                 <td className="mono">{session.line}</td>
                 <td>{session.since}</td>
               </tr>
@@ -588,6 +691,59 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         </button>
       </div>
 
+      <h3 className="section-title">This machine</h3>
+      <div className="actions-row">
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy}
+          onClick={() => void ask("policy-refresh")}
+        >
+          Re-apply policy
+        </button>
+        <button type="button" className="ghost" disabled={busy} onClick={() => setPower("restart")}>
+          <Power size={15} aria-hidden="true" />
+          Restart
+        </button>
+        <button
+          type="button"
+          className="danger"
+          disabled={busy}
+          onClick={() => setPower("shutdown")}
+        >
+          Shut down
+        </button>
+      </div>
+
+      {power && (
+        <Modal
+          title={power === "restart" ? "Restart this machine?" : "Shut this machine down?"}
+          submitLabel={power === "restart" ? "Restart" : "Shut down"}
+          onClose={() => setPower(null)}
+          onSubmit={() => {
+            const action = power;
+            setPower(null);
+            void ask(action);
+          }}
+        >
+          <p>
+            {facts.hostname} {power === "restart" ? "restarts" : "shuts down"} a minute after its
+            agent picks this up. Anyone signed in loses their session.
+          </p>
+          {facts.sessions.length > 0 && (
+            <p className="alert" role="alert">
+              {facts.sessions.length} signed in right now:{" "}
+              {facts.sessions.map((session) => session.user).join(", ")}
+            </p>
+          )}
+          {power === "shutdown" && (
+            <p className="muted">
+              A machine that is off cannot be started again from here.
+            </p>
+          )}
+        </Modal>
+      )}
+
       <h3 className="section-title">Recent work</h3>
       <table className="data compact">
         <thead>
@@ -621,5 +777,32 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         </tbody>
       </table>
     </>
+  );
+}
+
+
+function InstallPackageDialog({
+  onClose,
+  onInstall,
+}: {
+  onClose: () => void;
+  onInstall: (name: string) => void;
+}) {
+  const [name, setName] = useState("");
+
+  return (
+    <Modal
+      title="Install a package"
+      submitLabel="Install"
+      onClose={onClose}
+      onSubmit={() => name.trim() && onInstall(name.trim())}
+    >
+      <Field label="Package" hint="As apt names it, for example curl">
+        <input value={name} required autoFocus onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <p className="muted">
+        Installed without recommended packages, from the sources the machine already has.
+      </p>
+    </Modal>
   );
 }

@@ -70,6 +70,18 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 		output, err = checkUpdates(ctx, env)
 	case "update-install":
 		output, err = installUpdates(ctx, env)
+	case "package-install":
+		output, err = changePackage(ctx, task.Payload, env, true)
+	case "package-remove":
+		output, err = changePackage(ctx, task.Payload, env, false)
+	case "policy-refresh":
+		// Nothing to do: fetching this task means a run is already under way,
+		// and it is that run which re-applies the policy.
+		output = "policy re-applied on this run"
+	case "restart":
+		output, err = power(ctx, env, "reboot")
+	case "shutdown":
+		output, err = power(ctx, env, "poweroff")
 	default:
 		err = fmt.Errorf("unknown task kind %q", task.Kind)
 	}
@@ -143,6 +155,78 @@ func installUpdates(ctx context.Context, env apply.Env) (string, error) {
 	}
 	pending, _, _ := inventory.PendingUpdates(ctx, env)
 	return fmt.Sprintf("%s\n%d updates still waiting", strings.TrimSpace(out), pending), nil
+}
+
+// Package names as the Debian archive defines them. Checked here as well as in
+// the control plane: this process is root, and hands the value to apt.
+var safePackage = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]{1,127}$`)
+
+// Packages ODM will not take off a machine it manages, because doing so takes
+// the machine out of the domain or takes the agent off it.
+var keepInstalled = map[string]bool{
+	"odm-agent": true, "sssd": true, "sssd-ad": true, "krb5-user": true,
+	"systemd": true, "apt": true, "dpkg": true, "libc6": true, "sudo": true,
+	"openssh-server": true, "samba-common": true, "realmd": true, "adcli": true,
+}
+
+func changePackage(
+	ctx context.Context, payload map[string]any, env apply.Env, install bool,
+) (string, error) {
+	name := str(payload["package"])
+	if !safePackage.MatchString(name) {
+		return "", fmt.Errorf("invalid package name %q", name)
+	}
+	if !install && keepInstalled[name] {
+		return "", fmt.Errorf(
+			"%s is what keeps this machine joined and managed; removing it from here "+
+				"would leave nothing to undo it with", name,
+		)
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+
+	if install {
+		if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
+			return out, fmt.Errorf("refreshing the package index: %w", err)
+		}
+	}
+	action := "install"
+	if !install {
+		// purge would take the configuration with it, which is not what
+		// "uninstall" means to someone reading a button.
+		action = "remove"
+	}
+	out, err := env.Run.Run(ctx,
+		"apt-get", action, "-y",
+		"-o", "Dpkg::Options::=--force-confold",
+		"-o", "Dpkg::Options::=--force-confdef",
+		"--no-install-recommends", name,
+	)
+	if err != nil {
+		return out, fmt.Errorf("apt-get %s %s: %w", action, name, err)
+	}
+	return fmt.Sprintf("%s %sed", name, action), nil
+}
+
+// power schedules the action a minute out and reports before it happens: a
+// machine that reboots mid-request never gets to say that it worked.
+func power(ctx context.Context, env apply.Env, action string) (string, error) {
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	if out, err := env.Run.Run(ctx, "shutdown", flagFor(action), "+1",
+		"Scheduled by Open Directory Manager"); err != nil {
+		return out, fmt.Errorf("scheduling %s: %w", action, err)
+	}
+	return action + " scheduled in one minute", nil
+}
+
+func flagFor(action string) string {
+	if action == "reboot" {
+		return "-r"
+	}
+	return "-h"
 }
 
 // Share is the definition the control plane stores, as the agent receives it.

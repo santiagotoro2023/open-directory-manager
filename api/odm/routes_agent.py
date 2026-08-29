@@ -262,6 +262,11 @@ class MachineEvent(BaseModel):
     detail: Annotated[str, Field(max_length=500)] | None = None
 
 
+class InstalledPackage(BaseModel):
+    name: Annotated[str, Field(max_length=128)]
+    version: Annotated[str, Field(max_length=64)] = ""
+
+
 class Inventory(BaseModel):
     operating_system: Annotated[str, Field(max_length=128)] = ""
     kernel: Annotated[str, Field(max_length=128)] = ""
@@ -272,6 +277,8 @@ class Inventory(BaseModel):
     security_updates: int = 0
     updates: Annotated[list[Annotated[str, Field(max_length=128)]], Field(max_length=500)] = []
     updates_checked: bool = False
+    packages: Annotated[list[InstalledPackage], Field(max_length=2000)] = []
+    package_count: int = 0
     events: Annotated[list[MachineEvent], Field(max_length=500)] = []
 
 
@@ -288,10 +295,10 @@ async def agent_inventory(
             INSERT INTO computer_fact (
                 computer_dn, hostname, operating_system, kernel, booted_at,
                 local_users, sessions, pending_updates, security_updates,
-                updates, updates_checked_at, reported_at
+                updates, updates_checked_at, packages, package_count, reported_at
             )
             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
-                    CASE WHEN $11 THEN now() ELSE NULL END, now())
+                    CASE WHEN $11 THEN now() ELSE NULL END, $12::jsonb, $13, now())
             ON CONFLICT (computer_dn) DO UPDATE SET
                 hostname           = excluded.hostname,
                 operating_system   = excluded.operating_system,
@@ -304,6 +311,8 @@ async def agent_inventory(
                 updates            = excluded.updates,
                 updates_checked_at = COALESCE(excluded.updates_checked_at,
                                               computer_fact.updates_checked_at),
+                packages           = excluded.packages,
+                package_count      = excluded.package_count,
                 reported_at        = now()
             """,
             machine.dn,
@@ -317,6 +326,8 @@ async def agent_inventory(
             body.security_updates,
             json.dumps(body.updates),
             body.updates_checked,
+            json.dumps([package.model_dump() for package in body.packages]),
+            body.package_count,
         )
 
         # A report covers a window, so the same login arrives more than once.

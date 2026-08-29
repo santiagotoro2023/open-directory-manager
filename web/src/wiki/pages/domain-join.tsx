@@ -43,6 +43,38 @@ systemctl status odm-agent`}</Code>
       </Quickstart>
 
       <Details>
+        <Section title="Leaving the domain">
+          <p>
+            Two different rights are involved, and they are not interchangeable. Removing the
+            computer account from the directory needs a domain credential that may do so.
+            Disconnecting the machine needs root on the machine — and root can always do it,
+            because root owns the machine.
+          </p>
+          <Code>{`# both halves: the account goes too
+sudo odm-client-install --leave --domain corp.example.internal \\
+    --admin-user Administrator
+
+# local half only; the account stays for an administrator to delete
+sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
+          <Reference
+            headers={["Action", "Needs"]}
+            rows={[
+              ["Join", "root on the machine, and a domain credential or an enrolment token"],
+              ["Leave, account and all", "root on the machine, and a domain credential"],
+              ["Leave locally (--force)", "root on the machine"],
+              [
+                "Stop or remove the agent",
+                "root on the machine: it is a system service and a system package",
+              ],
+            ]}
+          />
+          <Note>
+            An ordinary user can do none of these. Everything the agent writes is root-owned, its
+            keytab is readable only by root, and it runs as a systemd unit — a user without sudo
+            can neither stop it nor uninstall it.
+          </Note>
+        </Section>
+
         <Section title="Before joining">
           <Reference
             headers={["Requirement", "Why"]}

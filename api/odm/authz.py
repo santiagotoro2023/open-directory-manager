@@ -39,6 +39,7 @@ PERMISSIONS: tuple[str, ...] = (
     "role.install",
     "server.read",
     "computer.manage",
+    "computer.power",
     "share.read",
     "share.write",
     "replication.read",

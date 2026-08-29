@@ -245,13 +245,24 @@ export interface ComputerFacts {
   kernel: string;
   booted_at: string | null;
   local_users: { name: string; uid: number; shell: string; home: string; groups: string[] }[];
-  sessions: { user: string; line: string; since: string }[];
+  sessions: { user: string; line: string; source: string; since: string }[];
   pending_updates: number;
   security_updates: number;
   updates: string[];
   updates_checked_at: string | null;
+  packages: { name: string; version: string }[];
+  package_count: number;
   reported_at: string;
 }
+
+export type ComputerAction =
+  | "update-check"
+  | "update-install"
+  | "package-install"
+  | "package-remove"
+  | "policy-refresh"
+  | "restart"
+  | "shutdown";
 
 export interface ComputerDetail {
   known: boolean;
@@ -737,8 +748,11 @@ export const api = {
 
     computer: (dn: string) => request<ComputerDetail>(`/servers/computer${qs({ dn })}`),
 
-    action: (dn: string, action: "update-check" | "update-install") =>
-      request<{ task: string; node: string }>("/servers/computer/action", json({ dn, action })),
+    action: (dn: string, action: ComputerAction, pkg?: string) =>
+      request<{ task: string; node: string }>(
+        "/servers/computer/action",
+        json({ dn, action, package: pkg }),
+      ),
   },
 
   shares: {

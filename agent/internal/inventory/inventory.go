@@ -32,9 +32,17 @@ type LocalUser struct {
 }
 
 type Session struct {
-	User  string `json:"user"`
-	Line  string `json:"line"`
-	Since string `json:"since"`
+	User string `json:"user"`
+	Line string `json:"line"`
+	// "local" or "domain": the same name means different things depending on
+	// where the account came from, and an administrator needs to know which.
+	Source string `json:"source"`
+	Since  string `json:"since"`
+}
+
+type Package struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 type Event struct {
@@ -50,6 +58,8 @@ type Report struct {
 	BootedAt        *time.Time  `json:"booted_at,omitempty"`
 	LocalUsers      []LocalUser `json:"local_users"`
 	Sessions        []Session   `json:"sessions"`
+	Packages        []Package   `json:"packages"`
+	PackageCount    int         `json:"package_count"`
 	PendingUpdates  int         `json:"pending_updates"`
 	SecurityUpdates int         `json:"security_updates"`
 	Updates         []string    `json:"updates"`
@@ -70,8 +80,9 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		report.BootedAt = &booted
 	}
 	if env.Run != nil {
-		report.Sessions = sessions(ctx, env)
+		report.Sessions = sessions(ctx, env, report.LocalUsers)
 		report.Events = recentEvents(ctx, env)
+		report.Packages, report.PackageCount = installedPackages(ctx, env)
 	}
 	pending, security, names := PendingUpdates(ctx, env)
 	report.PendingUpdates, report.SecurityUpdates, report.Updates = pending, security, names
@@ -166,10 +177,21 @@ func groupMembership(env apply.Env) map[string][]string {
 	return membership
 }
 
-func sessions(ctx context.Context, env apply.Env) []Session {
+func sessions(ctx context.Context, env apply.Env, local []LocalUser) []Session {
 	out, err := env.Run.Run(ctx, "who")
 	if err != nil {
 		return nil
+	}
+	return ParseWho(out, local)
+}
+
+// ParseWho turns `who` output into sessions, marking each as a local or a
+// domain account. A name /etc/passwd does not carry came from SSSD, which on a
+// joined machine means the directory.
+func ParseWho(out string, local []LocalUser) []Session {
+	isLocal := map[string]bool{}
+	for _, user := range local {
+		isLocal[user.Name] = true
 	}
 	found := []Session{}
 	for _, line := range strings.Split(out, "\n") {
@@ -177,13 +199,60 @@ func sessions(ctx context.Context, env apply.Env) []Session {
 		if len(fields) < 3 {
 			continue
 		}
+		source := "domain"
+		if isLocal[fields[0]] {
+			source = "local"
+		}
 		found = append(found, Session{
-			User:  fields[0],
-			Line:  fields[1],
-			Since: strings.Join(fields[2:], " "),
+			User:   fields[0],
+			Line:   fields[1],
+			Source: source,
+			Since:  strings.Join(fields[2:], " "),
 		})
 	}
 	return found
+}
+
+// installedPackages reports what somebody asked for, not the thousands pulled
+// in behind them: "what was put on this machine" is the question an operator
+// has, and a dependency list buries it.
+func installedPackages(ctx context.Context, env apply.Env) ([]Package, int) {
+	manual, err := env.Run.Run(ctx, "apt-mark", "showmanual")
+	if err != nil {
+		return nil, 0
+	}
+	wanted := map[string]bool{}
+	for _, name := range strings.Fields(manual) {
+		wanted[name] = true
+	}
+
+	out, err := env.Run.Run(ctx, "dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Status}\n")
+	if err != nil {
+		return nil, 0
+	}
+	return ParseInstalled(out, wanted)
+}
+
+// ParseInstalled reads dpkg-query output, keeping the packages in `wanted` that
+// are actually installed. The second return is how many are installed in total,
+// so the console can say how much of the machine the list covers.
+func ParseInstalled(out string, wanted map[string]bool) ([]Package, int) {
+	packages := []Package{}
+	total := 0
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.Split(line, "\t")
+		// "install ok installed" is the only status that means it is there;
+		// "deinstall ok config-files" is a package that has been removed.
+		if len(parts) < 3 || !strings.HasPrefix(parts[2], "install ok installed") {
+			continue
+		}
+		total++
+		if len(wanted) > 0 && !wanted[parts[0]] {
+			continue
+		}
+		packages = append(packages, Package{Name: parts[0], Version: parts[1]})
+	}
+	return packages, total
 }
 
 // `last -F` prints a full timestamp per record, which is what makes an event

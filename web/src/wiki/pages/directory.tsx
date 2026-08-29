@@ -50,6 +50,15 @@ export function Content() {
           pending updates, <strong>Local users</strong> for the accounts on it,{" "}
           <strong>Activity</strong> for who signed in and when it booted.
         </Example>
+        <Example title="See and change what is installed">
+          Open the computer → <strong>Software</strong>. The list is the packages somebody asked
+          for, not the dependencies behind them. <strong>Install a package</strong> adds one from
+          the sources the machine already has; <strong>Uninstall</strong> removes one.
+        </Example>
+        <Example title="Restart a machine">
+          Open the computer → <strong>Machine</strong> → <strong>Restart</strong>. Anyone signed
+          in is named before it is confirmed.
+        </Example>
         <Example title="Update a machine now">
           Open the computer → <strong>Machine</strong> → <strong>Check for updates</strong> or{" "}
           <strong>Install updates</strong>. The request is queued and runs at the

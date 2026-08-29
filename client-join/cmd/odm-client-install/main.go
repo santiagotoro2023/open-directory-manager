@@ -39,6 +39,8 @@ func main() {
 	noAgent := flags.Bool("no-agent", false, "join without installing the policy agent")
 	keepName := flags.Bool("keep-hostname", false, "fail rather than rename this machine")
 	unattended := flags.Bool("unattended", false, "never prompt; fail instead")
+	leave := flags.Bool("leave", false, "leave the domain instead of joining it")
+	force := flags.Bool("force", false, "with --leave, disconnect locally even without a credential")
 	dryRun := flags.Bool("dry-run", false, "report what would happen and change nothing")
 	root := flags.String("root", "", "write beneath this directory instead of /")
 	showVersion := flags.Bool("version", false, "print the version and exit")
@@ -64,6 +66,11 @@ func main() {
 		KeepName:  *keepName,
 		DryRun:    *dryRun,
 		Root:      *root,
+	}
+
+	if *leave {
+		leaveDomain(options, *passwordFile, *unattended, *force)
+		return
 	}
 
 	if err := gather(&options, *passwordFile, *unattended); err != nil {
@@ -100,6 +107,32 @@ Verify with:
   id someone@%s
 %s`, result.Domain, result.Hostname, result.Realm, result.Controller, result.Method,
 		agentState(result.AgentSetUp), result.Domain, rebootNote(result))
+}
+
+// leaveDomain is the reverse of a join. Removing the computer account needs a
+// domain credential; severing the machine needs root here. They are separate
+// rights, so --force does the second without the first and says so.
+func leaveDomain(options join.Options, passwordFile string, unattended, force bool) {
+	if options.Domain == "" {
+		fmt.Fprintln(os.Stderr, "odm-client-install: --domain is required")
+		os.Exit(2)
+	}
+	if options.AdminUser != "" {
+		if err := readPassword(&options, passwordFile, unattended); err != nil {
+			fmt.Fprintln(os.Stderr, "odm-client-install:", err)
+			os.Exit(1)
+		}
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	result, err := join.Leave(ctx, options, join.NewEnv(options.Root), force)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-client-install:", err)
+		os.Exit(1)
+	}
+	fmt.Print("\n" + result.Summary(options.Domain))
 }
 
 // rebootNote is printed when this machine was renamed to join. Long-running
@@ -153,23 +186,30 @@ func gather(options *join.Options, passwordFile string, unattended bool) error {
 		}
 	}
 
-	if options.AdminUser != "" && options.Password == "" {
-		switch {
-		case passwordFile != "":
-			body, err := os.ReadFile(passwordFile)
-			if err != nil {
-				return fmt.Errorf("cannot read the password file: %w", err)
-			}
-			options.Password = strings.TrimRight(string(body), "\r\n")
-		case unattended:
-			return errors.New("--password-file is required with --admin-user when unattended")
-		default:
-			password, err := promptSecret(fmt.Sprintf("Password for %s", options.AdminUser))
-			if err != nil {
-				return err
-			}
-			options.Password = password
+	return readPassword(options, passwordFile, unattended)
+}
+
+// readPassword fills in the credential's password from a file, a prompt, or
+// neither when there is no credential to read one for.
+func readPassword(options *join.Options, passwordFile string, unattended bool) error {
+	if options.AdminUser == "" || options.Password != "" {
+		return nil
+	}
+	switch {
+	case passwordFile != "":
+		body, err := os.ReadFile(passwordFile)
+		if err != nil {
+			return fmt.Errorf("cannot read the password file: %w", err)
 		}
+		options.Password = strings.TrimRight(string(body), "\r\n")
+	case unattended:
+		return errors.New("--password-file is required with --admin-user when unattended")
+	default:
+		password, err := promptSecret(fmt.Sprintf("Password for %s", options.AdminUser))
+		if err != nil {
+			return err
+		}
+		options.Password = password
 	}
 	return nil
 }

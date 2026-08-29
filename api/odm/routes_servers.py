@@ -9,6 +9,7 @@ logging into each one.
 from __future__ import annotations
 
 import json
+import re
 from typing import Annotated, Any
 
 import asyncpg
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 from . import audit, objects, tasks
 from .config import Settings, get_settings
 from .routes_directory import _read
-from .security import client_ip, get_pool, require_admin, requires
+from .security import Authz, authorization, client_ip, get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/servers", tags=["servers"])
@@ -145,6 +146,8 @@ async def computer_detail(
             "security_updates": fact["security_updates"],
             "updates": json.loads(fact["updates"]),
             "updates_checked_at": fact["updates_checked_at"],
+            "packages": json.loads(fact["packages"]),
+            "package_count": fact["package_count"],
             "reported_at": fact["reported_at"],
         },
         "events": [
@@ -170,9 +173,24 @@ async def computer_detail(
     }
 
 
+# Debian package names, as the archive defines them. A value from here reaches
+# apt on a machine running as root, so it is checked before it is queued.
+PACKAGE_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]{1,127}$")
+
+# Restarting a machine is not the same right as reading what is on it.
+POWER_ACTIONS = {"restart", "shutdown"}
+
+
 class ComputerAction(BaseModel):
     dn: Annotated[str, Field(min_length=3, max_length=1024)]
-    action: Annotated[str, Field(pattern="^(update-check|update-install)$")]
+    action: Annotated[
+        str,
+        Field(
+            pattern="^(update-check|update-install|package-install|package-remove"
+            "|policy-refresh|restart|shutdown)$"
+        ),
+    ]
+    package: Annotated[str, Field(max_length=128)] | None = None
 
 
 @router.post("/computer/action", status_code=202,
@@ -180,10 +198,20 @@ class ComputerAction(BaseModel):
 async def run_action(
     body: ComputerAction,
     request: Request,
+    authz: Authz = Depends(authorization),
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict[str, Any]:
     """Ask a machine to do something now, rather than at its next refresh."""
+    if body.action in POWER_ACTIONS:
+        authz.require("computer.power", body.dn)
+
+    payload: dict[str, Any] = {}
+    if body.action in ("package-install", "package-remove"):
+        if not body.package or not PACKAGE_RE.match(body.package):
+            raise objects.ObjectError("that is not a package name")
+        payload["package"] = body.package
+
     async with pool.acquire() as conn:
         fact = await conn.fetchrow(
             "SELECT hostname FROM computer_fact WHERE lower(computer_dn) = lower($1)", body.dn
@@ -196,7 +224,7 @@ async def run_action(
             conn,
             node_fqdn=fact["hostname"],
             kind=body.action,
-            payload={},
+            payload=payload,
             subject=body.dn,
             requested_by=session.principal,
         )
@@ -209,6 +237,6 @@ async def run_action(
             outcome="success",
             object_type="computer",
             object_dn=body.dn,
-            detail=f"queued for {fact['hostname']}",
+            detail=" ".join(filter(None, [f"queued for {fact['hostname']}", body.package])),
         )
     return {"task": task_id, "node": fact["hostname"]}
