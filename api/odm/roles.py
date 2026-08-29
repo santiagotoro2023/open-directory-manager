@@ -271,6 +271,32 @@ REGISTRY: dict[str, Role] = {
             "land, under Client Enrolment."
         ),
     ),
+    "print-server": Role(
+        name="print-server",
+        title="Print server",
+        summary="CUPS printers, published to the domain and handed to clients by policy.",
+        packages=("cups", "cups-ipp-utils", "printer-driver-all", "avahi-daemon"),
+        ui_section="printers",
+        notes="Add the printers themselves under Printers once this is installed.",
+    ),
+    "vpn": Role(
+        name="vpn",
+        title="Remote access (VPN)",
+        summary="WireGuard tunnels for machines and people outside the network.",
+        packages=("wireguard-tools", "iptables"),
+        arguments=(
+            Argument(
+                name="external_interface",
+                label="Interface facing the internet",
+                help="Traffic from the tunnel is routed out through this.",
+                placeholder="eth0",
+                optional=True,
+                configuration=True,
+            ),
+        ),
+        ui_section="vpn",
+        notes="Create the tunnels themselves under Remote Access once this is installed.",
+    ),
     "file-server": Role(
         name="file-server",
         title="File server",

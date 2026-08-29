@@ -239,11 +239,74 @@ class BrowserPolicy(Strict):
     firefox: dict[str, Any] = Field(default_factory=dict)
 
 
+FIT = Literal["none", "wallpaper", "centered", "scaled", "stretched", "zoom", "spanned"]
+
+
 class Wallpaper(Strict):
     uri: Annotated[str, Field(max_length=1024)]
-    picture_options: Literal["none", "wallpaper", "centered", "scaled", "stretched", "zoom",
-                             "spanned"] = "zoom"
+    picture_options: FIT = "zoom"
     for_principal: str | None = None
+    # Setting a background and letting somebody change it are different
+    # decisions, so they are separate here rather than implied by each other.
+    allow_user_change: bool = False
+
+
+class LoginScreen(Strict):
+    """The greeter, before anyone has signed in.
+
+    A machine setting, not a user one: nobody is logged in yet, so there is no
+    user whose policy could apply.
+    """
+
+    banner_text: Annotated[str, Field(max_length=512)] = ""
+    background_uri: Annotated[str, Field(max_length=1024)] = ""
+    background_fit: FIT = "zoom"
+    # Whether a signed-in person may then change their own desktop background.
+    # It belongs here as well because an operator setting the greeter usually
+    # means the same thing for the desktop.
+    allow_user_background: bool = True
+    disable_user_list: bool = False
+
+    @field_validator("banner_text")
+    @classmethod
+    def _banner(cls, value: str) -> str:
+        # Written into a dconf value; a newline would end the line early and a
+        # quote would end the string.
+        if any(character in value for character in "\n\r'"):
+            raise ValueError("the banner cannot contain newlines or apostrophes")
+        return value
+
+
+class Printer(Strict):
+    """A printer handed to a user or group."""
+
+    name: str
+    server: Annotated[str, Field(max_length=253)]
+    for_principal: Annotated[str, Field(max_length=128)] = ""
+    default: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not NAME_RE.match(value):
+            raise ValueError("invalid printer name")
+        return value
+
+
+class AlwaysOnVpn(Strict):
+    """Hold a tunnel up on this machine whatever the person using it does."""
+
+    tunnel: str
+    # Refuse to route anything until the tunnel is up, so a laptop cannot leak
+    # onto a coffee-shop network while it waits.
+    block_until_connected: bool = False
+
+    @field_validator("tunnel")
+    @classmethod
+    def _tunnel(cls, value: str) -> str:
+        if not NAME_RE.match(value):
+            raise ValueError("invalid tunnel name")
+        return value
 
 
 class AdmxSelection(Strict):
@@ -315,6 +378,9 @@ class PolicySettings(Strict):
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None
     updates: SystemUpdates | None = None
+    login_screen: LoginScreen | None = None
+    printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
+    always_on_vpn: AlwaysOnVpn | None = None
     agent: AgentSettings | None = None
 
     def stored(self) -> dict[str, Any]:

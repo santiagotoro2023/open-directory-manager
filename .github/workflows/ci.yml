@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    # A tag is what publishes the client package; without this the release
+    # job below could never run.
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -229,3 +232,73 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           for m in agent client-join; do (cd "$m" && "$(go env GOPATH)/bin/govulncheck" ./...); done
+
+  client-package:
+    name: odm-client.deb
+    runs-on: ubuntu-latest
+    # A machine being joined has no reason to have a checkout on it. One file
+    # to download, open and join with — built on every change, so what is
+    # published is never older than the code.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1-mesa-dev libxi-dev libxcursor-dev libxrandr-dev \
+            libxinerama-dev libxxf86vm-dev xorg-dev
+      - name: Build the package
+        run: |
+          # The version comes from the tag when there is one, so a release is
+          # not a separate thing anyone has to remember to bump.
+          VERSION="0.1.$(git rev-list --count HEAD)"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "ODM_CLIENT_VERSION=$VERSION" >> "$GITHUB_ENV"
+          WITH_GUI=yes bash packaging/deb/build.sh "$VERSION"
+      - name: The package must contain both front ends
+        shell: bash
+        run: |
+          set -o pipefail
+          PACKAGE="dist/odm-client_${ODM_CLIENT_VERSION}_amd64.deb"
+          dpkg-deb --contents "$PACKAGE" | tee /tmp/contents.txt
+          # A package missing the desktop application is one somebody has to
+          # be told about, not one that quietly ships.
+          for path in ./usr/sbin/odm-client-install ./usr/bin/odm-join \
+                      ./usr/share/applications/odm-join.desktop \
+                      ./usr/share/icons/hicolor/scalable/apps/odm-join.svg; do
+            grep -q "$path" /tmp/contents.txt || { echo "missing $path" >&2; exit 1; }
+          done
+      - name: It must install and uninstall cleanly
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            "./dist/odm-client_${ODM_CLIENT_VERSION}_amd64.deb"
+          odm-client-install --version
+          sudo apt-get remove -y odm-client
+      - uses: actions/upload-artifact@v4
+        with:
+          name: odm-client-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  release:
+    name: publish odm-client.deb
+    needs: [api, installed, web, go, client-package]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: odm-client-deb
+          path: dist
+      - name: Attach it to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          fail_on_unmatched_files: true

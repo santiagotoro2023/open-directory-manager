@@ -143,7 +143,50 @@ async def build(
         target=target,
     )
     await apply_admx(pool, document)
+    await attach_vpn(pool, document, target.dn)
     # The serial fingerprints what the agent will actually apply, so it is
     # recomputed after template expansion.
     document["serial"] = policy.serial(document)
     return document
+
+
+async def attach_vpn(pool: asyncpg.Pool, document: dict[str, Any], dn: str) -> None:
+    """Fill in the tunnel configuration for a machine told to hold one up.
+
+    A policy object names the tunnel; it cannot carry the configuration,
+    because that includes a private key belonging to one machine. It is
+    attached here, where the machine asking is already known, so a key only
+    ever reaches the machine it is for.
+    """
+    always_on = (document.get("settings") or {}).get("always_on_vpn")
+    if not always_on or not always_on.get("tunnel"):
+        return
+
+    row = await pool.fetchrow(
+        """
+        SELECT p.address, p.private_key, p.enabled,
+               t.name, t.endpoint, t.listen_port, t.public_key, t.routes,
+               t.dns_servers, t.search_domain, t.network
+        FROM vpn_peer p JOIN vpn_tunnel t ON t.id = p.tunnel_id
+        WHERE t.name = $1 AND lower(p.principal_dn) = lower($2)
+        """,
+        always_on["tunnel"],
+        dn,
+    )
+    if row is None or not row["enabled"] or not row["private_key"]:
+        # No peer for this machine on that tunnel. Said plainly rather than
+        # written as a configuration that cannot work.
+        always_on["unavailable"] = "this machine has no peer on that tunnel"
+        return
+
+    allowed = list(row["routes"]) or [row["network"]]
+    always_on["configuration"] = {
+        "name": row["name"],
+        "address": row["address"],
+        "private_key": row["private_key"],
+        "peer_public_key": row["public_key"],
+        "endpoint": f"{row['endpoint']}:{row['listen_port']}",
+        "allowed_ips": allowed,
+        "dns": list(row["dns_servers"]),
+        "search_domain": row["search_domain"],
+    }

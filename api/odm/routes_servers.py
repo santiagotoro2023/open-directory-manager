@@ -240,3 +240,53 @@ async def run_action(
             detail=" ".join(filter(None, [f"queued for {fact['hostname']}", body.package])),
         )
     return {"task": task_id, "node": fact["hostname"]}
+
+
+@router.get("/computer/logs", dependencies=[Depends(requires("server.read"))])
+async def computer_logs(
+    dn: Annotated[str, Query(min_length=3, max_length=1024)],
+    hours: Annotated[int, Query(ge=1, le=336)] = 24,
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """A machine's recent journal, grouped by the unit that produced it.
+
+    Grouped here rather than in the console: the counts are what decide which
+    groups are worth opening, and computing them once beside the rows keeps the
+    page from having to hold everything to work them out.
+    """
+    rows = await pool.fetch(
+        """
+        SELECT unit, priority, message, occurred_at
+        FROM computer_log
+        WHERE lower(computer_dn) = lower($1)
+          AND occurred_at > now() - ($2 || ' hours')::interval
+        ORDER BY occurred_at DESC
+        LIMIT 2000
+        """,
+        dn,
+        str(hours),
+    )
+
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        unit = row["unit"] or "system"
+        group = groups.setdefault(unit, {"unit": unit, "errors": 0, "entries": []})
+        # journalctl's priorities: 3 and below are errors, 4 is a warning.
+        if row["priority"] <= 3:
+            group["errors"] += 1
+        group["entries"].append(
+            {
+                "priority": row["priority"],
+                "message": row["message"],
+                "occurred_at": row["occurred_at"],
+            }
+        )
+
+    # Units with errors first, then by how much they had to say.
+    ordered = sorted(
+        groups.values(), key=lambda group: (-group["errors"], -len(group["entries"]))
+    )
+    for group in ordered:
+        group["count"] = len(group["entries"])
+    return {"hours": hours, "groups": ordered, "total": len(rows)}

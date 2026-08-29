@@ -13,6 +13,12 @@ export function Content() {
   return (
     <>
       <Quickstart>
+        <Example title="The easy way">
+          Download <C>odm-client_*.deb</C> from the project&rsquo;s releases, open it, and use{" "}
+          <strong>Join a Domain</strong> from the applications menu. One file, no checkout, no
+          flags. The same package carries <C>odm-client-install</C> for servers and scripts.
+        </Example>
+
         <p>
           Joining a machine creates its account in the directory, installs its Kerberos keytab,
           configures name resolution and authentication, and installs the policy agent. Two front

@@ -1,0 +1,22 @@
+Joining a domain
+================
+
+From the desktop:
+
+    Open "Join a Domain" from the applications menu. It asks for the domain,
+    an administrator account and its password.
+
+From a terminal:
+
+    sudo odm-client-install --domain corp.example.internal --admin-user Administrator
+
+Either needs root: joining writes /etc/krb5.conf, /etc/sssd/sssd.conf and the
+machine's keytab, and installs the policy agent as a system service.
+
+Leaving again:
+
+    sudo odm-client-install --leave --domain corp.example.internal \
+        --admin-user Administrator
+
+Removing the computer account from the directory needs a domain credential.
+Disconnecting this machine alone needs only root here, with --force.

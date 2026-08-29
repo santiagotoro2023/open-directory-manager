@@ -82,6 +82,12 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 		output, err = power(ctx, env, "reboot")
 	case "shutdown":
 		output, err = power(ctx, env, "poweroff")
+	case "printer-apply":
+		output, err = applyPrinter(ctx, task.Payload, env)
+	case "printer-remove":
+		output, err = removePrinter(ctx, task.Payload, env)
+	case "vpn-apply":
+		output, err = applyTunnel(ctx, task.Payload, env)
 	default:
 		err = fmt.Errorf("unknown task kind %q", task.Kind)
 	}
@@ -227,6 +233,188 @@ func flagFor(action string) string {
 		return "-r"
 	}
 	return "-h"
+}
+
+// ---------------------------------------------------------------- printers --
+
+const ppdDir = "/etc/cups/odm-ppd"
+
+var safeURI = regexp.MustCompile(`^(ipp|ipps|socket|lpd|usb|smb|dnssd)://[A-Za-z0-9._~:/?#%@!$&'()*+,;=-]{1,240}$`)
+
+func applyPrinter(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	name := str(payload["name"])
+	uri := str(payload["device_uri"])
+	if !safeName.MatchString(name) {
+		return "", fmt.Errorf("invalid printer name %q", name)
+	}
+	if !safeURI.MatchString(uri) {
+		return "", fmt.Errorf("invalid device address %q", uri)
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+
+	// A PPD is optional. Where one was uploaded it is written out and named;
+	// otherwise CUPS is told to work the printer out for itself, which is what
+	// IPP Everywhere is for.
+	args := []string{"-p", name, "-E", "-v", uri}
+	if ppd := str(payload["ppd"]); ppd != "" {
+		if err := os.MkdirAll(env.Path(ppdDir), 0o755); err != nil {
+			return "", fmt.Errorf("creating %s: %w", ppdDir, err)
+		}
+		path := ppdDir + "/" + name + ".ppd"
+		if err := env.WriteFile(path, ppd, 0o644, "root", "root"); err != nil {
+			return "", fmt.Errorf("writing the PPD: %w", err)
+		}
+		args = append(args, "-P", env.Path(path))
+	} else {
+		args = append(args, "-m", "everywhere")
+	}
+	if description := str(payload["description"]); description != "" {
+		args = append(args, "-D", sanitise(description))
+	}
+	if location := str(payload["location"]); location != "" {
+		args = append(args, "-L", sanitise(location))
+	}
+	if boolean(payload["shared"], true) {
+		args = append(args, "-o", "printer-is-shared=true")
+	} else {
+		args = append(args, "-o", "printer-is-shared=false")
+	}
+	if boolean(payload["duplex"], false) {
+		args = append(args, "-o", "sides-default=two-sided-long-edge")
+	}
+	if !boolean(payload["colour"], true) {
+		args = append(args, "-o", "print-color-mode-default=monochrome")
+	}
+
+	if out, err := env.Run.Run(ctx, "lpadmin", args...); err != nil {
+		return out, fmt.Errorf("lpadmin: %w", err)
+	}
+	// A queue that exists but is not accepting jobs looks broken to a client.
+	_, _ = env.Run.Run(ctx, "cupsenable", name)
+	_, _ = env.Run.Run(ctx, "cupsaccept", name)
+	return fmt.Sprintf("%s is published at ipp://%s/printers/%s", name, hostname(), name), nil
+}
+
+func removePrinter(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	name := str(payload["name"])
+	if !safeName.MatchString(name) {
+		return "", fmt.Errorf("invalid printer name %q", name)
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	if out, err := env.Run.Run(ctx, "lpadmin", "-x", name); err != nil {
+		return out, fmt.Errorf("lpadmin -x %s: %w", name, err)
+	}
+	_ = os.Remove(env.Path(ppdDir + "/" + name + ".ppd"))
+	return name + " removed", nil
+}
+
+// --------------------------------------------------------------------- vpn --
+
+const wireguardDir = "/etc/wireguard"
+
+func applyTunnel(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	name := str(payload["name"])
+	if !safeName.MatchString(name) {
+		return "", fmt.Errorf("invalid tunnel name %q", name)
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	unit := "wg-quick@" + name
+	path := fmt.Sprintf("%s/%s.conf", wireguardDir, name)
+
+	if boolean(payload["remove"], false) {
+		_, _ = env.Run.Run(ctx, "systemctl", "disable", "--now", unit)
+		_ = os.Remove(env.Path(path))
+		return name + " taken down", nil
+	}
+
+	body, err := RenderServer(payload, externalInterface(env))
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(env.Path(wireguardDir), 0o700); err != nil {
+		return "", fmt.Errorf("creating %s: %w", wireguardDir, err)
+	}
+	// 0600: the file is the tunnel's identity.
+	if err := env.WriteFile(path, body, 0o600, "root", "root"); err != nil {
+		return "", fmt.Errorf("writing %s: %w", path, err)
+	}
+
+	if out, err := env.Run.Run(ctx, "systemctl", "enable", unit); err != nil {
+		return out, fmt.Errorf("enabling %s: %w", unit, err)
+	}
+	if out, err := env.Run.Run(ctx, "systemctl", "restart", unit); err != nil {
+		return out, fmt.Errorf("starting %s: %w", unit, err)
+	}
+	peers, _ := payload["peers"].([]any)
+	return fmt.Sprintf("%s is up with %d peers", name, len(peers)), nil
+}
+
+// RenderServer writes the server side of a tunnel. Exported so what lands in
+// /etc/wireguard can be asserted without a network interface.
+func RenderServer(payload map[string]any, external string) (string, error) {
+	address := str(payload["address"])
+	private := str(payload["private_key"])
+	if address == "" || private == "" {
+		return "", fmt.Errorf("the tunnel has no address or key")
+	}
+	port := 51820
+	if raw, ok := payload["listen_port"].(float64); ok && raw > 0 {
+		port = int(raw)
+	}
+
+	var out strings.Builder
+	out.WriteString("# Managed by Open Directory Manager. Edits here are overwritten.\n")
+	out.WriteString("[Interface]\n")
+	fmt.Fprintf(&out, "Address = %s\n", address)
+	fmt.Fprintf(&out, "ListenPort = %d\n", port)
+	fmt.Fprintf(&out, "PrivateKey = %s\n", private)
+	// Without these a peer connects and reaches the server but nothing behind
+	// it, which looks like a broken tunnel rather than a missing route.
+	fmt.Fprintf(&out,
+		"PostUp = iptables -t nat -A POSTROUTING -o %s -j MASQUERADE; "+
+			"iptables -A FORWARD -i %%i -j ACCEPT\n", external)
+	fmt.Fprintf(&out,
+		"PostDown = iptables -t nat -D POSTROUTING -o %s -j MASQUERADE; "+
+			"iptables -D FORWARD -i %%i -j ACCEPT\n", external)
+
+	peers, _ := payload["peers"].([]any)
+	for _, raw := range peers {
+		peer, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		key := str(peer["public_key"])
+		allowed, err := stringList(peer["allowed_ips"], safeCIDR)
+		if err != nil || key == "" || len(allowed) == 0 {
+			continue
+		}
+		out.WriteString("\n[Peer]\n")
+		if name := str(peer["name"]); name != "" {
+			fmt.Fprintf(&out, "# %s\n", sanitise(name))
+		}
+		fmt.Fprintf(&out, "PublicKey = %s\n", key)
+		fmt.Fprintf(&out, "AllowedIPs = %s\n", strings.Join(allowed, ", "))
+	}
+	return out.String(), nil
+}
+
+var safeCIDR = regexp.MustCompile(`^[0-9a-fA-F.:]{2,45}(/[0-9]{1,3})?$`)
+
+// externalInterface is recorded by the role installer, which knows which way
+// out the machine routes.
+func externalInterface(env apply.Env) string {
+	raw, err := os.ReadFile(env.Path(wireguardDir + "/odm-external-interface"))
+	name := strings.TrimSpace(string(raw))
+	if err != nil || name == "" || !safeName.MatchString(name) {
+		return "eth0"
+	}
+	return name
 }
 
 // Share is the definition the control plane stores, as the agent receives it.

@@ -55,6 +55,14 @@ export interface AuditEntry {
   after_state: Record<string, unknown> | null;
 }
 
+export interface LoginScreenSettings {
+  banner_text: string;
+  background_uri: string;
+  background_fit: string;
+  allow_user_background: boolean;
+  disable_user_list: boolean;
+}
+
 export interface SystemUpdates {
   enabled: boolean;
   security_only: boolean;
@@ -77,8 +85,16 @@ export interface PolicySettings {
   trusted_certificates?: Record<string, unknown>[];
   admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
-  wallpaper?: { uri: string; picture_options: string; for_principal?: string };
+  wallpaper?: {
+    uri: string;
+    picture_options: string;
+    for_principal?: string;
+    allow_user_change?: boolean;
+  };
   updates?: SystemUpdates;
+  login_screen?: LoginScreenSettings;
+  printers?: Record<string, unknown>[];
+  always_on_vpn?: { tunnel: string; block_until_connected: boolean };
   agent?: { refresh_minutes: number };
 }
 
@@ -251,6 +267,112 @@ export interface TrustAnchor {
   is_ca: boolean;
   added_by: string | null;
   added_at: string;
+}
+
+export interface LogGroup {
+  unit: string;
+  count: number;
+  errors: number;
+  entries: { priority: number; message: string; occurred_at: string }[];
+}
+
+export interface DomainController {
+  name: string;
+  fqdn: string;
+  distinguished_name: string;
+  operating_system: string;
+  read_only: boolean;
+  last_seen: string | null;
+}
+
+export interface ControllerOverview {
+  controllers: DomainController[];
+  replication: {
+    available?: boolean;
+    detail?: string;
+    healthy?: boolean;
+    inbound?: {
+      naming_context: string;
+      partner: string;
+      last_attempt: string;
+      succeeded: boolean | null;
+      failures: number;
+    }[];
+  };
+  writable: number;
+  read_only: number;
+}
+
+export interface Printer {
+  id: string;
+  node_fqdn: string;
+  name: string;
+  description: string;
+  location: string;
+  device_uri: string;
+  has_ppd: boolean;
+  ppd_name: string;
+  duplex: boolean;
+  colour: boolean;
+  shared: boolean;
+  state: string;
+  last_error: string | null;
+  uri: string;
+}
+
+export interface NewPrinter {
+  node_fqdn: string;
+  name: string;
+  device_uri: string;
+  description?: string;
+  location?: string;
+  ppd?: string | null;
+  ppd_name?: string;
+  duplex?: boolean;
+  colour?: boolean;
+  shared?: boolean;
+}
+
+export interface VpnTunnel {
+  id: string;
+  node_fqdn: string;
+  name: string;
+  description: string;
+  endpoint: string;
+  listen_port: number;
+  network: string;
+  routes: string[];
+  dns_servers: string[];
+  search_domain: string;
+  public_key: string;
+  state: string;
+  last_error: string | null;
+  peers: number;
+}
+
+export interface NewTunnel {
+  node_fqdn: string;
+  name: string;
+  description?: string;
+  endpoint: string;
+  listen_port?: number;
+  network: string;
+  routes?: string[];
+  dns_servers?: string[];
+  search_domain?: string;
+}
+
+export interface VpnPeer {
+  id: string;
+  tunnel_id: string;
+  name: string;
+  principal_dn: string | null;
+  address: string;
+  public_key: string;
+  always_on: boolean;
+  enabled: boolean;
+  exportable: boolean;
+  created_at: string;
 }
 
 export interface ComputerFacts {
@@ -487,9 +609,10 @@ function remember(session: SessionInfo): SessionInfo {
 
 const json = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
-function qs(params: Record<string, string | number | undefined | null>): string {
+function qs(params: Record<string, string | number | boolean | undefined | null>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
+    // false is a value, not an absence: a flag has to be sendable as off.
     if (value !== undefined && value !== null && value !== "") search.set(key, String(value));
   }
   const query = search.toString();
@@ -757,10 +880,65 @@ export const api = {
     remove: (id: string) => request<void>(`/roles/instance${qs({ id })}`, { method: "DELETE" }),
   },
 
+  controllers: {
+    list: () => request<ControllerOverview>("/controllers"),
+
+    joinCommand: (hostname: string, read_only: boolean, site: string) =>
+      request<{ role: string; steps: string[]; notes: string[] }>(
+        `/controllers/join-command${qs({ hostname, read_only, site })}`,
+      ),
+
+    replication: (server?: string) =>
+      request<{ server: string; inbound: unknown[]; healthy: boolean }>(
+        `/controllers/replication${qs({ server })}`,
+      ),
+  },
+
+  printers: {
+    list: () => request<{ printers: Printer[] }>("/printers"),
+
+    create: (body: NewPrinter) => request<Printer>("/printers", json(body)),
+
+    update: (body: { id: string } & Partial<NewPrinter>) =>
+      request<Printer>("/printers", { method: "PATCH", body: JSON.stringify(body) }),
+
+    remove: (id: string) => request<void>(`/printers${qs({ id })}`, { method: "DELETE" }),
+  },
+
+  vpn: {
+    list: () => request<{ tunnels: VpnTunnel[] }>("/vpn"),
+
+    create: (body: NewTunnel) => request<VpnTunnel>("/vpn", json(body)),
+
+    update: (body: { id: string } & Partial<NewTunnel>) =>
+      request<VpnTunnel>("/vpn", { method: "PATCH", body: JSON.stringify(body) }),
+
+    remove: (id: string) => request<void>(`/vpn${qs({ id })}`, { method: "DELETE" }),
+
+    peers: (tunnel_id: string) => request<{ peers: VpnPeer[] }>(`/vpn/peers${qs({ tunnel_id })}`),
+
+    addPeer: (body: {
+      tunnel_id: string;
+      name: string;
+      principal_dn?: string;
+      always_on?: boolean;
+    }) => request<VpnPeer>("/vpn/peers", json(body)),
+
+    removePeer: (id: string) => request<void>(`/vpn/peers${qs({ id })}`, { method: "DELETE" }),
+
+    // A download rather than a fetch: the file is what a client is handed.
+    configurationUrl: (id: string) => `/api/v1/vpn/peers/configuration${qs({ id })}`,
+  },
+
   servers: {
     list: () => request<{ servers: ManagedServer[] }>("/servers"),
 
     computer: (dn: string) => request<ComputerDetail>(`/servers/computer${qs({ dn })}`),
+
+    logs: (dn: string, hours: number) =>
+      request<{ hours: number; total: number; groups: LogGroup[] }>(
+        `/servers/computer/logs${qs({ dn, hours })}`,
+      ),
 
     action: (dn: string, action: ComputerAction, pkg?: string) =>
       request<{ task: string; node: string }>(

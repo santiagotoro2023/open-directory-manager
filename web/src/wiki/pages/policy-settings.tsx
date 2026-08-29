@@ -44,6 +44,15 @@ export function Content() {
           daily. Tick <strong>Restart the machine when an update needs it</strong> for servers
           that can take it.
         </Example>
+        <Example title="Put a message on the login screen">
+          <strong>Login screen</strong> → <strong>Add</strong> → a message, and a background
+          image if wanted. This is the greeter, before anyone signs in — separate from the
+          desktop background, which belongs to whoever is signed in.
+        </Example>
+        <Example title="Give people a printer">
+          <strong>User</strong> → <strong>Printers</strong> → <strong>Add</strong> → the printer
+          and its server, then the group with <strong>Select…</strong>.
+        </Example>
         <Example title="Restrict who may log in">
           <strong>HBAC rules</strong> → principal <C>%Engineers</C>, service{" "}
           <C>ssh</C>, access <C>allow</C>. Root and local administrators are always kept.
@@ -63,6 +72,9 @@ export function Content() {
               ["Scheduled tasks", "name", "An entry in /etc/cron.d."],
               ["Software deployment", "package name", "An apt package installed, upgraded or removed."],
               ["System updates", "single value", "Unattended apt upgrades, through unattended-upgrades."],
+              ["Login screen", "single value", "The greeter's message, background and account list."],
+              ["Printers", "printer and principal", "A printer from a print server, offered to a user or group."],
+              ["Always-on VPN", "single value", "A tunnel the machine holds up from boot."],
               ["Firewall rules", "name", "Rules in a dedicated nftables table."],
               ["Drive maps", "mount point", "A mounted SMB share, machine-wide or per user."],
               ["Sudo rules", "name", "A file in /etc/sudoers.d."],
@@ -130,6 +142,52 @@ export function Content() {
 schedule  0 3 * * 0
 command   /usr/sbin/fstrim -a
 user      root`}</Code>
+        </Section>
+
+        <Section title="Login screen and desktop background">
+          <p>
+            Two separate settings, because they answer different questions. The login screen is
+            a machine setting: nobody is signed in yet, so there is no user whose policy could
+            carry it. The desktop background is a user setting, applied when they sign in.
+          </p>
+          <Reference
+            headers={["Setting", "Where it lands"]}
+            rows={[
+              [
+                "Login screen message",
+                <>
+                  <C key="a">banner-message-text</C> in the greeter&rsquo;s own dconf database.
+                  An empty message is written as off, so removing one takes it off the screen.
+                </>,
+              ],
+              [
+                "Login screen background",
+                "A stylesheet for the greeter: GNOME takes the greeter's image from its theme rather than from a dconf value.",
+              ],
+              [
+                "Hide the list of accounts",
+                "People type their name instead of picking it, so account names are not on display.",
+              ],
+              [
+                "Let people change their own desktop background",
+                <>
+                  Whether the background keys are locked. Unticked writes a dconf lock; ticked
+                  removes it. Setting a background and forbidding a different one are separate
+                  decisions, so they are separate ticks.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="Always-on VPN">
+          <p>
+            The machine brings the tunnel up at boot, before anyone signs in, and cannot be
+            told not to. The configuration is attached by the control plane for the machine
+            asking — it contains a private key belonging to that machine alone, so it is never
+            part of the policy object itself. A machine with no peer on the tunnel is reported
+            as skipped rather than given something that cannot work.
+          </p>
         </Section>
 
         <Section title="System updates">

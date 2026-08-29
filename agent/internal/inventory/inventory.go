@@ -11,6 +11,8 @@ package inventory
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -65,7 +67,17 @@ type Report struct {
 	Updates         []string    `json:"updates"`
 	UpdatesChecked  bool        `json:"updates_checked"`
 	Events          []Event     `json:"events"`
+	Logs            []LogEntry  `json:"logs"`
+	LogCursor       string      `json:"log_cursor"`
 }
+
+// CursorPath is where the last journal position is remembered, so a report
+// covers what happened since the previous one rather than the last hour again.
+const CursorPath = "/var/lib/odm/log-cursor"
+
+// LogUnits are read at every priority, not only warnings: they are the ones
+// that explain why the rest of the machine is unhappy.
+var LogUnits = []string{"odm-agent", "sssd", "ssh", "systemd-logind"}
 
 // Collect gathers the machine's current state. Anything that cannot be read is
 // left empty rather than failing the report: a partial inventory is worth more
@@ -83,6 +95,13 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		report.Sessions = sessions(ctx, env, report.LocalUsers)
 		report.Events = recentEvents(ctx, env)
 		report.Packages, report.PackageCount = installedPackages(ctx, env)
+
+		previous := strings.TrimSpace(readFile(env, CursorPath))
+		report.Logs, report.LogCursor = CollectLogs(ctx, env, previous, LogUnits, 200)
+		if report.LogCursor == "" {
+			// Nothing new: keep the position we had rather than resetting it.
+			report.LogCursor = previous
+		}
 	}
 	pending, security, names := PendingUpdates(ctx, env)
 	report.PendingUpdates, report.SecurityUpdates, report.Updates = pending, security, names
@@ -342,4 +361,151 @@ func ParseSimulation(out string) (int, int, []string) {
 		}
 	}
 	return len(names), security, names
+}
+
+// ------------------------------------------------------------------- logs ---
+// Warnings and above, plus whatever units policy names. Not a log pipeline:
+// enough to answer "why is this machine unhappy" from its page in the console.
+
+type LogEntry struct {
+	Unit       string    `json:"unit"`
+	Priority   int       `json:"priority"`
+	Message    string    `json:"message"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Cursor     string    `json:"cursor"`
+}
+
+// journalctl's own priority numbers. 4 is warning; anything higher is noise
+// for this purpose.
+const warningPriority = 4
+
+// CollectLogs reads the journal since the last cursor and returns what is
+// worth sending, together with the cursor to resume from next time.
+func CollectLogs(
+	ctx context.Context, env apply.Env, since string, units []string, limit int,
+) ([]LogEntry, string) {
+	if env.Run == nil {
+		return nil, since
+	}
+	args := []string{"--output=json", "--no-pager", fmt.Sprintf("--lines=%d", limit)}
+	if since != "" {
+		args = append(args, "--after-cursor="+since)
+	} else {
+		// A first run would otherwise ship the whole journal.
+		args = append(args, "--since=-1h")
+	}
+	args = append(args, fmt.Sprintf("--priority=%d", warningPriority))
+
+	entries, cursor := runJournal(ctx, env, args, limit)
+
+	// Named units are wanted at every priority, so they are a second read
+	// rather than a looser filter on the first.
+	for _, unit := range units {
+		unitArgs := []string{"--output=json", "--no-pager", "--unit=" + unit,
+			fmt.Sprintf("--lines=%d", limit/2)}
+		if since != "" {
+			unitArgs = append(unitArgs, "--after-cursor="+since)
+		} else {
+			unitArgs = append(unitArgs, "--since=-1h")
+		}
+		more, _ := runJournal(ctx, env, unitArgs, limit/2)
+		entries = append(entries, more...)
+	}
+
+	return dedupe(entries), cursor
+}
+
+func runJournal(
+	ctx context.Context, env apply.Env, args []string, limit int,
+) ([]LogEntry, string) {
+	out, err := env.Run.Run(ctx, "journalctl", args...)
+	if err != nil {
+		return nil, ""
+	}
+	entries := ParseJournal(out, limit)
+	cursor := ""
+	if len(entries) > 0 {
+		cursor = entries[len(entries)-1].Cursor
+	}
+	return entries, cursor
+}
+
+// ParseJournal reads journalctl --output=json. Exported so its handling of
+// the journal's microsecond timestamps and missing fields can be tested.
+func ParseJournal(out string, limit int) []LogEntry {
+	entries := []LogEntry{}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue
+		}
+		message := journalString(raw["MESSAGE"])
+		if message == "" {
+			continue
+		}
+		// __REALTIME_TIMESTAMP is microseconds since the epoch, as a string.
+		micros, err := strconv.ParseInt(journalString(raw["__REALTIME_TIMESTAMP"]), 10, 64)
+		if err != nil {
+			continue
+		}
+		priority, err := strconv.Atoi(journalString(raw["PRIORITY"]))
+		if err != nil {
+			priority = 6
+		}
+		unit := journalString(raw["_SYSTEMD_UNIT"])
+		if unit == "" {
+			unit = journalString(raw["SYSLOG_IDENTIFIER"])
+		}
+		if len(message) > 2000 {
+			message = message[:2000]
+		}
+		entries = append(entries, LogEntry{
+			Unit:       strings.TrimSuffix(unit, ".service"),
+			Priority:   priority,
+			Message:    message,
+			OccurredAt: time.UnixMicro(micros).UTC(),
+			Cursor:     journalString(raw["__CURSOR"]),
+		})
+		if len(entries) >= limit {
+			break
+		}
+	}
+	return entries
+}
+
+// journalString copes with the journal rendering a field as a string, a
+// number, or an array of byte values when it is not valid UTF-8.
+func journalString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case float64:
+		return strconv.FormatInt(int64(typed), 10)
+	case []any:
+		bytes := make([]byte, 0, len(typed))
+		for _, item := range typed {
+			if number, ok := item.(float64); ok {
+				bytes = append(bytes, byte(int(number)))
+			}
+		}
+		return string(bytes)
+	default:
+		return ""
+	}
+}
+
+func dedupe(entries []LogEntry) []LogEntry {
+	seen := map[string]bool{}
+	unique := make([]LogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Cursor == "" || seen[entry.Cursor] {
+			continue
+		}
+		seen[entry.Cursor] = true
+		unique = append(unique, entry)
+	}
+	return unique
 }

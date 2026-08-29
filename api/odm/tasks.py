@@ -27,6 +27,9 @@ KINDS = (
     "policy-refresh",
     "restart",
     "shutdown",
+    "printer-apply",
+    "printer-remove",
+    "vpn-apply",
 )
 
 

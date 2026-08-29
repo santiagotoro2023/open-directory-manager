@@ -20,6 +20,8 @@ case "$ROLE" in
     file-server)           INSTALLER="$ROLES_DIR/install-file-server-role.sh" ;;
     certificate-authority) INSTALLER="$ROLES_DIR/install-ca-role.sh" ;;
     pxe)                   INSTALLER="$ROLES_DIR/install-pxe-role.sh" ;;
+    print-server)          INSTALLER="$ROLES_DIR/install-print-server-role.sh" ;;
+    vpn)                   INSTALLER="$ROLES_DIR/install-vpn-role.sh" ;;
     *)           echo "unknown role: $ROLE" >&2; exit 2 ;;
 esac
 

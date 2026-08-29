@@ -4,11 +4,12 @@
 
 # Open Directory Manager
 
-An Active Directory domain on Linux, with the console to run it. A Samba
-domain controller holds the directory, Kerberos, DNS and SYSVOL; ODM adds the
-control plane, the web console, Group Policy that Debian clients actually
-enforce, DHCP, a certificate authority, delegated administration and a full
-audit trail.
+A Windows-compatible directory domain on Linux, with the console to run it. A
+Samba domain controller holds the directory, Kerberos, DNS and SYSVOL; ODM
+adds the control plane, the web console, Group Policy that Debian clients
+actually enforce, and the services around it — DHCP, file shares, printing,
+remote access, a certificate authority, unattended installation — each
+installable on any joined machine, not only the controller.
 
 Terminology is the one an AD or FreeIPA administrator already has:
 Organizational Unit, Group Policy Object, Distinguished Name, Sudo Rule,
@@ -60,13 +61,26 @@ names the step it stopped at.
 
 ### Joining a client
 
+Download `odm-client_*.deb` from the
+[latest release](https://github.com/santiagotoro2023/open-directory-manager/releases),
+open it, and use **Join a Domain** from the applications menu. Or from a
+terminal:
+
 ```bash
+sudo apt install ./odm-client_0.1.0_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
-sudo odm-agent apply --force
 ```
 
-The machine appears under **Directory**, and **Directory → the computer →
-Policy** shows what it received.
+The machine appears under **Directory**. Opening it shows what policy it
+received, its local accounts, who has signed in, what is installed, and its
+recent logs.
+
+Leaving again needs a domain credential to remove the computer account, or
+`--force` to disconnect this machine alone:
+
+```bash
+sudo odm-client-install --leave --domain corp.example.internal --admin-user Administrator
+```
 
 ### Doing it by hand
 
@@ -82,16 +96,23 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 |---|---|
 | Directory | Users, groups, computers and organizational units — create, edit, move, delete, bulk CSV import |
 | Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering and item-level targeting |
-| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, sudo rules, HBAC rules, trusted certificates, desktop background, browser policy, software deployment |
+| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN |
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
 | DHCP | ISC Kea scopes, reservations, leases, failover pair and dynamic DNS |
+| File shares | SMB shares on any file server, with per-user and per-group access levels |
+| Printing | CUPS printers on any print server, handed to people by policy |
+| Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
+| Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
+| Machine management | Installed software, local accounts, sign-in history, recent logs, updates, restart — per machine, from its own page |
 | Certificates | An internal CA that issues certificates, publishes trust by policy, and re-issues the console's own certificate |
 | Delegation | Roles and permissions scoped to an organizational unit |
-| Operations | Health dashboard, replication between controllers, domain backups |
+| Servers | Every joined machine, the roles it carries, and its agent's state |
+| Domain controllers | Which controllers exist, which are read-only, and replication between them |
+| Operations | Health dashboard on Overview, replication, domain backups |
 | Recycle bin | Every delete snapshotted and restorable within the retention window |
 | Audit | Every change with actor, outcome and before-and-after state |
-| Clients | `odm-client-install` and a desktop join app; `odm-agent` applies and reports policy |
+| Clients | One `.deb`: `odm-client-install` for scripts, **Join a Domain** for the desktop. `odm-agent` applies and reports policy |
 
 ## Architecture
 
@@ -104,9 +125,19 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Policy agent | Go, one static binary (`agent/`) |
 | Domain join | Go library with a CLI and a desktop app (`client-join/`) |
 | DHCP | ISC Kea, through its Control Agent |
+| File shares | Samba, with POSIX access lists |
+| Printing | CUPS, driverless or with an uploaded PPD |
+| Remote access | WireGuard |
+| Unattended install | Debian's own installer, preseeded, over proxy DHCP |
 
 Directory objects always live in Samba's LDAP; PostgreSQL is never the source
 of truth for them.
+
+The control plane can only run a command on its own host, so anything it needs
+done on another machine — installing a role, publishing a share or a printer,
+bringing up a tunnel, installing updates — is queued and collected by that
+machine's agent, which authenticates with the Kerberos identity domain join
+gave it. Nothing connects inward to a member server.
 
 ## Layout
 
@@ -116,6 +147,7 @@ agent/        Policy agent for domain members
 client-join/  Join library, odm-client-install, desktop join app
 web/          Console, including the operator wiki under web/src/wiki
 deploy/       Provisioning, role installers, systemd units, sudoers
+packaging/    The odm-client Debian package
 docs/         Repository notes and build status
 branding/     Logo assets — see branding/BRAND.md
 ```
@@ -150,7 +182,13 @@ cd web         && npm install && npm run build
 ```
 
 CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
-push.
+push, and builds the client package:
+
+```bash
+bash packaging/deb/build.sh 0.1.0     # -> dist/odm-client_0.1.0_amd64.deb
+```
+
+Pushing a `v*` tag attaches it to a GitHub release.
 
 ## Repository
 

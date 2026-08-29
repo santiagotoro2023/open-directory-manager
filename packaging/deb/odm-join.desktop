@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Join a Domain
+GenericName=Domain join
+Comment=Join this computer to an Open Directory Manager domain
+Exec=odm-join
+Icon=odm-join
+Terminal=false
+Categories=System;Settings;
+Keywords=domain;join;directory;kerberos;sssd;odm;
+StartupNotify=true

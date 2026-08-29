@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
+  ChevronDown,
+  ChevronRight,
   Folder,
   Monitor,
   Power,
@@ -16,6 +18,7 @@ import {
   type ComputerAction,
   type ComputerDetail,
   type DirectoryObject,
+  type LogGroup,
 } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { RsopDialog } from "../components/RsopDialog";
@@ -56,7 +59,8 @@ type Tab =
   | "machine"
   | "software"
   | "users"
-  | "activity";
+  | "activity"
+  | "logs";
 
 function when(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleString() : "—";
@@ -136,6 +140,7 @@ export function ObjectDetail() {
           { id: "software" as Tab, label: "Software" },
           { id: "users" as Tab, label: "Local users" },
           { id: "activity" as Tab, label: "Activity" },
+          { id: "logs" as Tab, label: "Logs" },
         ]
       : []),
   ];
@@ -316,9 +321,12 @@ export function ObjectDetail() {
       )}
 
       {isComputer &&
-        (tab === "machine" || tab === "software" || tab === "users" || tab === "activity") && (
-          <ComputerTabs dn={dn} tab={tab} />
-        )}
+        (tab === "machine" ||
+          tab === "software" ||
+          tab === "users" ||
+          tab === "activity") && <ComputerTabs dn={dn} tab={tab} />}
+
+      {isComputer && tab === "logs" && <LogsTab dn={dn} />}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
       {dialog === "move" && (
@@ -804,5 +812,128 @@ function InstallPackageDialog({
         Installed without recommended packages, from the sources the machine already has.
       </p>
     </Modal>
+  );
+}
+
+
+/**
+ * The machine's recent journal, collapsed by the unit that produced it.
+ *
+ * Groups with errors open by default and the rest stay shut: a page that
+ * expands two hundred lines answers nothing, and the counts are what decide
+ * which group is worth opening.
+ */
+function LogsTab({ dn }: { dn: string }) {
+  const [hours, setHours] = useState(24);
+  const [groups, setGroups] = useState<LogGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.servers.logs(dn, hours);
+      setGroups(result.groups);
+      setTotal(result.total);
+      setOpen(new Set(result.groups.filter((group) => group.errors > 0).map((g) => g.unit)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [dn, hours]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function toggle(unit: string) {
+    setOpen((current) => {
+      const next = new Set(current);
+      if (next.has(unit)) next.delete(unit);
+      else next.add(unit);
+      return next;
+    });
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <h3 className="section-title">
+          {total} {total === 1 ? "entry" : "entries"}
+        </h3>
+        <span className="spacer" />
+        <select
+          aria-label="How far back"
+          value={hours}
+          onChange={(e) => setHours(Number(e.target.value))}
+        >
+          <option value={6}>Last 6 hours</option>
+          <option value={24}>Last 24 hours</option>
+          <option value={72}>Last 3 days</option>
+          <option value={336}>Last 14 days</option>
+        </select>
+        <button type="button" className="ghost" onClick={() => void load()}>
+          <RefreshCw size={15} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <ul className="log-groups">
+        {groups.map((group) => (
+          <li key={group.unit}>
+            <button type="button" className="log-group" onClick={() => toggle(group.unit)}>
+              {open.has(group.unit) ? (
+                <ChevronDown size={15} aria-hidden="true" />
+              ) : (
+                <ChevronRight size={15} aria-hidden="true" />
+              )}
+              <span className="unit">{group.unit}</span>
+              <span className="count">{group.count}</span>
+              {group.errors > 0 && (
+                <span className="badge failure">
+                  {group.errors} {group.errors === 1 ? "error" : "errors"}
+                </span>
+              )}
+            </button>
+            {open.has(group.unit) && (
+              <table className="data compact">
+                <tbody>
+                  {group.entries.map((entry, index) => (
+                    <tr key={index}>
+                      <td style={{ width: "170px" }}>
+                        {new Date(entry.occurred_at).toLocaleString()}
+                      </td>
+                      <td style={{ width: "70px" }}>
+                        {entry.priority <= 3 ? (
+                          <span className="badge failure">error</span>
+                        ) : (
+                          <span className="badge">warn</span>
+                        )}
+                      </td>
+                      <td className="mono">{entry.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </li>
+        ))}
+        {!loading && groups.length === 0 && (
+          <li className="empty">
+            Nothing at warning level or worse. The agent sends these on its check-in.
+          </li>
+        )}
+      </ul>
+    </>
   );
 }

@@ -1,0 +1,14 @@
+Package: odm-client
+Version: @VERSION@
+Section: admin
+Priority: optional
+Architecture: @ARCH@
+Depends: @DEPENDS@
+Maintainer: Open Directory Manager Contributors <hello@example.org>
+Homepage: https://github.com/santiagotoro2023/open-directory-manager
+Description: Join a Debian machine to an Open Directory Manager domain
+ Configures Kerberos and SSSD, joins the domain, installs the machine keytab
+ and sets up the policy agent.
+ .
+ Two ways in, one implementation behind them: odm-client-install for servers
+ and scripted provisioning, and odm-join for the desktop.

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Nothing to configure: joining is an explicit act, run by an administrator.
+set -e
+
+if [ "$1" = "configure" ] && [ -x /usr/bin/gtk-update-icon-cache ]; then
+    gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
+fi
+
+exit 0

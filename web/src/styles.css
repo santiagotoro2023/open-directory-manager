@@ -1635,3 +1635,48 @@ ul.plain {
   align-items: center;
   gap: 8px;
 }
+
+/* ------------------------------------------------------------------ logs -- */
+
+.log-groups {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.log-groups > li + li {
+  margin-top: 6px;
+}
+
+.log-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+.log-group:hover {
+  border-color: var(--accent);
+}
+
+.log-group .unit {
+  font-weight: 600;
+}
+
+.log-group .count {
+  min-width: 24px;
+  padding: 0 7px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}

@@ -192,8 +192,18 @@ func runTasks(ctx context.Context, api *client.Client, env apply.Env) {
 // never fatal: a machine that cannot report its local users has still applied
 // its policy, and saying nothing about that would be worse than saying this.
 func reportInventory(ctx context.Context, api *client.Client, env apply.Env) {
-	if err := api.Inventory(ctx, inventory.Collect(ctx, env)); err != nil {
+	report := inventory.Collect(ctx, env)
+	if err := api.Inventory(ctx, report); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent: reporting inventory:", err)
+		return
+	}
+	// Only advance the journal position once the entries are safely reported,
+	// or a failed report would lose them.
+	if report.LogCursor != "" {
+		full := env.Path(inventory.CursorPath)
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err == nil {
+			_ = os.WriteFile(full, []byte(report.LogCursor), 0o600)
+		}
 	}
 }
 

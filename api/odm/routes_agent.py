@@ -267,6 +267,14 @@ class InstalledPackage(BaseModel):
     version: Annotated[str, Field(max_length=64)] = ""
 
 
+class LogEntry(BaseModel):
+    unit: Annotated[str, Field(max_length=128)] = ""
+    priority: int = 6
+    message: Annotated[str, Field(max_length=2000)]
+    occurred_at: datetime
+    cursor: Annotated[str, Field(max_length=256)]
+
+
 class Inventory(BaseModel):
     operating_system: Annotated[str, Field(max_length=128)] = ""
     kernel: Annotated[str, Field(max_length=128)] = ""
@@ -280,6 +288,8 @@ class Inventory(BaseModel):
     packages: Annotated[list[InstalledPackage], Field(max_length=2000)] = []
     package_count: int = 0
     events: Annotated[list[MachineEvent], Field(max_length=500)] = []
+    logs: Annotated[list[LogEntry], Field(max_length=500)] = []
+    log_cursor: Annotated[str, Field(max_length=256)] = ""
 
 
 @router.post("/inventory", status_code=204)
@@ -346,4 +356,32 @@ async def agent_inventory(
                 event.principal,
                 event.occurred_at,
                 event.detail,
+            )
+
+        for record in body.logs:
+            await conn.execute(
+                """
+                INSERT INTO computer_log
+                    (computer_dn, hostname, unit, priority, message, occurred_at, cursor)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (computer_dn, cursor) DO NOTHING
+                """,
+                machine.dn,
+                machine.hostname,
+                record.unit,
+                record.priority,
+                record.message,
+                record.occurred_at,
+                record.cursor,
+            )
+
+        # Kept for a window and then dropped. This is a machine's recent
+        # journal, not an archive, and an unbounded table would become one.
+        if body.logs:
+            await conn.execute(
+                """
+                DELETE FROM computer_log
+                WHERE computer_dn = $1 AND occurred_at < now() - interval '14 days'
+                """,
+                machine.dn,
             )

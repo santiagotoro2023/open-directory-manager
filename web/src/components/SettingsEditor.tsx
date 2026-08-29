@@ -184,6 +184,25 @@ export const CATEGORIES: CategorySpec[] = [
     blank: { name: "", state: "present" },
   },
   {
+    key: "printers",
+    title: "Printers",
+    half: "User",
+    note: "Printers the person signing in should have. They come from a print server.",
+    fields: [
+      { key: "name", label: "Printer", width: "180px" },
+      { key: "server", label: "Print server", picker: "computer", pickerValue: "host" },
+      {
+        key: "for_principal",
+        label: "For user or group",
+        placeholder: "%Finance",
+        picker: "principal",
+        pickerValue: "principal",
+      },
+      { key: "default", label: "Default", kind: "checkbox", width: "90px" },
+    ],
+    blank: { name: "", server: "", for_principal: "", default: false },
+  },
+  {
     key: "firewall",
     title: "Firewall rules",
     half: "Computer",
@@ -228,6 +247,8 @@ function fromInput(field: FieldSpec, raw: string): unknown {
 // Categories with no repeating rows; each renders its own editor.
 const SPECIAL = [
   { key: "updates", title: "System updates", half: "Computer" as Half },
+  { key: "login_screen", title: "Login screen", half: "Computer" as Half },
+  { key: "always_on_vpn", title: "Always-on VPN", half: "Computer" as Half },
   { key: "wallpaper", title: "Desktop background", half: "User" as Half },
   { key: "browser", title: "Browser policy", half: "Computer" as Half },
   { key: "admx", title: "Administrative templates", half: "Computer" as Half },
@@ -237,6 +258,8 @@ type Selected = string;
 
 function countOf(settings: PolicySettings, key: string): number {
   if (key === "updates") return settings.updates ? 1 : 0;
+  if (key === "login_screen") return settings.login_screen ? 1 : 0;
+  if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
@@ -315,6 +338,12 @@ export function SettingsEditor({
             <RowsEditor category={category} settings={settings} onChange={onChange} />
           )}
           {selected === "updates" && <UpdatesEditor settings={settings} onChange={onChange} />}
+          {selected === "login_screen" && (
+            <LoginScreenEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "always_on_vpn" && (
+            <AlwaysOnVpnEditor settings={settings} onChange={onChange} />
+          )}
           {selected === "wallpaper" && (
             <WallpaperEditor settings={settings} onChange={onChange} />
           )}
@@ -536,6 +565,204 @@ function UpdatesEditor({
   );
 }
 
+function LoginScreenEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.login_screen;
+
+  function set(changes: Partial<NonNullable<PolicySettings["login_screen"]>>) {
+    onChange({
+      ...settings,
+      login_screen: {
+        banner_text: "",
+        background_uri: "",
+        background_fit: "zoom",
+        allow_user_background: true,
+        disable_user_list: false,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <header>
+        <h3>Login screen</h3>
+        <span className="spacer" />
+        {current && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onChange({ ...settings, login_screen: undefined })}
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Remove
+          </button>
+        )}
+      </header>
+      <p className="muted">
+        What a machine shows before anyone signs in. Separate from the desktop background, which
+        belongs to whoever is signed in.
+      </p>
+
+      {!current ? (
+        <>
+          <p className="empty">Not configured.</p>
+          <div className="actions-row">
+            <button type="button" className="primary" onClick={() => set({})}>
+              <Plus size={15} aria-hidden="true" />
+              Add
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="field">
+            <span>Message</span>
+            <input
+              value={current.banner_text}
+              placeholder="Welcome to Example Corp"
+              onChange={(e) => set({ banner_text: e.target.value })}
+            />
+            <small>Shown above the sign-in box. Empty means no message.</small>
+          </label>
+
+          <div className="inline-fields">
+            <label className="field">
+              <span>Background image</span>
+              <input
+                value={current.background_uri}
+                placeholder="file:///usr/share/backgrounds/login.png"
+                onChange={(e) => set({ background_uri: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Fit</span>
+              <select
+                value={current.background_fit}
+                onChange={(e) => set({ background_fit: e.target.value })}
+              >
+                {["zoom", "scaled", "stretched", "centered", "none"].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.allow_user_background}
+              onChange={(e) => set({ allow_user_background: e.target.checked })}
+            />
+            Let people change their own desktop background
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.disable_user_list}
+              onChange={(e) => set({ disable_user_list: e.target.checked })}
+            />
+            Hide the list of accounts; make people type their name
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function AlwaysOnVpnEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.always_on_vpn;
+
+  return (
+    <>
+      <header>
+        <h3>Always-on VPN</h3>
+        <span className="spacer" />
+        {current && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onChange({ ...settings, always_on_vpn: undefined })}
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Remove
+          </button>
+        )}
+      </header>
+      <p className="muted">
+        The machine holds this tunnel up from boot, before anyone signs in, and the person using
+        it cannot turn it off. Each machine needs a peer on the tunnel under Remote Access; the
+        key is delivered to that machine alone.
+      </p>
+
+      {!current ? (
+        <>
+          <p className="empty">Not configured.</p>
+          <div className="actions-row">
+            <button
+              type="button"
+              className="primary"
+              onClick={() =>
+                onChange({
+                  ...settings,
+                  always_on_vpn: { tunnel: "", block_until_connected: false },
+                })
+              }
+            >
+              <Plus size={15} aria-hidden="true" />
+              Add
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="field">
+            <span>Tunnel</span>
+            <input
+              value={current.tunnel}
+              placeholder="homeoffice"
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  always_on_vpn: { ...current, tunnel: e.target.value },
+                })
+              }
+            />
+            <small>The tunnel's name, as it appears under Remote Access.</small>
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.block_until_connected}
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  always_on_vpn: { ...current, block_until_connected: e.target.checked },
+                })
+              }
+            />
+            Refuse to reach those networks until the tunnel is up
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
 function WallpaperEditor({
   settings,
   onChange,
@@ -590,6 +817,21 @@ function WallpaperEditor({
           </select>
         </label>
       </div>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={settings.wallpaper?.allow_user_change ?? false}
+          disabled={!settings.wallpaper}
+          onChange={(e) =>
+            settings.wallpaper &&
+            onChange({
+              ...settings,
+              wallpaper: { ...settings.wallpaper, allow_user_change: e.target.checked },
+            })
+          }
+        />
+        Let people change it afterwards
+      </label>
     </>
   );
 }

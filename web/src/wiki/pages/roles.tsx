@@ -64,6 +64,16 @@ export function Content() {
                 "Share name, share path, optionally a group allowed to use it.",
               ],
               [
+                "Print server",
+                "CUPS printers, published to the domain and handed out by policy.",
+                "Nothing. The printers are added under Printers.",
+              ],
+              [
+                "Remote access (VPN)",
+                "WireGuard tunnels for machines and people outside the network.",
+                "Optionally the interface facing the internet.",
+              ],
+              [
                 "Certificate authority",
                 "An internal CA that issues certificates and publishes its root through policy.",
                 "Optionally a CA directory.",

@@ -40,11 +40,19 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "hbac_rules": ("principal", "service"),
     "trusted_certificates": ("name",),
     "packages": ("name",),
+    "printers": ("name", "for_principal"),
     "admx": ("policy_id",),
 }
 
 # Categories that are objects rather than lists; merged one level deep.
-DICT_CATEGORIES = ("browser", "wallpaper", "agent")
+DICT_CATEGORIES = (
+    "browser",
+    "wallpaper",
+    "agent",
+    "updates",
+    "login_screen",
+    "always_on_vpn",
+)
 
 CATEGORIES = (*LIST_KEYS, *DICT_CATEGORIES)
 

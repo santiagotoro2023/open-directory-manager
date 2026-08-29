@@ -91,9 +91,15 @@ func applyWallpaper(ctx context.Context, s policy.Settings, env Env) []policy.Re
 		return []policy.Result{policy.Fail("wallpaper", err)}
 	}
 
-	locks := "/org/gnome/desktop/background/picture-uri\n" +
-		"/org/gnome/desktop/background/picture-uri-dark\n" +
-		"/org/gnome/desktop/background/picture-options\n"
+	// A locked key cannot be changed by the person using the machine. Setting
+	// a background and forbidding a different one are separate decisions, so
+	// the lock file is written only when the policy actually says so.
+	locks := ""
+	if !s.Wallpaper.AllowUserChange {
+		locks = "/org/gnome/desktop/background/picture-uri\n" +
+			"/org/gnome/desktop/background/picture-uri-dark\n" +
+			"/org/gnome/desktop/background/picture-options\n"
+	}
 	if err := env.WriteFile(dconfLockPath, locks, 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("wallpaper", err)}
 	}

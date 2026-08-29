@@ -33,6 +33,9 @@ var appliers = []applier{
 	{"trusted_certificates", applyTrustedCertificates},
 	{"browser", applyBrowser},
 	{"wallpaper", applyWallpaper},
+	{"login_screen", applyLoginScreen},
+	{"printers", applyPrinters},
+	{"always_on_vpn", applyAlwaysOnVpn},
 	{"firewall", applyFirewall},
 	{"sudo_rules", applySudo},
 	{"hbac_rules", applyHbacRules},
@@ -41,7 +44,7 @@ var appliers = []applier{
 // userScoped are the only appliers a per-user policy may drive. A GPO linked
 // where users live must not be able to mask a systemd unit or rewrite the
 // firewall the moment somebody logs in.
-var userScoped = map[string]bool{"drive_maps": true, "wallpaper": true}
+var userScoped = map[string]bool{"drive_maps": true, "wallpaper": true, "printers": true}
 
 // Apply runs every applier over one resolved policy document and returns the
 // Resultant Set of Policy. It never aborts on the first failure: a broken

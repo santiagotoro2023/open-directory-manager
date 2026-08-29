@@ -4,6 +4,7 @@ import { Login } from "./Login";
 import { Shell } from "./Shell";
 import { Audit } from "./pages/Audit";
 import { Certificates } from "./pages/Certificates";
+import { Controllers } from "./pages/Controllers";
 import { Delegation } from "./pages/Delegation";
 import { Dhcp } from "./pages/Dhcp";
 import { Directory } from "./pages/Directory";
@@ -11,11 +12,13 @@ import { Dns } from "./pages/Dns";
 import { Enrolment } from "./pages/Enrolment";
 import { ObjectDetail } from "./pages/ObjectDetail";
 import { Overview } from "./pages/Overview";
+import { Printers } from "./pages/Printers";
 import { Policy } from "./pages/Policy";
 import { RecycleBin } from "./pages/RecycleBin";
 import { Roles } from "./pages/Roles";
 import { Servers } from "./pages/Servers";
 import { Shares } from "./pages/Shares";
+import { Vpn } from "./pages/Vpn";
 import { Wiki } from "./wiki/Wiki";
 import { api, type SessionInfo } from "./api";
 
@@ -60,6 +63,9 @@ export function App() {
           <Route path="servers" element={<Servers />} />
           <Route path="shares" element={<Shares />} />
           <Route path="enrolment" element={<Enrolment />} />
+          <Route path="printers" element={<Printers />} />
+          <Route path="vpn" element={<Vpn />} />
+          <Route path="controllers" element={<Controllers />} />
           <Route path="delegation" element={<Delegation />} />
           <Route path="certificates" element={<Certificates />} />
           <Route path="operations" element={<Navigate to="/" replace />} />

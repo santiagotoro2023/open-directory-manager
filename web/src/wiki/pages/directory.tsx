@@ -50,6 +50,11 @@ export function Content() {
           pending updates, <strong>Local users</strong> for the accounts on it,{" "}
           <strong>Activity</strong> for who signed in and when it booted.
         </Example>
+        <Example title="See why a machine is unhappy">
+          Open the computer → <strong>Logs</strong>. Warnings and errors from its journal,
+          grouped by the unit that produced them; groups with errors open first. Choose how far
+          back at the top right.
+        </Example>
         <Example title="See and change what is installed">
           Open the computer → <strong>Software</strong>. The list is the packages somebody asked
           for, not the dependencies behind them. <strong>Install a package</strong> adds one from

@@ -5,6 +5,7 @@ import * as agent from "./pages/agent";
 import * as architecture from "./pages/architecture";
 import * as audit from "./pages/audit";
 import * as certificates from "./pages/certificates";
+import * as controllers from "./pages/controllers";
 import * as delegation from "./pages/delegation";
 import * as dhcp from "./pages/dhcp";
 import * as directory from "./pages/directory";
@@ -14,6 +15,8 @@ import * as glossary from "./pages/glossary";
 import * as groupPolicy from "./pages/group-policy";
 import * as operations from "./pages/operations";
 import * as policySettings from "./pages/policy-settings";
+import * as printing from "./pages/printing";
+import * as remoteAccess from "./pages/remote-access";
 import * as quickstart from "./pages/quickstart";
 import * as recycleBin from "./pages/recycle-bin";
 import * as roles from "./pages/roles";
@@ -43,6 +46,9 @@ const MODULES = [
   roles,
   servers,
   shares,
+  printing,
+  remoteAccess,
+  controllers,
   recycleBin,
   operations,
   audit,

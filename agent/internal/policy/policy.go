@@ -47,6 +47,9 @@ type Settings struct {
 	Browser      *Browser      `json:"browser,omitempty"`
 	Wallpaper    *Wallpaper    `json:"wallpaper,omitempty"`
 	Updates      *Updates      `json:"updates,omitempty"`
+	LoginScreen  *LoginScreen  `json:"login_screen,omitempty"`
+	Printers     []Printer     `json:"printers,omitempty"`
+	AlwaysOnVpn  *AlwaysOnVpn  `json:"always_on_vpn,omitempty"`
 	Agent        *AgentConfig  `json:"agent,omitempty"`
 }
 
@@ -138,9 +141,50 @@ type Browser struct {
 }
 
 type Wallpaper struct {
-	URI            string `json:"uri"`
-	PictureOptions string `json:"picture_options"`
-	ForPrincipal   string `json:"for_principal"`
+	URI             string `json:"uri"`
+	PictureOptions  string `json:"picture_options"`
+	ForPrincipal    string `json:"for_principal"`
+	AllowUserChange bool   `json:"allow_user_change"`
+}
+
+// LoginScreen is the greeter, before anyone has signed in.
+type LoginScreen struct {
+	BannerText          string `json:"banner_text"`
+	BackgroundURI       string `json:"background_uri"`
+	BackgroundFit       string `json:"background_fit"`
+	AllowUserBackground bool   `json:"allow_user_background"`
+	DisableUserList     bool   `json:"disable_user_list"`
+}
+
+// Printer is a printer handed to a user or group.
+type Printer struct {
+	Name         string `json:"name"`
+	Server       string `json:"server"`
+	ForPrincipal string `json:"for_principal"`
+	Default      bool   `json:"default"`
+}
+
+// AlwaysOnVpn holds a tunnel up whatever the person using the machine does.
+//
+// Configuration is filled in by the control plane for the machine asking, not
+// by whoever wrote the policy: it carries a private key belonging to one
+// machine, so it only ever travels to that one.
+type AlwaysOnVpn struct {
+	Tunnel              string            `json:"tunnel"`
+	BlockUntilConnected bool              `json:"block_until_connected"`
+	Configuration       *VpnConfiguration `json:"configuration,omitempty"`
+	Unavailable         string            `json:"unavailable,omitempty"`
+}
+
+type VpnConfiguration struct {
+	Name          string   `json:"name"`
+	Address       string   `json:"address"`
+	PrivateKey    string   `json:"private_key"`
+	PeerPublicKey string   `json:"peer_public_key"`
+	Endpoint      string   `json:"endpoint"`
+	AllowedIPs    []string `json:"allowed_ips"`
+	DNS           []string `json:"dns"`
+	SearchDomain  string   `json:"search_domain"`
 }
 
 type AgentConfig struct {
