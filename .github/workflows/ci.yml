@@ -313,3 +313,24 @@ jobs:
         with:
           files: dist/*.deb
           fail_on_unmatched_files: true
+          # Whoever downloads this is standing at a machine they want joined,
+          # not reading the repository.
+          body: |
+            Download `odm-client_*.deb`, open it, and join the domain.
+
+            **Desktop** — double-click the package to install it, then launch
+            **Join a Domain** from the applications menu.
+
+            **Server, or scripted**
+
+            ```
+            sudo apt install ./odm-client_*.deb
+            sudo odm-client-install --domain corp.example.internal --admin-user Administrator
+            ```
+
+            Both front ends do the same work: they find the domain by its
+            service records, join it, install the machine keytab, and start the
+            policy agent. Joining needs root; leaving needs a domain credential
+            or `--force` as root.
+
+            Debian 12 and 13, amd64.
