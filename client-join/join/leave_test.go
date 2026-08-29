@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -129,5 +130,26 @@ func TestADomainRefusalStopsTheLeaveUnlessForced(t *testing.T) {
 	// looks disconnected: the operator has to see the refusal.
 	if _, statErr := os.Stat(env.Path(KeytabPath)); statErr != nil {
 		t.Error("the keytab was removed even though the domain refused")
+	}
+}
+
+func TestEveryFlagTheCommandAcceptsIsDocumented(t *testing.T) {
+	// A flag that exists and is not in the help text is one nobody finds.
+	// --leave shipped undocumented; this is what noticed.
+	source, err := os.ReadFile("../cmd/odm-client-install/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+
+	declared := regexp.MustCompile(`flags\.(?:String|Bool|Int)\("([a-z-]+)"`).FindAllStringSubmatch(body, -1)
+	if len(declared) == 0 {
+		t.Fatal("no flags found; this test is looking in the wrong place")
+	}
+	usage := body[strings.Index(body, "func usage()"):]
+	for _, match := range declared {
+		if !strings.Contains(usage, "--"+match[1]) {
+			t.Errorf("--%s is accepted but not in the help text", match[1])
+		}
 	}
 }

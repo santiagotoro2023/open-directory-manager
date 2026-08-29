@@ -274,12 +274,22 @@ jobs:
                       ./usr/share/icons/hicolor/scalable/apps/odm-join.svg; do
             grep -q "$path" /tmp/contents.txt || { echo "missing $path" >&2; exit 1; }
           done
-      - name: It must install and uninstall cleanly
+      - name: It must install, run and uninstall cleanly
         run: |
           sudo apt-get install -y --no-install-recommends \
             "./dist/odm-client_${ODM_CLIENT_VERSION}_amd64.deb"
           odm-client-install --version
+          # A binary whose libraries do not resolve fails on first launch
+          # rather than at install: the desktop app shipped once without
+          # libwayland-client0 and would have done exactly that.
+          for BINARY in /usr/sbin/odm-client-install /usr/bin/odm-join; do
+            if ldd "$BINARY" | grep "not found"; then
+              echo "$BINARY has unresolved libraries" >&2
+              exit 1
+            fi
+          done
           sudo apt-get remove -y odm-client
+          test ! -e /usr/bin/odm-join
       - uses: actions/upload-artifact@v4
         with:
           name: odm-client-deb

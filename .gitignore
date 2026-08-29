@@ -40,3 +40,4 @@ npm-debug.log*
 *.swp
 .idea/
 .vscode/
+.build-cache/

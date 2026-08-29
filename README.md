@@ -190,10 +190,14 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build.sh 0.1.0     # -> dist/odm-client_0.1.0_amd64.deb
+bash packaging/deb/build-in-container.sh 0.1.0   # -> dist/odm-client_0.1.0_amd64.deb
 ```
 
-Pushing a `v*` tag attaches it to a GitHub release.
+That builds both front ends in a container, so nothing but Docker is needed on
+the machine doing it — the desktop half wants an X11 and a Wayland toolchain.
+`packaging/deb/build.sh` builds directly if you already have those.
+
+Pushing a `v*` tag attaches the package to a GitHub release.
 
 ## Repository
 

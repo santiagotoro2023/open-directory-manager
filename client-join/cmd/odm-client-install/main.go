@@ -253,7 +253,17 @@ policy agent.
   --keep-hostname   fail rather than rename this machine to its domain name
   --unattended      never prompt; fail instead
   --dry-run         report what would happen and change nothing
+  --root            write beneath this directory instead of /, for testing
   --version
+
+Leaving again:
+
+  --leave           leave the domain instead of joining it
+  --force           with --leave, disconnect this machine even without a
+                    credential, leaving its account for an administrator
+
+Removing the computer account from the directory needs a domain credential;
+disconnecting this machine needs root here. Both need root.
 
 Anything omitted is prompted for, unless --unattended is given.
 `)

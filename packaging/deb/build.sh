@@ -59,8 +59,34 @@ if [[ "$GUI_BUILT" == "yes" ]]; then
     DEPENDS="$DEPENDS, policykit-1 | polkitd, libgl1"
 fi
 
-sed -e "s/@VERSION@/$VERSION/" -e "s/@ARCH@/$ARCH/" -e "s/@DEPENDS@/$DEPENDS/" \
-    "$HERE/control.in" > "$ROOT/DEBIAN/control"
+# The libraries the binaries actually need, read out of the binaries rather
+# than listed by hand. A desktop build links against whatever the toolchain
+# gave it, and a hand-written list is a list that goes stale silently — the
+# first version of this package shipped without libwayland-client0 and the
+# desktop app would not have started.
+if command -v dpkg-shlibdeps >/dev/null 2>&1; then
+    SHLIBS_DIR="$STAGE/shlibs"
+    mkdir -p "$SHLIBS_DIR/debian"
+    printf 'Source: odm-client\nPackage: odm-client\nArchitecture: %s\n' "$ARCH" \
+        > "$SHLIBS_DIR/debian/control"
+    BINARIES=("$ROOT/usr/sbin/odm-client-install")
+    [[ "$GUI_BUILT" == "yes" ]] && BINARIES+=("$ROOT/usr/bin/odm-join")
+    if SHLIBS="$(cd "$SHLIBS_DIR" && dpkg-shlibdeps -O --ignore-missing-info \
+            "${BINARIES[@]}" 2>/dev/null)"; then
+        SHLIBS="${SHLIBS#shlibs:Depends=}"
+        [[ -n "$SHLIBS" ]] && DEPENDS="$DEPENDS, $SHLIBS"
+    else
+        echo "    note: dpkg-shlibdeps found nothing; library dependencies not added" >&2
+    fi
+fi
+
+# Substituted in bash rather than with sed: a dependency list contains "|"
+# for alternatives, and every sed delimiter is a character some value can hold.
+CONTROL="$(cat "$HERE/control.in")"
+CONTROL="${CONTROL//@VERSION@/$VERSION}"
+CONTROL="${CONTROL//@ARCH@/$ARCH}"
+CONTROL="${CONTROL//@DEPENDS@/$DEPENDS}"
+printf '%s\n' "$CONTROL" > "$ROOT/DEBIAN/control"
 install -m 0755 "$HERE/postinst" "$ROOT/DEBIAN/postinst"
 install -m 0644 "$REPO/LICENSE" "$ROOT/usr/share/doc/odm-client/copyright"
 install -m 0644 "$HERE/README.deb" "$ROOT/usr/share/doc/odm-client/README"
