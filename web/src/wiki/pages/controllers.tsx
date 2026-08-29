@@ -60,6 +60,33 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="Sites and subnets">
+          <p>
+            A site is a place. A subnet says which addresses are in it, and a controller assigned
+            to a site is one the machines there should prefer — rather than whichever one DNS
+            happened to return.
+          </p>
+          <Reference
+            headers={["Step", "What it does"]}
+            rows={[
+              ["New site", "A place: Head office, Branch, a floor."],
+              [
+                "Add a subnet",
+                "The addresses in that place, with a prefix. A machine is placed by the longest match, the way routing decides — so a /24 inside a /16 wins.",
+              ],
+              [
+                "Assign a controller",
+                "Says which site that controller serves.",
+              ],
+            ]}
+          />
+          <Note>
+            A machine reports its own addresses on every check-in, so one that moves is re-placed
+            without anything else having to notice. Machines matching no subnet are counted as
+            unplaced: a site with no subnet cannot be found by anything.
+          </Note>
+        </Section>
+
         <Section title="Before joining a controller">
           <Reference
             headers={["Requirement", "Why"]}

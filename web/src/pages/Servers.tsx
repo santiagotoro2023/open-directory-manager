@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Server as ServerIcon } from "lucide-react";
-import { ApiError, api, type ManagedServer } from "../api";
+import { ApiError, api, type ComputerAction, type ManagedServer } from "../api";
 import { Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
+
+const BULK_LABELS: Record<string, string> = {
+  "update-check": "Check for updates",
+  "update-install": "Install updates",
+  "policy-refresh": "Re-apply policy",
+  restart: "Restart",
+  shutdown: "Shut down",
+};
 
 const ROLE_LABELS: Record<string, string> = {
   core: "Directory, Group Policy and DNS",
@@ -24,7 +32,10 @@ function since(value: string | null): string {
 export function Servers() {
   const [servers, setServers] = useState<ManagedServer[]>([]);
   const [open, setOpen] = useState<ManagedServer | null>(null);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<ComputerAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const { bind, menu } = useContextMenu();
 
   const load = useCallback(async () => {
@@ -51,6 +62,32 @@ export function Servers() {
         </button>
       </div>
 
+      {/* The same request, asked of several machines at once. Each is
+          authorised on its own, so a scope that reaches some and not the rest
+          does the part it may and says what it skipped. */}
+      {chosen.size > 0 && (
+        <div className="actions-row">
+          <span className="badge">{chosen.size} selected</span>
+          <button type="button" className="ghost" onClick={() => setBulk("update-check")}>
+            Check for updates
+          </button>
+          <button type="button" className="ghost" onClick={() => setBulk("update-install")}>
+            Install updates
+          </button>
+          <button type="button" className="ghost" onClick={() => setBulk("policy-refresh")}>
+            Re-apply policy
+          </button>
+          <button type="button" className="danger" onClick={() => setBulk("restart")}>
+            Restart
+          </button>
+          <button type="button" className="ghost" onClick={() => setChosen(new Set())}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {notice && <p className="muted">{notice}</p>}
+
       {error && (
         <p className="alert" role="alert">
           {error}
@@ -60,6 +97,9 @@ export function Servers() {
       <table className="data">
         <thead>
           <tr>
+            <th scope="col" style={{ width: "44px" }}>
+              <span className="sr-only">Select</span>
+            </th>
             <th scope="col">Server</th>
             <th scope="col">Runs</th>
             <th scope="col">Operating system</th>
@@ -76,6 +116,21 @@ export function Servers() {
                 { label: "Details…", onSelect: () => setOpen(server) },
               ])}
             >
+              <td onClick={(event) => event.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${server.name}`}
+                  checked={chosen.has(server.distinguished_name)}
+                  onChange={(event) =>
+                    setChosen((current) => {
+                      const next = new Set(current);
+                      if (event.target.checked) next.add(server.distinguished_name);
+                      else next.delete(server.distinguished_name);
+                      return next;
+                    })
+                  }
+                />
+              </td>
               <td>
                 <ServerIcon size={15} aria-hidden="true" />
                 {server.name}
@@ -97,7 +152,7 @@ export function Servers() {
           ))}
           {servers.length === 0 && (
             <tr>
-              <td colSpan={4} className="empty">
+              <td colSpan={5} className="empty">
                 No machines have joined the domain yet.
               </td>
             </tr>
@@ -106,6 +161,44 @@ export function Servers() {
       </table>
 
       {menu}
+
+      {bulk && (
+        <Modal
+          title={`${BULK_LABELS[bulk]} on ${chosen.size} machines?`}
+          submitLabel={BULK_LABELS[bulk]}
+          onClose={() => setBulk(null)}
+          onSubmit={async () => {
+            const action = bulk;
+            setBulk(null);
+            try {
+              const result = await api.servers.bulkAction([...chosen], action);
+              setNotice(
+                `Queued on ${result.queued.length}` +
+                  (result.skipped.length
+                    ? `; skipped ${result.skipped.length} (${result.skipped
+                        .map((entry) => entry.reason)
+                        .filter((value, index, all) => all.indexOf(value) === index)
+                        .join(", ")})`
+                    : ""),
+              );
+              setChosen(new Set());
+              void load();
+            } catch (err) {
+              setError(err instanceof ApiError ? err.message : String(err));
+            }
+          }}
+        >
+          <p>
+            {BULK_LABELS[bulk]} runs on each machine at its next check-in, or immediately with{" "}
+            odm-agent apply --force on it.
+          </p>
+          {(bulk === "restart" || bulk === "shutdown") && (
+            <p className="alert" role="alert">
+              Anyone signed in to those machines loses their session.
+            </p>
+          )}
+        </Modal>
+      )}
 
       {open && (
         <Modal

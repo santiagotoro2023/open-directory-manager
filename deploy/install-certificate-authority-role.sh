@@ -12,7 +12,7 @@ CA_DIR="/var/lib/odm/ca"
 SERVICE_USER="odm"
 
 usage() {
-    echo "usage: install-ca-role.sh [--ca-dir <path>]" >&2
+    echo "usage: install-certificate-authority-role.sh [--ca-dir <path>]" >&2
     exit 2
 }
 

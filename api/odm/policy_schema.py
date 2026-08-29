@@ -43,6 +43,8 @@ class FileDeployment(Strict):
     mode: str = "0644"
     owner: Name = "root"
     group: Name = "root"
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
 
     @field_validator("path")
     @classmethod
@@ -62,6 +64,8 @@ class Script(Strict):
     name: str
     interpreter: str = "/bin/sh"
     content: Annotated[str, Field(max_length=262_144)]
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
 
     @field_validator("name")
     @classmethod
@@ -79,6 +83,8 @@ class Script(Strict):
 class SystemdUnit(Strict):
     unit: str
     state: Literal["enabled", "disabled", "masked", "started", "stopped"]
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
 
     @field_validator("unit")
     @classmethod
@@ -93,6 +99,8 @@ class CronJob(Strict):
     schedule: str
     command: Annotated[str, Field(min_length=1, max_length=1024)]
     user: Name = "root"
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
 
     @field_validator("name")
     @classmethod
@@ -133,6 +141,8 @@ class DriveMap(Strict):
     mount_point: str
     for_principal: str | None = None
     options: Annotated[str, Field(max_length=256)] = ""
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
 
     @field_validator("unc")
     @classmethod
@@ -200,6 +210,8 @@ class Package(Strict):
 
     name: str
     state: Literal["present", "latest", "absent"] = "present"
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
 
     @field_validator("name")
     @classmethod
@@ -318,6 +330,8 @@ class Printer(Strict):
     server: Annotated[str, Field(max_length=253)]
     for_principal: Annotated[str, Field(max_length=128)] = ""
     default: bool = False
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
 
     @field_validator("name")
     @classmethod
@@ -425,6 +439,20 @@ class PolicySettings(Strict):
         """Drop empty categories so a GPO's settings show only what it sets."""
         dumped = self.model_dump(exclude_none=True)
         return {key: value for key, value in dumped.items() if value not in ([], {}, None)}
+
+
+class ItemTargeting(Strict):
+    """Targeting on one entry rather than the whole policy object.
+
+    A drive map for laptops and another for desks is one policy object in
+    Active Directory, not two. The fields are the same as the object's own, so
+    what "matches" means does not depend on where it is written.
+    """
+
+    os: Annotated[list[Annotated[str, Field(max_length=64)]] | None, Field(default=None)] = None
+    hostname_pattern: Annotated[str | None, Field(default=None, max_length=253)] = None
+    security_groups: Annotated[list[str] | None, Field(default=None, max_length=64)] = None
+    ip_ranges: Annotated[list[str] | None, Field(default=None, max_length=64)] = None
 
 
 class Targeting(Strict):

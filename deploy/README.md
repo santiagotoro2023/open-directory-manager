@@ -19,7 +19,10 @@ framework, from the console or with `odm-role-install`.
 | `odm-apply-console-certificate` | The control-plane host | Installs a console certificate issued by the domain authority |
 | `install-dhcp-role.sh` | Each DHCP node | ISC Kea failover pair with dynamic DNS |
 | `install-file-server-role.sh` | A file server | Kerberos SMB shares for drive maps |
-| `install-ca-role.sh` | The control-plane host | Prepares the certificate authority directory |
+| `install-certificate-authority-role.sh` | The control-plane host | Prepares the certificate authority directory |
+| `install-print-server-role.sh` | Any joined server | CUPS, shared to the domain |
+| `install-vpn-role.sh` | Any joined server | WireGuard, for remote access |
+| `install-radius-role.sh` | Any joined server | FreeRADIUS, against the directory |
 | `install-pxe-role.sh` | A boot server | Unattended installation that joins on first boot |
 | `install-agent.sh` | An already-joined machine | The policy agent alone |
 

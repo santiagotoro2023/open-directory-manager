@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"strconv"
@@ -67,6 +68,7 @@ type Report struct {
 	Updates         []string    `json:"updates"`
 	UpdatesChecked  bool        `json:"updates_checked"`
 	Events          []Event     `json:"events"`
+	Addresses       []string    `json:"addresses"`
 	Logs            []LogEntry  `json:"logs"`
 	LogCursor       string      `json:"log_cursor"`
 }
@@ -103,6 +105,7 @@ func Collect(ctx context.Context, env apply.Env) Report {
 			report.LogCursor = previous
 		}
 	}
+	report.Addresses = LocalAddresses()
 	pending, security, names := PendingUpdates(ctx, env)
 	report.PendingUpdates, report.SecurityUpdates, report.Updates = pending, security, names
 	return report
@@ -508,4 +511,31 @@ func dedupe(entries []LogEntry) []LogEntry {
 		unique = append(unique, entry)
 	}
 	return unique
+}
+
+// LocalAddresses are this machine's own addresses, which is what places it in
+// a site. Loopback and link-local are left out: neither says where anything is.
+func LocalAddresses() []string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	found := []string{}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addresses, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, address := range addresses {
+			ip, _, err := net.ParseCIDR(address.String())
+			if err != nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			found = append(found, ip.String())
+		}
+	}
+	return found
 }

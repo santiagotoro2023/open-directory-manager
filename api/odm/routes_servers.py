@@ -290,3 +290,94 @@ async def computer_logs(
     for group in ordered:
         group["count"] = len(group["entries"])
     return {"hours": hours, "groups": ordered, "total": len(rows)}
+
+
+class BulkAction(BaseModel):
+    """The same request, asked of several machines at once."""
+
+    dns: Annotated[
+        list[Annotated[str, Field(max_length=1024)]], Field(min_length=1, max_length=500)
+    ]
+    action: Annotated[
+        str,
+        Field(
+            pattern="^(update-check|update-install|package-install|package-remove"
+            "|policy-refresh|restart|shutdown)$"
+        ),
+    ]
+    package: Annotated[str, Field(max_length=128)] | None = None
+
+
+@router.post("/computers/action", status_code=202,
+             dependencies=[Depends(requires("computer.manage"))])
+async def run_bulk_action(
+    body: BulkAction,
+    request: Request,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Ask the same thing of many machines.
+
+    Each machine is authorised on its own, so a scope that reaches some of a
+    selection and not the rest does the part it may and reports the rest —
+    rather than refusing everything or, worse, doing everything.
+    """
+    if body.action in POWER_ACTIONS:
+        # Checked per machine below as well; this is the fast refusal for
+        # somebody who holds the right nowhere.
+        authz.require("computer.power", None)
+
+    payload: dict[str, Any] = {}
+    if body.action in ("package-install", "package-remove"):
+        if not body.package or not PACKAGE_RE.match(body.package):
+            raise objects.ObjectError("that is not a package name")
+        payload["package"] = body.package
+
+    queued: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
+
+    async with pool.acquire() as conn:
+        for dn in dict.fromkeys(body.dns):
+            try:
+                authz.require("computer.manage", dn)
+                if body.action in POWER_ACTIONS:
+                    authz.require("computer.power", dn)
+            except Exception:  # noqa: BLE001 - reported per machine, not fatal
+                skipped.append({"dn": dn, "reason": "not permitted here"})
+                continue
+
+            fact = await conn.fetchrow(
+                "SELECT hostname FROM computer_fact WHERE lower(computer_dn) = lower($1)", dn
+            )
+            if fact is None:
+                skipped.append({"dn": dn, "reason": "has not reported yet"})
+                continue
+
+            task_id = await tasks.enqueue(
+                conn,
+                node_fqdn=fact["hostname"],
+                kind=body.action,
+                payload=payload,
+                subject=dn,
+                requested_by=session.principal,
+            )
+            queued.append({"dn": dn, "node": fact["hostname"], "task": task_id})
+
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action=f"computer.bulk.{body.action.replace('-', '.')}",
+            outcome="success",
+            object_type="computer",
+            object_dn=f"{len(queued)} machines",
+            after={
+                "queued": [entry["node"] for entry in queued],
+                "skipped": skipped,
+                "package": body.package,
+            },
+        )
+
+    return {"queued": queued, "skipped": skipped}

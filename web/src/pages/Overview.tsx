@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Activity, Archive, RefreshCw } from "lucide-react";
-import { ApiError, api, type BackupRecord, type HealthReport, type SessionInfo } from "../api";
+import { Activity, Archive, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  ApiError,
+  api,
+  type BackupRecord,
+  type HealthReport,
+  type PasswordPolicy,
+  type SessionInfo,
+} from "../api";
+import { Field, Modal } from "../components/Modal";
+import { ContainerPicker, PickerDialog } from "../components/Picker";
 
 type Tab = "health" | "replication" | "backups" | "passwords";
 
@@ -498,11 +507,313 @@ function PasswordPolicy() {
         </button>
       </div>
 
+      <h3 className="section-title">Policies for particular people</h3>
+      <p className="muted">
+        The settings above are the domain&rsquo;s. A policy here overrides them for the accounts
+        it reaches — tighter for administrators, say. Active Directory applies these to users and
+        groups, never to a container, so an organizational unit is resolved to the users beneath
+        it and re-resolved as people are added.
+      </p>
+      <FineGrainedPolicies />
+
       <p className="muted">
         Whether people may change their own password from the console is a policy setting:{" "}
         <strong>Group Policy</strong> → <strong>User</strong> →{" "}
         <strong>Self-service password</strong>.
       </p>
     </>
+  );
+}
+
+function FineGrainedPolicies() {
+  const [policies, setPolicies] = useState<PasswordPolicy[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setPolicies((await api.password.policies()).policies);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col" style={{ width: "110px" }}>
+              Precedence
+            </th>
+            <th scope="col">Policy</th>
+            <th scope="col">Requires</th>
+            <th scope="col">Reaches</th>
+            <th scope="col">State</th>
+            <th scope="col">
+              <span className="sr-only">Remove</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {policies.map((entry) => (
+            <tr key={entry.id}>
+              <td>{entry.precedence}</td>
+              <td>
+                <strong>{entry.name}</strong>
+                {entry.description && <p className="muted">{entry.description}</p>}
+              </td>
+              <td>
+                {entry.min_length} characters
+                {entry.complexity && ", complex"}
+                {entry.max_age_days > 0 && `, expires after ${entry.max_age_days} days`}
+              </td>
+              <td>
+                {entry.applied_to.length} {entry.applied_to.length === 1 ? "account" : "accounts"}
+                {entry.container_dns.length > 0 && (
+                  <span className="badge">{entry.container_dns.length} containers</span>
+                )}
+              </td>
+              <td>
+                <span className={`badge ${entry.state === "active" ? "success" : "failure"}`}>
+                  {entry.state}
+                </span>
+                {entry.last_error && <p className="muted">{entry.last_error}</p>}
+              </td>
+              <td>
+                <button
+                  type="button"
+                  className="icon"
+                  aria-label={`Remove ${entry.name}`}
+                  onClick={async () => {
+                    await api.password.removePolicy(entry.id).catch(() => undefined);
+                    void load();
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden="true" />
+                </button>
+              </td>
+            </tr>
+          ))}
+          {policies.length === 0 && (
+            <tr>
+              <td colSpan={6} className="empty">
+                None. Everybody gets the domain policy above.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <div className="actions-row">
+        <button type="button" className="primary" onClick={() => setAdding(true)}>
+          <Plus size={15} aria-hidden="true" />
+          New policy
+        </button>
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await api.password.syncPolicies().catch(() => undefined);
+            setBusy(false);
+            void load();
+          }}
+        >
+          <RefreshCw size={15} aria-hidden="true" />
+          Re-apply now
+        </button>
+      </div>
+
+      {adding && (
+        <PasswordPolicyDialog
+          onClose={() => setAdding(false)}
+          onSaved={() => {
+            setAdding(false);
+            void load();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function PasswordPolicyDialog({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [precedence, setPrecedence] = useState(50);
+  const [complexity, setComplexity] = useState(true);
+  const [minLength, setMinLength] = useState(14);
+  const [history, setHistory] = useState(10);
+  const [maxAge, setMaxAge] = useState(0);
+  const [lockout, setLockout] = useState(5);
+  const [groups, setGroups] = useState<{ dn: string; name: string }[]>([]);
+  const [containers, setContainers] = useState<string[]>([]);
+  const [picking, setPicking] = useState<"group" | "container" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title="New password policy"
+      submitLabel="Create"
+      busy={busy}
+      error={error}
+      wide
+      onClose={onClose}
+      onSubmit={async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          await api.password.createPolicy({
+            name,
+            description,
+            precedence,
+            complexity,
+            min_length: minLength,
+            history,
+            max_age_days: maxAge,
+            lockout_threshold: lockout,
+            group_dns: groups.map((entry) => entry.dn),
+            container_dns: containers,
+          });
+          onSaved();
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Field label="Name">
+        <input
+          value={name}
+          required
+          placeholder="administrators"
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+      <Field label="Description">
+        <input value={description} onChange={(e) => setDescription(e.target.value)} />
+      </Field>
+
+      <div className="field-grid">
+        <label className="field">
+          <span>Minimum length</span>
+          <input
+            type="number"
+            value={minLength}
+            onChange={(e) => setMinLength(Number(e.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span>Passwords remembered</span>
+          <input
+            type="number"
+            value={history}
+            onChange={(e) => setHistory(Number(e.target.value))}
+          />
+        </label>
+        <label className="field">
+          <span>Expires after (days)</span>
+          <input type="number" value={maxAge} onChange={(e) => setMaxAge(Number(e.target.value))} />
+          <small>0 means never</small>
+        </label>
+        <label className="field">
+          <span>Lock out after</span>
+          <input type="number" value={lockout} onChange={(e) => setLockout(Number(e.target.value))} />
+          <small>Failed attempts; 0 is never</small>
+        </label>
+        <label className="field">
+          <span>Precedence</span>
+          <input
+            type="number"
+            value={precedence}
+            onChange={(e) => setPrecedence(Number(e.target.value))}
+          />
+          <small>Lower wins where two policies reach the same account</small>
+        </label>
+      </div>
+
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={complexity}
+          onChange={(e) => setComplexity(e.target.checked)}
+        />
+        Require mixed character classes
+      </label>
+
+      <h3 className="section-title">Who it reaches</h3>
+      <div className="actions-row">
+        <button type="button" className="ghost" onClick={() => setPicking("group")}>
+          Add a group
+        </button>
+        <button type="button" className="ghost" onClick={() => setPicking("container")}>
+          Add an organizational unit
+        </button>
+      </div>
+      <ul className="permission-list">
+        {groups.map((entry) => (
+          <li key={entry.dn}>{entry.name}</li>
+        ))}
+        {containers.map((dn) => (
+          <li key={dn} className="mono">
+            {dn}
+          </li>
+        ))}
+        {groups.length === 0 && containers.length === 0 && (
+          <li className="muted">Nobody yet — a policy has to reach somebody.</li>
+        )}
+      </ul>
+
+      {picking === "group" && (
+        <PickerDialog
+          kind="group"
+          onClose={() => setPicking(null)}
+          onPick={(object) => {
+            setPicking(null);
+            setGroups((current) => [
+              ...current,
+              {
+                dn: object.distinguishedName,
+                name: String(object.sAMAccountName ?? object.cn ?? ""),
+              },
+            ]);
+          }}
+        />
+      )}
+      {picking === "container" && (
+        <ContainerPicker
+          title="Which organizational unit?"
+          submitLabel="Add"
+          onlyOrganizationalUnits
+          onClose={() => setPicking(null)}
+          onPick={(dn) => {
+            setPicking(null);
+            setContainers((current) => (current.includes(dn) ? current : [...current, dn]));
+          }}
+        />
+      )}
+    </Modal>
   );
 }

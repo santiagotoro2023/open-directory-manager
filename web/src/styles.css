@@ -1680,3 +1680,31 @@ ul.plain {
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
+
+.qr {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  margin: 12px 0;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.site-card {
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.site-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.site-card .badge .icon {
+  margin-left: 4px;
+  color: inherit;
+}

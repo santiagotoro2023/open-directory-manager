@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import type { AdmxSelection, PolicySettings } from "../api";
+import type { AdmxSelection, ItemTargeting, PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
-import { PickerField, type PickerKind, type PickerValue } from "./Picker";
+import { Modal } from "./Modal";
+import { PickerDialog, PickerField, type PickerKind, type PickerValue } from "./Picker";
 import { Split } from "./Split";
 
 type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox";
@@ -21,6 +22,18 @@ interface FieldSpec {
 }
 
 type Half = "Computer" | "User";
+
+// Where one entry can carry targeting of its own. A drive map for laptops and
+// another for desks is one policy object in Active Directory, not two.
+const TARGETABLE = new Set([
+  "files",
+  "scripts",
+  "systemd_units",
+  "cron",
+  "drive_maps",
+  "printers",
+  "packages",
+]);
 
 interface CategorySpec {
   key: keyof PolicySettings;
@@ -399,6 +412,7 @@ function RowsEditor({
   onChange: (next: PolicySettings) => void;
 }) {
   const current = (settings[category.key] as Record<string, unknown>[] | undefined) ?? [];
+  const [targeting, setTargeting] = useState<number | null>(null);
 
   function update(next: Record<string, unknown>[]) {
     onChange({ ...settings, [category.key]: next });
@@ -431,6 +445,9 @@ function RowsEditor({
                   {field.label}
                 </th>
               ))}
+              {TARGETABLE.has(String(category.key)) && (
+                <th style={{ width: "120px" }}>Applies to</th>
+              )}
               <th style={{ width: "44px" }}>
                 <span className="sr-only">Remove</span>
               </th>
@@ -452,6 +469,17 @@ function RowsEditor({
                     />
                   </td>
                 ))}
+                {TARGETABLE.has(String(category.key)) && (
+                  <td>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setTargeting(index)}
+                    >
+                      {row.targeting ? "Some" : "Everyone"}
+                    </button>
+                  </td>
+                )}
                 <td>
                   <button
                     type="button"
@@ -467,7 +495,130 @@ function RowsEditor({
           </tbody>
         </table>
       )}
+
+      {targeting !== null && current[targeting] && (
+        <ItemTargetingDialog
+          value={(current[targeting].targeting as ItemTargeting | undefined) ?? null}
+          onClose={() => setTargeting(null)}
+          onSave={(next) => {
+            const rows = [...current];
+            rows[targeting] = { ...rows[targeting], targeting: next ?? undefined };
+            update(rows);
+            setTargeting(null);
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Targeting on one entry rather than the whole policy object.
+ *
+ * The fields are the object's own, so what "matches" means does not depend on
+ * where it is written. Empty everywhere means the entry applies to whoever the
+ * policy object reaches.
+ */
+function ItemTargetingDialog({
+  value,
+  onClose,
+  onSave,
+}: {
+  value: ItemTargeting | null;
+  onClose: () => void;
+  onSave: (value: ItemTargeting | null) => void;
+}) {
+  const [os, setOs] = useState((value?.os ?? []).join(", "));
+  const [hostname, setHostname] = useState(value?.hostname_pattern ?? "");
+  const [groups, setGroups] = useState((value?.security_groups ?? []).join("\n"));
+  const [ranges, setRanges] = useState((value?.ip_ranges ?? []).join(", "));
+  const [picking, setPicking] = useState(false);
+
+  const lines = (text: string) =>
+    text
+      .split(/[\n,]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+  return (
+    <Modal
+      title="This entry applies to"
+      submitLabel="Save"
+      wide
+      onClose={onClose}
+      onSubmit={() => {
+        const next: ItemTargeting = {
+          os: lines(os),
+          hostname_pattern: hostname || undefined,
+          security_groups: lines(groups),
+          ip_ranges: lines(ranges),
+        };
+        const empty =
+          !next.os?.length &&
+          !next.hostname_pattern &&
+          !next.security_groups?.length &&
+          !next.ip_ranges?.length;
+        onSave(empty ? null : next);
+      }}
+    >
+      <p className="muted">
+        Leave everything empty and the entry applies wherever the policy object does. Anything
+        set here narrows it further — it can never widen it.
+      </p>
+
+      <label className="field">
+        <span>Operating systems</span>
+        <input
+          value={os}
+          placeholder="debian-13, debian-12"
+          onChange={(e) => setOs(e.target.value)}
+        />
+      </label>
+      <label className="field">
+        <span>Host name pattern</span>
+        <input
+          value={hostname}
+          placeholder="ws-*"
+          onChange={(e) => setHostname(e.target.value)}
+        />
+      </label>
+      <label className="field">
+        <span>Groups</span>
+        <textarea
+          rows={3}
+          className="mono"
+          value={groups}
+          onChange={(e) => setGroups(e.target.value)}
+        />
+      </label>
+      <div className="actions-row">
+        <button type="button" className="ghost" onClick={() => setPicking(true)}>
+          Add a group…
+        </button>
+      </div>
+      {picking && (
+        <PickerDialog
+          kind="group"
+          onClose={() => setPicking(false)}
+          onPick={(object) => {
+            setPicking(false);
+            setGroups((existing) =>
+              existing.split("\n").includes(object.distinguishedName)
+                ? existing
+                : [existing.trim(), object.distinguishedName].filter(Boolean).join("\n"),
+            );
+          }}
+        />
+      )}
+      <label className="field">
+        <span>Address ranges</span>
+        <input
+          value={ranges}
+          placeholder="10.20.0.0/24"
+          onChange={(e) => setRanges(e.target.value)}
+        />
+      </label>
+    </Modal>
   );
 }
 

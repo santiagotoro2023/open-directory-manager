@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Router, Trash2 } from "lucide-react";
-import {
-  ApiError,
-  api,
-  type RadiusClient,
-  type RadiusPolicy,
-} from "../api";
+import { ApiError, api, type RadiusClient, type RadiusPolicy } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { PickerDialog, PickerField } from "../components/Picker";
 
@@ -165,8 +160,8 @@ export function NetworkAccess() {
       {tab === "devices" && (
         <>
           <p className="muted">
-            Switches, access points and VPN servers that ask. Each has a shared secret, which is
-            the only thing proving a request came from it.
+            Switches, access points and VPN servers that ask. Each has a shared secret, which is the
+            only thing proving a request came from it.
           </p>
           <table className="data">
             <thead>
@@ -260,8 +255,8 @@ export function NetworkAccess() {
           <p>Enter this on the device. It is not shown again.</p>
           <pre className="wiki-code">{secret.secret}</pre>
           <p className="muted">
-            If it is lost, remove the device and add it back: a secret nobody has is not one
-            worth keeping.
+            If it is lost, remove the device and add it back: a secret nobody has is not one worth
+            keeping.
           </p>
         </Modal>
       )}
@@ -346,8 +341,7 @@ function ClientDialog({
         <input value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
       <p className="muted">
-        A shared secret is generated and shown once. One somebody chose is one somebody could
-        guess.
+        A shared secret is generated and shown once. One somebody chose is one somebody could guess.
       </p>
     </Modal>
   );

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, ca, objects, rsop, tasks
+from . import audit, ca, objects, rsop, sites, tasks
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -286,6 +286,7 @@ class Inventory(BaseModel):
     updates: Annotated[list[Annotated[str, Field(max_length=128)]], Field(max_length=500)] = []
     updates_checked: bool = False
     packages: Annotated[list[InstalledPackage], Field(max_length=2000)] = []
+    addresses: Annotated[list[Annotated[str, Field(max_length=64)]], Field(max_length=32)] = []
     package_count: int = 0
     events: Annotated[list[MachineEvent], Field(max_length=500)] = []
     logs: Annotated[list[LogEntry], Field(max_length=500)] = []
@@ -323,6 +324,8 @@ async def agent_inventory(
                                               computer_fact.updates_checked_at),
                 packages           = excluded.packages,
                 package_count      = excluded.package_count,
+                addresses          = excluded.addresses,
+                site_name          = excluded.site_name,
                 reported_at        = now()
             """,
             machine.dn,
@@ -338,6 +341,17 @@ async def agent_inventory(
             body.updates_checked,
             json.dumps([package.model_dump() for package in body.packages]),
             body.package_count,
+            json.dumps(body.addresses),
+            # Where this machine is, from the addresses it just reported. Worked
+            # out here so a machine that moves is re-placed on its next check-in
+            # without anything else having to notice.
+            sites.site_for(
+                body.addresses,
+                {
+                    row["cidr"]: row["site_name"]
+                    for row in await conn.fetch("SELECT cidr, site_name FROM ad_subnet")
+                },
+            ),
         )
 
         # A report covers a window, so the same login arrives more than once.

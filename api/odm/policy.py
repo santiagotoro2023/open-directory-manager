@@ -138,8 +138,17 @@ def in_scope(gpo: Gpo, target: Target) -> tuple[bool, str]:
         if target.dn.lower() not in allowed and not (allowed & groups):
             return False, "security filtering"
 
-    targeting = gpo.targeting or {}
+    applies, why = targeting_matches(gpo.targeting or {}, target)
+    return (True, "") if applies else (False, why)
 
+
+def targeting_matches(targeting: dict[str, Any], target: Target) -> tuple[bool, str]:
+    """Whether item-level targeting lets something through.
+
+    Shared by a whole policy object and by one entry inside it: what "matches"
+    means must not depend on which of the two is asking, or an operator would
+    have to learn it twice.
+    """
     wanted_os = targeting.get("os")
     if wanted_os and target.os_id not in wanted_os:
         return False, "os targeting"
@@ -149,7 +158,9 @@ def in_scope(gpo: Gpo, target: Target) -> tuple[bool, str]:
         return False, "hostname targeting"
 
     wanted_groups = targeting.get("security_groups")
-    if wanted_groups and not ({g.lower() for g in wanted_groups} & groups):
+    if wanted_groups and not (
+        {g.lower() for g in wanted_groups} & {g.lower() for g in target.group_dns}
+    ):
         return False, "group targeting"
 
     ranges = targeting.get("ip_ranges")
@@ -233,8 +244,13 @@ def resolve_order(
     return ordered, skipped
 
 
-def merge_settings(gpos: list[Gpo]) -> dict[str, Any]:
-    """Flatten ordered GPO settings into one document; later GPOs win."""
+def merge_settings(gpos: list[Gpo], target: Target | None = None) -> dict[str, Any]:
+    """Flatten ordered GPO settings into one document; later GPOs win.
+
+    `target` is optional so the merge can be reasoned about on its own, but the
+    effective policy always passes one: without it, per-entry targeting cannot
+    be evaluated and every entry would be included.
+    """
     merged: dict[str, Any] = {}
     sources: dict[str, str] = {}
 
@@ -245,6 +261,13 @@ def merge_settings(gpos: list[Gpo]) -> dict[str, Any]:
                 for item in value:
                     if not isinstance(item, dict):
                         continue
+                    # An entry may carry targeting of its own. One mapping for
+                    # laptops and another for desks is one policy object in AD,
+                    # not two, and this is what makes that possible here.
+                    if target is not None and item.get("targeting"):
+                        applies, _ = targeting_matches(item["targeting"], target)
+                        if not applies:
+                            continue
                     bucket[_identity(category, item)] = item
                     sources[f"{category}:{_identity(category, item)}"] = gpo.guid
             elif category in DICT_CATEGORIES and isinstance(value, dict):
@@ -282,7 +305,7 @@ def effective_policy(
     ordered, skipped = resolve_order(
         chain=chain, links=links, gpos=gpos, blocked=blocked, target=target
     )
-    settings = merge_settings(ordered)
+    settings = merge_settings(ordered, target)
     applied = [{"guid": gpo.guid, "name": gpo.display_name} for gpo in ordered]
     document = {
         "target": {"dn": target.dn, "hostname": target.hostname, "os": target.os_id},

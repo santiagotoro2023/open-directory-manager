@@ -146,6 +146,22 @@ command   /usr/sbin/fstrim -a
 user      root`}</Code>
         </Section>
 
+        <Section title="Targeting one entry rather than the whole object">
+          <p>
+            A drive map for laptops and another for desks is one policy object in Active
+            Directory, not two. Entries in File deployment, Scripts, systemd units, Scheduled
+            tasks, Drive maps, Printers and Software deployment each carry an{" "}
+            <strong>Applies to</strong> column: <C>Everyone</C> means whoever the policy object
+            reaches, and anything set there narrows it further.
+          </p>
+          <Note>
+            The fields are the policy object&rsquo;s own — operating system, host name pattern,
+            groups, address ranges — so what &ldquo;matches&rdquo; means does not depend on where
+            it is written. Entry targeting can only narrow: an entry cannot reach a machine the
+            policy object itself does not.
+          </Note>
+        </Section>
+
         <Section title="Login screen and desktop background">
           <p>
             Two separate settings, because they answer different questions. The login screen is

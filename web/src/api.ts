@@ -305,6 +305,55 @@ export interface ControllerOverview {
   read_only: number;
 }
 
+export interface Site {
+  name: string;
+  description: string;
+  subnets?: { cidr: string; description: string }[];
+  controllers?: { controller_dn: string; hostname: string }[];
+  machines?: number;
+}
+
+export interface PasswordPolicy {
+  id: string;
+  name: string;
+  description: string;
+  precedence: number;
+  complexity: boolean;
+  min_length: number;
+  history: number;
+  min_age_days: number;
+  max_age_days: number;
+  lockout_threshold: number;
+  lockout_minutes: number;
+  group_dns: string[];
+  container_dns: string[];
+  applied_to: string[];
+  state: string;
+  last_error: string | null;
+}
+
+export interface NewPasswordPolicy {
+  name: string;
+  description?: string;
+  precedence?: number;
+  complexity?: boolean;
+  min_length?: number;
+  history?: number;
+  min_age_days?: number;
+  max_age_days?: number;
+  lockout_threshold?: number;
+  lockout_minutes?: number;
+  group_dns?: string[];
+  container_dns?: string[];
+}
+
+export interface ItemTargeting {
+  os?: string[];
+  hostname_pattern?: string;
+  security_groups?: string[];
+  ip_ranges?: string[];
+}
+
 export interface RadiusClient {
   id: string;
   node_fqdn: string;
@@ -682,8 +731,8 @@ export interface NewUser {
 }
 
 export const api = {
-  login: (username: string, password: string) =>
-    request<SessionInfo>("/auth/login", json({ username, password })).then(remember),
+  login: (username: string, password: string, code?: string) =>
+    request<SessionInfo>("/auth/login", json({ username, password, code })).then(remember),
 
   session: () => request<SessionInfo>("/auth/session").then(remember),
 
@@ -960,6 +1009,50 @@ export const api = {
       request<void>(`/radius/policies${qs({ id })}`, { method: "DELETE" }),
   },
 
+  auth2fa: {
+    state: () =>
+      request<{ enrolled: boolean; pending: boolean; recovery_codes_left: number }>(
+        "/auth/second-factor",
+      ),
+
+    begin: () =>
+      request<{ secret: string; uri: string; digits: number; period: number }>(
+        "/auth/second-factor",
+        json({}),
+      ),
+
+    confirm: (code: string) =>
+      request<{ recovery_codes: string[] }>("/auth/second-factor/confirm", json({ code })),
+
+    remove: (code: string) =>
+      request<void>("/auth/second-factor", { method: "DELETE", body: JSON.stringify({ code }) }),
+  },
+
+  sites: {
+    list: () => request<{ sites: Site[]; unplaced: number }>("/controllers/sites"),
+
+    create: (name: string, description: string) =>
+      request<Site>("/controllers/sites", json({ name, description })),
+
+    remove: (name: string) =>
+      request<void>(`/controllers/sites${qs({ name })}`, { method: "DELETE" }),
+
+    addSubnet: (cidr: string, site_name: string, description: string) =>
+      request<{ cidr: string; site: string; overlaps: string[] }>(
+        "/controllers/sites/subnets",
+        json({ cidr, site_name, description }),
+      ),
+
+    removeSubnet: (cidr: string) =>
+      request<void>(`/controllers/sites/subnets${qs({ cidr })}`, { method: "DELETE" }),
+
+    assign: (controller_dn: string, site_name: string, hostname: string) =>
+      request<{ controller_dn: string; site: string }>(
+        "/controllers/sites/controllers",
+        json({ controller_dn, site_name, hostname }),
+      ),
+  },
+
   password: {
     policy: () => request<{ policy: Record<string, string> }>("/password/policy"),
 
@@ -976,6 +1069,16 @@ export const api = {
 
     change: (current_password: string, new_password: string) =>
       request<void>("/password/change", json({ current_password, new_password })),
+
+    policies: () => request<{ policies: PasswordPolicy[] }>("/password/policies"),
+
+    createPolicy: (body: NewPasswordPolicy) =>
+      request<PasswordPolicy>("/password/policies", json(body)),
+
+    syncPolicies: () => request<{ synced: unknown[] }>("/password/policies/sync", json({})),
+
+    removePolicy: (id: string) =>
+      request<void>(`/password/policies${qs({ id })}`, { method: "DELETE" }),
   },
 
   printers: {
@@ -1023,6 +1126,12 @@ export const api = {
       request<{ hours: number; total: number; groups: LogGroup[] }>(
         `/servers/computer/logs${qs({ dn, hours })}`,
       ),
+
+    bulkAction: (dns: string[], action: ComputerAction, pkg?: string) =>
+      request<{
+        queued: { dn: string; node: string; task: string }[];
+        skipped: { dn: string; reason: string }[];
+      }>("/servers/computers/action", json({ dns, action, package: pkg })),
 
     action: (dn: string, action: ComputerAction, pkg?: string) =>
       request<{ task: string; node: string }>(

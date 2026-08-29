@@ -18,7 +18,7 @@ shift || true
 case "$ROLE" in
     dhcp)                  INSTALLER="$ROLES_DIR/install-dhcp-role.sh" ;;
     file-server)           INSTALLER="$ROLES_DIR/install-file-server-role.sh" ;;
-    certificate-authority) INSTALLER="$ROLES_DIR/install-ca-role.sh" ;;
+    certificate-authority) INSTALLER="$ROLES_DIR/install-certificate-authority-role.sh" ;;
     pxe)                   INSTALLER="$ROLES_DIR/install-pxe-role.sh" ;;
     print-server)          INSTALLER="$ROLES_DIR/install-print-server-role.sh" ;;
     vpn)                   INSTALLER="$ROLES_DIR/install-vpn-role.sh" ;;

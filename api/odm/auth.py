@@ -17,13 +17,14 @@ import base64
 import binascii
 import logging
 from datetime import datetime
+from typing import Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, authz, directory, sessions
+from . import audit, authz, directory, sessions, totp
 from .config import Settings, get_settings
 from .security import clear_session_cookie, current_session, get_pool, set_session_cookie
 from .sessions import Session
@@ -36,6 +37,8 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=256)
     password: str = Field(min_length=1, max_length=1024)
+    # Sent on the second attempt, once the first has said one is needed.
+    code: str | None = Field(default=None, max_length=32)
 
 
 class SessionResponse(BaseModel):
@@ -169,10 +172,83 @@ async def login(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "directory unavailable") from exc
 
     grants = await _admissible(pool, settings, user, source_ip, request)
+
+    # The password was right. If this account has a second factor, that is not
+    # yet enough — and the account is told so rather than being let in.
     async with pool.acquire() as conn:
+        enrolment = await conn.fetchrow(
+            "SELECT * FROM totp_enrolment WHERE principal_sid = $1 AND confirmed_at IS NOT NULL",
+            user.sid,
+        )
+        if enrolment is not None:
+            if not body.code:
+                raise HTTPException(
+                    status.HTTP_401_UNAUTHORIZED,
+                    "a code from your authenticator is required",
+                    headers={"X-ODM-Second-Factor": "totp"},
+                )
+            if not await _accept_second_factor(conn, enrolment, body.code):
+                await sessions.record_attempt(
+                    conn,
+                    username=body.username,
+                    source_ip=source_ip,
+                    succeeded=False,
+                    reason="second factor rejected",
+                )
+                await audit.record(
+                    conn,
+                    actor=body.username,
+                    actor_sid=user.sid,
+                    source_ip=source_ip,
+                    action="auth.login",
+                    outcome="denied",
+                    object_type="session",
+                    detail="the second factor was rejected",
+                )
+                raise HTTPException(
+                    status.HTTP_401_UNAUTHORIZED,
+                    "that code is not right",
+                    headers={"X-ODM-Second-Factor": "totp"},
+                )
+
         return await _issue(
             conn, settings, request, response, user, source_ip, "password", grants
         )
+
+
+async def _accept_second_factor(
+    conn: asyncpg.Connection, enrolment: asyncpg.Record, code: str
+) -> bool:
+    """A time-based code, or one of the recovery codes.
+
+    A recovery code is consumed on use: it is a way back in for somebody who
+    has lost their device, not a second password.
+    """
+    try:
+        step = totp.verify(enrolment["secret"], code, last_step=enrolment["last_step"])
+    except totp.TotpError:
+        used = totp.matches_recovery(list(enrolment["recovery_codes"]), code)
+        if used is None:
+            return False
+        await conn.execute(
+            """
+            UPDATE totp_enrolment
+            SET recovery_codes = array_remove(recovery_codes, $2), updated_at = now()
+            WHERE principal_sid = $1
+            """,
+            enrolment["principal_sid"],
+            used,
+        )
+        return True
+
+    # Remembering the step is what stops a code being replayed inside its
+    # thirty-second window by anyone who saw it.
+    await conn.execute(
+        "UPDATE totp_enrolment SET last_step = $2, updated_at = now() WHERE principal_sid = $1",
+        enrolment["principal_sid"],
+        step,
+    )
+    return True
 
 
 async def _admissible(
@@ -332,3 +408,156 @@ async def logout(
             object_dn=session.principal_dn,
         )
     clear_session_cookie(response, settings)
+
+
+# ------------------------------------------------------------ second factor --
+# Enrolment is a two-step act on purpose: a secret is issued, and it only
+# becomes required once a code from the device has been accepted. Nobody locks
+# themselves out with a QR code they never scanned.
+
+
+class EnrolRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=8)
+
+
+@router.get("/second-factor")
+async def second_factor_state(
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    row = await pool.fetchrow(
+        "SELECT confirmed_at, recovery_codes FROM totp_enrolment WHERE principal_sid = $1",
+        session.principal_sid,
+    )
+    return {
+        "enrolled": bool(row and row["confirmed_at"]),
+        "pending": bool(row and not row["confirmed_at"]),
+        "recovery_codes_left": len(row["recovery_codes"]) if row else 0,
+    }
+
+
+@router.post("/second-factor", status_code=201)
+async def begin_enrolment(
+    request: Request,
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Issue a secret and the URI an authenticator scans.
+
+    The secret is returned exactly once, here. A console that could read it
+    back would hand it to anyone holding a stolen session.
+    """
+    if not session.principal_sid:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "this session has no account identifier"
+        )
+    secret = totp.generate_secret()
+    async with pool.acquire() as conn:
+        existing = await conn.fetchval(
+            "SELECT confirmed_at FROM totp_enrolment WHERE principal_sid = $1",
+            session.principal_sid,
+        )
+        if existing:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "this account already has a second factor; remove it before enrolling again",
+            )
+        await conn.execute(
+            """
+            INSERT INTO totp_enrolment (principal_sid, principal, secret, enrolled_by)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (principal_sid) DO UPDATE
+                SET secret = excluded.secret, confirmed_at = NULL, last_step = NULL,
+                    recovery_codes = '{}', updated_at = now()
+            """,
+            session.principal_sid,
+            session.principal,
+            secret,
+            session.principal,
+        )
+    return {
+        "secret": secret,
+        "uri": totp.provisioning_uri(secret, session.principal, settings.domain),
+        "digits": totp.DIGITS,
+        "period": totp.PERIOD,
+    }
+
+
+@router.post("/second-factor/confirm")
+async def confirm_enrolment(
+    body: EnrolRequest,
+    request: Request,
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Finish enrolling, by proving the device actually has the secret."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM totp_enrolment WHERE principal_sid = $1", session.principal_sid
+        )
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing to confirm")
+        try:
+            step = totp.verify(row["secret"], body.code, last_step=row["last_step"])
+        except totp.TotpError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+        codes = totp.generate_recovery_codes()
+        await conn.execute(
+            """
+            UPDATE totp_enrolment
+            SET confirmed_at = now(), last_step = $2, recovery_codes = $3, updated_at = now()
+            WHERE principal_sid = $1
+            """,
+            session.principal_sid,
+            step,
+            codes,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=request.client.host if request.client else None,
+            action="auth.second_factor.enrol",
+            outcome="success",
+            object_type="session",
+            detail="a second factor was enrolled",
+        )
+    # Shown once, like the secret: a recovery code readable later is a password.
+    return {"recovery_codes": codes}
+
+
+@router.delete("/second-factor", status_code=204)
+async def remove_enrolment(
+    body: EnrolRequest,
+    request: Request,
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """Stop requiring a second factor for this account.
+
+    A current code is required to remove it. Otherwise a stolen session could
+    take the second factor off and keep the account.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM totp_enrolment WHERE principal_sid = $1", session.principal_sid
+        )
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no second factor is enrolled")
+        if not await _accept_second_factor(conn, row, body.code):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "that code is not right")
+        await conn.execute(
+            "DELETE FROM totp_enrolment WHERE principal_sid = $1", session.principal_sid
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=request.client.host if request.client else None,
+            action="auth.second_factor.remove",
+            outcome="success",
+            object_type="session",
+            detail="the second factor was removed",
+        )

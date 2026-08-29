@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { ApiError, api, holds, type SessionInfo } from "./api";
 import { Field, Modal } from "./components/Modal";
+import { SecondFactorDialog } from "./components/SecondFactor";
 
 // `permission` is what the section needs; `domainAdmin` marks a section only
 // members of the domain administrators group ever see; `roles` names the server
@@ -127,6 +128,7 @@ export function Shell({
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [selfService, setSelfService] = useState(false);
   const [changing, setChanging] = useState(false);
+  const [secondFactor, setSecondFactor] = useState(false);
 
   // Changing your own password is offered only where policy allows it.
   useEffect(() => {
@@ -170,6 +172,10 @@ export function Shell({
             {session.display_name}
             {!session.domain_admin && <span className="badge">delegated</span>}
           </span>
+          <button type="button" className="ghost" onClick={() => setSecondFactor(true)}>
+            <ShieldCheck size={16} aria-hidden="true" />
+            Second factor
+          </button>
           {selfService && (
             <button type="button" className="ghost" onClick={() => setChanging(true)}>
               <KeyRound size={16} aria-hidden="true" />
@@ -224,6 +230,7 @@ export function Shell({
       </div>
 
       {changing && <ChangePasswordDialog onClose={() => setChanging(false)} />}
+      {secondFactor && <SecondFactorDialog onClose={() => setSecondFactor(false)} />}
     </div>
   );
 }

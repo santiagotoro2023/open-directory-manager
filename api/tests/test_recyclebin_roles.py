@@ -297,3 +297,17 @@ def test_a_boot_network_that_is_not_a_network_is_refused(value):
                 "scopes": value,
             },
         )
+
+
+def test_every_role_has_an_installer_named_after_it():
+    """The agent installs a role on another machine by running
+    /usr/lib/odm/roles/install-<role>-role.sh. A script named anything else is
+    one that can be installed here and nowhere else."""
+    import pathlib
+
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "deploy"
+    for role in roles.REGISTRY.values():
+        if role.core:
+            continue
+        installer = deploy / f"install-{role.name}-role.sh"
+        assert installer.exists(), f"{role.name} has no {installer.name}"

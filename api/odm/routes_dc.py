@@ -9,16 +9,18 @@ toggle that could not do what it says.
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
 
-from . import directory, objects, replication
+from . import audit, directory, objects, replication, sites
 from .config import Settings, get_settings
 from .routes_directory import _read
-from .security import get_pool, require_admin, requires
+from .security import client_ip, get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/controllers", tags=["controllers"])
@@ -157,3 +159,246 @@ async def controller_health(
         return {"available": False, "detail": str(exc)}
     await run_in_threadpool(conn.unbind)
     return {"available": True}
+
+
+# ------------------------------------------------------------------ sites ---
+# Where machines are, and which controllers are near them.
+
+
+class SiteIn(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=63)]
+    description: Annotated[str, Field(max_length=255)] = ""
+
+
+class SubnetIn(BaseModel):
+    cidr: Annotated[str, Field(min_length=9, max_length=64)]
+    site_name: Annotated[str, Field(min_length=1, max_length=63)]
+    description: Annotated[str, Field(max_length=255)] = ""
+
+
+class AssignmentIn(BaseModel):
+    controller_dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    site_name: Annotated[str, Field(min_length=1, max_length=63)]
+    hostname: Annotated[str, Field(max_length=253)] = ""
+
+
+@router.get("/sites", dependencies=[Depends(requires("site.read"))])
+async def list_sites(
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Sites, their subnets, their controllers, and what is in them."""
+    site_rows = await pool.fetch("SELECT * FROM ad_site ORDER BY name")
+    subnets = await pool.fetch("SELECT * FROM ad_subnet ORDER BY site_name, cidr")
+    assigned = await pool.fetch("SELECT * FROM ad_site_controller ORDER BY site_name, hostname")
+    machines = await pool.fetch(
+        "SELECT site_name, count(*) AS total FROM computer_fact"
+        " WHERE site_name IS NOT NULL GROUP BY site_name"
+    )
+    counts = {row["site_name"]: int(row["total"]) for row in machines}
+
+    return {
+        "sites": [
+            {
+                **sites.as_json(dict(row)),
+                "subnets": [
+                    {"cidr": s["cidr"], "description": s["description"]}
+                    for s in subnets
+                    if s["site_name"] == row["name"]
+                ],
+                "controllers": [
+                    {"controller_dn": a["controller_dn"], "hostname": a["hostname"]}
+                    for a in assigned
+                    if a["site_name"] == row["name"]
+                ],
+                "machines": counts.get(row["name"], 0),
+            }
+            for row in site_rows
+        ],
+        # Machines whose address matches no subnet: they have nowhere to prefer.
+        "unplaced": await pool.fetchval(
+            "SELECT count(*) FROM computer_fact WHERE site_name IS NULL"
+        ),
+    }
+
+
+@router.post("/sites", status_code=201, dependencies=[Depends(requires("site.write"))])
+async def create_site(
+    body: SiteIn,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    name = sites.validate_name(body.name)
+    async with pool.acquire() as conn:
+        if await conn.fetchval("SELECT 1 FROM ad_site WHERE lower(name) = lower($1)", name):
+            raise objects.ObjectError(f"a site called {name} already exists")
+        row = await conn.fetchrow(
+            "INSERT INTO ad_site (name, description, created_by) VALUES ($1, $2, $3) RETURNING *",
+            name,
+            body.description,
+            session.principal,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="site.create",
+            outcome="success",
+            object_type="site",
+            object_dn=name,
+        )
+    return sites.as_json(dict(row))
+
+
+@router.delete("/sites", status_code=204, dependencies=[Depends(requires("site.write"))])
+async def delete_site(
+    request: Request,
+    name: Annotated[str, Query(min_length=1, max_length=63)],
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> None:
+    """Remove a site, its subnets and its controller assignments.
+
+    Machines placed there become unplaced, which is what they were before.
+    """
+    async with pool.acquire() as conn:
+        if not await conn.fetchval("SELECT 1 FROM ad_site WHERE name = $1", name):
+            raise objects.NotFound("no such site")
+        await conn.execute("DELETE FROM ad_site WHERE name = $1", name)
+        await conn.execute("UPDATE computer_fact SET site_name = NULL WHERE site_name = $1", name)
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="site.delete",
+            outcome="success",
+            object_type="site",
+            object_dn=name,
+        )
+
+
+@router.post("/sites/subnets", status_code=201, dependencies=[Depends(requires("site.write"))])
+async def add_subnet(
+    body: SubnetIn,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    cidr = sites.validate_subnet(body.cidr)
+    async with pool.acquire() as conn:
+        if not await conn.fetchval("SELECT 1 FROM ad_site WHERE name = $1", body.site_name):
+            raise objects.NotFound(f"no site called {body.site_name}")
+        existing = [row["cidr"] for row in await conn.fetch("SELECT cidr FROM ad_subnet")]
+        await conn.execute(
+            """
+            INSERT INTO ad_subnet (cidr, site_name, description, created_by)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (cidr) DO UPDATE
+                SET site_name = excluded.site_name, description = excluded.description
+            """,
+            cidr,
+            body.site_name,
+            body.description,
+            session.principal,
+        )
+        await _replace_sites(conn)
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="site.subnet.add",
+            outcome="success",
+            object_type="subnet",
+            object_dn=cidr,
+            after={"site": body.site_name},
+        )
+    # Overlap is legal and often deliberate; it is reported so nobody is
+    # surprised by which one wins.
+    return {"cidr": cidr, "site": body.site_name, "overlaps": sites.overlapping(cidr, existing)}
+
+
+@router.delete("/sites/subnets", status_code=204, dependencies=[Depends(requires("site.write"))])
+async def remove_subnet(
+    request: Request,
+    cidr: Annotated[str, Query(min_length=9, max_length=64)],
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM ad_subnet WHERE cidr = $1", cidr)
+        if row is None:
+            raise objects.NotFound("no such subnet")
+        await conn.execute("DELETE FROM ad_subnet WHERE cidr = $1", cidr)
+        await _replace_sites(conn)
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="site.subnet.remove",
+            outcome="success",
+            object_type="subnet",
+            object_dn=cidr,
+        )
+
+
+@router.post("/sites/controllers", status_code=201,
+             dependencies=[Depends(requires("site.write"))])
+async def assign_controller(
+    body: AssignmentIn,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Say which site a controller serves."""
+    async with pool.acquire() as conn:
+        if not await conn.fetchval("SELECT 1 FROM ad_site WHERE name = $1", body.site_name):
+            raise objects.NotFound(f"no site called {body.site_name}")
+        await conn.execute(
+            """
+            INSERT INTO ad_site_controller (controller_dn, site_name, hostname, assigned_by)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (controller_dn) DO UPDATE
+                SET site_name = excluded.site_name, hostname = excluded.hostname,
+                    assigned_at = now()
+            """,
+            body.controller_dn,
+            body.site_name,
+            body.hostname,
+            session.principal,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="site.controller.assign",
+            outcome="success",
+            object_type="site",
+            object_dn=body.site_name,
+            after={"controller": body.controller_dn},
+        )
+    return {"controller_dn": body.controller_dn, "site": body.site_name}
+
+
+async def _replace_sites(conn: asyncpg.Connection) -> None:
+    """Re-place every machine after the subnet map changes.
+
+    Done here rather than waiting for each agent to check in: an operator who
+    has just drawn the map wants to see where machines landed.
+    """
+    subnets = {
+        row["cidr"]: row["site_name"] for row in await conn.fetch("SELECT * FROM ad_subnet")
+    }
+    machines = await conn.fetch("SELECT computer_dn, addresses FROM computer_fact")
+    for machine in machines:
+        addresses = json.loads(machine["addresses"])
+        await conn.execute(
+            "UPDATE computer_fact SET site_name = $2 WHERE computer_dn = $1",
+            machine["computer_dn"],
+            sites.site_for(addresses, subnets),
+        )

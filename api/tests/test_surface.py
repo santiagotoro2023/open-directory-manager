@@ -455,3 +455,25 @@ def test_every_job_that_builds_the_desktop_app_installs_the_same_headers() -> No
     (headers,) = installs
     for required in ("libwayland-dev", "libxkbcommon-dev", "xorg-dev", "libgl1-mesa-dev"):
         assert required in headers, f"{required} is missing from {sorted(headers)}"
+
+
+def test_no_route_reads_a_field_the_session_does_not_have() -> None:
+    """A session attribute that does not exist fails at request time, on a path
+    a unit test with a fake pool never reaches. Reading the field names out of
+    the source is cheaper than discovering it in production."""
+    import dataclasses
+    import pathlib
+    import re
+
+    from odm.sessions import Session
+
+    fields = {field.name for field in dataclasses.fields(Session)}
+    # `session` is also a local name for a login session in the agent's own
+    # request models, which are pydantic. Those are the methods that reaches.
+    methods = {"model_dump", "model_dump_json"}
+    for path in pathlib.Path("odm").glob("*.py"):
+        for attribute in re.findall(r"\bsession\.([a-z_]+)", path.read_text()):
+            assert attribute in fields or attribute in methods, (
+                f"{path.name} reads session.{attribute}, which is not a field: "
+                f"{sorted(fields)}"
+            )
