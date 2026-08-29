@@ -394,3 +394,27 @@ def test_the_directory_is_configured_to_accept_the_control_planes_bind() -> None
     for script in ("provision-dc.sh", "setup.sh"):
         body = (pathlib.Path("..") / "deploy" / script).read_text()
         assert "ldap server require strong auth = allow_sasl_over_tls" in body, script
+
+
+def test_a_typed_password_survives_the_installers_prompt() -> None:
+    """The prompt is read through a command substitution, so anything the
+    function writes to stdout becomes part of the secret. A stray newline here
+    provisioned the domain with a password nobody could type, and every sign-in
+    answered "invalid credentials" truthfully."""
+    import pathlib
+    import re
+    import subprocess
+
+    body = (pathlib.Path("..") / "deploy" / "setup.sh").read_text()
+    function = re.search(r"^ask_secret\(\) \{.*?^\}$", body, re.M | re.S)
+    assert function, "ask_secret is no longer where this test looks for it"
+
+    script = (
+        "warn() { printf '%s\\n' \"$*\" >&2; }\n"
+        + function.group(0)
+        + "\nprintf %s \"$(printf 'Secret123!\\nSecret123!\\n' | ask_secret x)\"\n"
+    )
+    typed = subprocess.run(  # noqa: S603 - the script is this repo's own
+        ["/bin/bash", "-c", script], capture_output=True, check=True
+    ).stdout
+    assert typed == b"Secret123!", f"the installer would set {typed!r}"

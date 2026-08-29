@@ -127,11 +127,15 @@ ask_yes_no() {
 }
 
 ask_secret() {
+    # Everything except the secret itself goes to stderr. The caller reads this
+    # through a command substitution, which captures stdout: a bare echo for
+    # the newline after a silent read ends up *inside* the password, and the
+    # account is then created with a password nobody can type.
     local prompt="$1" first second
     while true; do
-        read -rsp "      $prompt: " first; echo
+        read -rsp "      $prompt: " first; echo >&2
         [[ ${#first} -ge 8 ]] || { warn "Use at least 8 characters."; continue; }
-        read -rsp "      Repeat it: " second; echo
+        read -rsp "      Repeat it: " second; echo >&2
         [[ "$first" == "$second" ]] || { warn "They do not match. Try again."; continue; }
         printf '%s' "$first"
         return
