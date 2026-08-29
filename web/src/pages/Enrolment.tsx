@@ -23,8 +23,13 @@ export function Enrolment() {
       />
 
       <h3 className="section-title">How a machine gets here</h3>
+      <p className="muted">
+        Network boot is advertised over DHCP, so a deployment reaches exactly the scopes chosen
+        above and no others. That is what keeps a provisioning network separate from a client
+        network on the same wire.
+      </p>
       <ol className="wiki-steps">
-        <li>It boots from the network on the interface the role serves.</li>
+        <li>It boots from the network, on one of the scopes chosen above.</li>
         <li>
           The boot server offers Debian&rsquo;s installer and points it at a preseed, so nothing
           is answered by hand.

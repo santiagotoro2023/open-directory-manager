@@ -117,6 +117,10 @@ export function Content() {
           <Reference
             headers={["Setting", "Effect"]}
             rows={[
+              [
+                "Networks to offer boot on",
+                "The DHCP scopes boot is advertised in. Machines on any other network are not offered it at all, so a provisioning network stays separate from a client network.",
+              ],
               ["Debian release", "Which netboot image is fetched and which release is installed."],
               [
                 "Mirror",
@@ -130,9 +134,11 @@ export function Content() {
             ]}
           />
           <Note>
-            Create a multi-use enrolment token under <strong>Directory</strong> first. The join
-            binary is published by the installer, which refuses to run without it rather than
-            leaving machines that install and never join.
+            Client Enrolment appears only once both this role and DHCP are installed: boot is
+            advertised over DHCP, so without a DHCP server there is nothing to attach a
+            deployment to. Create a multi-use enrolment token under <strong>Directory</strong>{" "}
+            first. The join binary is published by the installer, which refuses to run without it
+            rather than leaving machines that install and never join.
           </Note>
         </Section>
 

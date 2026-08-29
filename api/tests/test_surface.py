@@ -418,3 +418,15 @@ def test_a_typed_password_survives_the_installers_prompt() -> None:
         ["/bin/bash", "-c", script], capture_output=True, check=True
     ).stdout
     assert typed == b"Secret123!", f"the installer would set {typed!r}"
+
+
+def test_network_boot_is_only_offered_where_dhcp_can_advertise_it() -> None:
+    """Network boot is advertised over DHCP. Showing the section without a DHCP
+    server would offer a deployment with nothing to attach it to."""
+    import pathlib
+    import re
+
+    shell = (pathlib.Path("..") / "web" / "src" / "Shell.tsx").read_text()
+    entry = re.search(r'to: "/enrolment".*?\}', shell, re.S)
+    assert entry, "the Client Enrolment nav entry moved"
+    assert '"pxe"' in entry.group(0) and '"dhcp"' in entry.group(0), entry.group(0)

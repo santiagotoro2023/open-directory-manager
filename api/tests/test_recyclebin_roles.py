@@ -268,3 +268,32 @@ def test_a_container_argument_still_refuses_a_shell_metacharacter(value):
                 "ou": value,
             },
         )
+
+
+def test_boot_networks_are_passed_through_as_a_list():
+    command = roles.build_command(
+        roles.get("pxe"),
+        {
+            "interface": "eth0",
+            "domain": "corp.example.internal",
+            "enrolment_token": "a" * 20,
+            "scopes": "10.10.0.0,10.20.0.0/24",
+        },
+    )
+    assert "--scopes" in command
+    assert "10.10.0.0,10.20.0.0/24" in command
+
+
+@pytest.mark.parametrize("value", ["10.10.0.0; rm -rf /", "$(id)", "eth0", "10.10.0.0 10.20.0.0"])
+def test_a_boot_network_that_is_not_a_network_is_refused(value):
+    """The value ends up in a dnsmasq configuration file on a boot server."""
+    with pytest.raises(roles.RoleError):
+        roles.build_command(
+            roles.get("pxe"),
+            {
+                "interface": "eth0",
+                "domain": "corp.example.internal",
+                "enrolment_token": "a" * 20,
+                "scopes": value,
+            },
+        )

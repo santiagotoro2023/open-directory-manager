@@ -334,7 +334,7 @@ export interface RoleArgument {
   name: string;
   label: string;
   help: string;
-  kind: "text" | "choice" | "url" | "host" | "path";
+  kind: "text" | "choice" | "url" | "host" | "path" | "dn" | "hash" | "networks";
   choices: string[];
   placeholder: string;
   default: string;

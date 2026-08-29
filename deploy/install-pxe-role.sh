@@ -16,6 +16,7 @@ JOIN_OU=""
 LOCAL_ADMIN="localadmin"
 PASSWORD_HASH=""
 CLIENT_BINARY="/usr/sbin/odm-client-install"
+SCOPES=""
 TFTP_ROOT="/srv/tftp"
 SEED_ROOT="/srv/odm-preseed"
 
@@ -34,6 +35,9 @@ usage: install-pxe-role.sh --interface <iface> --domain <domain> --enrolment-tok
   --local-password-hash
                      crypt(3) hash for the local administrator. One is
                      generated and printed when this is omitted.
+  --scopes           comma-separated network addresses to advertise boot in,
+                     e.g. 10.10.0.0,10.20.0.0. Without it, boot is offered to
+                     everything on the interface.
 USAGE
     exit 2
 }
@@ -49,6 +53,7 @@ while [[ $# -gt 0 ]]; do
         --local-admin) LOCAL_ADMIN="${2:?}"; shift 2 ;;
         --local-password-hash) PASSWORD_HASH="${2:?}"; shift 2 ;;
         --client-binary) CLIENT_BINARY="${2:?}"; shift 2 ;;
+        --scopes) SCOPES="${2:?}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
     esac
@@ -66,6 +71,7 @@ done
 # an unquoted space inside [[ =~ ]] is a syntax error.
 OU_RE='^[A-Za-z0-9=,._ -]{3,512}$'
 [[ -z "$JOIN_OU" || "$JOIN_OU" =~ $OU_RE ]] || { echo "invalid --ou" >&2; exit 1; }
+[[ -z "$SCOPES" || "$SCOPES" =~ ^[0-9./,]{7,255}$ ]] || { echo "invalid --scopes" >&2; exit 1; }
 
 # An installed machine has to fetch odm-client-install from somewhere, or its
 # join silently does nothing. Publishing it is part of installing the role,
@@ -176,13 +182,30 @@ systemctl enable --now nginx
 systemctl reload nginx
 
 echo "==> Configuring proxy DHCP and TFTP"
+# Which networks are offered boot at all.
+#
+# Scoping this matters: a boot server that answers everything on its interface
+# will offer to reinstall a workstation that happened to PXE-boot by accident.
+# Naming the networks keeps deployment on the network built for it.
+RANGES=""
+if [[ -n "$SCOPES" ]]; then
+    IFS=',' read -ra SCOPE_LIST <<< "$SCOPES"
+    for SCOPE in "${SCOPE_LIST[@]}"; do
+        SCOPE="${SCOPE%%/*}"
+        [[ -n "$SCOPE" ]] || continue
+        RANGES+="dhcp-range=$SCOPE,proxy"$'\n'
+    done
+fi
+# Nothing named means the whole interface, which is the right default for a
+# lab and the wrong one for a network with workstations on it.
+[[ -n "$RANGES" ]] || RANGES="dhcp-range=$INTERFACE,proxy"$'\n'
+
 cat > /etc/dnsmasq.d/odm-pxe.conf <<DNSMASQ
 # Managed by Open Directory Manager.
 # Proxy DHCP only: address assignment stays with whatever already does it.
 interface=$INTERFACE
 port=0
-dhcp-range=$INTERFACE,proxy
-enable-tftp
+${RANGES}enable-tftp
 tftp-root=$TFTP_ROOT
 pxe-service=x86PC,"Install Debian $SUITE",pxelinux
 dhcp-option-force=209,odm.cfg
@@ -196,6 +219,7 @@ cat <<SUMMARY
 PXE role installed.
 
   Interface     $INTERFACE (proxy DHCP; address assignment is untouched)
+  Networks      ${SCOPES:-everything on $INTERFACE}
   Boot images   $TFTP_ROOT
   Preseed       http://$(hostname -f)/odm.cfg
   Suite         $SUITE

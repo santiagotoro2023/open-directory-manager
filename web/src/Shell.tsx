@@ -22,9 +22,9 @@ import {
 import { api, holds, type SessionInfo } from "./api";
 
 // `permission` is what the section needs; `domainAdmin` marks a section only
-// members of the domain administrators group ever see; `role` marks a section
-// that manages something a server role provides, and so has nothing to show
-// until that role is installed somewhere.
+// members of the domain administrators group ever see; `roles` names the server
+// roles that must all be installed somewhere before the section has anything
+// to show — network boot needs a boot server and a DHCP server to advertise it.
 const NAV = [
   { label: "Overview", to: "/", icon: LayoutDashboard, end: true },
   { label: "Directory", to: "/directory", icon: Users, permission: "directory.read" },
@@ -35,28 +35,30 @@ const NAV = [
     to: "/dhcp",
     icon: Network,
     permission: "dhcp.read",
-    role: "dhcp",
+    roles: ["dhcp"],
   },
   {
     label: "File Shares",
     to: "/shares",
     icon: FolderOpen,
     permission: "share.read",
-    role: "file-server",
+    roles: ["file-server"],
   },
   {
     label: "Certificates",
     to: "/certificates",
     icon: KeyRound,
     permission: "ca.read",
-    role: "certificate-authority",
+    roles: ["certificate-authority"],
   },
   {
     label: "Client Enrolment",
     to: "/enrolment",
     icon: HardDriveDownload,
+    // Network boot is advertised through DHCP: without a DHCP server there is
+    // nothing to attach a deployment to.
     permission: "role.read",
-    role: "pxe",
+    roles: ["pxe", "dhcp"],
   },
   { label: "Servers", to: "/servers", icon: ServerCog, permission: "server.read" },
   { label: "Server Roles", to: "/roles", icon: Server, permission: "role.read" },
@@ -153,7 +155,7 @@ export function Shell({
               (item) =>
                 (!item.domainAdmin || session.domain_admin) &&
                 (!item.permission || holds(session, item.permission)) &&
-                (!item.role || installed.has(item.role)),
+                (!item.roles || item.roles.every((role) => installed.has(role))),
             ).map(({ label, to, icon: Icon, end }) => (
               <li key={label}>
                 <NavLink

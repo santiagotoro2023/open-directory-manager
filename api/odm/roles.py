@@ -39,6 +39,8 @@ _ARG_PATTERNS: dict[str, re.Pattern[str]] = {
     "dn": re.compile(r"^[A-Za-z0-9=,._ -]{3,512}$"),
     # $6$rounds=5000$salt$hash — the rounds prefix is optional but legal.
     "hash": re.compile(r"^[A-Za-z0-9$./=]{1,255}$"),
+    # A comma-separated list of network addresses.
+    "networks": re.compile(r"^[0-9./,]{7,255}$"),
 }
 
 
@@ -57,8 +59,8 @@ class Argument:
     name: str
     label: str
     help: str = ""
-    # text | choice | url | host | path | dn | hash — decides the control the
-    # console draws, and which characters the value may contain.
+    # text | choice | url | host | path | dn | hash | networks — decides the
+    # control the console draws, and which characters the value may contain.
     kind: str = "text"
     choices: tuple[str, ...] = ()
     placeholder: str = ""
@@ -236,6 +238,18 @@ REGISTRY: dict[str, Role] = {
                 label="Local administrator password hash",
                 help="crypt(3), as openssl passwd -6 produces. One is generated when empty.",
                 kind="hash",
+                optional=True,
+                configuration=True,
+            ),
+            Argument(
+                name="scopes",
+                label="Networks to offer boot on",
+                help=(
+                    "DHCP scopes network boot is advertised in. Machines on any other "
+                    "network are not offered it at all."
+                ),
+                kind="networks",
+                placeholder="10.10.0.0,10.20.0.0",
                 optional=True,
                 configuration=True,
             ),

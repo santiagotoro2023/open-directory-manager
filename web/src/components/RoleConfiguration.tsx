@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, type RoleArgument, type RoleInstance } from "../api";
 import { Field } from "./Modal";
+import { ScopeSelector } from "./ScopeSelector";
 
 /**
  * The settings a role takes after it exists.
@@ -102,34 +103,51 @@ export function RoleConfiguration({
       </Field>
 
       <div className="field-grid">
-        {argumentsFor.map((argument) => (
-          <Field
-            key={argument.name}
-            label={argument.label}
-            hint={argument.help || (argument.optional ? "Optional" : undefined)}
-          >
-            {argument.kind === "choice" ? (
-              <select
-                value={values[argument.name] ?? ""}
-                onChange={(e) => setValues({ ...values, [argument.name]: e.target.value })}
-              >
-                <option value="">Not set</option>
-                {argument.choices.map((choice) => (
-                  <option key={choice} value={choice}>
-                    {choice}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                value={values[argument.name] ?? ""}
-                placeholder={argument.placeholder || argument.default}
-                onChange={(e) => setValues({ ...values, [argument.name]: e.target.value })}
-              />
-            )}
-          </Field>
-        ))}
+        {argumentsFor
+          .filter((argument) => argument.kind !== "networks")
+          .map((argument) => (
+            <Field
+              key={argument.name}
+              label={argument.label}
+              hint={argument.help || (argument.optional ? "Optional" : undefined)}
+            >
+              {argument.kind === "choice" ? (
+                <select
+                  value={values[argument.name] ?? ""}
+                  onChange={(e) => setValues({ ...values, [argument.name]: e.target.value })}
+                >
+                  <option value="">Not set</option>
+                  {argument.choices.map((choice) => (
+                    <option key={choice} value={choice}>
+                      {choice}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={values[argument.name] ?? ""}
+                  placeholder={argument.placeholder || argument.default}
+                  onChange={(e) => setValues({ ...values, [argument.name]: e.target.value })}
+                />
+              )}
+            </Field>
+          ))}
       </div>
+
+      {/* A network is chosen from the DHCP server rather than typed: the
+          scopes are what boot is advertised in. */}
+      {argumentsFor
+        .filter((argument) => argument.kind === "networks")
+        .map((argument) => (
+          <div key={argument.name}>
+            <h3 className="section-title">{argument.label}</h3>
+            {argument.help && <p className="muted">{argument.help}</p>}
+            <ScopeSelector
+              value={values[argument.name] ?? ""}
+              onChange={(next) => setValues({ ...values, [argument.name]: next })}
+            />
+          </div>
+        ))}
 
       <div className="actions-row">
         <button type="button" className="primary" disabled={busy || !node} onClick={() => void save()}>
