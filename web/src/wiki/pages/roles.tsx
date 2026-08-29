@@ -14,20 +14,23 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          A fresh install runs the core role: Active Directory, Group Policy and DNS. Everything
+          A fresh install runs the core role: the directory, Group Policy and DNS. Everything
           else is added afterwards without redeploying anything.
         </p>
 
         <Example title="Add a role">
           <Steps>
             <li>
-              <strong>Server Roles</strong> → find it under <strong>Available</strong> →{" "}
-              <strong>Install</strong>.
+              <strong>Server Roles</strong> → click the role → <strong>Install on a server</strong>.
             </li>
-            <li>Give the node&rsquo;s fully-qualified name and the role&rsquo;s settings.</li>
             <li>
-              Watch the state under <strong>Installed</strong>. It moves from{" "}
-              <C>installing</C> to <C>active</C>.
+              Choose the server. The domain&rsquo;s controllers are offered; any
+              fully-qualified name is accepted.
+            </li>
+            <li>Fill in the role&rsquo;s settings and install.</li>
+            <li>
+              The role&rsquo;s row lists every server it runs on and the state of each. It moves
+              from <C>installing</C> to <C>active</C>.
             </li>
             <li>Add any settings the installer prints to the secrets file, then restart the control plane.</li>
           </Steps>

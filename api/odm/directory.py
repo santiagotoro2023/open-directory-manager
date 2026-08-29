@@ -277,6 +277,25 @@ def _lookup_user(
     )
 
 
+def netbios_name(conn: Connection, settings: Settings) -> str:
+    """The domain's short name, e.g. EXAMPLE for corp.example.internal.
+
+    Read from the domain's crossRef rather than configured a second time, so it
+    cannot drift from what the directory actually calls itself.
+
+    Blocking; call through run_in_threadpool.
+    """
+    entries = _search(
+        conn,
+        f"CN=Partitions,CN=Configuration,{settings.base_dn}",
+        f"(&(objectClass=crossRef)(nCName={escape_filter_chars(settings.base_dn)}))",
+        ["nETBIOSName"],
+    )
+    if not entries:
+        return ""
+    return str(entries[0]["attributes"].get("nETBIOSName") or "")
+
+
 def nested_groups(conn: Connection, settings: Settings, dn: str) -> list[dict[str, str | None]]:
     """Every group the object belongs to, including through nesting.
 

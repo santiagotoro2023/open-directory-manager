@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, objects, roles
+from . import audit, directory, objects, replication, roles
+from .config import Settings, get_settings
 from .security import (
     client_ip,
     get_pool,
@@ -36,8 +37,19 @@ def _descriptor(role: roles.Role) -> dict[str, Any]:
         "title": role.title,
         "summary": role.summary,
         "core": role.core,
-        "arguments": list(role.arguments),
-        "optional_arguments": sorted(role.optional_arguments),
+        "arguments": [
+            {
+                "name": argument.name,
+                "label": argument.label,
+                "help": argument.help,
+                "kind": argument.kind,
+                "choices": list(argument.choices),
+                "placeholder": argument.placeholder,
+                "default": argument.default,
+                "optional": argument.optional,
+            }
+            for argument in role.arguments
+        ],
         "packages": list(role.packages),
         "produces_settings": list(role.produces_settings),
         "ui_section": role.ui_section,
@@ -64,12 +76,33 @@ def _instance(row: asyncpg.Record) -> dict[str, Any]:
 async def list_roles(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     rows = await pool.fetch("SELECT * FROM server_role ORDER BY role_name, node_fqdn")
     return {
         "available": [_descriptor(role) for role in roles.REGISTRY.values()],
         "installed": [_instance(row) for row in rows],
+        "nodes": await _nodes(settings),
     }
+
+
+async def _nodes(settings: Settings) -> list[str]:
+    """Machines a role can be installed on: the domain's controllers.
+
+    Reported as a list the console offers, not enforced — a role may legitimately
+    run on a member server. A failure here is not worth failing the page for.
+    """
+    try:
+        conn = await run_in_threadpool(directory.service_connection, settings)
+    except Exception:  # noqa: BLE001 - the picker is a convenience, not a gate
+        return []
+    try:
+        found = await run_in_threadpool(replication.controllers, conn, settings)
+    except Exception:  # noqa: BLE001
+        return []
+    finally:
+        await run_in_threadpool(conn.unbind)
+    return sorted({dc["dns_host_name"] for dc in found if dc["dns_host_name"]})
 
 
 @router.get("/instance", dependencies=[Depends(requires("role.read"))])

@@ -17,6 +17,7 @@ export function Delegation() {
   const [assignments, setAssignments] = useState<RbacAssignment[]>([]);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [dialog, setDialog] = useState<"assign" | "role" | null>(null);
+  const [openRole, setOpenRole] = useState<RbacRole | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -51,7 +52,7 @@ export function Delegation() {
 
   return (
     <main className="content">
-      <div className="toolbar">
+      <div className="page-header">
         <h1>Delegation</h1>
         <span className="spacer" />
         <button
@@ -125,7 +126,7 @@ export function Delegation() {
             ))}
             {assignments.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
+                <td colSpan={5} className="empty">
                   Nothing delegated. Only members of the domain administrators group can sign in.
                 </td>
               </tr>
@@ -134,11 +135,14 @@ export function Delegation() {
         </table>
       )}
 
+      {/* A role's permission list runs to a dozen strings. The table carries
+          the count; the list itself is one click away. */}
       {tab === "roles" && (
         <table className="data">
           <thead>
             <tr>
               <th scope="col">Role</th>
+              <th scope="col">Description</th>
               <th scope="col">Permissions</th>
               <th scope="col">
                 <span className="sr-only">Remove</span>
@@ -147,22 +151,27 @@ export function Delegation() {
           </thead>
           <tbody>
             {roles.map((role) => (
-              <tr key={role.name}>
+              <tr key={role.name} onClick={() => setOpenRole(role)}>
                 <td>
-                  <strong>
-                    {role.builtin && <ShieldCheck size={14} aria-hidden="true" />}
-                    {role.name}
-                  </strong>
-                  <p className="muted">{role.description}</p>
+                  {role.builtin && <ShieldCheck size={14} aria-hidden="true" />}
+                  <strong>{role.name}</strong>
                 </td>
-                <td className="mono">{role.permissions.join(", ")}</td>
+                <td>{role.description}</td>
+                <td>
+                  {role.permissions.includes("*")
+                    ? "Everything"
+                    : `${role.permissions.length} permissions`}
+                </td>
                 <td>
                   {!role.builtin && (
                     <button
                       type="button"
                       className="icon"
                       aria-label={`Delete role ${role.name}`}
-                      onClick={() => void run(() => api.rbac.deleteRole(role.name))}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void run(() => api.rbac.deleteRole(role.name));
+                      }}
                     >
                       <Trash2 size={14} aria-hidden="true" />
                     </button>
@@ -172,6 +181,28 @@ export function Delegation() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {openRole && (
+        <Modal
+          title={openRole.name}
+          submitLabel="Close"
+          onClose={() => setOpenRole(null)}
+          onSubmit={() => setOpenRole(null)}
+        >
+          <p>{openRole.description}</p>
+          <h3 className="section-title">Permissions</h3>
+          <ul className="permission-list">
+            {(openRole.permissions.includes("*")
+              ? ["every permission in the console"]
+              : openRole.permissions
+            ).map((permission) => (
+              <li key={permission} className="mono">
+                {permission}
+              </li>
+            ))}
+          </ul>
+        </Modal>
       )}
 
       {dialog === "assign" && (

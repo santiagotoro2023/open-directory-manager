@@ -39,7 +39,7 @@ export function Health() {
 
   return (
     <main className="content">
-      <div className="toolbar">
+      <div className="page-header">
         <h1>Operations</h1>
         <span className="spacer" />
         <button type="button" className="ghost" onClick={() => void load()}>

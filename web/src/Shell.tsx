@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   Activity,
@@ -8,6 +9,8 @@ import {
   LayoutDashboard,
   LogOut,
   Network,
+  PanelLeftClose,
+  PanelLeftOpen,
   ScrollText,
   Server,
   ShieldCheck,
@@ -33,6 +36,22 @@ const NAV = [
   { label: "Wiki", to: "/wiki", icon: BookOpen },
 ];
 
+function remember(collapsed: boolean) {
+  try {
+    localStorage.setItem("odm.sidebar", collapsed ? "collapsed" : "open");
+  } catch {
+    /* nothing to do: the sidebar simply opens again next time */
+  }
+}
+
+function recall(): boolean {
+  try {
+    return localStorage.getItem("odm.sidebar") === "collapsed";
+  } catch {
+    return false;
+  }
+}
+
 export function Shell({
   session,
   onSignOut,
@@ -40,6 +59,15 @@ export function Shell({
   session: SessionInfo;
   onSignOut: () => void;
 }) {
+  const [collapsed, setCollapsed] = useState(recall);
+
+  function toggle() {
+    setCollapsed((current) => {
+      remember(!current);
+      return !current;
+    });
+  }
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -57,7 +85,20 @@ export function Shell({
       </header>
 
       <div className="body">
-        <nav className="sidebar" aria-label="Sections">
+        <nav className={collapsed ? "sidebar collapsed" : "sidebar"} aria-label="Sections">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggle}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand the navigation" : "Collapse the navigation"}
+          >
+            {collapsed ? (
+              <PanelLeftOpen size={16} aria-hidden="true" />
+            ) : (
+              <PanelLeftClose size={16} aria-hidden="true" />
+            )}
+          </button>
           <ul>
             {NAV.filter(
               (item) =>
@@ -68,10 +109,11 @@ export function Shell({
                 <NavLink
                   to={to}
                   end={end}
+                  title={label}
                   className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}
                 >
                   <Icon size={16} aria-hidden="true" />
-                  {label}
+                  <span>{label}</span>
                 </NavLink>
               </li>
             ))}

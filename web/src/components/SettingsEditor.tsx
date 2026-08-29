@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { AdmxSelection, PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
+import { Split } from "./Split";
 
 type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox";
 
@@ -13,9 +15,14 @@ interface FieldSpec {
   width?: string;
 }
 
+type Half = "Computer" | "User";
+
 interface CategorySpec {
   key: keyof PolicySettings;
   title: string;
+  // Which half of the policy the setting is enforced in, as the Group Policy
+  // Management Editor splits them.
+  half: Half;
   note?: string;
   fields: FieldSpec[];
   blank: Record<string, unknown>;
@@ -28,6 +35,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "files",
     title: "File deployment",
+    half: "Computer",
     fields: [
       { key: "path", label: "Path", placeholder: "/etc/motd" },
       { key: "content", label: "Content", kind: "textarea" },
@@ -40,7 +48,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "scripts",
     title: "Scripts",
-    note: "Startup and shutdown run from a systemd unit; logon and logoff from a PAM hook.",
+    half: "Computer",
     fields: [
       {
         key: "trigger",
@@ -58,6 +66,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "systemd_units",
     title: "systemd units",
+    half: "Computer",
     fields: [
       { key: "unit", label: "Unit", placeholder: "telnet.socket" },
       {
@@ -73,6 +82,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "cron",
     title: "Scheduled tasks",
+    half: "Computer",
     fields: [
       { key: "name", label: "Name", width: "160px" },
       { key: "schedule", label: "Schedule", placeholder: "0 3 * * 0", width: "150px" },
@@ -84,7 +94,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "drive_maps",
     title: "Drive maps",
-    note: "Mounted with cifs and sec=krb5; no credentials are stored on the client.",
+    half: "User",
     fields: [
       { key: "name", label: "Name", width: "140px" },
       { key: "unc", label: "Share", placeholder: "//fs01/shared" },
@@ -97,7 +107,8 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "sudo_rules",
     title: "Sudo rules",
-    note: "Users and commands are comma separated. Validated with visudo before install.",
+    note: "Users and commands are comma separated.",
+    half: "Computer",
     fields: [
       { key: "name", label: "Name", width: "140px" },
       { key: "users", label: "Users and %groups", placeholder: "%Helpdesk" },
@@ -110,9 +121,8 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "hbac_rules",
     title: "HBAC rules",
-    note:
-      "Host-based access control: who may open a session, and how. Deny overrides allow, and " +
-      "local administrators are never locked out.",
+    note: "Who may open a session on a machine, and how.",
+    half: "Computer",
     fields: [
       { key: "principal", label: "User or %group", placeholder: "%Engineers" },
       {
@@ -135,7 +145,8 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "packages",
     title: "Software deployment",
-    note: "apt packages the machine should have, keep current, or not have.",
+    half: "Computer",
+    note: "Packages the machine should have, keep current, or not have.",
     fields: [
       { key: "name", label: "Package", placeholder: "cifs-utils" },
       {
@@ -151,6 +162,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "firewall",
     title: "Firewall rules",
+    half: "Computer",
     fields: [
       { key: "name", label: "Name", width: "140px" },
       { key: "action", label: "Action", kind: "select", options: ["allow", "deny"], width: "110px" },
@@ -189,6 +201,28 @@ function fromInput(field: FieldSpec, raw: string): unknown {
   return raw;
 }
 
+// Categories with no repeating rows; each renders its own editor.
+const SPECIAL = [
+  { key: "wallpaper", title: "Desktop background", half: "User" as Half },
+  { key: "browser", title: "Browser policy", half: "Computer" as Half },
+  { key: "admx", title: "Administrative templates", half: "Computer" as Half },
+] as const;
+
+type Selected = string;
+
+function countOf(settings: PolicySettings, key: string): number {
+  if (key === "wallpaper") return settings.wallpaper?.uri ? 1 : 0;
+  if (key === "browser") {
+    const browser = settings.browser;
+    if (!browser) return 0;
+    return (
+      Object.keys(browser.chromium ?? {}).length + Object.keys(browser.firefox ?? {}).length
+    );
+  }
+  const value = settings[key as keyof PolicySettings];
+  return Array.isArray(value) ? value.length : 0;
+}
+
 export function SettingsEditor({
   settings,
   onChange,
@@ -196,165 +230,261 @@ export function SettingsEditor({
   settings: PolicySettings;
   onChange: (next: PolicySettings) => void;
 }) {
-  function rows(category: CategorySpec): Record<string, unknown>[] {
-    return (settings[category.key] as Record<string, unknown>[] | undefined) ?? [];
-  }
+  const [selected, setSelected] = useState<Selected>(String(CATEGORIES[0].key));
 
-  function update(category: CategorySpec, next: Record<string, unknown>[]) {
+  const entries = [
+    ...CATEGORIES.map((category) => ({
+      key: String(category.key),
+      title: category.title,
+      half: category.half,
+    })),
+    ...SPECIAL.map((special) => ({
+      key: special.key,
+      title: special.title,
+      half: special.half,
+    })),
+  ];
+
+  const tree = (
+    <ul className="category-list">
+      {(["Computer", "User"] as Half[]).map((half) => (
+        <li key={half}>
+          <p className="category-group">{half}</p>
+          <ul>
+            {entries
+              .filter((entry) => entry.half === half)
+              .map((entry) => {
+                const count = countOf(settings, entry.key);
+                return (
+                  <li key={entry.key}>
+                    <button
+                      type="button"
+                      className={selected === entry.key ? "active" : ""}
+                      aria-current={selected === entry.key ? "true" : undefined}
+                      onClick={() => setSelected(entry.key)}
+                    >
+                      <span className="truncate">{entry.title}</span>
+                      {count > 0 && (
+                        <span className="count" aria-label={`${count} configured`}>
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const category = CATEGORIES.find((entry) => String(entry.key) === selected);
+
+  return (
+    <div className="settings-editor">
+      <Split id="policy-categories" label="Resize the category list" initial={230} side={tree}>
+        <div className="category-editor">
+          {category && (
+            <RowsEditor category={category} settings={settings} onChange={onChange} />
+          )}
+          {selected === "wallpaper" && (
+            <WallpaperEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "browser" && <BrowserEditor settings={settings} onChange={onChange} />}
+          {selected === "admx" && (
+            <>
+              <header>
+                <h3>Administrative templates</h3>
+              </header>
+              <AdmxEditor
+                selections={settings.admx ?? []}
+                onChange={(admx: AdmxSelection[]) => onChange({ ...settings, admx })}
+              />
+            </>
+          )}
+        </div>
+      </Split>
+    </div>
+  );
+}
+
+function RowsEditor({
+  category,
+  settings,
+  onChange,
+}: {
+  category: CategorySpec;
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = (settings[category.key] as Record<string, unknown>[] | undefined) ?? [];
+
+  function update(next: Record<string, unknown>[]) {
     onChange({ ...settings, [category.key]: next });
   }
 
   return (
-    <div className="settings-editor">
-      {CATEGORIES.map((category) => {
-        const current = rows(category);
-        return (
-          <section key={String(category.key)}>
-            <header>
-              <h3>{category.title}</h3>
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => update(category, [...current, { ...category.blank }])}
-              >
-                <Plus size={14} aria-hidden="true" />
-                Add
-              </button>
-            </header>
-            {category.note && <p className="muted">{category.note}</p>}
+    <>
+      <header>
+        <h3>{category.title}</h3>
+        <span className="spacer" />
+        <button
+          type="button"
+          className="primary"
+          onClick={() => update([...current, { ...category.blank }])}
+        >
+          <Plus size={15} aria-hidden="true" />
+          Add
+        </button>
+      </header>
+      {category.note && <p className="muted">{category.note}</p>}
 
-            {current.length > 0 && (
-              <table className="data compact">
-                <thead>
-                  <tr>
-                    {category.fields.map((field) => (
-                      <th key={field.key} style={field.width ? { width: field.width } : undefined}>
-                        {field.label}
-                      </th>
-                    ))}
-                    <th style={{ width: "44px" }}>
-                      <span className="sr-only">Remove</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {current.map((row, index) => (
-                    <tr key={index}>
-                      {category.fields.map((field) => (
-                        <td key={field.key}>
-                          <Cell
-                            field={field}
-                            value={row[field.key]}
-                            onChange={(value) => {
-                              const next = [...current];
-                              next[index] = { ...row, [field.key]: value };
-                              update(category, next);
-                            }}
-                          />
-                        </td>
-                      ))}
-                      <td>
-                        <button
-                          type="button"
-                          className="icon"
-                          aria-label={`Remove ${category.title} entry ${index + 1}`}
-                          onClick={() => update(category, current.filter((_, i) => i !== index))}
-                        >
-                          <Trash2 size={14} aria-hidden="true" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {current.length === 0 ? (
+        <p className="empty">Not configured.</p>
+      ) : (
+        <table className="data compact">
+          <thead>
+            <tr>
+              {category.fields.map((field) => (
+                <th key={field.key} style={field.width ? { width: field.width } : undefined}>
+                  {field.label}
+                </th>
+              ))}
+              <th style={{ width: "44px" }}>
+                <span className="sr-only">Remove</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {current.map((row, index) => (
+              <tr key={index}>
+                {category.fields.map((field) => (
+                  <td key={field.key}>
+                    <Cell
+                      field={field}
+                      value={row[field.key]}
+                      onChange={(value) => {
+                        const next = [...current];
+                        next[index] = { ...row, [field.key]: value };
+                        update(next);
+                      }}
+                    />
+                  </td>
+                ))}
+                <td>
+                  <button
+                    type="button"
+                    className="icon"
+                    aria-label={`Remove ${category.title} entry ${index + 1}`}
+                    onClick={() => update(current.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
+  );
+}
+
+function WallpaperEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  return (
+    <>
+      <header>
+        <h3>Desktop background</h3>
+      </header>
+      <div className="inline-fields">
+        <label className="field">
+          <span>Image location</span>
+          <input
+            value={settings.wallpaper?.uri ?? ""}
+            placeholder="file:///usr/share/backgrounds/corp.png"
+            onChange={(e) =>
+              onChange({
+                ...settings,
+                wallpaper: e.target.value
+                  ? {
+                      uri: e.target.value,
+                      picture_options: settings.wallpaper?.picture_options ?? "zoom",
+                    }
+                  : undefined,
+              })
+            }
+          />
+        </label>
+        <label className="field">
+          <span>Fit</span>
+          <select
+            value={settings.wallpaper?.picture_options ?? "zoom"}
+            onChange={(e) =>
+              onChange({
+                ...settings,
+                wallpaper: settings.wallpaper
+                  ? { ...settings.wallpaper, picture_options: e.target.value }
+                  : undefined,
+              })
+            }
+          >
+            {["zoom", "scaled", "stretched", "centered", "wallpaper", "spanned", "none"].map(
+              (option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ),
             )}
-          </section>
-        );
-      })}
+          </select>
+        </label>
+      </div>
+    </>
+  );
+}
 
-      <section>
-        <header>
-          <h3>Desktop background</h3>
-        </header>
-        <div className="inline-fields">
-          <label className="field">
-            <span>Image URI</span>
-            <input
-              value={settings.wallpaper?.uri ?? ""}
-              placeholder="file:///usr/share/backgrounds/corp.png"
-              onChange={(e) =>
-                onChange({
-                  ...settings,
-                  wallpaper: e.target.value
-                    ? {
-                        uri: e.target.value,
-                        picture_options: settings.wallpaper?.picture_options ?? "zoom",
-                      }
-                    : undefined,
-                })
-              }
-            />
-          </label>
-          <label className="field">
-            <span>Fit</span>
-            <select
-              value={settings.wallpaper?.picture_options ?? "zoom"}
-              onChange={(e) =>
-                onChange({
-                  ...settings,
-                  wallpaper: settings.wallpaper
-                    ? { ...settings.wallpaper, picture_options: e.target.value }
-                    : undefined,
-                })
-              }
-            >
-              {["zoom", "scaled", "stretched", "centered", "wallpaper", "spanned", "none"].map(
-                (option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <AdmxEditor
-        selections={settings.admx ?? []}
-        onChange={(admx: AdmxSelection[]) => onChange({ ...settings, admx })}
+function BrowserEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  return (
+    <>
+      <header>
+        <h3>Browser policy</h3>
+      </header>
+      <p className="muted">
+        Managed-policy documents, written to each browser&rsquo;s own policy directory.
+      </p>
+      <JsonField
+        label="Chromium"
+        value={settings.browser?.chromium}
+        onChange={(value) =>
+          onChange({
+            ...settings,
+            browser: { chromium: value, firefox: settings.browser?.firefox ?? {} },
+          })
+        }
       />
-
-      <section>
-        <header>
-          <h3>Browser policy</h3>
-        </header>
-        <p className="muted">
-          Chromium and Firefox managed-policy documents, written to each vendor&rsquo;s native
-          location. Vendor ADMX templates render as forms once imported.
-        </p>
-        <JsonField
-          label="Chromium"
-          value={settings.browser?.chromium}
-          onChange={(value) =>
-            onChange({
-              ...settings,
-              browser: { chromium: value, firefox: settings.browser?.firefox ?? {} },
-            })
-          }
-        />
-        <JsonField
-          label="Firefox"
-          value={settings.browser?.firefox}
-          onChange={(value) =>
-            onChange({
-              ...settings,
-              browser: { chromium: settings.browser?.chromium ?? {}, firefox: value },
-            })
-          }
-        />
-      </section>
-    </div>
+      <JsonField
+        label="Firefox"
+        value={settings.browser?.firefox}
+        onChange={(value) =>
+          onChange({
+            ...settings,
+            browser: { chromium: settings.browser?.chromium ?? {}, firefox: value },
+          })
+        }
+      />
+    </>
   );
 }
 

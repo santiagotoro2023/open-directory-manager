@@ -89,6 +89,26 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Operations">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                "Replication says the account may not read replication state",
+                <>
+                  Reading the topology and forcing a run are separate directory rights. Run{" "}
+                  <C key="e">deploy/create-api-service-account.sh</C> on a domain controller to
+                  grant them.
+                </>,
+              ],
+              [
+                "Only one domain controller is listed",
+                "Controllers are read from their computer accounts. A second one appears once it has joined and replicated.",
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="A setting fails to apply">
           <p>The agent report names the setting and the reason.</p>
           <Reference

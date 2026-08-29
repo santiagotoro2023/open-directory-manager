@@ -14,7 +14,7 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          Open Directory Manager runs an Active Directory domain on Linux. A Samba domain
+          Open Directory Manager runs a Windows-compatible directory domain on Linux. A Samba domain
           controller holds the directory, Kerberos, DNS and SYSVOL. The ODM control plane is the
           only thing that talks to it, and this console is the only thing that talks to the
           control plane. Domain members run a small agent that applies the policy the control
@@ -72,6 +72,11 @@ sudo deploy/setup.sh`}</Code>
             the machine&rsquo;s own report of what it applied.
           </Example>
         </Section>
+
+        <Example title="Make a pane wider">
+          Drag the border between a list and its contents. Double-click it to reset. The
+          navigation collapses to icons from the button at its top.
+        </Example>
 
         <Where>Every section in the left-hand navigation has its own page in this wiki.</Where>
       </Quickstart>

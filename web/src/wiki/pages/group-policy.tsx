@@ -25,7 +25,9 @@ export function Content() {
               <strong>Group Policy</strong> → <strong>New GPO</strong> → give it a name.
             </li>
             <li>
-              <strong>Settings</strong> → add what it should do.
+              <strong>Settings</strong> → pick a category from the list, under{" "}
+              <strong>Computer</strong> or <strong>User</strong> → <strong>Add</strong>. A
+              category carrying settings shows how many.
             </li>
             <li>
               <strong>Links</strong> → pick a container → <strong>Link here</strong>.
@@ -46,6 +48,10 @@ export function Content() {
         </Example>
         <Example title="See what a machine will get">
           <strong>Directory</strong> → select the computer → <strong>Policy</strong>.
+        </Example>
+        <Example title="Delete a policy object">
+          Open it → <strong>Delete</strong>. Its links go with it, and it is restorable from{" "}
+          <strong>Deleted Objects</strong> within the retention window.
         </Example>
 
         <Where>Group Policy for the objects; Directory for inheritance and per-object results.</Where>

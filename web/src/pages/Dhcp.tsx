@@ -82,7 +82,7 @@ export function Dhcp() {
 
   return (
     <main className="content">
-      <div className="toolbar">
+      <div className="page-header">
         <h1>DHCP</h1>
         <span className="spacer" />
         <button type="button" className="primary" onClick={() => setDialog("scope")}>

@@ -26,8 +26,10 @@ TIMEOUT_SECONDS = 30
 
 RECORD_TYPES = ("A", "AAAA", "CNAME", "MX", "NS", "PTR", "SRV", "TXT")
 
-_ZONE_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?"
-                      r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$")
+# Underscores are legal here: Active Directory provisions _msdcs.<domain> as a
+# zone of its own, and rejecting it made the domain's own zone unreadable.
+_ZONE_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9_]([A-Za-z0-9_-]{0,62}[A-Za-z0-9_])?"
+                      r"(\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,62}[A-Za-z0-9_])?)*$")
 _NAME_RE = re.compile(r"^(@|\*|[A-Za-z0-9_]([A-Za-z0-9_-]{0,62}[A-Za-z0-9_])?"
                       r"(\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,62}[A-Za-z0-9_])?)*)$")
 _HOST_RE = re.compile(r"^(?=.{1,254}$)[A-Za-z0-9_]([A-Za-z0-9_-]{0,62}[A-Za-z0-9_])?"

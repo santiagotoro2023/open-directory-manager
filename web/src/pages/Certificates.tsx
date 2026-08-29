@@ -72,7 +72,7 @@ export function Certificates() {
 
   return (
     <main className="content">
-      <div className="toolbar">
+      <div className="page-header">
         <h1>Certificates</h1>
         <span className="spacer" />
         <a className="ghost button-link" href={api.ca.rootUrl} download>

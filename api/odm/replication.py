@@ -47,7 +47,14 @@ def _run(*args: str) -> str:
         raise ReplicationError(f"samba-tool drs failed: {exc}") from exc
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise ReplicationError(detail[-1] if detail else "samba-tool drs failed")
+        message = detail[-1] if detail else "samba-tool drs failed"
+        if "ACCESS_DENIED" in message:
+            raise ReplicationError(
+                "the control plane's account may not read replication state. "
+                "Re-run deploy/create-api-service-account.sh on a domain "
+                "controller to grant it."
+            )
+        raise ReplicationError(message)
     return completed.stdout
 
 

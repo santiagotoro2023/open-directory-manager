@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { SettingsEditor } from "../components/SettingsEditor";
@@ -50,7 +50,7 @@ export function Policy() {
 
   return (
     <main className="content">
-      <div className="toolbar">
+      <div className="page-header">
         <h1>Group Policy Objects</h1>
         <span className="spacer" />
         <button type="button" className="ghost" onClick={() => setTemplates(true)}>
@@ -93,7 +93,7 @@ export function Policy() {
           ))}
           {gpos.length === 0 && (
             <tr>
-              <td colSpan={5} className="muted">
+              <td colSpan={5} className="empty">
                 No group policy objects yet.
               </td>
             </tr>
@@ -180,6 +180,7 @@ function GpoDetail({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const lines = (value: string) =>
     value
@@ -215,19 +216,53 @@ function GpoDetail({
     }
   }
 
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.policy.remove(gpo.guid);
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="content">
-      <div className="toolbar">
+      <div className="page-header">
         <button type="button" className="ghost" onClick={onClose}>
+          <ArrowLeft size={15} aria-hidden="true" />
           Back
         </button>
         <h1>{gpo.display_name}</h1>
         <span className="spacer" />
+        <button type="button" className="danger" onClick={() => setConfirming(true)}>
+          <Trash2 size={15} aria-hidden="true" />
+          Delete
+        </button>
         <button type="button" className="primary" onClick={() => void save()} disabled={busy}>
           Save
         </button>
       </div>
       <p className="mono muted">{gpo.guid}</p>
+
+      {confirming && (
+        <Modal
+          title={`Delete ${gpo.display_name}?`}
+          submitLabel="Delete"
+          busy={busy}
+          onClose={() => setConfirming(false)}
+          onSubmit={() => void remove()}
+        >
+          <p>
+            {gpo.link_count
+              ? `Linked in ${gpo.link_count} place${gpo.link_count === 1 ? "" : "s"}. Those links go with it.`
+              : "This policy object is not linked anywhere."}
+          </p>
+          <p className="muted">Restorable from Deleted Objects within the retention window.</p>
+        </Modal>
+      )}
 
       <nav className="tabs" aria-label="Group policy sections">
         {(["settings", "links", "scope"] as Tab[]).map((current) => (

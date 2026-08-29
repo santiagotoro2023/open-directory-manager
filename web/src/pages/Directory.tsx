@@ -13,6 +13,7 @@ import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
 import { BulkImport, CreateDialog } from "../components/CreateDialog";
 import { EnrolmentTokens } from "../components/EnrolmentTokens";
 import { ObjectPanel, isDisabled } from "../components/ObjectPanel";
+import { Split } from "../components/Split";
 
 const ICONS = {
   user: User,
@@ -32,6 +33,21 @@ const TYPE_LABELS: Record<string, string> = {
   domain: "Domain",
 };
 
+// Containers the directory keeps for its own bookkeeping. Nothing an operator
+// manages lives in them, so they are out of the way until asked for.
+const PLUMBING = new Set([
+  "keys",
+  "foreignsecurityprincipals",
+  "managed service accounts",
+  "program data",
+  "system",
+  "ntds quotas",
+  "infrastructure",
+  "lostandfound",
+  "tpm devices",
+  "deleted objects",
+]);
+
 function parentOf(dn: string): string {
   const comma = dn.indexOf(",");
   return comma === -1 ? "" : dn.slice(comma + 1);
@@ -41,14 +57,20 @@ function label(node: DirectoryObject): string {
   return String(node.ou ?? node.cn ?? node.name ?? node.distinguishedName);
 }
 
+function isPlumbing(node: DirectoryObject): boolean {
+  return PLUMBING.has(label(node).toLowerCase());
+}
+
 export function Directory() {
   const [nodes, setNodes] = useState<DirectoryObject[]>([]);
   const [baseDn, setBaseDn] = useState("");
+  const [domainLabel, setDomainLabel] = useState("");
   const [container, setContainer] = useState("");
   const [objects, setObjects] = useState<DirectoryObject[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [typeFilter, setTypeFilter] = useState<ObjectType | "">("");
   const [search, setSearch] = useState("");
+  const [showPlumbing, setShowPlumbing] = useState(false);
   const [selected, setSelected] = useState<DirectoryObject | null>(null);
   const [creating, setCreating] = useState<ObjectType | null>(null);
   const [importing, setImporting] = useState(false);
@@ -59,6 +81,10 @@ export function Directory() {
   const loadTree = useCallback(async () => {
     const tree = await api.directory.tree();
     setBaseDn(tree.base_dn);
+    // The domain answers to its short name everywhere else — on a client's
+    // login screen, in a sudo rule, in a group name — so that is what the root
+    // of the tree is called here too.
+    setDomainLabel(tree.netbios_name || tree.domain || tree.base_dn);
     setNodes(tree.nodes);
     setContainer((current) => current || tree.base_dn);
   }, []);
@@ -98,17 +124,23 @@ export function Directory() {
     await loadObjects();
   }, [loadTree, loadObjects]);
 
+  const visible = useMemo(
+    () => (showPlumbing ? nodes : nodes.filter((node) => !isPlumbing(node))),
+    [nodes, showPlumbing],
+  );
+
   const containers = useMemo(
     () => nodes.filter((n) => n.objectType !== "domain" || n.distinguishedName === baseDn),
     [nodes, baseDn],
   );
 
-  return (
-    <div className="directory">
+  const tree = (
+    <>
       <nav className="tree" aria-label="Organizational units">
         <TreeNode
-          nodes={nodes}
+          nodes={visible}
           dn={baseDn}
+          rootLabel={domainLabel}
           selected={container}
           onSelect={(dn) => {
             setSearch("");
@@ -117,9 +149,45 @@ export function Directory() {
           }}
         />
       </nav>
+      <div className="pane-footer">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={showPlumbing}
+            onChange={(e) => setShowPlumbing(e.target.checked)}
+          />
+          Show system containers
+        </label>
+      </div>
+    </>
+  );
 
+  return (
+    <Split
+      id="directory"
+      label="Resize the directory tree"
+      initial={260}
+      side={tree}
+      aside={
+        selected && (
+          <ObjectPanel
+            object={selected}
+            containers={containers}
+            onClose={() => setSelected(null)}
+            onChanged={(updated) => {
+              setSelected(updated);
+              void refresh();
+            }}
+            onDeleted={() => {
+              setSelected(null);
+              void refresh();
+            }}
+          />
+        )
+      }
+    >
       <section className="objects">
-        <div className="toolbar">
+        <div className="page-header">
           <div className="search">
             <Search size={15} aria-hidden="true" />
             <input
@@ -141,18 +209,17 @@ export function Directory() {
             <option value="ou">Organizational units</option>
           </select>
           <span className="spacer" />
-          <button type="button" className="ghost" onClick={() => setCreating("user")}>
-            New user
-          </button>
-          <button type="button" className="ghost" onClick={() => setCreating("group")}>
-            New group
-          </button>
-          <button type="button" className="ghost" onClick={() => setCreating("computer")}>
-            New computer
-          </button>
-          <button type="button" className="ghost" onClick={() => setCreating("ou")}>
-            New OU
-          </button>
+          <select
+            aria-label="Create an object"
+            value=""
+            onChange={(e) => e.target.value && setCreating(e.target.value as ObjectType)}
+          >
+            <option value="">Create…</option>
+            <option value="user">User</option>
+            <option value="group">Group</option>
+            <option value="computer">Computer</option>
+            <option value="ou">Organizational unit</option>
+          </select>
           <button type="button" className="ghost" onClick={() => setImporting(true)}>
             <Upload size={15} aria-hidden="true" />
             Import CSV
@@ -212,8 +279,8 @@ export function Directory() {
             })}
             {!loading && objects.length === 0 && (
               <tr>
-                <td colSpan={4} className="muted">
-                  No objects here.
+                <td colSpan={4} className="empty">
+                  Nothing here yet.
                 </td>
               </tr>
             )}
@@ -221,22 +288,6 @@ export function Directory() {
         </table>
         {truncated && <p className="muted">Results truncated — narrow the search.</p>}
       </section>
-
-      {selected && (
-        <ObjectPanel
-          object={selected}
-          containers={containers}
-          onClose={() => setSelected(null)}
-          onChanged={(updated) => {
-            setSelected(updated);
-            void refresh();
-          }}
-          onDeleted={() => {
-            setSelected(null);
-            void refresh();
-          }}
-        />
-      )}
 
       {creating && (
         <CreateDialog
@@ -261,18 +312,20 @@ export function Directory() {
           onImported={() => void refresh()}
         />
       )}
-    </div>
+    </Split>
   );
 }
 
 function TreeNode({
   nodes,
   dn,
+  rootLabel,
   selected,
   onSelect,
 }: {
   nodes: DirectoryObject[];
   dn: string;
+  rootLabel?: string;
   selected: string;
   onSelect: (dn: string) => void;
 }) {
@@ -284,6 +337,7 @@ function TreeNode({
     (n) => parentOf(n.distinguishedName).toLowerCase() === dn.toLowerCase(),
   );
   if (!self) return null;
+  const name = rootLabel ?? label(self);
 
   return (
     <div className="tree-node">
@@ -291,7 +345,7 @@ function TreeNode({
         <button
           type="button"
           className="icon"
-          aria-label={open ? `Collapse ${label(self)}` : `Expand ${label(self)}`}
+          aria-label={open ? `Collapse ${name}` : `Expand ${name}`}
           onClick={() => setOpen(!open)}
           style={{ visibility: children.length ? "visible" : "hidden" }}
         >
@@ -303,7 +357,7 @@ function TreeNode({
         </button>
         <button type="button" className="tree-label" onClick={() => onSelect(dn)}>
           <Folder size={14} aria-hidden="true" />
-          {label(self)}
+          <span className="truncate">{name}</span>
         </button>
       </div>
       {open && children.length > 0 && (

@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # Absolute, so the helper cannot be shadowed by anything on PATH.
@@ -37,6 +37,25 @@ class RoleError(Exception):
 
 
 @dataclass(frozen=True)
+class Argument:
+    """One installer argument, described well enough to render a real field.
+
+    The console used to title-case the argument name, which produced "Ha role"
+    and "This url" and told the operator nothing about what to type.
+    """
+
+    name: str
+    label: str
+    help: str = ""
+    # text | choice | url | host | path — decides the control the console draws.
+    kind: str = "text"
+    choices: tuple[str, ...] = ()
+    placeholder: str = ""
+    default: str = ""
+    optional: bool = False
+
+
+@dataclass(frozen=True)
 class Role:
     name: str
     title: str
@@ -44,88 +63,147 @@ class Role:
     # Settings the operator must add to the secrets file once it is installed.
     produces_settings: tuple[str, ...] = ()
     # Installer arguments, in order, with the request field each comes from.
-    arguments: tuple[str, ...] = ()
+    arguments: tuple[Argument, ...] = ()
     packages: tuple[str, ...] = ()
     core: bool = False
     ui_section: str = ""
     notes: str = ""
-    optional_arguments: frozenset[str] = field(default_factory=frozenset)
 
 
 REGISTRY: dict[str, Role] = {
     "core": Role(
         name="core",
-        title="Active Directory, Group Policy and DNS",
-        summary=(
-            "The domain itself: the directory, Kerberos, SYSVOL and the "
-            "AD-integrated DNS zones. Always present."
-        ),
+        title="Directory, Group Policy and DNS",
+        summary="The directory, Kerberos, SYSVOL and the domain's DNS zones.",
         core=True,
         ui_section="directory",
     ),
     "dhcp": Role(
         name="dhcp",
         title="DHCP",
-        summary=(
-            "An ISC Kea failover pair with dynamic DNS into the domain's own "
-            "zones, so leased hosts resolve without anyone touching DNS."
+        summary="An ISC Kea failover pair that registers its leases in the domain's DNS zones.",
+        arguments=(
+            Argument(
+                name="ha_role",
+                label="Failover role",
+                help="Install once as primary and once as standby.",
+                kind="choice",
+                choices=("primary", "standby"),
+                default="primary",
+            ),
+            Argument(
+                name="this_url",
+                label="Control address of this node",
+                kind="url",
+                placeholder="http://dhcp1.corp.example.internal:8000/",
+            ),
+            Argument(
+                name="peer_url",
+                label="Control address of the other node",
+                kind="url",
+                placeholder="http://dhcp2.corp.example.internal:8000/",
+            ),
+            Argument(
+                name="realm",
+                label="Kerberos realm",
+                kind="text",
+                placeholder="CORP.EXAMPLE.INTERNAL",
+            ),
+            Argument(
+                name="dns_server",
+                label="DNS server to update",
+                help="A domain controller holding the zones leases are written into.",
+                kind="host",
+                placeholder="dc1.corp.example.internal",
+            ),
         ),
-        arguments=("ha_role", "this_url", "peer_url", "realm", "dns_server"),
         packages=("kea-dhcp4-server", "kea-ctrl-agent", "kea-dhcp-ddns-server"),
         produces_settings=("ODM_KEA_URL", "ODM_KEA_USER", "ODM_KEA_PASSWORD"),
         ui_section="dhcp",
-        notes=(
-            "Install on both nodes of the pair — once as primary, once as "
-            "standby — then add the printed ODM_KEA_* lines to the secrets file."
-        ),
+        notes="Add the ODM_KEA_* lines the installer prints to the secrets file.",
     ),
     "certificate-authority": Role(
         name="certificate-authority",
         title="Certificate authority",
         summary=(
-            "An internal CA that issues server and client certificates, "
-            "publishes its root to domain members through group policy, and "
-            "can re-issue the administration console's own certificate."
+            "Issues server and client certificates, publishes its root through group "
+            "policy, and re-issues the console's own certificate."
         ),
-        arguments=("ca_dir",),
-        optional_arguments=frozenset({"ca_dir"}),
+        arguments=(
+            Argument(
+                name="ca_dir",
+                label="Storage directory",
+                kind="path",
+                default="/var/lib/odm/ca",
+                placeholder="/var/lib/odm/ca",
+                optional=True,
+            ),
+        ),
         packages=(),
         produces_settings=("ODM_CA_DIR",),
         ui_section="ca",
-        notes=(
-            "After installing, create the root under Certificates, then "
-            "publish it so agents install it into the system trust store."
-        ),
+        notes="Create the root under Certificates once this is installed, then publish it.",
     ),
     "pxe": Role(
         name="pxe",
         title="Client enrolment (PXE)",
         summary=(
-            "Unattended Debian installation over the network. Installed "
-            "machines join the domain on first boot with an enrolment token."
+            "Unattended Debian installation over the network. Installed machines "
+            "join the domain on first boot with an enrolment token."
         ),
-        arguments=("interface", "domain", "enrolment_token", "suite"),
-        optional_arguments=frozenset({"suite"}),
+        arguments=(
+            Argument(
+                name="interface",
+                label="Network interface",
+                help="The interface installs are served on.",
+                placeholder="eth0",
+            ),
+            Argument(
+                name="domain",
+                label="Domain to join",
+                kind="host",
+                placeholder="corp.example.internal",
+            ),
+            Argument(
+                name="enrolment_token",
+                label="Enrolment token",
+                help="A multi-use token, created under Directory.",
+            ),
+            Argument(
+                name="suite",
+                label="Debian release",
+                kind="choice",
+                choices=("trixie", "bookworm"),
+                default="trixie",
+                optional=True,
+            ),
+        ),
         packages=("dnsmasq", "nginx-light"),
         ui_section="pxe",
-        notes=(
-            "Runs as proxy DHCP, so address assignment stays with the DHCP "
-            "role or an existing server. Create a multi-use enrolment token "
-            "under Directory first."
-        ),
+        notes="Runs as proxy DHCP; address assignment stays with the DHCP role.",
     ),
     "file-server": Role(
         name="file-server",
         title="File server",
-        summary=(
-            "Kerberos-authenticated SMB shares for drive maps. Clients mount "
-            "with sec=krb5, so no share credential is ever stored."
+        summary="Kerberos-authenticated SMB shares for drive maps.",
+        arguments=(
+            Argument(name="share_name", label="Share name", placeholder="shared"),
+            Argument(
+                name="share_path",
+                label="Directory on the server",
+                kind="path",
+                placeholder="/srv/shares/shared",
+            ),
+            Argument(
+                name="valid_group",
+                label="Restrict to group",
+                help="Leave empty to allow every domain user.",
+                optional=True,
+            ),
         ),
-        arguments=("share_name", "share_path", "valid_group"),
-        optional_arguments=frozenset({"valid_group"}),
         packages=("samba", "acl", "attr"),
         ui_section="file-server",
-        notes="Drive-map policies can point at the share as soon as it is active.",
+        notes="Drive-map policies can point at the share once it is active.",
     ),
 }
 
@@ -155,14 +233,17 @@ def build_command(role: Role, config: dict[str, str]) -> list[str]:
 
     command = [SUDO, "-n", ROLE_HELPER, role.name]
     for argument in role.arguments:
-        value = str(config.get(argument, "")).strip()
+        value = str(config.get(argument.name, "")).strip() or argument.default
         if not value:
-            if argument in role.optional_arguments:
+            if argument.optional:
                 continue
-            raise RoleError(f"{role.name} needs {argument}")
+            raise RoleError(f"{role.name} needs {argument.label.lower()}")
         if not _ARG_RE.match(value):
-            raise RoleError(f"invalid value for {argument}")
-        command += [f"--{argument.replace('_', '-')}", value]
+            raise RoleError(f"invalid value for {argument.label.lower()}")
+        if argument.choices and value not in argument.choices:
+            allowed = ", ".join(argument.choices)
+            raise RoleError(f"{argument.label.lower()} must be one of {allowed}")
+        command += [f"--{argument.name.replace('_', '-')}", value]
     return command
 
 

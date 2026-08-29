@@ -20,16 +20,17 @@ export function Content() {
         </p>
 
         <Example title="Create an organizational unit">
-          <strong>Directory</strong> → select the parent in the tree → <strong>New OU</strong> →
-          give it a name.
+          <strong>Directory</strong> → select the parent in the tree →{" "}
+          <strong>Create…</strong> → <strong>Organizational unit</strong> → give it a name.
         </Example>
         <Example title="Create a user">
-          Select the organizational unit → <strong>New user</strong> → account name, full name and
-          a password. Leave the password empty to create the account disabled.
+          Select the organizational unit → <strong>Create…</strong> → <strong>User</strong> →
+          account name, full name and a password. Leave the password empty to create the account
+          disabled.
         </Example>
         <Example title="Create a group">
-          Select the organizational unit → <strong>New group</strong> → name it, choose{" "}
-          <strong>User group</strong> or <strong>Computer group</strong>.
+          Select the organizational unit → <strong>Create…</strong> → <strong>Group</strong> →
+          name it, choose <strong>User group</strong> or <strong>Computer group</strong>.
         </Example>
         <Example title="Add members to a group">
           Select the group → <strong>Members</strong> in the detail panel → search →{" "}
@@ -45,7 +46,16 @@ export function Content() {
           Select it → <strong>Move</strong> → choose the destination container.
         </Example>
 
-        <Where>Directory. The tree on the left selects a container; the table lists its contents.</Where>
+        <Example title="Show the containers the directory keeps for itself">
+          <strong>Show system containers</strong> at the foot of the tree. Off by default, it
+          reveals <C>System</C>, <C>Program Data</C>, <C>Keys</C> and the rest.
+        </Example>
+
+        <Where>
+          Directory. The tree on the left selects a container; the table lists its contents. The
+          root is the domain&rsquo;s short name. Drag the border between the tree and the table to
+          resize either.
+        </Where>
       </Quickstart>
 
       <Details>

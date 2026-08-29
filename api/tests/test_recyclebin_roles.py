@@ -197,3 +197,30 @@ def test_every_registered_role_has_an_installer_case():
         if role.core:
             continue
         assert f"{role.name})" in body, f"{role.name} has no case in odm-role-install"
+
+
+def test_a_choice_argument_only_accepts_its_choices():
+    with pytest.raises(roles.RoleError):
+        roles.build_command(
+            roles.get("dhcp"),
+            {
+                "ha_role": "whatever",
+                "this_url": "http://dhcp1.corp.example.internal:8080/",
+                "peer_url": "http://dhcp2.corp.example.internal:8080/",
+                "realm": "CORP.EXAMPLE.INTERNAL",
+                "dns_server": "10.10.0.10",
+            },
+        )
+
+
+def test_every_argument_carries_a_label_the_console_can_show():
+    """The console used to title-case the argument name, which produced field
+    labels like "Ha role" and "This url"."""
+    for role in roles.REGISTRY.values():
+        for argument in role.arguments:
+            assert argument.label and argument.label != argument.name, (
+                f"{role.name}.{argument.name}"
+            )
+            assert argument.label[0].isupper(), f"{role.name}.{argument.name}"
+            if argument.kind == "choice":
+                assert argument.choices, f"{role.name}.{argument.name}"

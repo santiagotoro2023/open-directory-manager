@@ -133,7 +133,13 @@ async def tree(
     """Every OU and built-in container, plus the domain head."""
     authz.require("directory.read", settings.base_dn)
     nodes = await _read(settings, objects.containers)
-    return {"base_dn": settings.base_dn, "nodes": nodes}
+    netbios = await _read(settings, directory.netbios_name)
+    return {
+        "base_dn": settings.base_dn,
+        "domain": settings.domain,
+        "netbios_name": netbios,
+        "nodes": nodes,
+    }
 
 
 @router.get("/objects")

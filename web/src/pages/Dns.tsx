@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Globe, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DnsRecord, type DnsZone } from "../api";
 import { Field, Modal } from "../components/Modal";
+import { Split } from "../components/Split";
 
 const RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SRV", "TXT"];
 
@@ -70,50 +71,51 @@ export function Dns() {
     );
   }
 
-  return (
-    <div className="directory">
-      <nav className="tree" aria-label="DNS zones">
-        <div className="toolbar">
-          <button type="button" className="ghost" onClick={() => setDialog("zone")}>
-            <Plus size={14} aria-hidden="true" />
-            New zone
-          </button>
-        </div>
-        <ul>
-          {zones.map((zone) => (
-            <li key={zone.name}>
-              <button
-                type="button"
-                className={selected === zone.name ? "tree-label active" : "tree-label"}
-                onClick={() => setSelected(zone.name)}
-              >
-                <Globe size={14} aria-hidden="true" />
-                {zone.name}
-              </button>
-            </li>
-          ))}
-          {zones.length === 0 && <li className="muted">No zones.</li>}
-        </ul>
-      </nav>
+  const zoneList = (
+    <>
+      <div className="pane-actions">
+        <button type="button" className="primary" onClick={() => setDialog("zone")}>
+          <Plus size={15} aria-hidden="true" />
+          New zone
+        </button>
+      </div>
+      <ul className="pane-list" aria-label="DNS zones">
+        {zones.map((zone) => (
+          <li key={zone.name}>
+            <button
+              type="button"
+              className={selected === zone.name ? "active" : ""}
+              onClick={() => setSelected(zone.name)}
+            >
+              <Globe size={15} aria-hidden="true" />
+              <span className="truncate">{zone.name}</span>
+            </button>
+          </li>
+        ))}
+        {zones.length === 0 && <li className="empty">No zones.</li>}
+      </ul>
+    </>
+  );
 
+  return (
+    <Split id="dns" label="Resize the zone list" initial={280} side={zoneList}>
       <section className="objects">
-        <div className="toolbar">
+        <div className="page-header">
           <h1>{selected || "DNS"}</h1>
+          {zones.find((zone) => zone.name === selected)?.dynamic_update && (
+            <span className="badge">Secure dynamic updates</span>
+          )}
           <span className="spacer" />
           <button
             type="button"
-            className="ghost"
+            className="primary"
             disabled={!selected}
             onClick={() => setDialog("record")}
           >
-            <Plus size={14} aria-hidden="true" />
+            <Plus size={15} aria-hidden="true" />
             New record
           </button>
         </div>
-
-        {zones.find((zone) => zone.name === selected)?.dynamic_update && (
-          <p className="muted">Secure dynamic updates are enabled on this zone.</p>
-        )}
 
         {error && (
           <p className="alert" role="alert">
@@ -156,7 +158,7 @@ export function Dns() {
             ))}
             {records.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
+                <td colSpan={5} className="empty">
                   No records in this zone.
                 </td>
               </tr>
@@ -185,7 +187,7 @@ export function Dns() {
           }}
         />
       )}
-    </div>
+    </Split>
   );
 }
 

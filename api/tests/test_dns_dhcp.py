@@ -22,6 +22,9 @@ from odm.config import get_settings
         "corp.example.internal",
         "10.in-addr.arpa",
         "corp.example.internal.",  # trailing dot is normalised away
+        # Active Directory provisions this zone itself; refusing the name made
+        # the domain's own service-location zone unreadable in the console.
+        "_msdcs.corp.example.internal",
     ],
 )
 def test_valid_zones_are_accepted(zone):

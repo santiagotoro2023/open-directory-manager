@@ -218,13 +218,23 @@ export interface DeletedObject {
   members: string[];
 }
 
+export interface RoleArgument {
+  name: string;
+  label: string;
+  help: string;
+  kind: "text" | "choice" | "url" | "host" | "path";
+  choices: string[];
+  placeholder: string;
+  default: string;
+  optional: boolean;
+}
+
 export interface RoleDescriptor {
   name: string;
   title: string;
   summary: string;
   core: boolean;
-  arguments: string[];
-  optional_arguments: string[];
+  arguments: RoleArgument[];
   packages: string[];
   produces_settings: string[];
   notes: string;
@@ -399,7 +409,13 @@ export const api = {
   },
 
   directory: {
-    tree: () => request<{ base_dn: string; nodes: DirectoryObject[] }>("/directory/tree"),
+    tree: () =>
+      request<{
+        base_dn: string;
+        domain: string;
+        netbios_name: string;
+        nodes: DirectoryObject[];
+      }>("/directory/tree"),
 
     list: (params: {
       container?: string;
@@ -607,7 +623,9 @@ export const api = {
 
   roles: {
     list: () =>
-      request<{ available: RoleDescriptor[]; installed: RoleInstance[] }>("/roles"),
+      request<{ available: RoleDescriptor[]; installed: RoleInstance[]; nodes: string[] }>(
+        "/roles",
+      ),
 
     instance: (id: string) => request<RoleInstance>(`/roles/instance${qs({ id })}`),
 

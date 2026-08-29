@@ -82,6 +82,17 @@ fi
 BASE_DN="$(printf 'DC=%s' "${REALM//./,DC=}")"
 samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(A;CI;CCDCLCRPWP;;;${SID})"
 
+echo "==> Delegating replication monitoring"
+# Reading replication state and forcing a run are separate control-access
+# rights, and neither comes with the object rights above. Without them the
+# Operations page reports WERR_DS_DRA_ACCESS_DENIED. Granted individually
+# rather than by making the account a Domain Admin.
+#   f98340fb-…  Monitor Active Directory Replication  (read the topology)
+#   1131f6ab-…  Replication Synchronization           (force a run)
+for RIGHT in f98340fb-7c5b-4cdb-a00b-2ebdfa115a96 1131f6ab-9c07-11d1-f79f-00c04fc2dcd2; do
+    samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(OA;;CR;${RIGHT};;${SID})"
+done
+
 echo "==> Exporting keytab to $KEYTAB"
 install -d -m 0750 "$(dirname "$KEYTAB")"
 rm -f "$KEYTAB"
