@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -45,6 +46,8 @@ from . import (
 from .config import Settings, get_settings
 from .security import CSRF_HEADER, SecurityHeadersMiddleware
 
+log = logging.getLogger("odm")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -55,6 +58,7 @@ async def lifespan(app: FastAPI):
         os.environ.setdefault("KRB5_KTNAME", str(settings.keytab))
         os.environ.setdefault("KRB5_CLIENT_KTNAME", str(settings.keytab))
     app.state.pool = await db.create_pool()
+    await _check_directory(settings)
     # The recycle bin's retention window is only real if something enforces
     # it, so the sweep runs with the application (CLAUDE.md §5.3).
     background = [
@@ -70,6 +74,26 @@ async def lifespan(app: FastAPI):
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await app.state.pool.close()
+
+
+async def _check_directory(settings: Settings) -> None:
+    """Bind to the directory once at startup and say so either way.
+
+    Everything past the sign-in page needs this bind, so a broken service
+    account is a dead console — but it only ever showed up as a 503 with the
+    reason discarded. Not fatal: the API has to keep running to be told off.
+    """
+
+    def probe() -> None:
+        directory.service_connection(settings).unbind()
+
+    try:
+        await asyncio.to_thread(probe)
+    except Exception as exc:  # noqa: BLE001 - reported, never raised
+        log.error("directory bind failed, so nobody will be able to sign in: %s", exc)
+        log.error("keytab %s, realm %s", settings.keytab, settings.realm)
+    else:
+        log.info("directory bind ok: %s", settings.ldap_uri)
 
 
 def _problem(status_code: int):

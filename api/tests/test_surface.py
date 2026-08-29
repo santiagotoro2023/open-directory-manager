@@ -382,3 +382,15 @@ async def test_migrating_without_a_schema_is_an_error_not_a_success(monkeypatch)
     monkeypatch.setattr(db, "MIGRATIONS_DIR", pathlib.Path("/nonexistent/migrations"))
     with pytest.raises(RuntimeError, match="no migrations directory"):
         await db.migrate(pool=None)
+
+
+def test_the_directory_is_configured_to_accept_the_control_planes_bind() -> None:
+    # ldap3's GSSAPI brings no SASL security layer, which Samba refuses by
+    # default. Without this the service bind fails and every page past sign-in
+    # answers 503, so both the guided installer and the standalone provision
+    # script have to set it.
+    import pathlib
+
+    for script in ("provision-dc.sh", "setup.sh"):
+        body = (pathlib.Path("..") / "deploy" / script).read_text()
+        assert "ldap server require strong auth = allow_sasl_over_tls" in body, script

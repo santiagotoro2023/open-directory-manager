@@ -333,6 +333,18 @@ else
     ok "Domain $REALM is up"
 fi
 
+if [[ "$SKIP_DC" != "yes" ]] &&
+        ! grep -q "ldap server require strong auth" /etc/samba/smb.conf 2>/dev/null; then
+    # ldap3 authenticates with GSSAPI but implements no SASL security layer, and
+    # Samba's default "require strong auth = yes" refuses a SASL bind that brings
+    # none — even inside LDAPS. Accepting it over TLS is what this value is for:
+    # the transport still encrypts everything the SASL layer would have.
+    sed -i "/^\[global\]/a\\        ldap server require strong auth = allow_sasl_over_tls" \
+        /etc/samba/smb.conf
+    systemctl restart samba-ad-dc
+    ok "The directory accepts the control plane's bind"
+fi
+
 # ---------------------------------------------------------------- step 4 --
 
 step "Creating the control plane's account"

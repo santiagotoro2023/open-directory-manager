@@ -162,6 +162,10 @@ async def login(
             ) from exc
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials") from exc
     except directory.DirectoryError as exc:
+        # The client is told nothing useful on purpose, so the reason has to
+        # be here or it exists nowhere: a directory ODM cannot reach is also a
+        # directory it cannot write an audit record to.
+        log.error("directory unavailable during sign-in: %s", exc)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "directory unavailable") from exc
 
     grants = await _admissible(pool, settings, user, source_ip, request)
@@ -260,6 +264,10 @@ async def negotiate(
             status.HTTP_403_FORBIDDEN, f"not a member of {settings.admin_group}"
         ) from exc
     except directory.DirectoryError as exc:
+        # The client is told nothing useful on purpose, so the reason has to
+        # be here or it exists nowhere: a directory ODM cannot reach is also a
+        # directory it cannot write an audit record to.
+        log.error("directory unavailable during sign-in: %s", exc)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "directory unavailable") from exc
 
     grants = await _admissible(pool, settings, user, source_ip, request)

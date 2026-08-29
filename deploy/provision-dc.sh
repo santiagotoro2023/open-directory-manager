@@ -171,6 +171,16 @@ if [[ -n "$FORWARDER" ]]; then
     sed -i "/^\[global\]/a\\        dns forwarder = $FORWARDER" /etc/samba/smb.conf
 fi
 
+echo "==> Allowing the control plane's GSSAPI bind"
+# ldap3 authenticates with GSSAPI but implements no SASL security layer, and
+# Samba's default "require strong auth = yes" refuses a SASL bind that brings
+# none — even inside LDAPS. Accepting it over TLS is what this value is for:
+# the transport still encrypts everything the SASL layer would have.
+if ! grep -q "ldap server require strong auth" /etc/samba/smb.conf; then
+    sed -i "/^\[global\]/a\\        ldap server require strong auth = allow_sasl_over_tls" \
+        /etc/samba/smb.conf
+fi
+
 echo "==> Pointing the resolver at this DC"
 # systemd-resolved's stub listener conflicts with Samba's internal DNS.
 if systemctl is-enabled --quiet systemd-resolved 2>/dev/null; then
