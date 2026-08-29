@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     # --- Kerberos (agent/SSO SPNEGO) ---
     keytab: Path | None = None
     service_name: str = "HTTP"
+    service_account: str = Field(
+        default="svc-odm-api",
+        description=(
+            "sAMAccountName the control plane authenticates as. Active Directory "
+            "issues a ticket-granting ticket to an account, never to one of its "
+            "service principal names, so this is the name the keytab is read under."
+        ),
+    )
 
     # --- Group Policy ---
     # Set only when the API runs on a domain controller: enables mirroring

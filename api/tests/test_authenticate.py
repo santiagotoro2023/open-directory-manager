@@ -68,3 +68,28 @@ def test_an_empty_password_never_reaches_a_bind(wired):
         directory.authenticate(get_settings(), "ada", "")
 
     assert wired == []
+
+
+def test_the_service_bind_names_the_account_not_the_service_principal(monkeypatch):
+    """The keytab also holds HTTP/<host>, which is what the library would pick
+    on its own. Active Directory issues a ticket-granting ticket to an account,
+    never to one of its service principal names, so binding under the SPN is
+    refused as an unknown client."""
+    captured: dict[str, object] = {}
+
+    class Recorder:
+        def __init__(self, server, **kwargs):
+            captured.update(kwargs)
+
+        def bind(self):
+            return True
+
+    monkeypatch.setattr(directory, "_tls", lambda settings: None)
+    monkeypatch.setattr(directory, "Server", lambda *a, **k: object())
+    monkeypatch.setattr(directory, "Connection", Recorder)
+
+    settings = get_settings()
+    directory.service_connection(settings)
+
+    assert captured["user"] == f"{settings.service_account}@{settings.realm}"
+    assert "HTTP/" not in str(captured["user"])

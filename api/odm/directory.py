@@ -170,6 +170,12 @@ def service_connection(settings: Settings, *, read_only: bool = True) -> Connect
     (set at startup from settings.keytab). This account needs nothing beyond
     the directory read rights every authenticated principal already has —
     never a Domain Admin bind for routine reads (CLAUDE.md §6).
+
+    The principal is named explicitly. Left to itself the library takes the
+    first entry in the keytab, which is the HTTP service principal it also
+    holds for accepting browser tickets — and Active Directory issues a
+    ticket-granting ticket to an account, never to one of its service
+    principal names, so that attempt is refused as an unknown client.
     """
     server = Server(
         settings.ldap_uri,
@@ -178,6 +184,7 @@ def service_connection(settings: Settings, *, read_only: bool = True) -> Connect
     )
     conn = Connection(
         server,
+        user=f"{settings.service_account}@{settings.realm}",
         authentication=SASL,
         sasl_mechanism=KERBEROS,
         read_only=read_only,

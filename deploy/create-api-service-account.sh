@@ -85,7 +85,20 @@ samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(A;CI;CCDCLCRPWP;;;${SID})"
 echo "==> Exporting keytab to $KEYTAB"
 install -d -m 0750 "$(dirname "$KEYTAB")"
 rm -f "$KEYTAB"
+# Two principals, two jobs. The SPN accepts tickets from browsers and agents.
+# The account itself is what the control plane authenticates *as* when it binds
+# to the directory: AD issues a ticket-granting ticket to an account, never to
+# one of its service principal names, so a keytab holding only the SPN gets
+# "client not found in Kerberos database".
 samba-tool domain exportkeytab "$KEYTAB" --principal="$SPN"
+samba-tool domain exportkeytab "$KEYTAB" --principal="$ACCOUNT"
+
+for PRINCIPAL in "$SPN" "$ACCOUNT"; do
+    if ! klist -k "$KEYTAB" 2>/dev/null | grep -qi -- "$PRINCIPAL@"; then
+        echo "$KEYTAB has no entry for $PRINCIPAL; the control plane cannot start" >&2
+        exit 1
+    fi
+done
 
 # The control plane runs unprivileged and authenticates with this keytab, so
 # the service user must be able to read it — and nobody else.
