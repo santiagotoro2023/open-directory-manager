@@ -322,6 +322,10 @@ if [[ "$SKIP_DC" == "yes" ]]; then
     info "Skipped: the controller is elsewhere."
 elif [[ -f /var/lib/samba/private/sam.ldb ]]; then
     ok "Already provisioned"
+    # Provisioning is also what starts the directory and its DNS. Skipping it
+    # on a re-run must not leave them stopped: every client finds this machine
+    # by asking it for its own address.
+    systemctl enable --now samba-ad-dc >/dev/null 2>&1 || true
 else
     info "This takes a couple of minutes."
     ODM_ADMIN_PASSWORD="$ADMIN_PASSWORD" "$HERE/provision-dc.sh" \
@@ -552,6 +556,22 @@ else
     echo
     printf '      Follow it with: journalctl -u odm-api -f\n'
     printf '      Restart after a fix with: systemctl restart odm-api\n'
+fi
+
+# The console answering on 127.0.0.1 proves nothing to a client, which has to
+# find this machine by name first. That name is served by this DC's own DNS.
+if [[ "$SKIP_DC" != "yes" ]]; then
+    RESOLVED="$(getent ahostsv4 "$CONSOLE_FQDN" 2>/dev/null | awk 'NR==1{print $1}')"
+    MY_ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    if [[ -z "$RESOLVED" ]]; then
+        echo
+        warn "$CONSOLE_FQDN does not resolve, so no client can reach the console."
+        warn "The domain's DNS is this machine: systemctl status samba-ad-dc"
+    elif [[ -n "$MY_ADDRESS" && "$RESOLVED" != "$MY_ADDRESS" ]]; then
+        echo
+        warn "$CONSOLE_FQDN resolves to $RESOLVED, but this machine is $MY_ADDRESS."
+        warn "Correct it with: samba-tool dns add 127.0.0.1 $REALM ${CONSOLE_FQDN%%.*} A $MY_ADDRESS"
+    fi
 fi
 
 cat <<DONE
