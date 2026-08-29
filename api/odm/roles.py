@@ -279,6 +279,20 @@ REGISTRY: dict[str, Role] = {
         ui_section="printers",
         notes="Add the printers themselves under Printers once this is installed.",
     ),
+    "radius": Role(
+        name="radius",
+        title="Network access (RADIUS)",
+        summary=(
+            "FreeRADIUS against the directory, for wired and wireless "
+            "authentication and for VPN sign-in."
+        ),
+        packages=("freeradius", "freeradius-utils", "krb5-user", "winbind"),
+        ui_section="radius",
+        notes=(
+            "Add the devices that ask, and the rules that decide, under Network "
+            "Access once this is installed."
+        ),
+    ),
     "vpn": Role(
         name="vpn",
         title="Remote access (VPN)",

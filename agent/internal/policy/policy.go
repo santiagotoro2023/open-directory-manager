@@ -34,23 +34,24 @@ type SkipNote struct {
 }
 
 type Settings struct {
-	Files        []File        `json:"files,omitempty"`
-	Scripts      []Script      `json:"scripts,omitempty"`
-	SystemdUnits []SystemdUnit `json:"systemd_units,omitempty"`
-	Cron         []CronJob     `json:"cron,omitempty"`
-	Firewall     []Firewall    `json:"firewall,omitempty"`
-	DriveMaps    []DriveMap    `json:"drive_maps,omitempty"`
-	SudoRules    []SudoRule    `json:"sudo_rules,omitempty"`
-	HbacRules    []HbacRule    `json:"hbac_rules,omitempty"`
-	TrustedCerts []TrustedCert `json:"trusted_certificates,omitempty"`
-	Packages     []Package     `json:"packages,omitempty"`
-	Browser      *Browser      `json:"browser,omitempty"`
-	Wallpaper    *Wallpaper    `json:"wallpaper,omitempty"`
-	Updates      *Updates      `json:"updates,omitempty"`
-	LoginScreen  *LoginScreen  `json:"login_screen,omitempty"`
-	Printers     []Printer     `json:"printers,omitempty"`
-	AlwaysOnVpn  *AlwaysOnVpn  `json:"always_on_vpn,omitempty"`
-	Agent        *AgentConfig  `json:"agent,omitempty"`
+	Files                []File                 `json:"files,omitempty"`
+	Scripts              []Script               `json:"scripts,omitempty"`
+	SystemdUnits         []SystemdUnit          `json:"systemd_units,omitempty"`
+	Cron                 []CronJob              `json:"cron,omitempty"`
+	Firewall             []Firewall             `json:"firewall,omitempty"`
+	DriveMaps            []DriveMap             `json:"drive_maps,omitempty"`
+	SudoRules            []SudoRule             `json:"sudo_rules,omitempty"`
+	HbacRules            []HbacRule             `json:"hbac_rules,omitempty"`
+	TrustedCerts         []TrustedCert          `json:"trusted_certificates,omitempty"`
+	Packages             []Package              `json:"packages,omitempty"`
+	Browser              *Browser               `json:"browser,omitempty"`
+	Wallpaper            *Wallpaper             `json:"wallpaper,omitempty"`
+	Updates              *Updates               `json:"updates,omitempty"`
+	LoginScreen          *LoginScreen           `json:"login_screen,omitempty"`
+	CertificateEnrolment []CertificateEnrolment `json:"certificate_enrolment,omitempty"`
+	Printers             []Printer              `json:"printers,omitempty"`
+	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
+	Agent                *AgentConfig           `json:"agent,omitempty"`
 }
 
 // Updates configures unattended apt upgrades.
@@ -154,6 +155,14 @@ type LoginScreen struct {
 	BackgroundFit       string `json:"background_fit"`
 	AllowUserBackground bool   `json:"allow_user_background"`
 	DisableUserList     bool   `json:"disable_user_list"`
+}
+
+// CertificateEnrolment is a certificate this machine should hold and keep.
+type CertificateEnrolment struct {
+	Profile         string `json:"profile"`
+	Path            string `json:"path"`
+	ValidityDays    int    `json:"validity_days"`
+	RenewBeforeDays int    `json:"renew_before_days"`
 }
 
 // Printer is a printer handed to a user or group.

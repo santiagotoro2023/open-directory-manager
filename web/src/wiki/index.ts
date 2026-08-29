@@ -15,6 +15,8 @@ import * as glossary from "./pages/glossary";
 import * as groupPolicy from "./pages/group-policy";
 import * as operations from "./pages/operations";
 import * as policySettings from "./pages/policy-settings";
+import * as networkAccess from "./pages/network-access";
+import * as passwords from "./pages/passwords";
 import * as printing from "./pages/printing";
 import * as remoteAccess from "./pages/remote-access";
 import * as quickstart from "./pages/quickstart";
@@ -36,6 +38,7 @@ const MODULES = [
   directory,
   groupPolicy,
   policySettings,
+  passwords,
   administrativeTemplates,
   dns,
   dhcp,
@@ -48,6 +51,7 @@ const MODULES = [
   shares,
   printing,
   remoteAccess,
+  networkAccess,
   controllers,
   recycleBin,
   operations,

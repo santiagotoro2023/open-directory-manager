@@ -21,6 +21,7 @@ import (
 	"odm.example.org/agent/internal/apply"
 	"odm.example.org/agent/internal/client"
 	"odm.example.org/agent/internal/config"
+	"odm.example.org/agent/internal/enrol"
 	"odm.example.org/agent/internal/inventory"
 	"odm.example.org/agent/internal/policy"
 	"odm.example.org/agent/internal/tasks"
@@ -139,6 +140,12 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 		applyFn = apply.ApplyUser
 	}
 	results := applyFn(ctx, document.Settings, env)
+	// Certificates need the control plane, not just the file system, so they
+	// are not an applier: the machine asks for one for itself and installs
+	// what comes back.
+	if username == "" {
+		results = append(results, enrol.Apply(ctx, document.Settings, env, api)...)
+	}
 	failed := 0
 	for _, result := range results {
 		if result.Status == "failed" {

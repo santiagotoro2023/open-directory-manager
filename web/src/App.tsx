@@ -12,6 +12,7 @@ import { Dns } from "./pages/Dns";
 import { Enrolment } from "./pages/Enrolment";
 import { ObjectDetail } from "./pages/ObjectDetail";
 import { Overview } from "./pages/Overview";
+import { NetworkAccess } from "./pages/NetworkAccess";
 import { Printers } from "./pages/Printers";
 import { Policy } from "./pages/Policy";
 import { RecycleBin } from "./pages/RecycleBin";
@@ -65,6 +66,7 @@ export function App() {
           <Route path="enrolment" element={<Enrolment />} />
           <Route path="printers" element={<Printers />} />
           <Route path="vpn" element={<Vpn />} />
+          <Route path="network-access" element={<NetworkAccess />} />
           <Route path="controllers" element={<Controllers />} />
           <Route path="delegation" element={<Delegation />} />
           <Route path="certificates" element={<Certificates />} />

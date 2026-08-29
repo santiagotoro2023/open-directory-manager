@@ -277,6 +277,40 @@ class LoginScreen(Strict):
         return value
 
 
+class CertificateEnrolment(Strict):
+    """A certificate this machine should hold, and keep holding.
+
+    The subject is not written here: the agent asks for one for itself, and
+    the control plane names it from the identity that asked. A policy that
+    could name a subject would be a policy that could ask for anyone's.
+    """
+
+    profile: Literal["server", "client"] = "server"
+    # Where the pair is written. The key is created on the machine and never
+    # leaves it, so what arrives is a certificate, not a key.
+    path: Annotated[str, Field(max_length=255)] = "/etc/ssl/odm"
+    validity_days: Annotated[int, Field(ge=1, le=825)] = 365
+    # Renewed once this much of its life is left, so an expiry never surprises
+    # anyone who was not watching.
+    renew_before_days: Annotated[int, Field(ge=1, le=365)] = 30
+
+    @field_validator("path")
+    @classmethod
+    def _path(cls, value: str) -> str:
+        if not value.startswith("/") or ".." in value:
+            raise ValueError("the path must be absolute and contain no ..")
+        return value.rstrip("/")
+
+
+class PasswordSelfService(Strict):
+    """Whether people may change their own password from the console."""
+
+    enabled: bool = True
+    # Changing a password needs the current one, always. This is about whether
+    # the page is offered at all.
+    minimum_length: Annotated[int, Field(ge=1, le=255)] = 12
+
+
 class Printer(Strict):
     """A printer handed to a user or group."""
 
@@ -379,6 +413,10 @@ class PolicySettings(Strict):
     wallpaper: Wallpaper | None = None
     updates: SystemUpdates | None = None
     login_screen: LoginScreen | None = None
+    certificate_enrolment: Annotated[
+        list[CertificateEnrolment], Field(default_factory=list, max_length=8)
+    ]
+    password_self_service: PasswordSelfService | None = None
     printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
     always_on_vpn: AlwaysOnVpn | None = None
     agent: AgentSettings | None = None

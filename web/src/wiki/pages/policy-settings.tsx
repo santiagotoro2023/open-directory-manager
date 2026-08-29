@@ -75,6 +75,8 @@ export function Content() {
               ["Login screen", "single value", "The greeter's message, background and account list."],
               ["Printers", "printer and principal", "A printer from a print server, offered to a user or group."],
               ["Always-on VPN", "single value", "A tunnel the machine holds up from boot."],
+              ["Certificates", "kind and path", "A certificate the machine gets by itself and renews."],
+              ["Self-service password", "single value", "Whether people may change their own password."],
               ["Firewall rules", "name", "Rules in a dedicated nftables table."],
               ["Drive maps", "mount point", "A mounted SMB share, machine-wide or per user."],
               ["Sudo rules", "name", "A file in /etc/sudoers.d."],

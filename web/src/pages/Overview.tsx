@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Activity, Archive, RefreshCw } from "lucide-react";
 import { ApiError, api, type BackupRecord, type HealthReport, type SessionInfo } from "../api";
 
-type Tab = "health" | "replication" | "backups";
+type Tab = "health" | "replication" | "backups" | "passwords";
 
 function bytes(value: number): string {
   if (value > 1_073_741_824) return `${(value / 1_073_741_824).toFixed(1)} GB`;
@@ -49,7 +49,7 @@ export function Overview({ session }: { session: SessionInfo }) {
       </div>
 
       <nav className="tabs" aria-label="Operations views">
-        {(["health", "replication", "backups"] as Tab[]).map((current) => (
+        {(["health", "replication", "backups", "passwords"] as Tab[]).map((current) => (
           <button
             key={current}
             type="button"
@@ -57,7 +57,13 @@ export function Overview({ session }: { session: SessionInfo }) {
             aria-current={tab === current ? "true" : undefined}
             onClick={() => setTab(current)}
           >
-            {current === "health" ? "Health" : current === "replication" ? "Replication" : "Backups"}
+            {current === "health"
+              ? "Health"
+              : current === "replication"
+                ? "Replication"
+                : current === "backups"
+                  ? "Backups"
+                  : "Password policy"}
           </button>
         ))}
       </nav>
@@ -263,6 +269,8 @@ export function Overview({ session }: { session: SessionInfo }) {
         </>
       )}
 
+      {tab === "passwords" && <PasswordPolicy />}
+
       {tab === "backups" && backups && (
         <>
           {!backups.configured ? (
@@ -363,5 +371,138 @@ function Card({
       </h3>
       {children}
     </article>
+  );
+}
+
+
+/**
+ * What a password in this domain has to be.
+ *
+ * The rule lives in the directory, not here: Samba enforces it on every
+ * password change however it is made, and a second copy in ODM would look
+ * authoritative without being it.
+ */
+function PasswordPolicy() {
+  const [policy, setPolicy] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setPolicy((await api.password.policy()).policy);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const fields: { key: string; label: string; hint?: string }[] = [
+    { key: "min_pwd_length", label: "Minimum length" },
+    { key: "history_length", label: "Passwords remembered", hint: "Cannot be reused" },
+    { key: "min_pwd_age", label: "Minimum age (days)", hint: "Before it can be changed again" },
+    { key: "max_pwd_age", label: "Maximum age (days)", hint: "0 means it never expires" },
+    { key: "account_lockout_threshold", label: "Lock out after", hint: "Failed attempts; 0 is never" },
+    { key: "account_lockout_duration", label: "Locked out for (minutes)" },
+    { key: "reset_account_lockout_after", label: "Reset the count after (minutes)" },
+  ];
+
+  return (
+    <>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      {saved && <p className="muted">Saved. It applies to the next password set, not existing ones.</p>}
+
+      <h3 className="section-title">As the directory holds it</h3>
+      <table className="data compact">
+        <tbody>
+          {Object.entries(policy).map(([label, value]) => (
+            <tr key={label}>
+              <th scope="row">{label}</th>
+              <td className="mono">{value}</td>
+            </tr>
+          ))}
+          {Object.keys(policy).length === 0 && (
+            <tr>
+              <td className="empty">
+                Not readable from here. Password policy needs the control plane on a domain
+                controller.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <h3 className="section-title">Change it</h3>
+      <div className="field-grid">
+        <label className="field">
+          <span>Complexity</span>
+          <select
+            value={draft.complexity ?? ""}
+            onChange={(e) => setDraft({ ...draft, complexity: e.target.value })}
+          >
+            <option value="">Leave as it is</option>
+            <option value="on">Required</option>
+            <option value="off">Not required</option>
+          </select>
+        </label>
+        {fields.map((field) => (
+          <label key={field.key} className="field">
+            <span>{field.label}</span>
+            <input
+              type="number"
+              value={draft[field.key] ?? ""}
+              placeholder="unchanged"
+              onChange={(e) => setDraft({ ...draft, [field.key]: e.target.value })}
+            />
+            {field.hint && <small>{field.hint}</small>}
+          </label>
+        ))}
+      </div>
+
+      <div className="actions-row">
+        <button
+          type="button"
+          className="primary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            setSaved(false);
+            try {
+              const body: Record<string, string | number> = {};
+              for (const [key, value] of Object.entries(draft)) {
+                if (value === "") continue;
+                body[key] = key === "complexity" ? value : Number(value);
+              }
+              if (Object.keys(body).length === 0) return;
+              setPolicy((await api.password.updatePolicy(body)).policy);
+              setDraft({});
+              setSaved(true);
+            } catch (err) {
+              setError(err instanceof ApiError ? err.message : String(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Apply
+        </button>
+      </div>
+
+      <p className="muted">
+        Whether people may change their own password from the console is a policy setting:{" "}
+        <strong>Group Policy</strong> → <strong>User</strong> →{" "}
+        <strong>Self-service password</strong>.
+      </p>
+    </>
   );
 }

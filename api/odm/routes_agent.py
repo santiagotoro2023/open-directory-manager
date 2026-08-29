@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, objects, rsop, tasks
+from . import audit, ca, objects, rsop, tasks
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -385,3 +385,121 @@ async def agent_inventory(
                 """,
                 machine.dn,
             )
+
+
+# ------------------------------------------------------------- enrolment ----
+# Certificates a machine gets without anyone issuing one by hand.
+#
+# The subject is never taken from the request. A machine asks for "a
+# certificate", and the control plane names it from the Kerberos identity that
+# asked — so a compromised agent can obtain a certificate for its own host and
+# for nothing else. That is the whole security property here.
+
+
+class EnrolmentRequest(BaseModel):
+    profile: Annotated[str, Field(pattern="^(server|client)$")] = "server"
+    validity_days: Annotated[int, Field(ge=1, le=825)] = 365
+    # What the machine already holds, so a renewal is only done when due.
+    current_serial: Annotated[str, Field(max_length=64)] | None = None
+
+
+@router.post("/certificate", status_code=201)
+async def agent_certificate(
+    body: EnrolmentRequest,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Issue this machine a certificate for itself."""
+    if not ca.initialised(settings):
+        raise HTTPException(
+            status.HTTP_501_NOT_IMPLEMENTED,
+            "no certificate authority has been created in this domain",
+        )
+
+    # The name comes from who asked, not from what they sent.
+    common_name = machine.hostname or machine.sam_account_name.rstrip("$")
+    if not common_name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "this machine has no usable name")
+
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            """
+            SELECT e.serial, e.not_after
+            FROM enrolled_certificate e
+            JOIN ca_certificate c ON c.serial = e.serial
+            WHERE lower(e.computer_dn) = lower($1) AND e.profile = $2
+              AND c.revoked_at IS NULL
+            """,
+            machine.dn,
+            body.profile,
+        )
+        # Already holds a current one: say so rather than issuing a second.
+        if existing and existing["serial"] == (body.current_serial or ""):
+            return {
+                "unchanged": True,
+                "serial": existing["serial"],
+                "not_after": existing["not_after"],
+            }
+
+        issued = await run_in_threadpool(
+            ca.issue,
+            settings,
+            common_name=common_name,
+            sans=[common_name],
+            profile=body.profile,
+            validity_days=body.validity_days,
+        )
+        await conn.execute(
+            """
+            INSERT INTO ca_certificate (serial, subject, sans, profile, certificate_pem,
+                                        fingerprint, not_before, not_after, issued_by)
+            VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9)
+            """,
+            issued.serial,
+            issued.subject,
+            json.dumps(issued.sans),
+            body.profile,
+            issued.certificate_pem,
+            issued.fingerprint,
+            issued.not_before,
+            issued.not_after,
+            f"autoenrolment:{machine.hostname}",
+        )
+        await conn.execute(
+            """
+            INSERT INTO enrolled_certificate
+                (computer_dn, hostname, profile, subject, serial, not_after)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (computer_dn, profile) DO UPDATE
+                SET serial = excluded.serial, subject = excluded.subject,
+                    not_after = excluded.not_after, issued_at = now()
+            """,
+            machine.dn,
+            machine.hostname,
+            body.profile,
+            issued.subject,
+            issued.serial,
+            issued.not_after,
+        )
+        await audit.record(
+            conn,
+            actor=machine.hostname,
+            action="ca.autoenrol",
+            outcome="success",
+            object_type="certificate",
+            object_dn=issued.subject,
+            detail=f"{body.profile} certificate, serial {issued.serial}",
+        )
+
+    return {
+        "unchanged": False,
+        "serial": issued.serial,
+        "subject": issued.subject,
+        "not_after": issued.not_after,
+        "certificate_pem": issued.certificate_pem,
+        # The key is generated here with the certificate, so it travels once,
+        # over the machine's own authenticated connection, and is not kept.
+        "private_key_pem": issued.private_key_pem,
+        "ca_pem": await run_in_threadpool(ca.root_pem, settings),
+    }

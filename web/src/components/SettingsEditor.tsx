@@ -184,6 +184,25 @@ export const CATEGORIES: CategorySpec[] = [
     blank: { name: "", state: "present" },
   },
   {
+    key: "certificate_enrolment",
+    title: "Certificates",
+    half: "Computer",
+    note: "Certificates the machine gets by itself, and renews before they expire.",
+    fields: [
+      {
+        key: "profile",
+        label: "Kind",
+        kind: "select",
+        options: ["server", "client"],
+        width: "130px",
+      },
+      { key: "path", label: "Written to", placeholder: "/etc/ssl/odm" },
+      { key: "validity_days", label: "Valid for (days)", kind: "number", width: "150px" },
+      { key: "renew_before_days", label: "Renew with (days) left", kind: "number", width: "180px" },
+    ],
+    blank: { profile: "server", path: "/etc/ssl/odm", validity_days: 365, renew_before_days: 30 },
+  },
+  {
     key: "printers",
     title: "Printers",
     half: "User",
@@ -249,6 +268,7 @@ const SPECIAL = [
   { key: "updates", title: "System updates", half: "Computer" as Half },
   { key: "login_screen", title: "Login screen", half: "Computer" as Half },
   { key: "always_on_vpn", title: "Always-on VPN", half: "Computer" as Half },
+  { key: "password_self_service", title: "Self-service password", half: "User" as Half },
   { key: "wallpaper", title: "Desktop background", half: "User" as Half },
   { key: "browser", title: "Browser policy", half: "Computer" as Half },
   { key: "admx", title: "Administrative templates", half: "Computer" as Half },
@@ -260,6 +280,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "updates") return settings.updates ? 1 : 0;
   if (key === "login_screen") return settings.login_screen ? 1 : 0;
   if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
+  if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
@@ -343,6 +364,9 @@ export function SettingsEditor({
           )}
           {selected === "always_on_vpn" && (
             <AlwaysOnVpnEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "password_self_service" && (
+            <SelfServiceEditor settings={settings} onChange={onChange} />
           )}
           {selected === "wallpaper" && (
             <WallpaperEditor settings={settings} onChange={onChange} />
@@ -756,6 +780,97 @@ function AlwaysOnVpnEditor({
               }
             />
             Refuse to reach those networks until the tunnel is up
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function SelfServiceEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.password_self_service;
+
+  return (
+    <>
+      <header>
+        <h3>Self-service password</h3>
+        <span className="spacer" />
+        {current && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onChange({ ...settings, password_self_service: undefined })}
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Remove
+          </button>
+        )}
+      </header>
+      <p className="muted">
+        Whether these people may change their own password from the console. Not configured
+        anywhere means yes — changing your own password is ordinary, and a policy object is how
+        it is taken away. The current password is always required, whatever this says.
+      </p>
+
+      {!current ? (
+        <>
+          <p className="empty">Not configured. People may change their own password.</p>
+          <div className="actions-row">
+            <button
+              type="button"
+              className="primary"
+              onClick={() =>
+                onChange({
+                  ...settings,
+                  password_self_service: { enabled: true, minimum_length: 12 },
+                })
+              }
+            >
+              <Plus size={15} aria-hidden="true" />
+              Add
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.enabled}
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  password_self_service: { ...current, enabled: e.target.checked },
+                })
+              }
+            />
+            Let people change their own password
+          </label>
+          <label className="field">
+            <span>Minimum length</span>
+            <input
+              type="number"
+              value={current.minimum_length}
+              onChange={(e) =>
+                onChange({
+                  ...settings,
+                  password_self_service: {
+                    ...current,
+                    minimum_length: Number(e.target.value),
+                  },
+                })
+              }
+            />
+            <small>
+              Checked before the change is attempted. The domain&rsquo;s own policy is enforced
+              by the directory on top of this.
+            </small>
           </label>
         </>
       )}

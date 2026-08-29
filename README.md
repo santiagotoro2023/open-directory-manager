@@ -103,9 +103,11 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | File shares | SMB shares on any file server, with per-user and per-group access levels |
 | Printing | CUPS printers on any print server, handed to people by policy |
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
+| Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
 | Machine management | Installed software, local accounts, sign-in history, recent logs, updates, restart — per machine, from its own page |
-| Certificates | An internal CA that issues certificates, publishes trust by policy, and re-issues the console's own certificate |
+| Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy, and re-issues the console's own certificate |
+| Passwords | Domain password policy, helpdesk resets, and self-service change gated by policy |
 | Delegation | Roles and permissions scoped to an organizational unit |
 | Servers | Every joined machine, the roles it carries, and its agent's state |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them |
@@ -128,6 +130,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | File shares | Samba, with POSIX access lists |
 | Printing | CUPS, driverless or with an uploaded PPD |
 | Remote access | WireGuard |
+| Network access | FreeRADIUS, against the directory through winbind |
 | Unattended install | Debian's own installer, preseeded, over proxy DHCP |
 
 Directory objects always live in Samba's LDAP; PostgreSQL is never the source

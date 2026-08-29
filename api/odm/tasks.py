@@ -30,6 +30,7 @@ KINDS = (
     "printer-apply",
     "printer-remove",
     "vpn-apply",
+    "radius-apply",
 )
 
 

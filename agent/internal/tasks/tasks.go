@@ -88,6 +88,8 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 		output, err = removePrinter(ctx, task.Payload, env)
 	case "vpn-apply":
 		output, err = applyTunnel(ctx, task.Payload, env)
+	case "radius-apply":
+		output, err = applyRadius(ctx, task.Payload, env)
 	default:
 		err = fmt.Errorf("unknown task kind %q", task.Kind)
 	}
@@ -415,6 +417,46 @@ func externalInterface(env apply.Env) string {
 		return "eth0"
 	}
 	return name
+}
+
+// ------------------------------------------------------------------ radius --
+
+// Where the role installer told FreeRADIUS to look. Only these two files are
+// written; the rest of the configuration is the distribution's.
+const (
+	radiusClientsPath  = "/etc/freeradius/3.0/odm/clients.conf"
+	radiusPoliciesPath = "/etc/freeradius/3.0/odm/policy.conf"
+)
+
+func applyRadius(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	clients := str(payload["clients"])
+	policies := str(payload["policies"])
+	if clients == "" && policies == "" {
+		return "", fmt.Errorf("nothing to write")
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+
+	// 0640 and owned by freerad: the shared secrets are in here.
+	for _, file := range []struct{ path, body string }{
+		{radiusClientsPath, clients},
+		{radiusPoliciesPath, policies},
+	} {
+		if err := env.WriteFile(file.path, file.body, 0o640, "freerad", "freerad"); err != nil {
+			return "", fmt.Errorf("writing %s: %w", file.path, err)
+		}
+	}
+
+	// A configuration FreeRADIUS refuses would take the service down on
+	// restart, so it is checked before anything is restarted.
+	if out, err := env.Run.Run(ctx, "freeradius", "-CX"); err != nil {
+		return out, fmt.Errorf("freeradius refused the configuration: %w", err)
+	}
+	if out, err := env.Run.Run(ctx, "systemctl", "reload-or-restart", "freeradius"); err != nil {
+		return out, fmt.Errorf("reloading freeradius: %w", err)
+	}
+	return "network access rules applied", nil
 }
 
 // Share is the definition the control plane stores, as the agent receives it.

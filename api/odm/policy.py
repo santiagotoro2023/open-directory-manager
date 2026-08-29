@@ -41,6 +41,7 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "trusted_certificates": ("name",),
     "packages": ("name",),
     "printers": ("name", "for_principal"),
+    "certificate_enrolment": ("profile", "path"),
     "admx": ("policy_id",),
 }
 
@@ -52,6 +53,7 @@ DICT_CATEGORIES = (
     "updates",
     "login_screen",
     "always_on_vpn",
+    "password_self_service",
 )
 
 CATEGORIES = (*LIST_KEYS, *DICT_CATEGORIES)

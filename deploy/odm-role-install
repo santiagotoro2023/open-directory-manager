@@ -22,6 +22,7 @@ case "$ROLE" in
     pxe)                   INSTALLER="$ROLES_DIR/install-pxe-role.sh" ;;
     print-server)          INSTALLER="$ROLES_DIR/install-print-server-role.sh" ;;
     vpn)                   INSTALLER="$ROLES_DIR/install-vpn-role.sh" ;;
+    radius)                INSTALLER="$ROLES_DIR/install-radius-role.sh" ;;
     *)           echo "unknown role: $ROLE" >&2; exit 2 ;;
 esac
 

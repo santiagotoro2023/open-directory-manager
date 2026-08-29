@@ -29,6 +29,7 @@ from . import (
     kea,
     objects,
     printers,
+    radius,
     roles,
     routes_admx,
     routes_agent,
@@ -40,8 +41,10 @@ from . import (
     routes_dns,
     routes_join,
     routes_operations,
+    routes_password,
     routes_policy,
     routes_printers,
+    routes_radius,
     routes_rbac,
     routes_recyclebin,
     routes_roles,
@@ -145,6 +148,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_shares.router)
     app.include_router(routes_printers.router)
     app.include_router(routes_vpn.router)
+    app.include_router(routes_radius.router)
+    app.include_router(routes_password.router)
     app.include_router(routes_dc.router)
     app.include_router(routes_rbac.router)
     app.include_router(routes_ca.router)
@@ -170,6 +175,7 @@ def create_app() -> FastAPI:
         (shares.ShareError, status.HTTP_400_BAD_REQUEST),
         (printers.PrinterError, status.HTTP_400_BAD_REQUEST),
         (vpn.VpnError, status.HTTP_400_BAD_REQUEST),
+        (radius.RadiusError, status.HTTP_400_BAD_REQUEST),
         (ca.CaNotInitialised, status.HTTP_501_NOT_IMPLEMENTED),
         (ca.CaError, status.HTTP_400_BAD_REQUEST),
     ):

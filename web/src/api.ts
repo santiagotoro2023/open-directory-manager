@@ -93,6 +93,8 @@ export interface PolicySettings {
   };
   updates?: SystemUpdates;
   login_screen?: LoginScreenSettings;
+  certificate_enrolment?: Record<string, unknown>[];
+  password_self_service?: { enabled: boolean; minimum_length: number };
   printers?: Record<string, unknown>[];
   always_on_vpn?: { tunnel: string; block_until_connected: boolean };
   agent?: { refresh_minutes: number };
@@ -301,6 +303,52 @@ export interface ControllerOverview {
   };
   writable: number;
   read_only: number;
+}
+
+export interface RadiusClient {
+  id: string;
+  node_fqdn: string;
+  name: string;
+  description: string;
+  address: string;
+  nas_identifier: string;
+  has_secret: boolean;
+}
+
+export interface NewRadiusClient {
+  node_fqdn: string;
+  name: string;
+  address: string;
+  description?: string;
+  nas_identifier?: string;
+  secret?: string;
+}
+
+export interface RadiusPolicy {
+  id: string;
+  name: string;
+  description: string;
+  group_dn: string;
+  group_name: string;
+  principal_kind: "user" | "computer" | "any";
+  nas_identifiers: string[];
+  access: "allow" | "deny";
+  vlan: number | null;
+  ordering: number;
+  enabled: boolean;
+}
+
+export interface NewRadiusPolicy {
+  name: string;
+  group_dn: string;
+  group_name?: string;
+  description?: string;
+  principal_kind?: "user" | "computer" | "any";
+  nas_identifiers?: string[];
+  access?: "allow" | "deny";
+  vlan?: number | null;
+  ordering?: number;
+  enabled?: boolean;
 }
 
 export interface Printer {
@@ -892,6 +940,42 @@ export const api = {
       request<{ server: string; inbound: unknown[]; healthy: boolean }>(
         `/controllers/replication${qs({ server })}`,
       ),
+  },
+
+  radius: {
+    overview: () =>
+      request<{ clients: RadiusClient[]; policies: RadiusPolicy[] }>("/radius"),
+
+    preview: () => request<{ policies: string }>("/radius/preview"),
+
+    addClient: (body: NewRadiusClient) =>
+      request<RadiusClient & { secret: string }>("/radius/clients", json(body)),
+
+    removeClient: (id: string) =>
+      request<void>(`/radius/clients${qs({ id })}`, { method: "DELETE" }),
+
+    addPolicy: (body: NewRadiusPolicy) => request<RadiusPolicy>("/radius/policies", json(body)),
+
+    removePolicy: (id: string) =>
+      request<void>(`/radius/policies${qs({ id })}`, { method: "DELETE" }),
+  },
+
+  password: {
+    policy: () => request<{ policy: Record<string, string> }>("/password/policy"),
+
+    updatePolicy: (body: Record<string, string | number>) =>
+      request<{ policy: Record<string, string> }>("/password/policy", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+
+    selfService: () =>
+      request<{ enabled: boolean; minimum_length?: number; detail?: string }>(
+        "/password/self-service",
+      ),
+
+    change: (current_password: string, new_password: string) =>
+      request<void>("/password/change", json({ current_password, new_password })),
   },
 
   printers: {

@@ -24,6 +24,7 @@ import (
 	"github.com/jcmturner/gokrb5/v8/spnego"
 
 	agentconfig "odm.example.org/agent/internal/config"
+	"odm.example.org/agent/internal/enrol"
 	"odm.example.org/agent/internal/inventory"
 	"odm.example.org/agent/internal/policy"
 	"odm.example.org/agent/internal/tasks"
@@ -288,4 +289,35 @@ func (c *Client) Inventory(ctx context.Context, report inventory.Report) error {
 		return fmt.Errorf("inventory: %s", response.Status)
 	}
 	return nil
+}
+
+// Certificate asks the control plane for one for this machine. The subject is
+// not sent: it is named from the Kerberos identity this request carries.
+func (c *Client) Certificate(
+	ctx context.Context, request enrol.Request,
+) (*enrol.Response, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	httpRequest, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+"/api/v1/agent/certificate", bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, err
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(httpRequest)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("certificate: %s", response.Status)
+	}
+	issued := &enrol.Response{}
+	if err := json.NewDecoder(response.Body).Decode(issued); err != nil {
+		return nil, fmt.Errorf("decode certificate: %w", err)
+	}
+	return issued, nil
 }

@@ -55,6 +55,42 @@ export function Content() {
       </Quickstart>
 
       <Details>
+        <Section title="Certificates that arrive on their own">
+          <p>
+            <strong>Group Policy</strong> → <strong>Computer</strong> →{" "}
+            <strong>Certificates</strong> gives machines a certificate without anyone issuing one
+            by hand, and replaces it before it expires.
+          </p>
+          <Reference
+            headers={["Part", "How it works"]}
+            rows={[
+              [
+                "The subject",
+                "Never sent by the machine. It asks for \u201ca certificate\u201d and the control plane names it from the Kerberos identity that asked \u2014 so a machine can obtain one for itself and for nothing else.",
+              ],
+              [
+                "The key",
+                <>
+                  Written to the path in the policy as <C key="k">&lt;profile&gt;.key</C>, mode
+                  0600 and owned by root.
+                </>,
+              ],
+              [
+                "Renewal",
+                "Checked on every refresh. Replaced once the certificate has less than the given number of days left, so an expiry never surprises anybody.",
+              ],
+              [
+                "A failed renewal",
+                "Reported, and the machine keeps the certificate it has. Losing a working certificate because a renewal failed would be worse than the renewal failing.",
+              ],
+            ]}
+          />
+          <Note>
+            This is what makes EAP-TLS on the network practical: see{" "}
+            <strong>Network access</strong>.
+          </Note>
+        </Section>
+
         <Section title="Trusting certificates this domain did not issue">
           <p>
             A domain trusts more than one authority in practice: an internal CA that predates

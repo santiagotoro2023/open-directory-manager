@@ -115,7 +115,9 @@ def test_every_permission_is_held_by_at_least_one_built_in_role():
 
     seeded = set()
     for migration in sorted(pathlib.Path("odm/migrations").glob("*.sql")):
-        seeded.update(re.findall(r"'[a-z-]+', '([a-z.*]+)'\)", migration.read_text()))
+        # Underscores are legal in a permission name; the class has to allow
+        # them or a real grant reads as a missing one.
+        seeded.update(re.findall(r"'[a-z-]+', '([a-z._*]+)'\)", migration.read_text()))
     # Domain-administrator-only actions are deliberately not in any role.
     reserved = {"rbac.write", "role.install"}
     missing = set(authz.PERMISSIONS) - seeded - reserved
