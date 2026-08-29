@@ -244,12 +244,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Desktop build dependencies
+      # The same set the gui job uses. glfw builds an X11 and a Wayland
+      # backend on Linux, so both sets of headers have to be here.
+      - name: Install desktop toolkit headers
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgl1-mesa-dev libxi-dev libxcursor-dev libxrandr-dev \
-            libxinerama-dev libxxf86vm-dev xorg-dev
+            libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
       - name: Build the package
         run: |
           # The version comes from the tag when there is one, so a release is

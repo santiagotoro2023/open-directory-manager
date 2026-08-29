@@ -430,3 +430,26 @@ def test_network_boot_is_only_offered_where_dhcp_can_advertise_it() -> None:
     entry = re.search(r'to: "/enrolment".*?\}', shell, re.S)
     assert entry, "the Client Enrolment nav entry moved"
     assert '"pxe"' in entry.group(0) and '"dhcp"' in entry.group(0), entry.group(0)
+
+
+def test_every_job_that_builds_the_desktop_app_installs_the_same_headers() -> None:
+    """The desktop build needs an X11 *and* a Wayland toolchain, because glfw
+    builds both backends on Linux. Two jobs build it; a second list that had
+    drifted from the first is what broke the client package."""
+    import pathlib
+    import re
+
+    workflow = (pathlib.Path("..") / ".github" / "workflows" / "ci.yml").read_text()
+    # One set per line that names the GL headers. Matching whole apt-get
+    # commands does not work: every following line is indented, so a greedy
+    # pattern swallows the file and finds one set however wrong they are.
+    installs = {
+        frozenset(re.findall(r"lib[a-z0-9-]+-dev|xorg-dev", line))
+        for line in workflow.splitlines()
+        if "libgl1-mesa-dev" in line
+    }
+    assert len(installs) >= 1, "nothing builds the desktop application any more"
+    assert len(installs) == 1, f"the desktop jobs install different headers: {installs}"
+    (headers,) = installs
+    for required in ("libwayland-dev", "libxkbcommon-dev", "xorg-dev", "libgl1-mesa-dev"):
+        assert required in headers, f"{required} is missing from {sorted(headers)}"
