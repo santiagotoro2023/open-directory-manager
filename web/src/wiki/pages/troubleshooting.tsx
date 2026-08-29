@@ -20,7 +20,7 @@ export function Content() {
             ["Is the control plane up?", <Code key="a">curl --cacert /etc/odm/tls/api.crt https://&lt;console&gt;:8443/api/v1/healthz</Code>],
             ["What did ODM think happened?", "Audit Log, filtered by actor or object."],
             ["What did the machine do?", "Directory → the computer → Policy → the agent's report."],
-            ["Is the domain healthy?", "Operations → Health."],
+            ["Is the domain healthy?", "Overview → Health."],
           ]}
         />
       </Quickstart>

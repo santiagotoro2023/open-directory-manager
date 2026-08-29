@@ -24,8 +24,8 @@ export function Content() {
               <strong>Server Roles</strong> → click the role → <strong>Install on a server</strong>.
             </li>
             <li>
-              Choose the server. The domain&rsquo;s controllers are offered; any
-              fully-qualified name is accepted.
+              <strong>Select…</strong> and choose the server. Any joined machine can carry a
+              role, not only a controller.
             </li>
             <li>Fill in the role&rsquo;s settings and install.</li>
             <li>

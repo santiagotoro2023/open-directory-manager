@@ -22,6 +22,7 @@ import (
 	"odm.example.org/agent/internal/client"
 	"odm.example.org/agent/internal/config"
 	"odm.example.org/agent/internal/policy"
+	"odm.example.org/agent/internal/tasks"
 )
 
 const version = "0.1.0"
@@ -124,7 +125,8 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 
 	env := apply.NewEnv(root)
 	if !force && username == "" && document.Serial == lastSerial(env) {
-		fmt.Println("policy unchanged; nothing to do")
+		fmt.Println("policy unchanged")
+		runTasks(ctx, api, env)
 		return nil
 	}
 
@@ -145,6 +147,10 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 		}
 	}
 
+	// Work queued for this machine — a role to install, a share to render —
+	// is collected on the same visit rather than needing a poll of its own.
+	runTasks(ctx, api, env)
+
 	if err := api.Report(ctx, policy.Report{
 		PolicySerial: document.Serial,
 		AppliedGPOs:  document.AppliedGPOs,
@@ -159,6 +165,24 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 		return fmt.Errorf("%d of %d settings failed", failed, len(results))
 	}
 	return nil
+}
+
+func runTasks(ctx context.Context, api *client.Client, env apply.Env) {
+	queued, err := api.Tasks(ctx)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: fetching tasks:", err)
+		return
+	}
+	for _, task := range queued {
+		fmt.Printf("  task %-16s running\n", task.Kind)
+		result := tasks.Run(ctx, task, env)
+		if !result.OK {
+			fmt.Fprintf(os.Stderr, "  task %-16s failed: %s\n", task.Kind, result.Output)
+		}
+		if err := api.TaskResult(ctx, result); err != nil {
+			fmt.Fprintln(os.Stderr, "odm-agent: reporting task:", err)
+		}
+	}
 }
 
 func lastSerial(env apply.Env) string {

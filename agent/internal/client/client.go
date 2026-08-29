@@ -25,6 +25,7 @@ import (
 
 	agentconfig "odm.example.org/agent/internal/config"
 	"odm.example.org/agent/internal/policy"
+	"odm.example.org/agent/internal/tasks"
 )
 
 type Client struct {
@@ -210,4 +211,55 @@ func localAddresses() []string {
 		}
 	}
 	return out
+}
+
+// Tasks claims whatever work the control plane has queued for this machine.
+// An empty list is the normal case and is not an error.
+func (c *Client) Tasks(ctx context.Context) ([]tasks.Task, error) {
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, c.base+"/api/v1/agent/tasks", nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tasks: %s", response.Status)
+	}
+	var body struct {
+		Tasks []tasks.Task `json:"tasks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode tasks: %w", err)
+	}
+	return body.Tasks, nil
+}
+
+// TaskResult records how a task went. Reported even on failure, so a stuck
+// install shows a reason in the console rather than staying "installing".
+func (c *Client) TaskResult(ctx context.Context, result tasks.Result) error {
+	body, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+"/api/v1/agent/tasks/result", bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("task result: %s", response.Status)
+	}
+	return nil
 }

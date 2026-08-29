@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
-  Activity,
   BookOpen,
   ClipboardList,
   Globe,
@@ -11,26 +10,49 @@ import {
   Network,
   PanelLeftClose,
   PanelLeftOpen,
+  FolderOpen,
   ScrollText,
   Server,
+  ServerCog,
   ShieldCheck,
   Trash2,
   Users,
 } from "lucide-react";
-import { holds, type SessionInfo } from "./api";
+import { api, holds, type SessionInfo } from "./api";
 
 // `permission` is what the section needs; `domainAdmin` marks a section only
-// members of the domain administrators group ever see.
+// members of the domain administrators group ever see; `role` marks a section
+// that manages something a server role provides, and so has nothing to show
+// until that role is installed somewhere.
 const NAV = [
   { label: "Overview", to: "/", icon: LayoutDashboard, end: true },
   { label: "Directory", to: "/directory", icon: Users, permission: "directory.read" },
   { label: "Group Policy", to: "/policy", icon: ClipboardList, permission: "gpo.read" },
   { label: "DNS", to: "/dns", icon: Globe, permission: "dns.read" },
-  { label: "DHCP", to: "/dhcp", icon: Network, permission: "dhcp.read" },
-  { label: "Certificates", to: "/certificates", icon: KeyRound, permission: "ca.read" },
+  {
+    label: "DHCP",
+    to: "/dhcp",
+    icon: Network,
+    permission: "dhcp.read",
+    role: "dhcp",
+  },
+  {
+    label: "File Shares",
+    to: "/shares",
+    icon: FolderOpen,
+    permission: "share.read",
+    role: "file-server",
+  },
+  {
+    label: "Certificates",
+    to: "/certificates",
+    icon: KeyRound,
+    permission: "ca.read",
+    role: "certificate-authority",
+  },
+  { label: "Servers", to: "/servers", icon: ServerCog, permission: "server.read" },
   { label: "Server Roles", to: "/roles", icon: Server, permission: "role.read" },
   { label: "Delegation", to: "/delegation", icon: ShieldCheck, domainAdmin: true },
-  { label: "Operations", to: "/operations", icon: Activity, permission: "health.read" },
   { label: "Deleted Objects", to: "/recyclebin", icon: Trash2, permission: "recyclebin.read" },
   { label: "Audit Log", to: "/audit", icon: ScrollText, permission: "audit.read" },
   { label: "Wiki", to: "/wiki", icon: BookOpen },
@@ -60,6 +82,25 @@ export function Shell({
   onSignOut: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(recall);
+  const [installed, setInstalled] = useState<Set<string>>(new Set());
+
+  // Sections that only manage what a role provides stay out of the way until
+  // the role exists. Server Roles is where they are turned on.
+  useEffect(() => {
+    if (!holds(session, "role.read")) return;
+    api.roles
+      .list()
+      .then((result) =>
+        setInstalled(
+          new Set(
+            result.installed
+              .filter((instance) => instance.state !== "removed")
+              .map((instance) => instance.role_name),
+          ),
+        ),
+      )
+      .catch(() => setInstalled(new Set()));
+  }, [session]);
 
   function toggle() {
     setCollapsed((current) => {
@@ -103,7 +144,8 @@ export function Shell({
             {NAV.filter(
               (item) =>
                 (!item.domainAdmin || session.domain_admin) &&
-                (!item.permission || holds(session, item.permission)),
+                (!item.permission || holds(session, item.permission)) &&
+                (!item.role || installed.has(item.role)),
             ).map(({ label, to, icon: Icon, end }) => (
               <li key={label}>
                 <NavLink

@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
 import { BulkImport, CreateDialog } from "../components/CreateDialog";
+import { useContextMenu, type MenuItem } from "../components/ContextMenu";
 import { EnrolmentTokens } from "../components/EnrolmentTokens";
+import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
 import { ObjectPanel, isDisabled } from "../components/ObjectPanel";
 import { Split } from "../components/Split";
 
@@ -77,6 +79,9 @@ export function Directory() {
   const [enrolling, setEnrolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [linking, setLinking] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<DirectoryObject | null>(null);
+  const { bind, menu } = useContextMenu();
 
   const loadTree = useCallback(async () => {
     const tree = await api.directory.tree();
@@ -134,6 +139,31 @@ export function Directory() {
     [nodes, baseDn],
   );
 
+  function containerMenu(node: DirectoryObject): MenuItem[] {
+    const dn = node.distinguishedName;
+    const isOu = node.objectType === "ou";
+    return [
+      { label: label(node), heading: true },
+      { label: "New user", onSelect: () => { setContainer(dn); setCreating("user"); } },
+      { label: "New group", onSelect: () => { setContainer(dn); setCreating("group"); } },
+      { label: "New computer", onSelect: () => { setContainer(dn); setCreating("computer"); } },
+      {
+        label: "New organizational unit",
+        onSelect: () => { setContainer(dn); setCreating("ou"); },
+      },
+      { separator: true },
+      { label: "Link a policy object…", onSelect: () => setLinking(dn) },
+      { separator: true },
+      { label: "Rename", disabled: !isOu, onSelect: () => setRenaming(node) },
+      {
+        label: "Delete",
+        danger: true,
+        disabled: !isOu,
+        onSelect: () => setSelected(node),
+      },
+    ];
+  }
+
   const tree = (
     <>
       <nav className="tree" aria-label="Organizational units">
@@ -142,6 +172,8 @@ export function Directory() {
           dn={baseDn}
           rootLabel={domainLabel}
           selected={container}
+          menuFor={containerMenu}
+          bind={bind}
           onSelect={(dn) => {
             setSearch("");
             setContainer(dn);
@@ -259,6 +291,24 @@ export function Directory() {
                   onDoubleClick={() =>
                     object.objectType === "ou" && setContainer(object.distinguishedName)
                   }
+                  {...bind([
+                    { label: label(object), heading: true },
+                    { label: "Properties…", onSelect: () => setSelected(object) },
+                    {
+                      label: "Open",
+                      disabled: object.objectType !== "ou",
+                      onSelect: () => setContainer(object.distinguishedName),
+                    },
+                    { separator: true },
+                    { label: "Rename", onSelect: () => setRenaming(object) },
+                    {
+                      label: "Link a policy object…",
+                      disabled: object.objectType !== "ou",
+                      onSelect: () => setLinking(object.distinguishedName),
+                    },
+                    { separator: true },
+                    { label: "Delete", danger: true, onSelect: () => setSelected(object) },
+                  ])}
                 >
                   <td>
                     <Icon size={15} aria-hidden="true" />
@@ -305,6 +355,27 @@ export function Directory() {
         <EnrolmentTokens container={container} onClose={() => setEnrolling(false)} />
       )}
 
+      {menu}
+
+      {linking && (
+        <LinkPolicyDialog
+          targetDn={linking}
+          onClose={() => setLinking(null)}
+          onLinked={() => setLinking(null)}
+        />
+      )}
+
+      {renaming && (
+        <RenameDialog
+          object={renaming}
+          onClose={() => setRenaming(null)}
+          onRenamed={() => {
+            setRenaming(null);
+            void refresh();
+          }}
+        />
+      )}
+
       {importing && (
         <BulkImport
           container={container}
@@ -321,12 +392,16 @@ function TreeNode({
   dn,
   rootLabel,
   selected,
+  menuFor,
+  bind,
   onSelect,
 }: {
   nodes: DirectoryObject[];
   dn: string;
   rootLabel?: string;
   selected: string;
+  menuFor: (node: DirectoryObject) => MenuItem[];
+  bind: (items: MenuItem[]) => { onContextMenu: (event: React.MouseEvent) => void };
   onSelect: (dn: string) => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -341,7 +416,10 @@ function TreeNode({
 
   return (
     <div className="tree-node">
-      <div className={selected === dn ? "tree-row active" : "tree-row"}>
+      <div
+        className={selected === dn ? "tree-row active" : "tree-row"}
+        {...bind(menuFor(self))}
+      >
         <button
           type="button"
           className="icon"
@@ -368,6 +446,8 @@ function TreeNode({
               nodes={nodes}
               dn={child.distinguishedName}
               selected={selected}
+              menuFor={menuFor}
+              bind={bind}
               onSelect={onSelect}
             />
           ))}

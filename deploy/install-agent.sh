@@ -44,6 +44,14 @@ apt-get install -y --no-install-recommends \
     cifs-utils libpam-mount nftables dconf-cli sudo openssh-server
 
 install -m 0755 "$BINARY" /usr/sbin/odm-agent
+
+# Role installers ship with the agent so a member server can be given a role
+# from the console. The control plane cannot run a subprocess on a machine it
+# is not; the agent runs these when it is asked to.
+install -d -m 0755 /usr/lib/odm/roles
+for INSTALLER in "$(dirname "$0")"/install-*-role.sh; do
+    [[ -f "$INSTALLER" ]] && install -m 0755 "$INSTALLER" /usr/lib/odm/roles/
+done
 install -d -m 0750 /etc/odm /var/lib/odm
 
 if [[ -n "$CA_CERT" ]]; then

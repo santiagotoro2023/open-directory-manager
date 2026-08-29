@@ -29,7 +29,7 @@ export function Content() {
             ["Agent", "File server", "SMB with Kerberos"],
           ]}
         />
-        <Where>Operations → Health reports the state of each of these.</Where>
+        <Where>Overview → Health reports the state of each of these.</Where>
       </Quickstart>
 
       <Details>

@@ -149,7 +149,7 @@ button.ghost:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 14px 0 0;
+  margin: 14px 0;
   padding: 9px 11px;
   color: var(--danger);
   background: #fef2f2;
@@ -278,6 +278,7 @@ button.ghost:hover {
 .tree-label {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 7px;
   flex: 1;
   padding: 5px 6px;
@@ -1324,10 +1325,15 @@ ul.plain {
 
 /* ---------------------------------------------------- policy categories -- */
 
-.category-list {
+.category-list,
+.category-list ul {
   margin: 0;
-  padding: 8px;
+  padding: 0;
   list-style: none;
+}
+
+.category-list {
+  padding: 8px;
   overflow: auto;
   flex: 1;
 }
@@ -1481,4 +1487,137 @@ ul.plain {
   background: var(--surface-recessed);
   border: 1px solid var(--border);
   border-radius: 999px;
+}
+
+/* ------------------------------------------------------- context menus -- */
+
+.context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 200px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 30px rgb(17 24 39 / 0.16);
+}
+
+.context-menu ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.context-menu button {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 9px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  text-align: left;
+}
+
+.context-menu button:hover:not(:disabled) {
+  background: #eef2ff;
+}
+
+.context-menu button.danger:hover {
+  background: #fef2f2;
+}
+
+.context-menu hr {
+  margin: 4px 6px;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.context-menu .group-label {
+  padding: 6px 9px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------- pickers ------ */
+
+/* A value that exists in the domain is chosen, not typed. */
+.picker-field {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.picker-field input {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-field button {
+  flex: 0 0 auto;
+}
+
+.picker-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.picker-results li + li {
+  border-top: 1px solid var(--border);
+}
+
+.picker-results button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  color: var(--text);
+}
+
+.picker-results button:hover {
+  background: #eef2ff;
+}
+
+.picker-results .secondary {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.picker-tree {
+  max-height: 340px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* ---------------------------------------------------------- toolbar row -- */
+
+.actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.picker-results button.active {
+  background: #eef2ff;
+  font-weight: 600;
 }

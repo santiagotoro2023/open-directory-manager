@@ -106,16 +106,15 @@ export function ObjectPanel({
   const isAccount = object.objectType === "user" || object.objectType === "computer";
 
   return (
-    <aside className="panel" aria-label="Object details">
-      <header>
-        <div>
-          <h2>{text(object.displayName || object.cn || object.ou)}</h2>
-          <p className="mono muted">{dn}</p>
-        </div>
-        <button type="button" className="ghost" onClick={onClose}>
-          Close
-        </button>
-      </header>
+    <Modal
+      title={text(object.displayName || object.cn || object.ou)}
+      submitLabel="Save"
+      busy={busy}
+      onClose={onClose}
+      onSubmit={save}
+      wide
+    >
+      <p className="mono muted">{dn}</p>
 
       {object.objectType === "group" && (
         <>
@@ -165,10 +164,7 @@ export function ObjectPanel({
         </p>
       )}
 
-      <div className="panel-actions">
-        <button type="button" className="primary" onClick={save} disabled={busy}>
-          Save
-        </button>
+      <div className="actions-row">
         {object.objectType === "group" && (
           <button type="button" className="ghost" onClick={() => setDialog("members")}>
             Members
@@ -255,7 +251,7 @@ export function ObjectPanel({
           }}
         />
       )}
-    </aside>
+    </Modal>
   );
 }
 

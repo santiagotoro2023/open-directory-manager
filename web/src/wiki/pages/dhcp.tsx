@@ -118,7 +118,7 @@ export function Content() {
         <Section title="Utilisation">
           <p>
             The scope list shows assigned addresses against the pool total. The same figures appear
-            on the health dashboard under Operations.
+            on the health dashboard under Overview.
           </p>
         </Section>
       </Details>

@@ -3,7 +3,7 @@ import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
   id: "operations",
-  title: "Operations",
+  title: "Health and backups",
   section: "Administration",
   summary: "Health, replication between domain controllers, and domain backups.",
   keywords: ["health", "replication", "drs", "backup", "restore", "monitoring", "dashboard"],
@@ -14,12 +14,12 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          Operations answers three questions: is the domain well, are the controllers in step, and
+          The Overview answers three questions: is the domain well, are the controllers in step, and
           when was the last backup.
         </p>
 
         <Example title="Check the domain">
-          <strong>Operations</strong> → <strong>Health</strong>. Each card reports one subsystem
+          <strong>Overview</strong> → <strong>Health</strong>. Each card reports one subsystem
           and says so plainly when that subsystem is not installed.
         </Example>
         <Example title="Force replication">
@@ -30,7 +30,7 @@ export function Content() {
           appears in the list when it finishes.
         </Example>
 
-        <Where>Operations.</Where>
+        <Where>Overview.</Where>
       </Quickstart>
 
       <Details>

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import objects, rsop
+from . import audit, objects, rsop, tasks
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -160,3 +160,76 @@ async def agent_report(
         json.dumps(results),
         sum(1 for result in results if result["status"] == "failed"),
     )
+
+
+# ------------------------------------------------------------------ tasks ---
+# Work the control plane cannot do itself, because it is work on another
+# machine. The agent already proves which machine it is, so it is handed only
+# the tasks queued for that machine (CLAUDE.md §5.5).
+
+
+class TaskResult(BaseModel):
+    id: Annotated[str, Field(min_length=36, max_length=36)]
+    ok: bool
+    output: Annotated[str, Field(max_length=8000)] = ""
+
+
+@router.get("/tasks")
+async def agent_tasks(
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Claim this machine's pending work."""
+    async with pool.acquire() as conn:
+        return {"tasks": await tasks.claim(conn, machine.hostname)}
+
+
+@router.post("/tasks/result", status_code=204)
+async def agent_task_result(
+    body: TaskResult,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """Record how a task went, and move whatever it was for to its new state."""
+    async with pool.acquire() as conn:
+        task = await tasks.finish(
+            conn, body.id, machine.hostname, ok=body.ok, output=body.output
+        )
+        if task is None:
+            # Not this machine's task, or already reported. Nothing to record.
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such task")
+
+        detail = body.output.strip().splitlines()[-1][:500] if body.output.strip() else None
+        if task["kind"] == "role-install" and task["subject"]:
+            await conn.execute(
+                """
+                UPDATE server_role
+                SET state = $2, last_error = $3,
+                    installed_at = CASE WHEN $2 = 'active' THEN now() ELSE installed_at END,
+                    updated_at = now()
+                WHERE id = $1::uuid
+                """,
+                task["subject"],
+                "active" if body.ok else "failed",
+                None if body.ok else detail,
+            )
+        elif task["kind"] == "share-apply" and task["subject"]:
+            await conn.execute(
+                """
+                UPDATE file_share SET state = $2, last_error = $3, updated_at = now()
+                WHERE id = $1::uuid
+                """,
+                task["subject"],
+                "active" if body.ok else "failed",
+                None if body.ok else detail,
+            )
+
+        await audit.record(
+            conn,
+            actor=machine.hostname,
+            action=f"agent.{task['kind'].replace('-', '.')}",
+            outcome="success" if body.ok else "failure",
+            object_type="node-task",
+            object_dn=task["subject"],
+            detail=detail,
+        )

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { AdmxSelection, PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
+import { PickerField, type PickerKind, type PickerValue } from "./Picker";
 import { Split } from "./Split";
 
 type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox";
@@ -13,6 +14,10 @@ interface FieldSpec {
   options?: string[];
   placeholder?: string;
   width?: string;
+  // A value the directory already knows is chosen, not typed.
+  picker?: PickerKind;
+  pickerValue?: PickerValue;
+  pickerMultiple?: boolean;
 }
 
 type Half = "Computer" | "User";
@@ -40,8 +45,8 @@ export const CATEGORIES: CategorySpec[] = [
       { key: "path", label: "Path", placeholder: "/etc/motd" },
       { key: "content", label: "Content", kind: "textarea" },
       { key: "mode", label: "Mode", width: "90px" },
-      { key: "owner", label: "Owner", width: "110px" },
-      { key: "group", label: "Group", width: "110px" },
+      { key: "owner", label: "Owner", width: "150px", picker: "user" },
+      { key: "group", label: "Group", width: "150px", picker: "group" },
     ],
     blank: { path: "", content: "", mode: "0644", owner: "root", group: "root" },
   },
@@ -87,7 +92,7 @@ export const CATEGORIES: CategorySpec[] = [
       { key: "name", label: "Name", width: "160px" },
       { key: "schedule", label: "Schedule", placeholder: "0 3 * * 0", width: "150px" },
       { key: "command", label: "Command" },
-      { key: "user", label: "Run as", width: "110px" },
+      { key: "user", label: "Run as", width: "150px", picker: "user" },
     ],
     blank: { name: "", schedule: "0 3 * * 0", command: "", user: "root" },
   },
@@ -99,7 +104,13 @@ export const CATEGORIES: CategorySpec[] = [
       { key: "name", label: "Name", width: "140px" },
       { key: "unc", label: "Share", placeholder: "//fs01/shared" },
       { key: "mount_point", label: "Mount point", placeholder: "/mnt/shared" },
-      { key: "for_principal", label: "For user or %group", placeholder: "%Engineers" },
+      {
+        key: "for_principal",
+        label: "For user or group",
+        placeholder: "%Engineers",
+        picker: "principal",
+        pickerValue: "principal",
+      },
       { key: "options", label: "Options" },
     ],
     blank: { name: "", unc: "", mount_point: "", for_principal: "", options: "" },
@@ -111,9 +122,16 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     fields: [
       { key: "name", label: "Name", width: "140px" },
-      { key: "users", label: "Users and %groups", placeholder: "%Helpdesk" },
+      {
+        key: "users",
+        label: "Users and groups",
+        placeholder: "%Helpdesk",
+        picker: "principal",
+        pickerValue: "principal",
+        pickerMultiple: true,
+      },
       { key: "commands", label: "Commands", placeholder: "/usr/bin/systemctl" },
-      { key: "run_as", label: "Run as", width: "110px" },
+      { key: "run_as", label: "Run as", width: "140px", picker: "user" },
       { key: "nopasswd", label: "NOPASSWD", kind: "checkbox", width: "110px" },
     ],
     blank: { name: "", users: [], commands: [], run_as: "ALL", nopasswd: false },
@@ -124,7 +142,13 @@ export const CATEGORIES: CategorySpec[] = [
     note: "Who may open a session on a machine, and how.",
     half: "Computer",
     fields: [
-      { key: "principal", label: "User or %group", placeholder: "%Engineers" },
+      {
+        key: "principal",
+        label: "User or group",
+        placeholder: "%Engineers",
+        picker: "principal",
+        pickerValue: "principal",
+      },
       {
         key: "service",
         label: "Service",
@@ -529,6 +553,19 @@ function Cell({
         rows={3}
         value={toInput(value)}
         onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+  if (field.picker) {
+    return (
+      <PickerField
+        kind={field.picker}
+        as={field.pickerValue}
+        ariaLabel={field.label}
+        placeholder={field.placeholder}
+        multiple={field.pickerMultiple}
+        value={toInput(value)}
+        onChange={(next) => onChange(fromInput(field, next))}
       />
     );
   }

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowUp, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
 import { Field, Modal } from "../components/Modal";
+import { useContextMenu } from "../components/ContextMenu";
+import { ContainerPicker, PickerDialog } from "../components/Picker";
 import { SettingsEditor } from "../components/SettingsEditor";
 import { TemplateManager } from "../components/TemplateManager";
 
@@ -13,6 +15,7 @@ export function Policy() {
   const [creating, setCreating] = useState(false);
   const [templates, setTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { bind, menu } = useContextMenu();
 
   const load = useCallback(async () => {
     setError(null);
@@ -80,7 +83,23 @@ export function Policy() {
         </thead>
         <tbody>
           {gpos.map((gpo) => (
-            <tr key={gpo.guid} onClick={() => void open(gpo.guid)}>
+            <tr
+              key={gpo.guid}
+              onClick={() => void open(gpo.guid)}
+              {...bind([
+                { label: gpo.display_name, heading: true },
+                { label: "Edit settings…", onSelect: () => void open(gpo.guid) },
+                { separator: true },
+                {
+                  label: "Delete",
+                  danger: true,
+                  onSelect: async () => {
+                    await api.policy.remove(gpo.guid).catch(() => undefined);
+                    void load();
+                  },
+                },
+              ])}
+            >
               <td>
                 <ClipboardList size={15} aria-hidden="true" />
                 {gpo.display_name}
@@ -100,6 +119,8 @@ export function Policy() {
           )}
         </tbody>
       </table>
+
+      {menu}
 
       {templates && <TemplateManager onClose={() => setTemplates(false)} />}
 
@@ -181,6 +202,8 @@ function GpoDetail({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [pickingFilter, setPickingFilter] = useState(false);
+  const [pickingGroup, setPickingGroup] = useState(false);
 
   const lines = (value: string) =>
     value
@@ -313,6 +336,23 @@ function GpoDetail({
           >
             <textarea rows={4} className="mono" value={filter} onChange={(e) => setFilter(e.target.value)} />
           </Field>
+          <button type="button" className="ghost" onClick={() => setPickingFilter(true)}>
+            Add a user or group…
+          </button>
+          {pickingFilter && (
+            <PickerDialog
+              kind="principal"
+              onClose={() => setPickingFilter(false)}
+              onPick={(object) => {
+                setPickingFilter(false);
+                setFilter((current) =>
+                  current.split("\n").includes(object.distinguishedName)
+                    ? current
+                    : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
+                );
+              }}
+            />
+          )}
 
           <h3>Item-level targeting</h3>
           <Field label="Operating systems" hint="Comma separated, e.g. debian-12, debian-13">
@@ -327,6 +367,23 @@ function GpoDetail({
           <Field label="Groups" hint="One distinguished name per line">
             <textarea rows={3} className="mono" value={groups} onChange={(e) => setGroups(e.target.value)} />
           </Field>
+          <button type="button" className="ghost" onClick={() => setPickingGroup(true)}>
+            Add a group…
+          </button>
+          {pickingGroup && (
+            <PickerDialog
+              kind="group"
+              onClose={() => setPickingGroup(false)}
+              onPick={(object) => {
+                setPickingGroup(false);
+                setGroups((current) =>
+                  current.split("\n").includes(object.distinguishedName)
+                    ? current
+                    : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
+                );
+              }}
+            />
+          )}
         </div>
       )}
     </main>
@@ -335,20 +392,8 @@ function GpoDetail({
 
 function LinksEditor({ gpo, onChanged }: { gpo: Gpo; onChanged: () => void }) {
   const [links, setLinks] = useState<GpoLink[]>(gpo.links ?? []);
-  const [containers, setContainers] = useState<string[]>([]);
-  const [target, setTarget] = useState("");
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.directory
-      .tree()
-      .then((tree) => {
-        const dns = tree.nodes.map((node) => node.distinguishedName);
-        setContainers(dns);
-        setTarget((current) => current || tree.base_dn);
-      })
-      .catch(() => setContainers([]));
-  }, []);
 
   async function refresh() {
     const fresh = await api.policy.get(gpo.guid);
@@ -368,27 +413,28 @@ function LinksEditor({ gpo, onChanged }: { gpo: Gpo; onChanged: () => void }) {
 
   return (
     <div>
-      <div className="toolbar">
-        <select
-          aria-label="Container to link to"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-        >
-          {containers.map((dn) => (
-            <option key={dn} value={dn}>
-              {dn}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="ghost"
-          onClick={() => void run(() => api.policy.link(gpo.guid, target))}
-        >
-          <Plus size={14} aria-hidden="true" />
-          Link here
+      {/* A link only means something on an organizational unit or the domain
+          head, so those are what the picker offers. The dropdown it replaces
+          listed every container in the directory, CN=WMIPolicy included. */}
+      <div className="page-header">
+        <button type="button" className="primary" onClick={() => setPicking(true)}>
+          <Plus size={15} aria-hidden="true" />
+          Link here…
         </button>
       </div>
+
+      {picking && (
+        <ContainerPicker
+          title={`Link ${gpo.display_name} to`}
+          submitLabel="Link here"
+          onlyOrganizationalUnits
+          onClose={() => setPicking(false)}
+          onPick={(dn) => {
+            setPicking(false);
+            void run(() => api.policy.link(gpo.guid, dn));
+          }}
+        />
+      )}
 
       {error && (
         <p className="alert" role="alert">

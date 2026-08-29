@@ -218,6 +218,55 @@ export interface DeletedObject {
   members: string[];
 }
 
+export interface ManagedServer {
+  name: string;
+  fqdn: string;
+  distinguished_name: string;
+  operating_system: string;
+  domain_controller: boolean;
+  roles: { role: string; state: string }[];
+  last_seen: string | null;
+  pending_tasks: number;
+}
+
+export type ShareAccess = "read" | "change" | "full";
+
+export interface ShareEntry {
+  principal: string;
+  kind: "user" | "group";
+  access: ShareAccess;
+  inherit: boolean;
+}
+
+export interface FileShare {
+  id: string;
+  node_fqdn: string;
+  name: string;
+  path: string;
+  comment: string;
+  owner: string;
+  owner_group: string;
+  entries: ShareEntry[];
+  browseable: boolean;
+  read_only: boolean;
+  state: "pending" | "applying" | "active" | "failed";
+  last_error: string | null;
+  unc: string;
+  updated_at: string;
+}
+
+export interface NewShare {
+  node_fqdn: string;
+  name: string;
+  path: string;
+  comment?: string;
+  owner?: string;
+  owner_group?: string;
+  entries?: ShareEntry[];
+  browseable?: boolean;
+  read_only?: boolean;
+}
+
 export interface RoleArgument {
   name: string;
   label: string;
@@ -422,6 +471,7 @@ export const api = {
       object_type?: ObjectType;
       query?: string;
       scope?: "level" | "subtree";
+      limit?: number;
     }) =>
       request<{ objects: DirectoryObject[]; truncated: boolean }>(
         `/directory/objects${qs(params)}`,
@@ -633,6 +683,22 @@ export const api = {
       request<RoleInstance>("/roles/install", json({ role, node_fqdn, config })),
 
     remove: (id: string) => request<void>(`/roles/instance${qs({ id })}`, { method: "DELETE" }),
+  },
+
+  servers: {
+    list: () => request<{ servers: ManagedServer[] }>("/servers"),
+  },
+
+  shares: {
+    list: () =>
+      request<{ shares: FileShare[]; access_levels: Record<string, string> }>("/shares"),
+
+    create: (body: NewShare) => request<FileShare>("/shares", json(body)),
+
+    update: (body: { id: string } & Partial<NewShare>) =>
+      request<FileShare>("/shares", { method: "PATCH", body: JSON.stringify(body) }),
+
+    remove: (id: string) => request<void>(`/shares${qs({ id })}`, { method: "DELETE" }),
   },
 
   rbac: {

@@ -8,11 +8,12 @@ import { Delegation } from "./pages/Delegation";
 import { Dhcp } from "./pages/Dhcp";
 import { Directory } from "./pages/Directory";
 import { Dns } from "./pages/Dns";
-import { Health } from "./pages/Health";
 import { Overview } from "./pages/Overview";
 import { Policy } from "./pages/Policy";
 import { RecycleBin } from "./pages/RecycleBin";
 import { Roles } from "./pages/Roles";
+import { Servers } from "./pages/Servers";
+import { Shares } from "./pages/Shares";
 import { Wiki } from "./wiki/Wiki";
 import { api, type SessionInfo } from "./api";
 
@@ -53,9 +54,11 @@ export function App() {
           <Route path="dns" element={<Dns />} />
           <Route path="dhcp" element={<Dhcp />} />
           <Route path="roles" element={<Roles />} />
+          <Route path="servers" element={<Servers />} />
+          <Route path="shares" element={<Shares />} />
           <Route path="delegation" element={<Delegation />} />
           <Route path="certificates" element={<Certificates />} />
-          <Route path="operations" element={<Health />} />
+          <Route path="operations" element={<Navigate to="/" replace />} />
           <Route path="recyclebin" element={<RecycleBin />} />
           <Route path="wiki/*" element={<Wiki />} />
           <Route path="audit" element={<Audit />} />

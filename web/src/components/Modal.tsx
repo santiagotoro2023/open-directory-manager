@@ -8,6 +8,7 @@ export function Modal({
   error,
   onSubmit,
   onClose,
+  wide,
   children,
 }: {
   title: string;
@@ -16,6 +17,8 @@ export function Modal({
   error?: string | null;
   onSubmit: () => void;
   onClose: () => void;
+  /** For dialogs carrying a table or several groups of fields. */
+  wide?: boolean;
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
@@ -34,7 +37,13 @@ export function Modal({
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} ref={dialog}>
+      <div
+        className={wide ? "modal wide" : "modal"}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        ref={dialog}
+      >
         <header>
           <h2>{title}</h2>
           <button type="button" className="icon" onClick={onClose} aria-label="Close">

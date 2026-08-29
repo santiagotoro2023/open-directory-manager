@@ -186,24 +186,9 @@ REGISTRY: dict[str, Role] = {
         name="file-server",
         title="File server",
         summary="Kerberos-authenticated SMB shares for drive maps.",
-        arguments=(
-            Argument(name="share_name", label="Share name", placeholder="shared"),
-            Argument(
-                name="share_path",
-                label="Directory on the server",
-                kind="path",
-                placeholder="/srv/shares/shared",
-            ),
-            Argument(
-                name="valid_group",
-                label="Restrict to group",
-                help="Leave empty to allow every domain user.",
-                optional=True,
-            ),
-        ),
         packages=("samba", "acl", "attr"),
         ui_section="file-server",
-        notes="Drive-map policies can point at the share once it is active.",
+        notes="Create the shares themselves under File Shares once this is installed.",
     ),
 }
 
@@ -231,7 +216,17 @@ def build_command(role: Role, config: dict[str, str]) -> list[str]:
     if role.core:
         raise RoleError("the core role is always installed")
 
-    command = [SUDO, "-n", ROLE_HELPER, role.name]
+    return [SUDO, "-n", ROLE_HELPER, role.name, *installer_arguments(role, config)]
+
+
+def installer_arguments(role: Role, config: dict[str, str]) -> list[str]:
+    """The validated flags the role's installer takes, in declared order.
+
+    Separate from build_command because a role installed on another machine is
+    run by that machine's agent, which needs the arguments without this host's
+    sudo wrapper around them.
+    """
+    command: list[str] = []
     for argument in role.arguments:
         value = str(config.get(argument.name, "")).strip() or argument.default
         if not value:

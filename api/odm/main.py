@@ -42,6 +42,9 @@ from . import (
     routes_rbac,
     routes_recyclebin,
     routes_roles,
+    routes_servers,
+    routes_shares,
+    shares,
 )
 from .config import Settings, get_settings
 from .security import CSRF_HEADER, SecurityHeadersMiddleware
@@ -133,6 +136,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_dhcp.router)
     app.include_router(routes_recyclebin.router)
     app.include_router(routes_roles.router)
+    app.include_router(routes_servers.router)
+    app.include_router(routes_shares.router)
     app.include_router(routes_rbac.router)
     app.include_router(routes_ca.router)
     app.include_router(routes_operations.router)
@@ -154,6 +159,7 @@ def create_app() -> FastAPI:
         (backup.BackupError, status.HTTP_400_BAD_REQUEST),
         (enrolment.EnrolmentError, status.HTTP_400_BAD_REQUEST),
         (roles.RoleError, status.HTTP_400_BAD_REQUEST),
+        (shares.ShareError, status.HTTP_400_BAD_REQUEST),
         (ca.CaNotInitialised, status.HTTP_501_NOT_IMPLEMENTED),
         (ca.CaError, status.HTTP_400_BAD_REQUEST),
     ):

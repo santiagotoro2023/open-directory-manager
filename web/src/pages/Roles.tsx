@@ -8,6 +8,7 @@ import {
   type RoleInstance,
 } from "../api";
 import { Field, Modal } from "../components/Modal";
+import { PickerField } from "../components/Picker";
 
 const STATE_BADGE: Record<string, string> = {
   active: "success",
@@ -20,7 +21,6 @@ const STATE_BADGE: Record<string, string> = {
 export function Roles() {
   const [available, setAvailable] = useState<RoleDescriptor[]>([]);
   const [installed, setInstalled] = useState<RoleInstance[]>([]);
-  const [nodes, setNodes] = useState<string[]>([]);
   const [open, setOpen] = useState<RoleDescriptor | null>(null);
   const [installing, setInstalling] = useState<RoleDescriptor | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +31,6 @@ export function Roles() {
       const result = await api.roles.list();
       setAvailable(result.available);
       setInstalled(result.installed);
-      setNodes(result.nodes);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
     }
@@ -119,7 +118,6 @@ export function Roles() {
       {installing && (
         <InstallDialog
           role={installing}
-          nodes={nodes}
           onClose={() => setInstalling(null)}
           onStarted={() => {
             setInstalling(null);
@@ -267,16 +265,14 @@ function ArgumentField({
 
 function InstallDialog({
   role,
-  nodes,
   onClose,
   onStarted,
 }: {
   role: RoleDescriptor;
-  nodes: string[];
   onClose: () => void;
   onStarted: () => void;
 }) {
-  const [node, setNode] = useState(nodes[0] ?? "");
+  const [node, setNode] = useState("");
   const [config, setConfig] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -301,22 +297,19 @@ function InstallDialog({
         }
       }}
     >
-      {/* The domain's controllers are offered, but a role may legitimately run
-          on a member server, so the field stays free text. */}
-      <Field label="Server" hint="Fully-qualified name of the machine">
-        <input
+      {/* Any joined machine can carry a role, not just a controller, so the
+          picker searches every computer in the domain. */}
+      <Field label="Server" hint="The machine this role runs on">
+        <PickerField
+          kind="computer"
+          as="host"
+          ariaLabel="Server"
           value={node}
           required
-          list="odm-role-nodes"
-          placeholder="dc1.corp.example.internal"
-          onChange={(e) => setNode(e.target.value)}
+          placeholder="fs01.corp.example.internal"
+          onChange={setNode}
         />
       </Field>
-      <datalist id="odm-role-nodes">
-        {nodes.map((candidate) => (
-          <option key={candidate} value={candidate} />
-        ))}
-      </datalist>
 
       {role.arguments.map((argument) => (
         <ArgumentField

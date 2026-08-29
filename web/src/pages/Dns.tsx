@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Globe, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DnsRecord, type DnsZone } from "../api";
+import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { Split } from "../components/Split";
 
@@ -16,6 +17,7 @@ export function Dns() {
   const [available, setAvailable] = useState(true);
   const [dialog, setDialog] = useState<"zone" | "record" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { bind, menu } = useContextMenu();
 
   const loadZones = useCallback(async () => {
     setError(null);
@@ -81,7 +83,13 @@ export function Dns() {
       </div>
       <ul className="pane-list" aria-label="DNS zones">
         {zones.map((zone) => (
-          <li key={zone.name}>
+          <li
+            key={zone.name}
+            {...bind([
+              { label: zone.name, heading: true },
+              { label: "New record…", onSelect: () => { setSelected(zone.name); setDialog("record"); } },
+            ])}
+          >
             <button
               type="button"
               className={selected === zone.name ? "active" : ""}
@@ -137,7 +145,18 @@ export function Dns() {
           </thead>
           <tbody>
             {records.map((record, index) => (
-              <tr key={`${record.name}-${record.type}-${index}`}>
+              <tr
+                key={`${record.name}-${record.type}-${index}`}
+                {...bind([
+                  { label: `${record.name} ${record.type}`, heading: true },
+                  {
+                    label: "Delete record",
+                    danger: true,
+                    disabled: READ_ONLY_TYPES.has(record.type),
+                    onSelect: () => void removeRecord(record),
+                  },
+                ])}
+              >
                 <td>{record.name}</td>
                 <td>{record.type}</td>
                 <td className="mono">{record.data}</td>
@@ -166,6 +185,8 @@ export function Dns() {
           </tbody>
         </table>
       </section>
+
+      {menu}
 
       {dialog === "zone" && (
         <ZoneDialog

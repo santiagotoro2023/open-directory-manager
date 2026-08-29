@@ -17,6 +17,8 @@ import * as policySettings from "./pages/policy-settings";
 import * as quickstart from "./pages/quickstart";
 import * as recycleBin from "./pages/recycle-bin";
 import * as roles from "./pages/roles";
+import * as servers from "./pages/servers";
+import * as shares from "./pages/shares";
 import * as troubleshooting from "./pages/troubleshooting";
 
 /**
@@ -39,6 +41,8 @@ const MODULES = [
   domainJoin,
   delegation,
   roles,
+  servers,
+  shares,
   recycleBin,
   operations,
   audit,

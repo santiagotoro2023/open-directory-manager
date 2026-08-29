@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 from typing import Annotated, Any
 
 import asyncpg
@@ -11,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, directory, objects, replication, roles
+from . import audit, directory, objects, replication, roles, tasks
 from .config import Settings, get_settings
 from .security import (
     client_ip,
@@ -153,6 +154,18 @@ async def install(
             json.dumps(body.config),
             session.principal,
         )
+        if not _is_this_host(body.node_fqdn):
+            await tasks.enqueue(
+                conn,
+                node_fqdn=body.node_fqdn,
+                kind="role-install",
+                payload={
+                    "role": role.name,
+                    "arguments": roles.installer_arguments(role, body.config),
+                },
+                subject=str(row["id"]),
+                requested_by=session.principal,
+            )
         await audit.record(
             conn,
             actor=session.principal,
@@ -162,11 +175,18 @@ async def install(
             outcome="success",
             object_type="role",
             object_dn=f"{role.name}@{body.node_fqdn}",
-            after={"config": body.config},
+            after={"config": body.config, "on_this_host": _is_this_host(body.node_fqdn)},
         )
 
-    asyncio.create_task(_run_install(pool, role, dict(body.config), str(row["id"])))  # noqa: RUF006
+    if _is_this_host(body.node_fqdn):
+        asyncio.create_task(  # noqa: RUF006
+            _run_install(pool, role, dict(body.config), str(row["id"]))
+        )
     return {**_instance(row), "poll": "/api/v1/roles/instance"}
+
+
+def _is_this_host(node_fqdn: str) -> bool:
+    return node_fqdn.strip().lower().rstrip(".") == socket.getfqdn().lower().rstrip(".")
 
 
 async def _run_install(
