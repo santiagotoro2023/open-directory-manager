@@ -17,7 +17,12 @@ export function Content() {
         <Reference
           headers={["Check", "How"]}
           rows={[
-            ["Is the control plane up?", <Code key="a">curl --cacert /etc/odm/tls/api.crt https://&lt;console&gt;:8443/api/v1/healthz</Code>],
+            [
+              "Is the control plane up?",
+              <Code key="a">
+                curl --cacert /etc/odm/tls/api.crt https://&lt;console&gt;:8443/api/v1/healthz
+              </Code>,
+            ],
             ["What did ODM think happened?", "Audit Log, filtered by actor or object."],
             ["What did the machine do?", "Directory → the computer → Policy → the agent's report."],
             ["Is the domain healthy?", "Overview → Health."],
@@ -89,6 +94,42 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Server roles">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                'A role sits in "installing" and never finishes',
+                <>
+                  The target machine has no agent, so nothing collected the work. Check{" "}
+                  <C key="a">systemctl status odm-agent</C> on it. Installs are run by the agent on
+                  the machine the role goes on &mdash; the control plane runs sandboxed and installs
+                  nothing itself, on any host.
+                </>,
+              ],
+              [
+                '"is not installed on this machine"',
+                <>
+                  The installers ship with the agent, in <C key="b">/usr/lib/odm/roles/</C>.
+                  Reinstall the agent on that machine.
+                </>,
+              ],
+              [
+                "The controller carries no agent after setup",
+                <>
+                  Re-run it and read the tail of <C key="c">/var/log/odm-agent-install.log</C>,
+                  which setup prints when this fails. Usually a machine keytab that could not be
+                  exported, or no network to build the binary.
+                </>,
+              ],
+              [
+                "The installer's own error",
+                "Server Roles → the role → the failed server. The last of its output is under the row.",
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Operations">
           <Reference
             headers={["Symptom", "Check"]}
@@ -114,11 +155,20 @@ export function Content() {
           <Reference
             headers={["Reason", "Usually"]}
             rows={[
-              ["unknown state", "A systemd unit state that is not one of the five supported values."],
+              [
+                "unknown state",
+                "A systemd unit state that is not one of the five supported values.",
+              ],
               ["visudo failed", "The sudo rule would not parse. It was not installed."],
               ["no command runner", "The agent is running in a mode that cannot execute commands."],
-              ["a permissions error", "The agent is not running as root, or a path is on a read-only mount."],
-              ["skipped: not a PEM certificate", "A trusted-certificate entry does not contain a certificate."],
+              [
+                "a permissions error",
+                "The agent is not running as root, or a path is on a read-only mount.",
+              ],
+              [
+                "skipped: not a PEM certificate",
+                "A trusted-certificate entry does not contain a certificate.",
+              ],
             ]}
           />
         </Section>
@@ -131,8 +181,8 @@ export function Content() {
                 "samba-tool: command not found",
                 <>
                   It ships in <C key="a">python3-samba</C> on Debian 13 and{" "}
-                  <C key="b">samba-common-bin</C> on Debian 12. Setup installs whichever the
-                  release has; if it is still missing, install it and run setup again.
+                  <C key="b">samba-common-bin</C> on Debian 12. Setup installs whichever the release
+                  has; if it is still missing, install it and run setup again.
                 </>,
               ],
               [
@@ -172,8 +222,14 @@ export function Content() {
                   <C key="e">host -t SRV _ldap._tcp.corp.example.internal</C>.
                 </>,
               ],
-              ["Clock skew", "Kerberos rejects tickets more than five minutes out. Synchronise time first."],
-              ["Pre-authentication failed", "The join credential is wrong, or the account is disabled."],
+              [
+                "Clock skew",
+                "Kerberos rejects tickets more than five minutes out. Synchronise time first.",
+              ],
+              [
+                "Pre-authentication failed",
+                "The join credential is wrong, or the account is disabled.",
+              ],
               [
                 "Joined, but domain users do not resolve",
                 <>
@@ -213,7 +269,10 @@ export function Content() {
                 "Leases do not appear in DNS",
                 "The dynamic-update path needs the GSS-TSIG hook and a keytab. The role installer reports when the hook is missing.",
               ],
-              ["The peer shows as unreachable", "Check the peer node's service and that both URLs are correct on both nodes."],
+              [
+                "The peer shows as unreachable",
+                "Check the peer node's service and that both URLs are correct on both nodes.",
+              ],
             ]}
           />
         </Section>

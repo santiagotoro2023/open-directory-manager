@@ -515,7 +515,9 @@ button.ghost:hover {
 .modal .search,
 .picker-field .search,
 .wiki-nav .search {
+  flex: 1;
   width: 100%;
+  min-width: 0;
 }
 
 .toolbar .search {
@@ -868,10 +870,26 @@ table.data.compact td {
 }
 
 .scope-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+  gap: 22px 28px;
+}
+
+.scope-form section {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 720px;
+  min-width: 0;
+}
+
+.scope-form h3 {
+  margin: 0;
+}
+
+/* A button stretched by the column it sits in reads as another empty field. */
+.scope-form button {
+  align-self: flex-start;
 }
 
 .inline-fields {

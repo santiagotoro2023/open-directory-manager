@@ -137,13 +137,7 @@ export function Policy() {
   );
 }
 
-function CreateGpoDialog({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: () => void;
-}) {
+function CreateGpoDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
@@ -313,77 +307,96 @@ function GpoDetail({
       {tab === "links" && <LinksEditor gpo={gpo} onChanged={onReload} />}
 
       {tab === "scope" && (
+        /* Three groups side by side rather than one 720px column with two
+           thirds of a wide screen left blank underneath it. */
         <div className="scope-form">
-          <Field label="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="Description">
-            <input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </Field>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-            />
-            Group policy object enabled
-          </label>
+          <section>
+            <h3>Identity</h3>
+            <Field label="Name">
+              <input value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field label="Description">
+              <input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </Field>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+              />
+              Group policy object enabled
+            </label>
+          </section>
 
-          <h3>Security filtering</h3>
-          <Field
-            label="Applies only to these principals"
-            hint="One distinguished name per line. Empty means everyone."
-          >
-            <textarea rows={4} className="mono" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          </Field>
-          <button type="button" className="ghost" onClick={() => setPickingFilter(true)}>
-            Add a user or group…
-          </button>
-          {pickingFilter && (
-            <PickerDialog
-              kind="principal"
-              onClose={() => setPickingFilter(false)}
-              onPick={(object) => {
-                setPickingFilter(false);
-                setFilter((current) =>
-                  current.split("\n").includes(object.distinguishedName)
-                    ? current
-                    : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
-                );
-              }}
-            />
-          )}
+          <section>
+            <h3>Security filtering</h3>
+            <Field
+              label="Applies only to these principals"
+              hint="One distinguished name per line. Empty means everyone."
+            >
+              <textarea
+                rows={4}
+                className="mono"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </Field>
+            <button type="button" className="ghost" onClick={() => setPickingFilter(true)}>
+              Add a user or group…
+            </button>
+            {pickingFilter && (
+              <PickerDialog
+                kind="principal"
+                onClose={() => setPickingFilter(false)}
+                onPick={(object) => {
+                  setPickingFilter(false);
+                  setFilter((current) =>
+                    current.split("\n").includes(object.distinguishedName)
+                      ? current
+                      : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
+                  );
+                }}
+              />
+            )}
+          </section>
 
-          <h3>Item-level targeting</h3>
-          <Field label="Operating systems" hint="Comma separated, e.g. debian-12, debian-13">
-            <input value={osList} onChange={(e) => setOsList(e.target.value)} />
-          </Field>
-          <Field label="Host name pattern" hint="Shell-style wildcards, e.g. ws-*">
-            <input value={hostname} onChange={(e) => setHostname(e.target.value)} />
-          </Field>
-          <Field label="IP ranges" hint="Comma separated CIDR, e.g. 10.10.0.0/16">
-            <input value={ipRanges} onChange={(e) => setIpRanges(e.target.value)} />
-          </Field>
-          <Field label="Groups" hint="One distinguished name per line">
-            <textarea rows={3} className="mono" value={groups} onChange={(e) => setGroups(e.target.value)} />
-          </Field>
-          <button type="button" className="ghost" onClick={() => setPickingGroup(true)}>
-            Add a group…
-          </button>
-          {pickingGroup && (
-            <PickerDialog
-              kind="group"
-              onClose={() => setPickingGroup(false)}
-              onPick={(object) => {
-                setPickingGroup(false);
-                setGroups((current) =>
-                  current.split("\n").includes(object.distinguishedName)
-                    ? current
-                    : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
-                );
-              }}
-            />
-          )}
+          <section>
+            <h3>Item-level targeting</h3>
+            <Field label="Operating systems" hint="Comma separated, e.g. debian-12, debian-13">
+              <input value={osList} onChange={(e) => setOsList(e.target.value)} />
+            </Field>
+            <Field label="Host name pattern" hint="Shell-style wildcards, e.g. ws-*">
+              <input value={hostname} onChange={(e) => setHostname(e.target.value)} />
+            </Field>
+            <Field label="IP ranges" hint="Comma separated CIDR, e.g. 10.10.0.0/16">
+              <input value={ipRanges} onChange={(e) => setIpRanges(e.target.value)} />
+            </Field>
+            <Field label="Groups" hint="One distinguished name per line">
+              <textarea
+                rows={3}
+                className="mono"
+                value={groups}
+                onChange={(e) => setGroups(e.target.value)}
+              />
+            </Field>
+            <button type="button" className="ghost" onClick={() => setPickingGroup(true)}>
+              Add a group…
+            </button>
+            {pickingGroup && (
+              <PickerDialog
+                kind="group"
+                onClose={() => setPickingGroup(false)}
+                onPick={(object) => {
+                  setPickingGroup(false);
+                  setGroups((current) =>
+                    current.split("\n").includes(object.distinguishedName)
+                      ? current
+                      : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
+                  );
+                }}
+              />
+            )}
+          </section>
         </div>
       )}
     </main>
@@ -536,8 +549,8 @@ function LinksEditor({ gpo, onChanged }: { gpo: Gpo; onChanged: () => void }) {
         </tbody>
       </table>
       <p className="muted">
-        Link order 1 has the highest precedence at a container. Enforced links override anything
-        set closer to the object and survive blocked inheritance.
+        Link order 1 has the highest precedence at a container. Enforced links override anything set
+        closer to the object and survive blocked inheritance.
       </p>
     </div>
   );

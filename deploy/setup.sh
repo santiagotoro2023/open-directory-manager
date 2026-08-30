@@ -561,34 +561,58 @@ step "Installing the policy agent on this controller"
 # host — it runs under ProtectSystem=strict with NoNewPrivileges, which is
 # what an identity system should look like. The agent is what does that work,
 # here exactly as on every other server.
-AGENT_BINARY="$REPO/agent/odm-agent"
-if [[ ! -x "$AGENT_BINARY" ]]; then
-    if command -v go >/dev/null 2>&1; then
-        info "Building the agent"
-        (cd "$REPO/agent" && go build -o odm-agent .) >/dev/null 2>&1 || true
+# A Samba controller keeps its keys in its own database and never writes
+# /etc/krb5.keytab, so the agent — which authenticates as this machine's
+# computer account, exactly as it does on a member server — has nothing to
+# load. Export that one principal, and only it.
+if [[ ! -f /etc/krb5.keytab ]]; then
+    MACHINE_PRINCIPAL="$(hostname -s | tr '[:lower:]' '[:upper:]')\$"
+    if samba-tool domain exportkeytab /etc/krb5.keytab \
+            --principal="$MACHINE_PRINCIPAL" >/dev/null 2>&1; then
+        chmod 0600 /etc/krb5.keytab
+        ok "Exported this controller's machine keytab"
     else
-        info "Installing Go to build the agent"
-        apt-get install -y --no-install-recommends golang-go >/dev/null 2>&1 || true
-        (cd "$REPO/agent" && go build -o odm-agent .) >/dev/null 2>&1 || true
+        warn "Could not export a machine keytab for $MACHINE_PRINCIPAL."
     fi
 fi
 
-if [[ -x "$AGENT_BINARY" ]]; then
-    if "$HERE/install-agent.sh" --api-url "https://$CONSOLE_FQDN:$PORT" \
-            --binary "$AGENT_BINARY" \
-            ${LDAP_CA:+--ca-cert "/etc/odm/tls/api.crt"} >/dev/null 2>&1; then
-        ok "The agent is running on this controller"
-    else
-        warn "The agent did not install. Roles cannot be installed on this"
-        warn "machine until it does:"
-        warn "  $HERE/install-agent.sh --api-url https://$CONSOLE_FQDN:$PORT \\"
-        warn "      --binary $AGENT_BINARY"
+AGENT_BINARY="$REPO/agent/odm-agent"
+AGENT_LOG="/var/log/odm-agent-install.log"
+
+if [[ ! -x "$AGENT_BINARY" ]]; then
+    command -v go >/dev/null 2>&1 || {
+        info "Installing Go to build the agent"
+        apt-get install -y --no-install-recommends golang-go >>"$AGENT_LOG" 2>&1 || true
+    }
+    if command -v go >/dev/null 2>&1; then
+        info "Building the agent"
+        (cd "$REPO/agent" && go build -o odm-agent .) >>"$AGENT_LOG" 2>&1 || true
     fi
-else
-    warn "The agent could not be built here, so this controller carries no"
-    warn "agent and no role can be installed on it. Build it on any machine"
-    warn "with Go and run:"
-    warn "  $HERE/install-agent.sh --api-url https://$CONSOLE_FQDN:$PORT --binary ./odm-agent"
+fi
+
+AGENT_READY="no"
+if [[ -x "$AGENT_BINARY" ]]; then
+    if "$HERE/install-agent.sh" \
+            --api-url "https://$CONSOLE_FQDN:$PORT" \
+            --binary "$AGENT_BINARY" \
+            --ca-cert /etc/odm/tls/api.crt >>"$AGENT_LOG" 2>&1; then
+        AGENT_READY="yes"
+        ok "The agent is running on this controller"
+    fi
+fi
+
+if [[ "$AGENT_READY" != "yes" ]]; then
+    warn "The agent is not running here, so no role can be installed on this"
+    warn "machine and it will report nothing to the console."
+    # Whatever went wrong is in that log; making the operator go and find it
+    # is how the last round of this took an evening.
+    if [[ -s "$AGENT_LOG" ]]; then
+        warn "The last of $AGENT_LOG:"
+        tail -n 12 "$AGENT_LOG" | sed 's/^/      /' >&2
+    fi
+    warn "Fix it and run:"
+    warn "  $HERE/install-agent.sh --api-url https://$CONSOLE_FQDN:$PORT \\"
+    warn "      --binary $AGENT_BINARY --ca-cert /etc/odm/tls/api.crt"
 fi
 
 echo
