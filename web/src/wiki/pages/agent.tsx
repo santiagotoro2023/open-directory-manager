@@ -131,6 +131,11 @@ journalctl -u odm-agent -n 50`}</Code>
             The interval defaults to 15 minutes and is itself policy. A small random offset is added
             so a fleet does not check in at the same instant.
           </p>
+          <Note>
+            Queued work &mdash; a role to install, a restart, a share to render &mdash; is collected
+            every 30 seconds in between, so an action taken in the console does not wait for the
+            next policy refresh. Policy itself is still only re-applied when it has changed.
+          </Note>
         </Section>
 
         <Section title="Files the agent owns">

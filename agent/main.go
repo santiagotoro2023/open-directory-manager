@@ -96,12 +96,68 @@ func runDaemon(args []string) int {
 			wait = time.Duration(cfg.RefreshMinutes) * time.Minute
 		}
 
-		select {
-		case <-ctx.Done():
+		if !waitAndPoll(ctx, *configPath, *root, wait+jitter(wait)) {
 			return 0
-		case <-time.After(wait + jitter(wait)):
 		}
 	}
+}
+
+// waitAndPoll sleeps until the next policy refresh, checking for queued work
+// every taskPoll along the way. Returns false when the agent should stop.
+//
+// Policy is compared against a serial and applied only when it changes; a task
+// is somebody in the console waiting for an answer. Making them share a
+// fifteen-minute interval meant clicking Install and watching "installing" for
+// a quarter of an hour with no way to tell it apart from a failure. Asking for
+// the queue is one small authenticated GET that returns nothing almost every
+// time.
+//
+// ponytail: a fixed poll. If a large estate makes this traffic matter, the
+// control plane would have to push instead, which is a connection per machine
+// to hold open — a much bigger change than shortening an interval.
+const taskPoll = 30 * time.Second
+
+func waitAndPoll(ctx context.Context, configPath, root string, remaining time.Duration) bool {
+	// One Kerberos client for the whole window rather than one per poll: a
+	// ticket is good for hours, and asking the KDC for a new one every thirty
+	// seconds on every machine in the domain is real load for nothing.
+	var api *client.Client
+	defer func() {
+		if api != nil {
+			api.Close()
+		}
+	}()
+
+	for remaining > 0 {
+		step := taskPoll
+		if remaining < step {
+			step = remaining
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(step):
+		}
+		remaining -= step
+		if remaining <= 0 {
+			break
+		}
+
+		if api == nil {
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				continue
+			}
+			// A failure here is not worth a log line every thirty seconds;
+			// the next policy refresh reports it properly.
+			if api, err = client.New(cfg, version); err != nil {
+				api = nil
+				continue
+			}
+		}
+		runTasks(ctx, api, apply.NewEnv(root))
+	}
+	return true
 }
 
 func applyOnce(ctx context.Context, configPath, root, username string, force bool) error {

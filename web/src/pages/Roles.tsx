@@ -1,6 +1,13 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ChevronRight, Server } from "lucide-react";
-import { ApiError, api, type RoleArgument, type RoleDescriptor, type RoleInstance } from "../api";
+import {
+  ApiError,
+  api,
+  type ManagedServer,
+  type RoleArgument,
+  type RoleDescriptor,
+  type RoleInstance,
+} from "../api";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 
@@ -276,6 +283,20 @@ function InstallDialog({
   const [config, setConfig] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [servers, setServers] = useState<ManagedServer[]>([]);
+
+  useEffect(() => {
+    api.servers
+      .list()
+      .then((result) => setServers(result.servers))
+      .catch(() => setServers([]));
+  }, []);
+
+  // The agent on the target machine is what installs a role. Picking a machine
+  // that has never run one means watching "installing" until somebody works
+  // out why — so say it before the click, not after the wait.
+  const chosen = servers.find((server) => server.fqdn.toLowerCase() === node.trim().toLowerCase());
+  const silent = node.trim() !== "" && chosen !== undefined && chosen.last_seen === null;
 
   return (
     <Modal
@@ -321,6 +342,14 @@ function InstallDialog({
             onChange={(value) => setConfig({ ...config, [argument.name]: value })}
           />
         ))}
+
+      {silent && (
+        <p className="alert" role="alert">
+          {chosen?.name} has never reported in, so it is probably not running the agent — and the
+          agent is what installs a role. Install it there first, or this will sit at
+          &ldquo;installing&rdquo; until it does.
+        </p>
+      )}
 
       {role.produces_settings.length > 0 && (
         <p className="muted">

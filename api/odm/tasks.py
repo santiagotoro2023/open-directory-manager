@@ -18,6 +18,7 @@ import asyncpg
 
 KINDS = (
     "role-install",
+    "console-certificate",
     "share-apply",
     "share-remove",
     "update-check",

@@ -347,3 +347,22 @@ def test_every_role_has_an_installer_named_after_it():
             continue
         installer = deploy / f"install-{role.name}-role.sh"
         assert installer.exists(), f"{role.name} has no {installer.name}"
+
+
+def test_every_task_the_api_queues_is_one_the_agent_runs():
+    # The two lists are in different languages and neither imports the other,
+    # so they drift silently: console-certificate was added to the API and the
+    # agent and left out of KINDS, which made re-issuing the console's
+    # certificate raise instead of queueing anything.
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    source = (root / "api" / "odm" / "tasks.py").read_text()
+    block = source[source.index("KINDS = (") : source.index(")", source.index("KINDS = ("))]
+    queued = set(re.findall(r'"([a-z-]+)"', block))
+
+    handler = (root / "agent" / "internal" / "tasks" / "tasks.go").read_text()
+    handled = set(re.findall(r'\tcase "([a-z-]+)":', handler))
+
+    assert queued - handled == set(), "the API queues work no agent can run"
+    assert handled - queued == set(), "the agent handles work nothing queues"
