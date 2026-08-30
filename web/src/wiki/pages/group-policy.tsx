@@ -177,6 +177,43 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Export and import">
+          <p>
+            A policy object is the thing an administrator is least willing to rebuild by hand and
+            most afraid to change. Exporting one makes it reviewable, diffable in a repository and
+            movable between a lab domain and a real one; importing it back makes a mistake
+            recoverable without restoring the whole domain.
+          </p>
+          <Reference
+            headers={["Action", "Where"]}
+            rows={[
+              ["Export one", "Right-click it in the list → Export."],
+              ["Export all", "Group Policy → Export all."],
+              ["Import", "Group Policy → Import, then choose the file."],
+            ]}
+          />
+          <Reference
+            headers={["If a name already exists", "What happens"]}
+            rows={[
+              ["Leave the existing one alone", "The imported one is skipped and reported."],
+              [
+                "Replace it",
+                "The existing object's settings become the imported ones. Its links are untouched.",
+              ],
+              [
+                "Bring it in beside it",
+                'Imported as "Name (2)", so both exist and neither is lost.',
+              ],
+            ]}
+          />
+          <Note>
+            Links are not restored unless you ask. An export names the containers it was linked to
+            in the domain it came from, and an import that silently changed what applies to whom
+            would be the worst surprise a button labelled Import could produce. When you do ask,
+            only links whose container exists here are made, and the rest are reported.
+          </Note>
+        </Section>
+
         <Section title="Resultant Set of Policy">
           <p>The Policy dialog on any object answers two separate questions.</p>
           <Reference

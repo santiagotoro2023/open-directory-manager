@@ -52,6 +52,7 @@ type Settings struct {
 	Printers             []Printer              `json:"printers,omitempty"`
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
+	RemoteDesktopSession *RemoteDesktopSession  `json:"remote_desktop_session,omitempty"`
 	Agent                *AgentConfig           `json:"agent,omitempty"`
 }
 
@@ -172,6 +173,18 @@ type Printer struct {
 	Server       string `json:"server"`
 	ForPrincipal string `json:"for_principal"`
 	Default      bool   `json:"default"`
+}
+
+// RemoteDesktopSession is what a session may carry between the client and the
+// host it is running on. A rule about machines, so it comes from a policy
+// object rather than from the collection.
+type RemoteDesktopSession struct {
+	AllowClipboard  bool `json:"allow_clipboard"`
+	AllowPrinters   bool `json:"allow_printers"`
+	AllowDrives     bool `json:"allow_drives"`
+	AllowAudio      bool `json:"allow_audio"`
+	AllowMicrophone bool `json:"allow_microphone"`
+	MaxColourDepth  int  `json:"max_colour_depth"`
 }
 
 // LocalAdministrator is a local account whose password this machine chooses

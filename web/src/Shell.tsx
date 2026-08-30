@@ -7,6 +7,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  MonitorSmartphone,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
@@ -56,6 +57,15 @@ const NAV = [
     icon: Printer,
     permission: "printer.read",
     roles: ["print-server"],
+  },
+  {
+    label: "Remote Desktop",
+    to: "/remote-desktop",
+    icon: MonitorSmartphone,
+    permission: "rd.read",
+    // The broker is what people connect to; without one there is nothing to
+    // configure and nothing to hand out.
+    roles: ["remote-desktop-broker"],
   },
   {
     label: "Remote Access",

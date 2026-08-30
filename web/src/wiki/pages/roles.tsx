@@ -16,7 +16,7 @@ export const meta: WikiPageMeta = {
   title: "Server roles",
   section: "Administration",
   summary:
-    "What is installed where, and how to add DHCP, file-server and certificate-authority roles.",
+    "What is installed where, and how to add DHCP, file, print, remote desktop and certificate roles.",
   keywords: ["role", "install", "dhcp", "file server", "ca", "extend", "plugin", "node"],
 };
 
@@ -80,6 +80,16 @@ export function Content() {
                 "Print server",
                 "CUPS printers, published to the domain and handed out by policy.",
                 "Nothing. The printers are added under Printers.",
+              ],
+              [
+                "Remote desktop session host",
+                "Serves desktops and published applications over RDP.",
+                "Nothing. Everything is decided by the collection it joins.",
+              ],
+              [
+                "Remote desktop broker",
+                "The address people connect to; sends each back to the host they were last on.",
+                "Nothing. Collections are made under Remote Desktop.",
               ],
               [
                 "Remote access (VPN)",

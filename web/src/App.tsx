@@ -19,6 +19,7 @@ import { RecycleBin } from "./pages/RecycleBin";
 import { Roles } from "./pages/Roles";
 import { Servers } from "./pages/Servers";
 import { Shares } from "./pages/Shares";
+import { RemoteDesktop } from "./pages/RemoteDesktop";
 import { Vpn } from "./pages/Vpn";
 import { Wiki } from "./wiki/Wiki";
 import { api, type SessionInfo } from "./api";
@@ -65,6 +66,7 @@ export function App() {
           <Route path="shares" element={<Shares />} />
           <Route path="enrolment" element={<Enrolment />} />
           <Route path="printers" element={<Printers />} />
+          <Route path="remote-desktop" element={<RemoteDesktop />} />
           <Route path="vpn" element={<Vpn />} />
           <Route path="network-access" element={<NetworkAccess />} />
           <Route path="controllers" element={<Controllers />} />

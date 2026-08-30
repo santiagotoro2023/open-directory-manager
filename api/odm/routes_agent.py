@@ -403,6 +403,31 @@ async def agent_inventory(
             json.dumps([device.model_dump() for device in body.print_devices]),
         )
 
+        # A session host's logged-on users are the session directory. Derived
+        # from what every machine already reports rather than a second report
+        # only these machines make: the console needs to know who is on which
+        # host to say where a reconnect will land.
+        serves = await conn.fetchval(
+            "SELECT 1 FROM rd_collection_host WHERE lower(node_fqdn) = lower($1)",
+            machine.hostname,
+        )
+        if serves:
+            await conn.execute(
+                "DELETE FROM rd_session WHERE lower(node_fqdn) = lower($1)", machine.hostname
+            )
+            for entry in body.sessions:
+                await conn.execute(
+                    """
+                    INSERT INTO rd_session (node_fqdn, username, display, state, reported_at)
+                    VALUES ($1, $2, $3, 'active', now())
+                    ON CONFLICT (node_fqdn, username) DO UPDATE SET
+                        display = excluded.display, state = 'active', reported_at = now()
+                    """,
+                    machine.hostname,
+                    entry.user,
+                    entry.line,
+                )
+
         # A report covers a window, so the same login arrives more than once.
         # The unique constraint is what makes that harmless.
         for event in body.events:

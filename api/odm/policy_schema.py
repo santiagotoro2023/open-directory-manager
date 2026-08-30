@@ -412,6 +412,25 @@ class SystemUpdates(Strict):
     remove_unused: bool = True
 
 
+class RemoteDesktopSession(Strict):
+    """What a remote desktop session may carry between client and host.
+
+    Not on the collection, because it is not a property of who connects to
+    what: it is a rule about machines, and an organisation usually wants the
+    same rule everywhere and one exception for a group. That is what a policy
+    object linked at an OU is for.
+    """
+
+    allow_clipboard: bool = True
+    allow_printers: bool = True
+    # Off by default. A redirected drive is the client's filesystem inside the
+    # session, which is the usual way data leaves a managed desktop.
+    allow_drives: bool = False
+    allow_audio: bool = True
+    allow_microphone: bool = False
+    max_colour_depth: Annotated[int, Field(ge=8, le=32)] = 32
+
+
 class LocalAdministrator(Strict):
     """A local administrator whose password the machine rotates itself.
 
@@ -466,6 +485,7 @@ class PolicySettings(Strict):
     printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
     always_on_vpn: AlwaysOnVpn | None = None
     local_administrator: LocalAdministrator | None = None
+    remote_desktop_session: RemoteDesktopSession | None = None
     agent: AgentSettings | None = None
 
     def stored(self) -> dict[str, Any]:

@@ -322,6 +322,36 @@ REGISTRY: dict[str, Role] = {
         ui_section="vpn",
         notes="Create the tunnels themselves under Remote Access once this is installed.",
     ),
+    "session-host": Role(
+        name="session-host",
+        title="Remote desktop session host",
+        summary=(
+            "Serves desktops and published applications over RDP. Joins a "
+            "collection, which is where everything about it is decided."
+        ),
+        packages=("xrdp", "xorgxrdp", "xfce4", "xfce4-goodies", "cifs-utils", "dbus-x11"),
+        ui_section="remote-desktop",
+        notes=(
+            "Add it to a collection under Remote Desktop. Until it is in one it "
+            "serves nobody: who may connect, which desktop and where profiles "
+            "live are the collection's, not the machine's."
+        ),
+    ),
+    "remote-desktop-broker": Role(
+        name="remote-desktop-broker",
+        title="Remote desktop broker",
+        summary=(
+            "The address people connect to. Sends each person to the host they "
+            "were last on, so reconnecting resumes the session they left."
+        ),
+        packages=("haproxy",),
+        ui_section="remote-desktop",
+        notes=(
+            "Create a collection under Remote Desktop and give it hosts. The "
+            "broker listens on 3389 and routes by the user name the client "
+            "sends, which is what makes a reconnect land back on the same host."
+        ),
+    ),
     "file-server": Role(
         name="file-server",
         title="File server",

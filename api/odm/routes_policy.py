@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import timedelta
-from typing import Annotated, Any
+from datetime import datetime, timedelta
+from typing import Annotated, Any, Literal
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query, Request
@@ -154,6 +154,227 @@ async def create_gpo(
         )
         entry.after = {"display_name": body.display_name, "description": body.description}
         return _gpo_json(row)
+
+
+# ---------------------------------------------------------- export/import ---
+# A policy object is the thing an operator is least willing to rebuild by hand
+# and most afraid to edit. Exporting one makes it reviewable, diffable in a
+# repository and movable between a lab domain and a real one; importing it
+# back makes a mistake recoverable without a full restore.
+
+EXPORT_FORMAT = 1
+
+
+@router.get("/gpo/export", dependencies=[Depends(requires("gpo.read"))])
+async def export_gpo(
+    guid: uuid.UUID | None = None,
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """One policy object, or every one of them, as portable JSON.
+
+    Links are exported as the distinguished names they point at. Those names
+    belong to the domain they were taken from, so an import re-links only what
+    exists in the domain it is going into and says what it skipped.
+    """
+    if guid is None:
+        rows = await pool.fetch("SELECT * FROM gpo ORDER BY display_name")
+    else:
+        rows = await pool.fetch("SELECT * FROM gpo WHERE guid = $1", guid)
+        if not rows:
+            raise objects.NotFound("no such group policy object")
+
+    exported = []
+    for row in rows:
+        links = await pool.fetch(
+            """
+            SELECT target_dn, link_order, enforced, enabled
+            FROM gpo_link WHERE gpo_guid = $1 ORDER BY link_order
+            """,
+            row["guid"],
+        )
+        exported.append(
+            {
+                "display_name": row["display_name"],
+                "description": row["description"],
+                "enabled": row["enabled"],
+                "settings": json.loads(row["settings"]),
+                "security_filter": json.loads(row["security_filter"]),
+                "targeting": json.loads(row["targeting"]),
+                "links": [dict(link) for link in links],
+            }
+        )
+
+    return {
+        "format": EXPORT_FORMAT,
+        "exported_at": datetime.now().astimezone(),
+        "objects": exported,
+    }
+
+
+class ImportRequest(BaseModel):
+    """A previously exported document, and what to do about collisions."""
+
+    format: int
+    objects: Annotated[list[dict[str, Any]], Field(max_length=500)]
+    # A name that already exists is a decision, not an error: overwrite it,
+    # or bring it in beside the existing one.
+    on_conflict: Literal["skip", "replace", "rename"] = "skip"
+    # Links name containers from the domain the export came from. Off by
+    # default: an import should not change what applies to whom until
+    # somebody says so.
+    restore_links: bool = False
+
+
+@router.post("/gpos/import", dependencies=[Depends(requires("gpo.write"))])
+async def import_gpos(
+    body: ImportRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Bring exported policy objects into this domain.
+
+    Every object is validated against the settings schema before anything is
+    written, so a document from a newer ODM fails as a whole rather than
+    leaving half of itself behind.
+    """
+    if body.format != EXPORT_FORMAT:
+        raise objects.ObjectError(
+            f"this is a format {body.format} export; this ODM reads format {EXPORT_FORMAT}"
+        )
+
+    prepared: list[dict[str, Any]] = []
+    for index, entry in enumerate(body.objects):
+        name = str(entry.get("display_name") or "").strip()
+        if not name:
+            raise objects.ObjectError(f"object {index + 1} has no name")
+        try:
+            parsed = PolicySettings.model_validate(entry.get("settings") or {})
+        except Exception as exc:  # noqa: BLE001 - reported against the object
+            raise objects.ObjectError(f"{name}: {exc}") from exc
+        prepared.append({"name": name, "entry": entry, "settings": parsed.stored()})
+
+    created: list[str] = []
+    replaced: list[str] = []
+    skipped: list[dict[str, str]] = []
+    linked = 0
+    unlinked: list[str] = []
+
+    async with _audit_context(
+        request, session, pool, "gpo.import", object_type="gpo", object_dn="import"
+    ) as audit_entry:
+        for item in prepared:
+            name, entry = item["name"], item["entry"]
+            existing = await pool.fetchrow(
+                "SELECT guid FROM gpo WHERE lower(display_name) = lower($1)", name
+            )
+            if existing and body.on_conflict == "skip":
+                skipped.append({"name": name, "reason": "a policy object of that name exists"})
+                continue
+            if existing and body.on_conflict == "rename":
+                name = await _free_name(pool, name)
+                existing = None
+
+            if existing:
+                guid = existing["guid"]
+                await pool.execute(
+                    """
+                    UPDATE gpo SET description = $2, enabled = $3, settings = $4::jsonb,
+                                   security_filter = $5::jsonb, targeting = $6::jsonb,
+                                   version = version + 1, updated_at = now()
+                    WHERE guid = $1
+                    """,
+                    guid,
+                    str(entry.get("description") or ""),
+                    bool(entry.get("enabled", True)),
+                    json.dumps(item["settings"]),
+                    json.dumps(entry.get("security_filter") or []),
+                    json.dumps(entry.get("targeting") or {}),
+                )
+                replaced.append(name)
+            else:
+                guid = uuid.uuid4()
+                if sysvol.enabled(settings):
+                    async with _bound(settings, write=True) as conn:
+                        await run_in_threadpool(sysvol.create, conn, settings, str(guid), name)
+                await pool.execute(
+                    """
+                    INSERT INTO gpo (guid, display_name, description, enabled, settings,
+                                     security_filter, targeting, created_by)
+                    VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
+                    """,
+                    guid,
+                    name,
+                    str(entry.get("description") or ""),
+                    bool(entry.get("enabled", True)),
+                    json.dumps(item["settings"]),
+                    json.dumps(entry.get("security_filter") or []),
+                    json.dumps(entry.get("targeting") or {}),
+                    session.principal,
+                )
+                created.append(name)
+
+            if not body.restore_links:
+                continue
+            for link in entry.get("links") or []:
+                target = str(link.get("target_dn") or "")
+                if not target:
+                    continue
+                # The container has to exist here. It usually does not when
+                # the export came from another domain, and inventing it would
+                # be worse than saying so.
+                try:
+                    async with _bound(settings, write=False) as conn:
+                        await run_in_threadpool(objects.get, conn, settings, target)
+                except Exception:  # noqa: BLE001 - a missing target is reported, not raised
+                    unlinked.append(target)
+                    continue
+                await pool.execute(
+                    """
+                    INSERT INTO gpo_link (gpo_guid, target_dn, link_order, enforced, enabled)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (gpo_guid, target_dn) DO UPDATE
+                        SET link_order = excluded.link_order,
+                            enforced = excluded.enforced,
+                            enabled = excluded.enabled
+                    """,
+                    guid,
+                    target,
+                    int(link.get("link_order") or 1),
+                    bool(link.get("enforced", False)),
+                    bool(link.get("enabled", True)),
+                )
+                await _mirror_links(pool, settings, target)
+                linked += 1
+
+        audit_entry.after = {
+            "created": created,
+            "replaced": replaced,
+            "skipped": [entry["name"] for entry in skipped],
+            "links_restored": linked,
+        }
+
+    return {
+        "created": created,
+        "replaced": replaced,
+        "skipped": skipped,
+        "links_restored": linked,
+        "links_skipped": sorted(set(unlinked)),
+    }
+
+
+async def _free_name(pool: asyncpg.Pool, name: str) -> str:
+    """A name like the one asked for that nothing else is using."""
+    for suffix in range(2, 100):
+        candidate = f"{name} ({suffix})"
+        taken = await pool.fetchval(
+            "SELECT 1 FROM gpo WHERE lower(display_name) = lower($1)", candidate
+        )
+        if not taken:
+            return candidate
+    raise objects.ObjectError(f"too many policy objects named like {name!r}")
 
 
 @router.patch("/gpo", dependencies=[Depends(requires("gpo.write"))])

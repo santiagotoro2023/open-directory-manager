@@ -48,6 +48,8 @@ PERMISSIONS: tuple[str, ...] = (
     "printer.write",
     "vpn.read",
     "vpn.write",
+    "rd.read",
+    "rd.write",
     "dc.read",
     "radius.read",
     "radius.write",

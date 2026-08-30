@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, ClipboardList, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  ClipboardList,
+  Download,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
@@ -13,6 +22,7 @@ type Tab = "settings" | "links" | "scope";
 export function Policy() {
   const [gpos, setGpos] = useState<Gpo[]>([]);
   const [selected, setSelected] = useState<Gpo | null>(null);
+  const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
   const [templates, setTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +40,20 @@ export function Policy() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Saved by the browser rather than shown: a policy object is something to
+  // keep in a repository, not to read in a dialog.
+  async function exportAll(guid?: string) {
+    try {
+      const document = await api.policy.export(guid);
+      download(
+        guid ? `gpo-${guid}.json` : "group-policy-export.json",
+        JSON.stringify(document, null, 2),
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }
 
   async function open(guid: string) {
     try {
@@ -59,6 +83,14 @@ export function Policy() {
         <span className="spacer" />
         <button type="button" className="ghost" onClick={() => setTemplates(true)}>
           Administrative templates
+        </button>
+        <button type="button" className="ghost" onClick={() => void exportAll()}>
+          <Download size={15} aria-hidden="true" />
+          Export all
+        </button>
+        <button type="button" className="ghost" onClick={() => setImporting(true)}>
+          <Upload size={15} aria-hidden="true" />
+          Import
         </button>
         <button type="button" className="primary" onClick={() => setCreating(true)}>
           <Plus size={15} aria-hidden="true" />
@@ -90,6 +122,7 @@ export function Policy() {
               {...bind([
                 { label: gpo.display_name, heading: true },
                 { label: "Edit settings…", onSelect: () => void open(gpo.guid) },
+                { label: "Export…", onSelect: () => void exportAll(gpo.guid) },
                 { separator: true },
                 {
                   label: "Delete",
@@ -124,6 +157,16 @@ export function Policy() {
       {menu}
 
       {templates && <TemplateManager onClose={() => setTemplates(false)} />}
+
+      {importing && (
+        <ImportDialog
+          onClose={() => setImporting(false)}
+          onDone={() => {
+            setImporting(false);
+            void load();
+          }}
+        />
+      )}
 
       {creating && (
         <CreateGpoDialog
@@ -548,5 +591,142 @@ function LinksEditor({ gpo, onChanged }: { gpo: Gpo; onChanged: () => void }) {
         closer to the object and survive blocked inheritance.
       </p>
     </div>
+  );
+}
+
+/** Hands the browser a file without a round trip through the server. */
+function download(filename: string, body: string) {
+  const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Bringing exported policy objects in.
+ *
+ * Links are left alone by default. The containers an export names belong to
+ * the domain it came from, and an import that silently changed what applies
+ * to whom would be the worst possible surprise from a button labelled
+ * Import.
+ */
+function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [text, setText] = useState("");
+  const [conflict, setConflict] = useState<"skip" | "replace" | "rename">("skip");
+  const [restoreLinks, setRestoreLinks] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.policy.import>> | null>(null);
+
+  return (
+    <Modal
+      title="Import group policy objects"
+      submitLabel={result ? "Close" : "Import"}
+      busy={busy}
+      error={error}
+      wide
+      onClose={onClose}
+      onSubmit={async () => {
+        if (result) {
+          onDone();
+          return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+          const parsed = JSON.parse(text);
+          setResult(
+            await api.policy.import({
+              format: parsed.format,
+              objects: parsed.objects ?? [],
+              on_conflict: conflict,
+              restore_links: restoreLinks,
+            }),
+          );
+        } catch (err) {
+          setError(
+            err instanceof ApiError
+              ? err.message
+              : err instanceof SyntaxError
+                ? "that is not a policy export: the file is not valid JSON"
+                : String(err),
+          );
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {result ? (
+        <>
+          <p>
+            {result.created.length} created, {result.replaced.length} replaced,{" "}
+            {result.skipped.length} skipped.
+          </p>
+          {result.skipped.length > 0 && (
+            <table className="data compact">
+              <thead>
+                <tr>
+                  <th scope="col">Skipped</th>
+                  <th scope="col">Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.skipped.map((entry) => (
+                  <tr key={entry.name}>
+                    <td>{entry.name}</td>
+                    <td className="muted">{entry.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {result.links_skipped.length > 0 && (
+            <p className="muted">
+              {result.links_skipped.length} link(s) were not restored because the container they
+              name does not exist here.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <Field label="Export file" hint="Choose the .json an export produced">
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void file.text().then(setText);
+              }}
+            />
+          </Field>
+
+          <Field label="If a name already exists">
+            <select
+              value={conflict}
+              onChange={(e) => setConflict(e.target.value as typeof conflict)}
+            >
+              <option value="skip">Leave the existing one alone</option>
+              <option value="replace">Replace it with the imported one</option>
+              <option value="rename">Bring the imported one in beside it</option>
+            </select>
+          </Field>
+
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={restoreLinks}
+              onChange={(e) => setRestoreLinks(e.target.checked)}
+            />
+            Also link them where the export was linked
+          </label>
+          <p className="muted">
+            Off by default. Links name containers from the domain the export came from, and only
+            those that exist here could be restored anyway.
+          </p>
+        </>
+      )}
+    </Modal>
   );
 }

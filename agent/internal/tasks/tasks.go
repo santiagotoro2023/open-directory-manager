@@ -100,6 +100,10 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 		output, err = applyTunnel(ctx, task.Payload, env)
 	case "radius-apply":
 		output, err = applyRadius(ctx, task.Payload, env)
+	case "rd-host-apply":
+		output, err = applyRemoteDesktopHost(ctx, task.Payload, env)
+	case "rd-broker-apply":
+		output, err = applyRemoteDesktopBroker(ctx, task.Payload, env)
 	default:
 		err = fmt.Errorf("unknown task kind %q", task.Kind)
 	}

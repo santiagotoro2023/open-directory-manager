@@ -18,6 +18,7 @@ import * as policySettings from "./pages/policy-settings";
 import * as networkAccess from "./pages/network-access";
 import * as passwords from "./pages/passwords";
 import * as printing from "./pages/printing";
+import * as remoteDesktop from "./pages/remote-desktop";
 import * as remoteAccess from "./pages/remote-access";
 import * as quickstart from "./pages/quickstart";
 import * as recycleBin from "./pages/recycle-bin";
@@ -50,6 +51,7 @@ const MODULES = [
   servers,
   shares,
   printing,
+  remoteDesktop,
   remoteAccess,
   networkAccess,
   controllers,

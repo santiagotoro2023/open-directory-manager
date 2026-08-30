@@ -94,6 +94,14 @@ export interface PolicySettings {
   updates?: SystemUpdates;
   login_screen?: LoginScreenSettings;
   certificate_enrolment?: Record<string, unknown>[];
+  remote_desktop_session?: {
+    allow_clipboard: boolean;
+    allow_printers: boolean;
+    allow_drives: boolean;
+    allow_audio: boolean;
+    allow_microphone: boolean;
+    max_colour_depth: number;
+  };
   local_administrator?: {
     account: string;
     rotate_days: number;
@@ -533,6 +541,34 @@ export interface ShareEntry {
   inherit: boolean;
 }
 
+export interface RdCollection {
+  id: string;
+  name: string;
+  description: string;
+  broker_fqdn: string;
+  kind: "desktop" | "remoteapp";
+  app_path: string;
+  app_name: string;
+  profile_share: string;
+  profile_gb: number;
+  idle_minutes: number;
+  disconnected_minutes: number;
+  max_sessions_per_host: number;
+  principals: string[];
+  hosts: string[];
+  state: "pending" | "applying" | "active" | "failed";
+  last_error: string | null;
+  updated_at: string;
+}
+
+export interface RdSession {
+  node_fqdn: string;
+  username: string;
+  display: string;
+  state: string;
+  reported_at: string;
+}
+
 export interface FileShare {
   id: string;
   node_fqdn: string;
@@ -830,6 +866,27 @@ export const api = {
 
     get: (guid: string) => request<Gpo>(`/policy/gpo${qs({ guid })}`),
 
+    // Portable JSON: reviewable, diffable in a repository, and movable
+    // between a lab domain and a real one.
+    export: (guid?: string) =>
+      request<{ format: number; exported_at: string; objects: unknown[] }>(
+        `/policy/gpo/export${guid ? qs({ guid }) : ""}`,
+      ),
+
+    import: (body: {
+      format: number;
+      objects: unknown[];
+      on_conflict: "skip" | "replace" | "rename";
+      restore_links: boolean;
+    }) =>
+      request<{
+        created: string[];
+        replaced: string[];
+        skipped: { name: string; reason: string }[];
+        links_restored: number;
+        links_skipped: string[];
+      }>("/policy/gpos/import", json(body)),
+
     create: (display_name: string, description: string) =>
       request<Gpo>("/policy/gpos", json({ display_name, description })),
 
@@ -1097,6 +1154,28 @@ export const api = {
 
     removePolicy: (id: string) =>
       request<void>(`/password/policies${qs({ id })}`, { method: "DELETE" }),
+  },
+
+  rd: {
+    list: () => request<{ collections: RdCollection[]; unassigned_hosts: string[] }>("/rd"),
+
+    sessions: () => request<{ sessions: RdSession[] }>("/rd/sessions"),
+
+    create: (body: Partial<RdCollection>) => request<RdCollection>("/rd", json(body)),
+
+    update: (body: { id: string } & Partial<RdCollection>) =>
+      request<RdCollection>("/rd", { method: "PATCH", body: JSON.stringify(body) }),
+
+    remove: (id: string) => request<void>(`/rd${qs({ id })}`, { method: "DELETE" }),
+
+    addHost: (collection_id: string, node_fqdn: string) =>
+      request<RdCollection>("/rd/hosts", json({ collection_id, node_fqdn })),
+
+    removeHost: (collection_id: string, node_fqdn: string) =>
+      request<void>(`/rd/hosts${qs({ collection_id, node_fqdn })}`, { method: "DELETE" }),
+
+    // A file the browser downloads rather than JSON the console renders.
+    connectionUrl: (id: string, username: string) => `/api/v1/rd/rdp${qs({ id, username })}`,
   },
 
   printers: {

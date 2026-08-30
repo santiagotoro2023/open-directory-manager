@@ -32,6 +32,8 @@ KINDS = (
     "printer-remove",
     "vpn-apply",
     "radius-apply",
+    "rd-host-apply",
+    "rd-broker-apply",
 )
 
 

@@ -326,6 +326,11 @@ const SPECIAL = [
   { key: "login_screen", title: "Login screen", half: "Computer" as Half },
   { key: "always_on_vpn", title: "Always-on VPN", half: "Computer" as Half },
   { key: "local_administrator", title: "Local administrator", half: "Computer" as Half },
+  {
+    key: "remote_desktop_session",
+    title: "Remote desktop session",
+    half: "Computer" as Half,
+  },
   { key: "password_self_service", title: "Self-service password", half: "User" as Half },
   { key: "wallpaper", title: "Desktop background", half: "User" as Half },
   { key: "browser", title: "Browser policy", half: "Computer" as Half },
@@ -339,6 +344,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "login_screen") return settings.login_screen ? 1 : 0;
   if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
+  if (key === "remote_desktop_session") return settings.remote_desktop_session ? 1 : 0;
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri ? 1 : 0;
   if (key === "browser") {
@@ -422,6 +428,9 @@ export function SettingsEditor({
           )}
           {selected === "local_administrator" && (
             <LocalAdministratorEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "remote_desktop_session" && (
+            <RemoteDesktopSessionEditor settings={settings} onChange={onChange} />
           )}
           {selected === "password_self_service" && (
             <SelfServiceEditor settings={settings} onChange={onChange} />
@@ -1103,6 +1112,105 @@ function LocalAdministratorEditor({
             Without it the account is a way in but not a way up, which is enough to reach a machine
             and read its logs.
           </p>
+        </>
+      )}
+    </>
+  );
+}
+
+/** What a remote desktop session may carry between client and host. */
+const REDIRECTION = [
+  { key: "allow_clipboard", label: "Clipboard" },
+  { key: "allow_printers", label: "The client's printers" },
+  { key: "allow_drives", label: "The client's drives" },
+  { key: "allow_audio", label: "Sound to the client" },
+  { key: "allow_microphone", label: "The client's microphone" },
+] as const;
+
+function RemoteDesktopSessionEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.remote_desktop_session;
+
+  function set(changes: Partial<NonNullable<PolicySettings["remote_desktop_session"]>>) {
+    onChange({
+      ...settings,
+      remote_desktop_session: {
+        allow_clipboard: true,
+        allow_printers: true,
+        allow_drives: false,
+        allow_audio: true,
+        allow_microphone: false,
+        max_colour_depth: 32,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <header>
+        <h3>Remote desktop session</h3>
+        <span className="spacer" />
+        {current && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onChange({ ...settings, remote_desktop_session: undefined })}
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Remove
+          </button>
+        )}
+      </header>
+      <p className="muted">
+        What a session may carry between the client and the host it runs on. This is a rule about
+        machines rather than about a collection, so it is set here and linked where it should apply.
+        Machines that are not session hosts skip it.
+      </p>
+
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <div className="field">
+            <span>Allowed in a session</span>
+            <div className="option-row">
+              {REDIRECTION.map((entry) => (
+                <label key={entry.key} className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(current[entry.key])}
+                    onChange={(e) => set({ [entry.key]: e.target.checked })}
+                  />
+                  {entry.label}
+                </label>
+              ))}
+            </div>
+            <small>
+              A redirected drive is the client&rsquo;s own filesystem inside the session, which is
+              the usual way data leaves a managed desktop. It is off unless turned on.
+            </small>
+          </div>
+
+          <label className="field">
+            <span>Most colour depth</span>
+            <select
+              value={String(current.max_colour_depth)}
+              onChange={(e) => set({ max_colour_depth: Number(e.target.value) })}
+            >
+              <option value="32">32-bit</option>
+              <option value="24">24-bit</option>
+              <option value="16">16-bit</option>
+              <option value="8">8-bit</option>
+            </select>
+            <small>Lower is less to send, which shows on a slow or distant link.</small>
+          </label>
         </>
       )}
     </>

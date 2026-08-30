@@ -95,13 +95,14 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Area | Capability |
 |---|---|
 | Directory | Users, groups, computers and organizational units — create, edit, move, delete, bulk CSV import |
-| Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering and item-level targeting |
-| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN |
+| Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering, item-level targeting, and export/import as portable JSON |
+| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN, remote desktop session rules, and a local administrator whose password each machine rotates itself |
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
 | DHCP | ISC Kea scopes, reservations, leases, failover pair and dynamic DNS |
 | File shares | SMB shares on any file server, with per-user and per-group access levels |
 | Printing | CUPS printers on any print server, handed to people by policy |
+| Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share, published applications, and downloadable connection files |
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
 | Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
