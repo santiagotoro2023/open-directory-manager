@@ -311,6 +311,9 @@ function CollectionDialog({
   const [idle, setIdle] = useState(collection?.idle_minutes ?? 60);
   const [disconnected, setDisconnected] = useState(collection?.disconnected_minutes ?? 120);
   const [maxSessions, setMaxSessions] = useState(collection?.max_sessions_per_host ?? 0);
+  const [balance, setBalance] = useState<RdCollection["balance_method"]>(
+    collection?.balance_method ?? "leastconn",
+  );
   const [principals, setPrincipals] = useState<string[]>(collection?.principals ?? []);
   const [shares, setShares] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -347,6 +350,7 @@ function CollectionDialog({
           idle_minutes: idle,
           disconnected_minutes: disconnected,
           max_sessions_per_host: maxSessions,
+          balance_method: balance,
           principals,
         };
         try {
@@ -472,7 +476,24 @@ function CollectionDialog({
             onChange={(e) => setMaxSessions(Number(e.target.value))}
           />
         </Field>
+        <Field
+          label="Send a new session to"
+          hint="Someone reconnecting always returns to the host they were on"
+        >
+          <select
+            value={balance}
+            onChange={(e) => setBalance(e.target.value as RdCollection["balance_method"])}
+          >
+            <option value="leastconn">The host with the fewest sessions</option>
+            <option value="roundrobin">Each host in turn</option>
+            <option value="first">The first host with room, then the next</option>
+          </select>
+        </Field>
       </div>
+      <p className="muted">
+        This decides where somebody with no session yet lands. They can land on any host in the
+        collection because their profile is a disk on the share, not files on one machine.
+      </p>
 
       <h3 className="section-title">Who may connect</h3>
       <ChoiceList

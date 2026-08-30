@@ -554,6 +554,7 @@ export interface RdCollection {
   idle_minutes: number;
   disconnected_minutes: number;
   max_sessions_per_host: number;
+  balance_method: "leastconn" | "roundrobin" | "first";
   principals: string[];
   hosts: string[];
   state: "pending" | "applying" | "active" | "failed";

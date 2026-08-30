@@ -228,6 +228,8 @@ func applyRemoteDesktopBroker(
 	if err != nil {
 		return "", err
 	}
+	balance := balanceMethod(payload["balance_method"])
+	affinity := intOf(payload["affinity_minutes"], 8*60)
 
 	var config strings.Builder
 	config.WriteString(apply.Header)
@@ -236,7 +238,7 @@ func applyRemoteDesktopBroker(
 	if len(hosts) == 0 {
 		config.WriteString("# No session hosts in this collection; nothing is served.\n")
 	} else {
-		config.WriteString(`frontend odm_rd
+		config.WriteString(fmt.Sprintf(`frontend odm_rd
     bind *:3389
     mode tcp
     option tcplog
@@ -245,16 +247,24 @@ func applyRemoteDesktopBroker(
 
 backend odm_rd_hosts
     mode tcp
-    balance leastconn
+    # Where somebody with no session yet goes. They can land on any host in
+    # the collection because their profile is a disk on the share rather than
+    # files on one machine.
+    balance %s
     timeout server 1h
-    # An RDP client sends the user name in its first packet. Keeping that
-    # value against the host it went to is what makes a reconnect resume the
-    # session somebody left, rather than open a second one beside it.
-    stick-table type string len 64 size 10k expire 8h
+    # And where somebody who already has one goes: back to the same host. An
+    # RDP client sends the user name in its first packet, and keeping that
+    # against the host it went to is what makes a reconnect resume the session
+    # somebody left rather than open a second one beside it.
+    #
+    # The window is the collection's own disconnected timeout. An entry that
+    # expired first would send somebody to a host that cannot mount their
+    # profile, because the host still holding the session still has it.
+    stick-table type string len 64 size 10k expire %dm
     stick on req.rdp_cookie(mstshash)
     tcp-request inspect-delay 5s
     tcp-request content accept if RDP_COOKIE
-`)
+`, balance, affinity))
 		for index, host := range hosts {
 			config.WriteString(fmt.Sprintf(
 				"    server host%d %s:3389 check inter 10s\n", index+1, host))
@@ -277,6 +287,22 @@ backend odm_rd_hosts
 		return out, fmt.Errorf("reloading haproxy: %w", err)
 	}
 	return fmt.Sprintf("routing %d host(s) for %s", len(hosts), name), nil
+}
+
+// balanceMethod maps what the collection asked for onto haproxy's name for
+// it, and refuses anything else rather than writing a configuration haproxy
+// will not load.
+func balanceMethod(value any) string {
+	switch name, _ := value.(string); name {
+	case "roundrobin":
+		return "roundrobin"
+	case "first":
+		return "first"
+	default:
+		// Fewest sessions. The default because it is what an administrator
+		// means by "spread the load" on a session host.
+		return "leastconn"
+	}
 }
 
 func writeManaged(env apply.Env, path, body string, mode os.FileMode) error {

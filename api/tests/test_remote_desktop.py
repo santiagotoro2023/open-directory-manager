@@ -82,3 +82,39 @@ def test_the_host_is_told_only_what_it_needs():
     )
     assert "principals" not in task
     assert task["profile_share"] == "//fs01/Profiles"
+
+
+def test_a_new_session_is_spread_and_a_returning_one_is_not():
+    task = remotedesktop.broker_task(
+        {
+            "name": "Finance",
+            "balance_method": "roundrobin",
+            "disconnected_minutes": 120,
+            "idle_minutes": 60,
+        },
+        ["a.example.org", "b.example.org"],
+    )
+    assert task["balance_method"] == "roundrobin"
+    assert task["hosts"] == ["a.example.org", "b.example.org"]
+
+
+def test_the_affinity_window_outlives_the_session_it_protects():
+    # A person whose session is still being held has their profile disk
+    # mounted on that host, exclusively. Sending them anywhere else refuses
+    # the logon, so the broker must keep pointing at that host for at least as
+    # long as the session can survive.
+    disconnected, idle = 120, 60
+    window = remotedesktop.affinity_minutes(disconnected, idle)
+    assert window > disconnected + idle, "affinity expires while a session can still exist"
+
+
+def test_sessions_kept_forever_keep_their_host_forever():
+    # Zero means never, as it does in Windows. An affinity that expired would
+    # send somebody to a host that cannot mount a profile the old host holds.
+    assert remotedesktop.affinity_minutes(0, 0) >= 7 * 24 * 60
+
+
+def test_a_short_timeout_still_gets_a_usable_window():
+    # Not just disconnected + idle: the host ends the session on its own
+    # clock, and the two are not synchronised to the second.
+    assert remotedesktop.affinity_minutes(5, 0) > 5

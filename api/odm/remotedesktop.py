@@ -65,8 +65,40 @@ def host_task(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def broker_task(row: dict[str, Any], hosts: list[str]) -> dict[str, Any]:
-    """What a broker is told: the collection, and where to send people."""
-    return {"collection": row["name"], "hosts": hosts}
+    """What a broker is told: the collection, and where to send people.
+
+    The affinity window is the collection's own disconnected timeout, not a
+    number of the broker's choosing. A person whose session is still being
+    held on a host must be sent back to that host: their profile disk is
+    mounted there, exclusively, and landing them anywhere else would refuse
+    the logon rather than start a second session.
+    """
+    return {
+        "collection": row["name"],
+        "hosts": hosts,
+        "balance_method": row.get("balance_method") or "leastconn",
+        "affinity_minutes": affinity_minutes(
+            row.get("disconnected_minutes") or 0, row.get("idle_minutes") or 0
+        ),
+    }
+
+
+def affinity_minutes(disconnected: int, idle: int) -> int:
+    """How long the broker keeps sending one person back to the same host.
+
+    Long enough to cover a session that may still exist, and no longer: an
+    entry that outlives the session pins somebody to a host for no reason,
+    and one that expires first sends them to a host that cannot mount their
+    profile because the old host still has it.
+    """
+    if disconnected == 0:
+        # Sessions are kept indefinitely, so the affinity has to be too. A
+        # week is the longest haproxy will hold a stick entry usefully, and
+        # anything staler than that is a session nobody is coming back to.
+        return 7 * 24 * 60
+    # A little past the timeout, because the host ends the session on its own
+    # clock and the two are not synchronised to the second.
+    return disconnected + max(idle, 5) + 5
 
 
 def rdp_file(

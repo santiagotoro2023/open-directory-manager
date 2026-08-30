@@ -28,6 +28,7 @@ class CollectionIn(BaseModel):
     idle_minutes: Annotated[int, Field(ge=0, le=10080)] = 60
     disconnected_minutes: Annotated[int, Field(ge=0, le=10080)] = 120
     max_sessions_per_host: Annotated[int, Field(ge=0, le=1000)] = 0
+    balance_method: Literal["leastconn", "roundrobin", "first"] = "leastconn"
     principals: Annotated[list[Annotated[str, Field(max_length=512)]], Field(max_length=200)] = []
 
 
@@ -43,6 +44,7 @@ class CollectionUpdate(BaseModel):
     idle_minutes: Annotated[int, Field(ge=0, le=10080)] | None = None
     disconnected_minutes: Annotated[int, Field(ge=0, le=10080)] | None = None
     max_sessions_per_host: Annotated[int, Field(ge=0, le=1000)] | None = None
+    balance_method: Literal["leastconn", "roundrobin", "first"] | None = None
     principals: (
         Annotated[list[Annotated[str, Field(max_length=512)]], Field(max_length=200)] | None
     ) = None
@@ -67,6 +69,7 @@ def _collection_json(row: asyncpg.Record, hosts: list[str]) -> dict[str, Any]:
         "idle_minutes": row["idle_minutes"],
         "disconnected_minutes": row["disconnected_minutes"],
         "max_sessions_per_host": row["max_sessions_per_host"],
+        "balance_method": row["balance_method"],
         "principals": json.loads(row["principals"]),
         "hosts": hosts,
         "state": row["state"],
@@ -175,8 +178,8 @@ async def create_collection(
             INSERT INTO rd_collection (name, description, broker_fqdn, kind, app_path,
                                        app_name, profile_share, profile_gb, idle_minutes,
                                        disconnected_minutes, max_sessions_per_host,
-                                       principals, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13)
+                                       balance_method, principals, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14)
             RETURNING *
             """,
             name,
@@ -190,6 +193,7 @@ async def create_collection(
             body.idle_minutes,
             body.disconnected_minutes,
             body.max_sessions_per_host,
+            body.balance_method,
             json.dumps(body.principals),
             session.principal,
         )
@@ -246,7 +250,8 @@ async def update_collection(
                 idle_minutes          = COALESCE($9, idle_minutes),
                 disconnected_minutes  = COALESCE($10, disconnected_minutes),
                 max_sessions_per_host = COALESCE($11, max_sessions_per_host),
-                principals            = COALESCE($12::jsonb, principals),
+                balance_method        = COALESCE($12, balance_method),
+                principals            = COALESCE($13::jsonb, principals),
                 updated_at            = now()
             WHERE id = $1::uuid
             RETURNING *
@@ -262,6 +267,7 @@ async def update_collection(
             body.idle_minutes,
             body.disconnected_minutes,
             body.max_sessions_per_host,
+            body.balance_method,
             None if body.principals is None else json.dumps(body.principals),
         )
         await _dispatch(conn, updated, session.principal)

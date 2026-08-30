@@ -98,6 +98,50 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="Which host somebody lands on">
+          <p>Two different questions, and the broker answers them differently.</p>
+          <Reference
+            headers={["Who", "Where they go"]}
+            rows={[
+              [
+                "Somebody who already has a session",
+                "Back to the host it is on, always. Their profile disk is mounted there and nowhere else, so this is not a preference.",
+              ],
+              [
+                "Somebody with no session yet",
+                "Spread across the collection by the method below. They can land on any host, because their profile is a disk on the share rather than files on one machine.",
+              ],
+            ]}
+          />
+          <Reference
+            headers={["Send a new session to", "Means", "Use it when"]}
+            rows={[
+              [
+                "The host with the fewest sessions",
+                "Whichever host is carrying the least.",
+                "The default, and what most people mean by spreading load.",
+              ],
+              [
+                "Each host in turn",
+                "Strict round robin, ignoring how busy a host is.",
+                "Hosts are identical and you want an even count rather than an even load.",
+              ],
+              [
+                "The first host with room, then the next",
+                "Fills one host before touching the next.",
+                "You want to be able to shut idle hosts down, or you are paying per running machine.",
+              ],
+            ]}
+          />
+          <Note>
+            The broker holds somebody to their host for as long as their session could still exist
+            &mdash; derived from the collection&rsquo;s disconnected timeout, not a fixed number.
+            That matters: if the affinity expired first, they would land on another host, that host
+            could not mount a profile disk the old host still holds, and the logon would be refused.
+            When sessions are kept indefinitely, so is the affinity.
+          </Note>
+        </Section>
+
         <Section title="Profile disks">
           <p>
             Each person gets one disk image on the profile share, named for them and their security
