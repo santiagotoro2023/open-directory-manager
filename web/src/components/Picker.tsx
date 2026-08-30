@@ -296,7 +296,9 @@ function Branch({
   const self = nodes.find((node) => node.distinguishedName === dn);
   const children = nodes.filter((node) => {
     const comma = node.distinguishedName.indexOf(",");
-    return comma !== -1 && node.distinguishedName.slice(comma + 1).toLowerCase() === dn.toLowerCase();
+    return (
+      comma !== -1 && node.distinguishedName.slice(comma + 1).toLowerCase() === dn.toLowerCase()
+    );
   });
   if (!self) return null;
 

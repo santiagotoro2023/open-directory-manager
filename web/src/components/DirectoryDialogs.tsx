@@ -59,8 +59,8 @@ export function RenameDialog({
         <input value={name} required autoFocus onChange={(e) => setName(e.target.value)} />
       </Field>
       <p className="muted">
-        The account name and the group memberships are unaffected; only the object&rsquo;s place
-        in the tree changes.
+        The account name and the group memberships are unaffected; only the object&rsquo;s place in
+        the tree changes.
       </p>
     </Modal>
   );

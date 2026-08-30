@@ -64,13 +64,7 @@ export function Note({ children }: { children: ReactNode }) {
 }
 
 /** A reference table. Rows are [term, description] or wider. */
-export function Reference({
-  headers,
-  rows,
-}: {
-  headers: string[];
-  rows: (ReactNode[])[];
-}) {
+export function Reference({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <div className="wiki-table-wrap">
       <table className="data compact">

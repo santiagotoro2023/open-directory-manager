@@ -73,6 +73,11 @@ fi
 
 [[ -n "$DOMAIN" && -n "$TOKEN" ]] || usage
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
+
+# Shared helpers: apt that survives a controller, and a dpkg that recovers.
+# shellcheck source=odm-role-common.sh
+. "$(dirname "$0")/odm-role-common.sh"
+
 [[ "$INTERFACE" =~ ^[A-Za-z0-9._-]{1,32}$ ]] || { echo "invalid --interface" >&2; exit 1; }
 [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || { echo "invalid --domain" >&2; exit 1; }
 [[ "$SUITE" =~ ^(bookworm|trixie)$ ]] || { echo "--suite must be bookworm or trixie" >&2; exit 1; }
@@ -104,9 +109,7 @@ MISSING
 fi
 
 echo "==> Installing packages"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends dnsmasq nginx-light curl ca-certificates
+odm_apt_install dnsmasq nginx-light curl ca-certificates
 
 echo "==> Fetching the $SUITE netboot image"
 install -d -m 0755 "$TFTP_ROOT"

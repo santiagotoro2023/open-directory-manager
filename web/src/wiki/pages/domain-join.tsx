@@ -1,4 +1,15 @@
-import { C, Code, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Code,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -30,8 +41,8 @@ export function Content() {
           <Code>{`sudo odm-client-install \\
   --domain corp.example.internal \\
   --admin-user Administrator`}</Code>
-          Prompts for anything not given. Add <C>--unattended</C> with{" "}
-          <C>--otp</C> for scripted provisioning.
+          Prompts for anything not given. Add <C>--unattended</C> with <C>--otp</C> for scripted
+          provisioning.
         </Example>
 
         <Example title="Join from the desktop">
@@ -53,8 +64,8 @@ systemctl status odm-agent`}</Code>
           <p>
             Two different rights are involved, and they are not interchangeable. Removing the
             computer account from the directory needs a domain credential that may do so.
-            Disconnecting the machine needs root on the machine — and root can always do it,
-            because root owns the machine.
+            Disconnecting the machine needs root on the machine — and root can always do it, because
+            root owns the machine.
           </p>
           <Code>{`# both halves: the account goes too
 sudo odm-client-install --leave --domain corp.example.internal \\
@@ -76,8 +87,8 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
           />
           <Note>
             An ordinary user can do none of these. Everything the agent writes is root-owned, its
-            keytab is readable only by root, and it runs as a systemd unit — a user without sudo
-            can neither stop it nor uninstall it.
+            keytab is readable only by root, and it runs as a systemd unit — a user without sudo can
+            neither stop it nor uninstall it.
           </Note>
         </Section>
 
@@ -86,7 +97,10 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
             headers={["Requirement", "Why"]}
             rows={[
               ["Debian 12 or 13", "The supported client platforms."],
-              ["The machine's final host name", "It becomes the account name and the certificate subject."],
+              [
+                "The machine's final host name",
+                "It becomes the account name and the certificate subject.",
+              ],
               ["The domain's DNS as resolver", "Service records locate the domain controllers."],
               ["Clock within five minutes", "Kerberos rejects tickets outside its tolerance."],
               ["A join credential", "A domain administrator, or a one-time password."],
@@ -103,8 +117,14 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
               [<C key="3">--admin-user</C>, "Join as this account; the password is prompted for."],
               [<C key="4">--otp</C>, "Enrol with a one-time token instead of a credential."],
               [<C key="5">--ou</C>, "Create the computer account in this organizational unit."],
-              [<C key="6">--hostname</C>, "Name this machine takes in the domain. Its own name when omitted."],
-              [<C key="7">--api-url</C>, "The control plane. Discovered from the domain when omitted."],
+              [
+                <C key="6">--hostname</C>,
+                "Name this machine takes in the domain. Its own name when omitted.",
+              ],
+              [
+                <C key="7">--api-url</C>,
+                "The control plane. Discovered from the domain when omitted.",
+              ],
               [<C key="8">--no-agent</C>, "Join without installing the policy agent."],
               [<C key="9">--unattended</C>, "Never prompt. Fails rather than asking."],
               [<C key="10">--password-file</C>, "Read the credential's password from a file."],
@@ -129,11 +149,29 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
                 </>,
               ],
               ["Discovery", "Locates controllers through the domain's service records."],
-              ["Kerberos", <>Writes <C key="a">/etc/krb5.conf</C> for the realm.</>],
+              [
+                "Kerberos",
+                <>
+                  Writes <C key="a">/etc/krb5.conf</C> for the realm.
+                </>,
+              ],
               ["Join", "Creates or takes over the computer account and writes /etc/krb5.keytab."],
-              ["Identity", <>Writes <C key="b">/etc/sssd/sssd.conf</C> so domain users resolve and can log in.</>],
-              ["Name service", "Adds sss to passwd, group and shadow, and enables home-directory creation."],
-              ["Services", <>Enables and restarts <C key="s">sssd</C> so the new configuration takes effect.</>],
+              [
+                "Identity",
+                <>
+                  Writes <C key="b">/etc/sssd/sssd.conf</C> so domain users resolve and can log in.
+                </>,
+              ],
+              [
+                "Name service",
+                "Adds sss to passwd, group and shadow, and enables home-directory creation.",
+              ],
+              [
+                "Services",
+                <>
+                  Enables and restarts <C key="s">sssd</C> so the new configuration takes effect.
+                </>,
+              ],
               ["Agent", "Installs odm-agent, writes its configuration and enables the service."],
               ["First apply", "Runs the agent once so the machine arrives with its policy."],
             ]}
@@ -141,9 +179,9 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
           <Note>
             A machine holds its Kerberos identity under its fully-qualified name, so a machine
             called <C>ws01</C> joining <C>corp.example.internal</C> becomes{" "}
-            <C>ws01.corp.example.internal</C>. Services already running keep the old name until
-            they restart; reboot after a join that renamed the machine.{" "}
-            <C>--keep-hostname</C> stops the join instead of renaming.
+            <C>ws01.corp.example.internal</C>. Services already running keep the old name until they
+            restart; reboot after a join that renamed the machine. <C>--keep-hostname</C> stops the
+            join instead of renaming.
           </Note>
           <Note>
             Both front ends produce the same configuration. The desktop application is a view over
@@ -154,13 +192,13 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
 
         <Section title="Enrolment tokens">
           <p>
-            A token lets a machine enrol without a domain administrator credential ever being
-            typed on it.
+            A token lets a machine enrol without a domain administrator credential ever being typed
+            on it.
           </p>
           <Steps>
             <li>
-              In the console: <strong>Directory</strong> → select the container the computer accounts
-              should land in → <strong>Enrolment tokens</strong>.
+              In the console: <strong>Directory</strong> → select the container the computer
+              accounts should land in → <strong>Enrolment tokens</strong>.
             </li>
             <li>
               Set how many machines may use it and how long it lives, then{" "}
@@ -172,13 +210,13 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
           </Steps>
           <p>
             Redeeming a token creates the computer account and returns that machine&rsquo;s own
-            keytab, and nothing else. Redemption is throttled per source address, and every
-            attempt — successful or refused — is recorded in the audit log. A token can be revoked
-            at any time from the same dialog.
+            keytab, and nothing else. Redemption is throttled per source address, and every attempt
+            — successful or refused — is recorded in the audit log. A token can be revoked at any
+            time from the same dialog.
           </p>
           <Note>
-            Token enrolment needs the control plane on a domain controller. Where it is not,
-            join with <C>--admin-user</C>.
+            Token enrolment needs the control plane on a domain controller. Where it is not, join
+            with <C>--admin-user</C>.
           </Note>
         </Section>
 
@@ -199,8 +237,7 @@ systemctl status odm-agent`}</Code>
             <li>Stop and disable the agent service.</li>
             <li>Remove the computer account from the directory in the console.</li>
             <li>
-              Remove <C>/etc/krb5.keytab</C>, the SSSD configuration and{" "}
-              <C>/etc/odm</C>.
+              Remove <C>/etc/krb5.keytab</C>, the SSSD configuration and <C>/etc/odm</C>.
             </li>
           </Steps>
           <Note>

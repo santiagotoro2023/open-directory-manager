@@ -70,9 +70,9 @@ export function Dhcp() {
       <main className="content">
         <h1>DHCP</h1>
         <p className="muted">
-          The DHCP role is not installed. Run <code>deploy/install-dhcp-role.sh</code> on both
-          nodes of the failover pair, then set ODM_KEA_URL, ODM_KEA_USER and ODM_KEA_PASSWORD in
-          the secrets file.
+          The DHCP role is not installed. Run <code>deploy/install-dhcp-role.sh</code> on both nodes
+          of the failover pair, then set ODM_KEA_URL, ODM_KEA_USER and ODM_KEA_PASSWORD in the
+          secrets file.
         </p>
       </main>
     );
@@ -116,11 +116,7 @@ export function Dhcp() {
             aria-current={tab === current ? "true" : undefined}
             onClick={() => setTab(current)}
           >
-            {current === "scopes"
-              ? "Scopes"
-              : current === "leases"
-                ? "Leases"
-                : "Configuration"}
+            {current === "scopes" ? "Scopes" : current === "leases" ? "Leases" : "Configuration"}
           </button>
         ))}
       </nav>

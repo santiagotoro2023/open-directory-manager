@@ -130,14 +130,15 @@ input[type="radio"]:checked {
   border-color: var(--accent);
 }
 
+/* Drawn as a mask rather than a rotated box: a rotated element's bounding box
+   is bigger than the box it is centred in, so the tick was clipped at the
+   corners on the sizes the console actually uses. */
 input[type="checkbox"]:checked::after {
   content: "";
-  width: 9px;
-  height: 5px;
-  border: 2px solid #ffffff;
-  border-top: 0;
-  border-right: 0;
-  transform: rotate(-45deg) translate(1px, -1px);
+  width: 11px;
+  height: 11px;
+  background: #ffffff;
+  clip-path: polygon(14% 47%, 0 61%, 40% 100%, 100% 20%, 85% 7%, 39% 71%);
 }
 
 input[type="radio"]:checked::after {
@@ -865,8 +866,15 @@ table.data.compact td {
   width: 100%;
 }
 
-.settings-editor input[type="checkbox"] {
-  width: auto;
+/* The editor stretches its inputs to the panel width, which a tick box must
+   not inherit. "auto" collapsed it to nothing once the box became a drawn
+   element rather than the browser's, so the tick showed as a sliver. It gets
+   the size the control actually is. */
+.settings-editor input[type="checkbox"],
+.settings-editor input[type="radio"] {
+  width: 17px;
+  height: 17px;
+  flex: none;
 }
 
 .scope-form {
@@ -1515,10 +1523,15 @@ ul.plain {
   color: #ffffff;
 }
 
+/* overflow:hidden clips the line box, not the glyphs — so with the default
+   line-height the descender of a g or a p was cut off on every truncated
+   label. The extra line height is the room those need. */
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.5;
+  padding-block: 1px;
 }
 
 /* --------------------------------------------------- collapsible sidebar -- */
@@ -1653,10 +1666,31 @@ ul.plain {
   background: rgb(255 255 255 / 0.25);
 }
 
+/* One column with one rhythm. Every child used to bring its own margins, so
+   a heading sat on top of a tick box, which sat on top of a label, and the
+   panel read as a stack of things that had landed there rather than a form. */
 .category-editor {
-  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  padding: 20px 24px;
   overflow: auto;
   flex: 1;
+}
+
+.category-editor > * {
+  margin: 0;
+}
+
+/* The sentence under a heading belongs to it, so it sits closer than the gap
+   between one setting and the next. */
+.category-editor > header + p.muted {
+  margin-top: -8px;
+}
+
+.category-editor > .checkbox {
+  margin-top: 0;
 }
 
 /* A line of explanation running the full width of a wide monitor is a line
@@ -1670,7 +1704,6 @@ ul.plain {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
 }
 
 .category-editor h3 {
@@ -2113,4 +2146,87 @@ tr.detail-row td {
 
 .folder-custom {
   color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------ choice list -- */
+
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.choice-list ul {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.choice-list li {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.choice-list li:last-child {
+  border-bottom: none;
+}
+
+.choice-list li .dn {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.choice-list .empty {
+  width: 100%;
+  padding: 12px;
+  background: var(--surface-recessed);
+  border: 1px dashed #cbd5e1;
+  border-radius: var(--radius-sm);
+}
+
+/* A row of tick boxes that is a set of values, not a form of questions. */
+.option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.option-row .checkbox {
+  margin-top: 0;
+}
+
+/* A field with a menu of ready-made values beside it. */
+.with-suggestions {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.with-suggestions input {
+  flex: 1;
+  min-width: 0;
+}
+
+.with-suggestions select {
+  flex: none;
+  max-width: 130px;
+}
+
+/* A value meant to be copied: selectable, and obviously so. */
+.selectable {
+  user-select: all;
+  padding: 4px 8px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: inline-block;
 }

@@ -23,11 +23,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
+
+# Shared helpers: apt that survives a controller, and a dpkg that recovers.
+# shellcheck source=odm-role-common.sh
+. "$(dirname "$0")/odm-role-common.sh"
+
 [[ -z "$EXTERNAL_INTERFACE" || "$EXTERNAL_INTERFACE" =~ ^[A-Za-z0-9._-]{1,32}$ ]] ||
     { echo "invalid --external-interface" >&2; exit 1; }
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get install -y --no-install-recommends wireguard-tools iptables
+odm_apt_install wireguard-tools iptables
 
 # Without forwarding, a tunnel connects and reaches nothing behind the server.
 echo "==> Enabling forwarding"

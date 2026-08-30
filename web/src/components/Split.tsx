@@ -49,10 +49,7 @@ export function Split({
   const [dragging, setDragging] = useState(false);
   const frame = useRef<HTMLDivElement>(null);
 
-  const clamp = useCallback(
-    (value: number) => Math.min(max, Math.max(min, value)),
-    [min, max],
-  );
+  const clamp = useCallback((value: number) => Math.min(max, Math.max(min, value)), [min, max]);
 
   useEffect(() => {
     if (!dragging) return;

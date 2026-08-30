@@ -71,6 +71,60 @@ type Report struct {
 	Addresses       []string    `json:"addresses"`
 	Logs            []LogEntry  `json:"logs"`
 	LogCursor       string      `json:"log_cursor"`
+	// Printers this machine can see, when it is a print server. Reported with
+	// everything else so choosing one in the console is instant, rather than
+	// a request that waits for the machine's next check-in.
+	PrintDevices []PrintDevice `json:"print_devices,omitempty"`
+}
+
+// PrintDevice is one thing CUPS found: a URI it can print to and, when the
+// device announced one, what it says it is.
+type PrintDevice struct {
+	URI         string `json:"uri"`
+	Description string `json:"description"`
+}
+
+// printDevices asks CUPS what it can print to. Empty on a machine that is not
+// a print server, which is the answer there: nothing to choose from.
+func printDevices(ctx context.Context, env apply.Env) []PrintDevice {
+	if _, err := os.Stat(env.Path("/usr/sbin/cupsd")); err != nil {
+		return nil
+	}
+	// -l lists local and network devices; the timeout keeps a slow network
+	// discovery from holding up the whole check-in.
+	out, err := env.Run.Run(ctx, "lpinfo", "--timeout", "10", "-l", "-v")
+	if err != nil {
+		return nil
+	}
+	var devices []PrintDevice
+	var current PrintDevice
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "Device:"):
+			if current.URI != "" {
+				devices = append(devices, current)
+			}
+			current = PrintDevice{}
+		case strings.HasPrefix(trimmed, "uri = "):
+			current.URI = strings.TrimPrefix(trimmed, "uri = ")
+		case strings.HasPrefix(trimmed, "info = "):
+			current.Description = strings.TrimPrefix(trimmed, "info = ")
+		}
+	}
+	if current.URI != "" {
+		devices = append(devices, current)
+	}
+	// A driverless network printer is the useful case; the "file" and "cups"
+	// pseudo-devices are not something to hand somebody as a choice.
+	kept := devices[:0]
+	for _, device := range devices {
+		if strings.HasPrefix(device.URI, "file:") || device.URI == "cups-brf:/" {
+			continue
+		}
+		kept = append(kept, device)
+	}
+	return kept
 }
 
 // CursorPath is where the last journal position is remembered, so a report
@@ -97,6 +151,8 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		report.Sessions = sessions(ctx, env, report.LocalUsers)
 		report.Events = recentEvents(ctx, env)
 		report.Packages, report.PackageCount = installedPackages(ctx, env)
+
+		report.PrintDevices = printDevices(ctx, env)
 
 		previous := strings.TrimSpace(readFile(env, CursorPath))
 		report.Logs, report.LogCursor = CollectLogs(ctx, env, previous, LogUnits, 200)

@@ -37,10 +37,16 @@ export function Content() {
           <Reference
             headers={["Data", "Stored in"]}
             rows={[
-              ["Users, groups, computers, organizational units", "The directory on the domain controllers"],
+              [
+                "Users, groups, computers, organizational units",
+                "The directory on the domain controllers",
+              ],
               ["DNS zones and records", "The directory, replicated with everything else"],
               ["Kerberos principals and keys", "The directory"],
-              ["Policy objects, settings and links", "PostgreSQL, mirrored into the directory and SYSVOL when configured"],
+              [
+                "Policy objects, settings and links",
+                "PostgreSQL, mirrored into the directory and SYSVOL when configured",
+              ],
               ["Administrative template definitions", "PostgreSQL"],
               ["Audit log", "PostgreSQL, append-only"],
               ["Delegation roles and assignments", "PostgreSQL"],
@@ -73,8 +79,14 @@ export function Content() {
             headers={["Stage", "What happens"]}
             rows={[
               ["Authentication", "SPNEGO with the machine keytab. No cookie, no CSRF token."],
-              ["Identity", "The Kerberos principal names the computer account whose policy is served."],
-              ["Resolution", "Precedence, inheritance, filtering and targeting are resolved server-side."],
+              [
+                "Identity",
+                "The Kerberos principal names the computer account whose policy is served.",
+              ],
+              [
+                "Resolution",
+                "Precedence, inheritance, filtering and targeting are resolved server-side.",
+              ],
               ["Response", "One flattened settings document with a fingerprint."],
               ["Report", "The agent posts back per-setting results."],
             ]}

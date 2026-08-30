@@ -37,9 +37,10 @@ Certificate authority role installed.
 
   CA directory  $CA_DIR (0700, owned by $SERVICE_USER)
 
-Add to the ODM secrets file and restart the API:
+Open Certificates in the console and create the root certificate.
+
+Only if you changed --ca-dir from the default, add this to the ODM secrets
+file and restart the API:
 
   ODM_CA_DIR=$CA_DIR
-
-Then open Certificates in the console and create the root certificate.
 SUMMARY

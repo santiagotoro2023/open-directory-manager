@@ -13,8 +13,12 @@ set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get install -y --no-install-recommends freeradius freeradius-utils winbind krb5-user
+# Shared helpers: apt that survives a controller, and a dpkg that recovers.
+# shellcheck source=odm-role-common.sh
+. "$(dirname "$0")/odm-role-common.sh"
+
+
+odm_apt_install freeradius freeradius-utils winbind krb5-user
 
 CONF="/etc/freeradius/3.0"
 [[ -d "$CONF" ]] || { echo "freeradius 3.0 configuration not found at $CONF" >&2; exit 1; }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import timedelta
 from typing import Annotated, Any
 
 import asyncpg
@@ -228,6 +229,26 @@ async def delete_gpo(
             for r in await pool.fetch("SELECT target_dn FROM gpo_link WHERE gpo_guid = $1", guid)
         ]
         entry.before = _gpo_json(row)
+
+        # A policy object is as deletable-by-accident as a user, and the
+        # console says so before it deletes one. It has to actually be there
+        # afterwards: this used to delete outright, so the dialog promised a
+        # recycle bin the object never reached.
+        await pool.execute(
+            """
+            INSERT INTO deleted_object (object_dn, object_type, display_name, parent_dn,
+                                        attributes, memberships, members, deleted_by,
+                                        purge_after)
+            VALUES ($1, 'gpo', $2, '', $3::jsonb, '[]'::jsonb, $4::jsonb, $5,
+                    now() + $6::interval)
+            """,
+            f"CN={{{guid}}},CN=Policies,CN=System,{settings.base_dn}",
+            row["display_name"],
+            json.dumps(_gpo_json(row)),
+            json.dumps(targets),
+            session.principal,
+            timedelta(days=settings.retention_days),
+        )
 
         # Links cascade in the database; the LDAP side has to be rewritten.
         await pool.execute("DELETE FROM gpo WHERE guid = $1", guid)

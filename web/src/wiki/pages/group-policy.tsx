@@ -1,4 +1,14 @@
-import { C, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -6,7 +16,17 @@ export const meta: WikiPageMeta = {
   title: "Group Policy",
   section: "Managing the domain",
   summary: "Policy objects, links, precedence, inheritance, filtering and item-level targeting.",
-  keywords: ["gpo", "policy", "link", "precedence", "enforced", "block inheritance", "rsop", "targeting", "wmi"],
+  keywords: [
+    "gpo",
+    "policy",
+    "link",
+    "precedence",
+    "enforced",
+    "block inheritance",
+    "rsop",
+    "targeting",
+    "wmi",
+  ],
 };
 
 export function Content() {
@@ -14,9 +34,9 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          A group policy object is a named set of settings. It does nothing until it is linked to
-          a container. A machine receives every policy object linked at its own organizational
-          unit and at every container above it, merged into one effective policy.
+          A group policy object is a named set of settings. It does nothing until it is linked to a
+          container. A machine receives every policy object linked at its own organizational unit
+          and at every container above it, merged into one effective policy.
         </p>
 
         <Example title="Create and apply a policy">
@@ -26,8 +46,8 @@ export function Content() {
             </li>
             <li>
               <strong>Settings</strong> → pick a category from the list, under{" "}
-              <strong>Computer</strong> or <strong>User</strong> → <strong>Add</strong>. A
-              category carrying settings shows how many.
+              <strong>Computer</strong> or <strong>User</strong> → <strong>Add</strong>. A category
+              carrying settings shows how many.
             </li>
             <li>
               <strong>Links</strong> → pick a container → <strong>Link here</strong>.
@@ -54,7 +74,9 @@ export function Content() {
           <strong>Deleted Objects</strong> within the retention window.
         </Example>
 
-        <Where>Group Policy for the objects; Directory for inheritance and per-object results.</Where>
+        <Where>
+          Group Policy for the objects; Directory for inheritance and per-object results.
+        </Where>
       </Quickstart>
 
       <Details>
@@ -91,9 +113,9 @@ export function Content() {
         <Section title="Security filtering">
           <p>
             A policy object with no security filter applies to everything in scope. Adding
-            distinguished names restricts it to those principals and to anything that is a member
-            of them, nesting included. A machine that is not in the filter is skipped, and the
-            reason is reported.
+            distinguished names restricts it to those principals and to anything that is a member of
+            them, nesting included. A machine that is not in the filter is skipped, and the reason
+            is reported.
           </p>
         </Section>
 
@@ -106,7 +128,11 @@ export function Content() {
             headers={["Condition", "Matches against", "Example"]}
             rows={[
               ["Operating systems", "The client's own identifier", <C key="1">debian-13</C>],
-              ["Host name pattern", "The machine's host name, shell-style wildcards", <C key="2">ws-*</C>],
+              [
+                "Host name pattern",
+                "The machine's host name, shell-style wildcards",
+                <C key="2">ws-*</C>,
+              ],
               ["Groups", "Group membership, nesting included", "A distinguished name per line"],
               ["IP ranges", "The machine's current addresses", <C key="3">10.10.0.0/16</C>],
             ]}
@@ -170,17 +196,17 @@ export function Content() {
 
         <Section title="Interoperability">
           <p>
-            When the control plane runs on a domain controller and{" "}
-            <C>ODM_SYSVOL_PATH</C> is configured, each policy object is mirrored into the
-            directory as a group policy container with a SYSVOL directory, links are written to{" "}
-            <C>gPLink</C> on each target, and blocked inheritance is written to <C>gPOptions</C>.
+            When the control plane runs on a domain controller and <C>ODM_SYSVOL_PATH</C> is
+            configured, each policy object is mirrored into the directory as a group policy
+            container with a SYSVOL directory, links are written to <C>gPLink</C> on each target,
+            and blocked inheritance is written to <C>gPOptions</C>.
           </p>
           <Note>
             The mirror is off after a standard install. Turning it on requires the control-plane
             service account to be able to write Samba&rsquo;s SYSVOL share, and{" "}
             <C>ReadWritePaths</C> in the service unit extended to cover it. Without it, policy
-            objects exist only in ODM: agents are unaffected, and external group policy tooling
-            does not see them.
+            objects exist only in ODM: agents are unaffected, and external group policy tooling does
+            not see them.
           </Note>
         </Section>
       </Details>

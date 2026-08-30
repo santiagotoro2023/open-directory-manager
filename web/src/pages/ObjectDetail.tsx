@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Folder,
+  KeyRound,
   Monitor,
   Power,
   RefreshCw,
@@ -53,14 +54,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 type Tab =
-  | "general"
-  | "membership"
-  | "policy"
-  | "machine"
-  | "software"
-  | "users"
-  | "activity"
-  | "logs";
+  "general" | "membership" | "policy" | "machine" | "software" | "users" | "activity" | "logs";
 
 function when(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleString() : "—";
@@ -82,9 +76,9 @@ export function ObjectDetail() {
   const [containers, setContainers] = useState<DirectoryObject[]>([]);
   const [tab, setTab] = useState<Tab>("general");
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [dialog, setDialog] = useState<
-    "password" | "move" | "members" | "delete" | "rsop" | null
-  >(null);
+  const [dialog, setDialog] = useState<"password" | "move" | "members" | "delete" | "rsop" | null>(
+    null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -183,8 +177,7 @@ export function ObjectDetail() {
           Directory
         </button>
         <h1>
-          <Icon size={20} aria-hidden="true" />{" "}
-          {text(object.displayName || object.cn || object.ou)}
+          <Icon size={20} aria-hidden="true" /> {text(object.displayName || object.cn || object.ou)}
         </h1>
         {isDisabled(object) && <span className="badge">Disabled</span>}
         <span className="spacer" />
@@ -312,19 +305,16 @@ export function ObjectDetail() {
         </>
       )}
 
-      {tab === "membership" && (
-        <MembershipTab object={object} onChanged={() => void load()} />
-      )}
+      {tab === "membership" && <MembershipTab object={object} onChanged={() => void load()} />}
 
       {tab === "policy" && (
         <RsopDialog dn={dn} isComputer={isComputer} onClose={() => setTab("general")} inline />
       )}
 
       {isComputer &&
-        (tab === "machine" ||
-          tab === "software" ||
-          tab === "users" ||
-          tab === "activity") && <ComputerTabs dn={dn} tab={tab} />}
+        (tab === "machine" || tab === "software" || tab === "users" || tab === "activity") && (
+          <ComputerTabs dn={dn} tab={tab} />
+        )}
 
       {isComputer && tab === "logs" && <LogsTab dn={dn} />}
 
@@ -360,13 +350,71 @@ export function ObjectDetail() {
   );
 }
 
-function MembershipTab({
-  object,
-  onChanged,
-}: {
-  object: DirectoryObject;
-  onChanged: () => void;
-}) {
+/**
+ * The machine's own local administrator, and its password.
+ *
+ * Hidden until asked for, because every read is audited: rendering it with
+ * the rest of the page would fill the log with reads nobody made. What comes
+ * back is what the machine last generated, so it is the password that works
+ * right now even if the domain is unreachable from it.
+ */
+function LocalAdministratorPanel({ dn }: { dn: string }) {
+  const [shown, setShown] = useState<Awaited<
+    ReturnType<typeof api.servers.localAdministrator>
+  > | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function reveal() {
+    setBusy(true);
+    setError(null);
+    try {
+      setShown(await api.servers.localAdministrator(dn));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3 className="section-title">Local administrator</h3>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      {!shown ? (
+        <div className="actions-row">
+          <button type="button" className="ghost" disabled={busy} onClick={() => void reveal()}>
+            <KeyRound size={15} aria-hidden="true" />
+            Show the password
+          </button>
+          <span className="muted">Every read is recorded in the audit log.</span>
+        </div>
+      ) : !shown.configured ? (
+        <p className="empty">
+          No password has been reported. Set one under Group Policy &rarr; Computer &rarr; Local
+          administrator, and it appears after the machine&rsquo;s next check-in.
+        </p>
+      ) : (
+        <dl className="definition">
+          <dt>Account</dt>
+          <dd className="mono">{shown.account}</dd>
+          <dt>Password</dt>
+          <dd className="mono selectable">{shown.password}</dd>
+          <dt>Rotated</dt>
+          <dd>{when(shown.rotated_at)}</dd>
+          <dt>Rotates again</dt>
+          <dd>{when(shown.expires_at)}</dd>
+        </dl>
+      )}
+    </>
+  );
+}
+
+function MembershipTab({ object, onChanged }: { object: DirectoryObject; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const isGroup = object.objectType === "group";
   const entries = isGroup
@@ -546,12 +594,12 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
             }}
           >
             <p>
-              <strong>{removing}</strong> is removed from {facts.hostname}. Its configuration
-              files are left in place.
+              <strong>{removing}</strong> is removed from {facts.hostname}. Its configuration files
+              are left in place.
             </p>
             <p className="muted">
-              Packages that depend on it go with it, as apt decides. Nothing that keeps this
-              machine joined and managed can be removed from here.
+              Packages that depend on it go with it, as apt decides. Nothing that keeps this machine
+              joined and managed can be removed from here.
             </p>
           </Modal>
         )}
@@ -665,6 +713,8 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         <dd>{when(facts.reported_at)}</dd>
       </dl>
 
+      <LocalAdministratorPanel dn={dn} />
+
       <h3 className="section-title">Updates</h3>
       <dl className="definition">
         <dt>Waiting</dt>
@@ -676,9 +726,7 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         <dt>Last checked</dt>
         <dd>{when(facts.updates_checked_at)}</dd>
       </dl>
-      {facts.updates.length > 0 && (
-        <p className="mono muted">{facts.updates.join(", ")}</p>
-      )}
+      {facts.updates.length > 0 && <p className="mono muted">{facts.updates.join(", ")}</p>}
       <div className="actions-row">
         <button
           type="button"
@@ -745,9 +793,7 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
             </p>
           )}
           {power === "shutdown" && (
-            <p className="muted">
-              A machine that is off cannot be started again from here.
-            </p>
+            <p className="muted">A machine that is off cannot be started again from here.</p>
           )}
         </Modal>
       )}
@@ -788,7 +834,6 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   );
 }
 
-
 function InstallPackageDialog({
   onClose,
   onInstall,
@@ -814,7 +859,6 @@ function InstallPackageDialog({
     </Modal>
   );
 }
-
 
 /**
  * The machine's recent journal, collapsed by the unit that produced it.

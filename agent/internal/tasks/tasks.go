@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"odm.example.org/agent/internal/apply"
 	"odm.example.org/agent/internal/inventory"
@@ -59,6 +60,13 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 	var output string
 	var err error
 
+	// A task that never returns is worse than one that fails: the agent is
+	// single-threaded, so it stops collecting work entirely and the console
+	// shows "installing" forever with nothing to say why. An installer that
+	// is still going after this has hit a prompt nothing will ever answer.
+	ctx, cancel := context.WithTimeout(ctx, timeoutFor(task.Kind))
+	defer cancel()
+
 	switch task.Kind {
 	case "role-install":
 		output, err = installRole(ctx, task.Payload, env)
@@ -97,9 +105,28 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 	}
 
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			err = fmt.Errorf(
+				"gave up after %s: %w (an installer waiting on a prompt looks like this)",
+				timeoutFor(task.Kind), err,
+			)
+		}
 		return Result{ID: task.ID, OK: false, Output: strings.TrimSpace(output + "\n" + err.Error())}
 	}
 	return Result{ID: task.ID, OK: true, Output: strings.TrimSpace(output)}
+}
+
+// timeoutFor bounds one task. Installing a role is apt over a network and can
+// legitimately take a while; everything else is local and quick.
+func timeoutFor(kind string) time.Duration {
+	switch kind {
+	case "role-install", "update-install":
+		return 30 * time.Minute
+	case "update-check", "package-install", "package-remove":
+		return 10 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
 }
 
 func installRole(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {

@@ -94,7 +94,20 @@ export interface PolicySettings {
   updates?: SystemUpdates;
   login_screen?: LoginScreenSettings;
   certificate_enrolment?: Record<string, unknown>[];
-  password_self_service?: { enabled: boolean; minimum_length: number };
+  local_administrator?: {
+    account: string;
+    rotate_days: number;
+    length: number;
+    administrator: boolean;
+  };
+  password_self_service?: {
+    enabled: boolean;
+    minimum_length: number;
+    require_uppercase?: boolean;
+    require_lowercase?: boolean;
+    require_digit?: boolean;
+    require_symbol?: boolean;
+  };
   printers?: Record<string, unknown>[];
   always_on_vpn?: { tunnel: string; block_until_connected: boolean };
   agent?: { refresh_minutes: number };
@@ -694,7 +707,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ApiError(response.status, (body as { detail?: string }).detail ?? response.statusText);
+    throw new ApiError(
+      response.status,
+      (body as { detail?: string }).detail ?? response.statusText,
+    );
   }
   return body as T;
 }
@@ -766,10 +782,10 @@ export const api = {
     createUser: (body: NewUser) => request<DirectoryObject>("/directory/users", json(body)),
 
     bulkUsers: (users: NewUser[]) =>
-      request<{ created: number; results: { sam_account_name: string; created: boolean; error?: string }[] }>(
-        "/directory/users/bulk",
-        json({ users }),
-      ),
+      request<{
+        created: number;
+        results: { sam_account_name: string; created: boolean; error?: string }[];
+      }>("/directory/users/bulk", json({ users })),
 
     createGroup: (body: {
       container: string;
@@ -806,8 +822,7 @@ export const api = {
     editMembers: (dn: string, add: string[], remove: string[]) =>
       request<DirectoryObject>("/directory/group/members", json({ dn, add, remove })),
 
-    remove: (dn: string) =>
-      request<void>(`/directory/object${qs({ dn })}`, { method: "DELETE" }),
+    remove: (dn: string) => request<void>(`/directory/object${qs({ dn })}`, { method: "DELETE" }),
   },
 
   policy: {
@@ -821,10 +836,10 @@ export const api = {
     update: (body: Partial<Gpo> & { guid: string }) =>
       request<Gpo>("/policy/gpo", { method: "PATCH", body: JSON.stringify(body) }),
 
-    remove: (guid: string) =>
-      request<void>(`/policy/gpo${qs({ guid })}`, { method: "DELETE" }),
+    remove: (guid: string) => request<void>(`/policy/gpo${qs({ guid })}`, { method: "DELETE" }),
 
-    links: (target_dn?: string) => request<{ links: GpoLink[] }>(`/policy/links${qs({ target_dn })}`),
+    links: (target_dn?: string) =>
+      request<{ links: GpoLink[] }>(`/policy/links${qs({ target_dn })}`),
 
     link: (gpo_guid: string, target_dn: string) =>
       request<{ id: string; link_order: number }>("/policy/links", json({ gpo_guid, target_dn })),
@@ -863,9 +878,14 @@ export const api = {
       request<void>(`/admx/template${qs({ id })}`, { method: "DELETE" }),
 
     categories: () =>
-      request<{ categories: { name: string; display_name: string; parent: string | null; policy_count: number }[] }>(
-        "/admx/categories",
-      ),
+      request<{
+        categories: {
+          name: string;
+          display_name: string;
+          parent: string | null;
+          policy_count: number;
+        }[];
+      }>("/admx/categories"),
 
     policies: (params: { query?: string; category?: string; applicable_only?: boolean }) =>
       request<{ policies: AdmxPolicy[] }>(
@@ -922,8 +942,7 @@ export const api = {
 
     scopes: () => request<{ scopes: DhcpScope[] }>("/dhcp/scopes"),
 
-    createScope: (body: Record<string, unknown>) =>
-      request<DhcpScope>("/dhcp/scopes", json(body)),
+    createScope: (body: Record<string, unknown>) => request<DhcpScope>("/dhcp/scopes", json(body)),
 
     updateScope: (body: Record<string, unknown>) =>
       request<DhcpScope>("/dhcp/scope", { method: "PATCH", body: JSON.stringify(body) }),
@@ -992,8 +1011,7 @@ export const api = {
   },
 
   radius: {
-    overview: () =>
-      request<{ clients: RadiusClient[]; policies: RadiusPolicy[] }>("/radius"),
+    overview: () => request<{ clients: RadiusClient[]; policies: RadiusPolicy[] }>("/radius"),
 
     preview: () => request<{ policies: string }>("/radius/preview"),
 
@@ -1082,6 +1100,11 @@ export const api = {
   },
 
   printers: {
+    devices: (node_fqdn: string) =>
+      request<{ devices: { uri: string; description: string }[] }>(
+        `/printers/devices${qs({ node_fqdn })}`,
+      ),
+
     list: () => request<{ printers: Printer[] }>("/printers"),
 
     create: (body: NewPrinter) => request<Printer>("/printers", json(body)),
@@ -1122,6 +1145,18 @@ export const api = {
 
     computer: (dn: string) => request<ComputerDetail>(`/servers/computer${qs({ dn })}`),
 
+    // Read on demand rather than with the rest of the machine: every read is
+    // audited, so fetching it to render a page nobody asked it of would fill
+    // the log with reads that never happened.
+    localAdministrator: (dn: string) =>
+      request<{
+        configured: boolean;
+        account?: string;
+        password?: string;
+        rotated_at?: string;
+        expires_at?: string;
+      }>(`/servers/computer/localadmin${qs({ dn })}`),
+
     logs: (dn: string, hours: number) =>
       request<{ hours: number; total: number; groups: LogGroup[] }>(
         `/servers/computer/logs${qs({ dn, hours })}`,
@@ -1141,8 +1176,7 @@ export const api = {
   },
 
   shares: {
-    list: () =>
-      request<{ shares: FileShare[]; access_levels: Record<string, string> }>("/shares"),
+    list: () => request<{ shares: FileShare[]; access_levels: Record<string, string> }>("/shares"),
 
     create: (body: NewShare) => request<FileShare>("/shares", json(body)),
 
@@ -1171,8 +1205,7 @@ export const api = {
       description?: string;
     }) => request<{ id: string }>("/rbac/assignments", json(body)),
 
-    unassign: (id: string) =>
-      request<void>(`/rbac/assignment${qs({ id })}`, { method: "DELETE" }),
+    unassign: (id: string) => request<void>(`/rbac/assignment${qs({ id })}`, { method: "DELETE" }),
   },
 
   ca: {
@@ -1209,11 +1242,7 @@ export const api = {
 
     untrust: (id: string) => request<void>(`/ca/trusted${qs({ id })}`, { method: "DELETE" }),
 
-    consoleCertificate: (body: {
-      common_name: string;
-      sans: string[];
-      validity_days: number;
-    }) =>
+    consoleCertificate: (body: { common_name: string; sans: string[]; validity_days: number }) =>
       request<{ serial: string; fingerprint: string; applied: boolean; note: string }>(
         "/ca/console-certificate",
         json(body),

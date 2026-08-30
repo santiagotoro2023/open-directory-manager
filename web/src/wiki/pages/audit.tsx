@@ -14,9 +14,9 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          Every change made through ODM is recorded: who made it, when, from where, what it
-          touched, whether it succeeded, and what the object looked like before and after.
-          Attempts that were refused are recorded too.
+          Every change made through ODM is recorded: who made it, when, from where, what it touched,
+          whether it succeeded, and what the object looked like before and after. Attempts that were
+          refused are recorded too.
         </p>
 
         <Example title="Find who changed an object">
@@ -41,7 +41,12 @@ export function Content() {
               ["Time", "When it happened."],
               ["Actor", "The principal that made the change, or system for scheduled work."],
               ["Source address", "Where the request came from."],
-              ["Action", <>A dotted name such as <C key="a">user.create</C> or <C key="b">gpo.link</C>.</>],
+              [
+                "Action",
+                <>
+                  A dotted name such as <C key="a">user.create</C> or <C key="b">gpo.link</C>.
+                </>,
+              ],
               ["Object", "The distinguished name or identifier that was touched."],
               ["Outcome", "success, denied or failure."],
               ["Before and after", "The object's state on each side of the change."],
@@ -74,7 +79,10 @@ export function Content() {
               [<C key="4">admx.</C>, "Administrative template imports and removals."],
               [<C key="5">dns.</C>, "Zones and records."],
               [<C key="6">dhcp.</C>, "Scopes and reservations."],
-              [<C key="7">ca.</C>, "Certificate issuing, revocation, publishing and the console certificate."],
+              [
+                <C key="7">ca.</C>,
+                "Certificate issuing, revocation, publishing and the console certificate.",
+              ],
               [<C key="8">rbac.</C>, "Roles and assignments."],
               [<C key="9">role.</C>, "Server role installation and deregistration."],
               [<C key="10">recyclebin.</C>, "Restores and purges."],
@@ -93,8 +101,8 @@ export function Content() {
 
         <Section title="What is not in it">
           <p>
-            Changes made directly against the directory or the DHCP service with other tools are
-            not recorded here; only what goes through ODM is.
+            Changes made directly against the directory or the DHCP service with other tools are not
+            recorded here; only what goes through ODM is.
           </p>
         </Section>
       </Details>

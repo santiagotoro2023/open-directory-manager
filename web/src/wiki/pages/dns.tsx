@@ -14,26 +14,26 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          The domain&rsquo;s DNS is served by the domain controllers and stored in the directory,
-          so it replicates with everything else. The zone that matches the domain name is created
-          during provisioning and already holds the service records clients use to find the
-          domain.
+          The domain&rsquo;s DNS is served by the domain controllers and stored in the directory, so
+          it replicates with everything else. The zone that matches the domain name is created
+          during provisioning and already holds the service records clients use to find the domain.
         </p>
 
         <Example title="Add a host record">
-          <strong>DNS</strong> → select the zone → <strong>New record</strong> → name{" "}
-          <C>fs01</C>, type <C>A</C>, data <C>10.10.0.20</C>.
+          <strong>DNS</strong> → select the zone → <strong>New record</strong> → name <C>fs01</C>,
+          type <C>A</C>, data <C>10.10.0.20</C>.
         </Example>
         <Example title="Add a reverse zone">
-          <strong>New zone</strong> → <C>10.in-addr.arpa</C>. Then add{" "}
-          <C>PTR</C> records inside it.
+          <strong>New zone</strong> → <C>10.in-addr.arpa</C>. Then add <C>PTR</C> records inside it.
         </Example>
         <Example title="Add an alias">
           <strong>New record</strong> → name <C>files</C>, type <C>CNAME</C>, data{" "}
           <C>fs01.corp.example.internal.</C> — note the trailing dot.
         </Example>
 
-        <Where>DNS. Zones are listed on the left; the records of the selected zone on the right.</Where>
+        <Where>
+          DNS. Zones are listed on the left; the records of the selected zone on the right.
+        </Where>
       </Quickstart>
 
       <Details>
@@ -41,14 +41,13 @@ export function Content() {
           <p>
             A forward zone answers names with addresses; a reverse zone answers addresses with
             names. <strong>New zone</strong> asks which, and a reverse zone is named from the
-            network it covers — <C>10.10.0.0/24</C> becomes{" "}
-            <C>0.10.10.in-addr.arpa</C> — rather than needing the octets reversed by hand. A
-            reverse zone covers a /8, /16 or /24.
+            network it covers — <C>10.10.0.0/24</C> becomes <C>0.10.10.in-addr.arpa</C> — rather
+            than needing the octets reversed by hand. A reverse zone covers a /8, /16 or /24.
           </p>
           <p>
             When a reverse zone exists, adding an <C>A</C> record offers to create the matching
-            pointer record with it. Without a reverse zone the forward record is created on its
-            own and the console says so.
+            pointer record with it. Without a reverse zone the forward record is created on its own
+            and the console says so.
           </p>
         </Section>
 
@@ -58,17 +57,25 @@ export function Content() {
             rows={[
               ["A", "An IPv4 address", <C key="a">10.10.0.20</C>],
               ["AAAA", "An IPv6 address", <C key="b">2001:db8::20</C>],
-              ["CNAME", "A host name, usually fully qualified with a trailing dot", <C key="c">fs01.corp.example.internal.</C>],
+              [
+                "CNAME",
+                "A host name, usually fully qualified with a trailing dot",
+                <C key="c">fs01.corp.example.internal.</C>,
+              ],
               ["PTR", "A host name, in a reverse zone", <C key="d">fs01.corp.example.internal.</C>],
               ["NS", "A name server host name", <C key="e">dc1.corp.example.internal.</C>],
               ["MX", "Preference then host name", <C key="f">10 mail.corp.example.internal</C>],
-              ["SRV", "Priority, weight, port, target", <C key="g">0 100 389 dc1.corp.example.internal</C>],
+              [
+                "SRV",
+                "Priority, weight, port, target",
+                <C key="g">0 100 389 dc1.corp.example.internal</C>,
+              ],
               ["TXT", "Free text", <C key="h">v=spf1 -all</C>],
             ]}
           />
           <Note>
-            Record data is validated for its type before it is written: an A record must parse as
-            an IPv4 address, an SRV record must have all four fields, and so on.
+            Record data is validated for its type before it is written: an A record must parse as an
+            IPv4 address, an SRV record must have all four fields, and so on.
           </Note>
         </Section>
 
@@ -99,8 +106,8 @@ export function Content() {
         <Section title="Dynamic updates">
           <p>
             Zones created by provisioning accept secure dynamic updates, so domain members register
-            themselves and the DHCP service can register the computers it gives addresses to. The zone
-            list marks which zones have this enabled.
+            themselves and the DHCP service can register the computers it gives addresses to. The
+            zone list marks which zones have this enabled.
           </p>
         </Section>
 

@@ -142,7 +142,10 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
         setInstalled(
           new Set(
             result.installed
-              .filter((instance) => instance.state !== "removed")
+              // Only a role that actually came up. A failed install left its
+              // section in the sidebar, so the console offered to manage
+              // printers on a machine where CUPS had never installed.
+              .filter((instance) => instance.state === "active")
               .map((instance) => instance.role_name),
           ),
         ),

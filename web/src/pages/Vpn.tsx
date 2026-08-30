@@ -94,13 +94,7 @@ export function Vpn() {
   );
 }
 
-function TunnelDetail({
-  tunnel,
-  onChanged,
-}: {
-  tunnel: VpnTunnel;
-  onChanged: () => void;
-}) {
+function TunnelDetail({ tunnel, onChanged }: { tunnel: VpnTunnel; onChanged: () => void }) {
   const [peers, setPeers] = useState<VpnPeer[]>([]);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -213,10 +207,10 @@ function TunnelDetail({
       </table>
 
       <p className="muted">
-        A configuration can only be downloaded once a peer exists, and every download is
-        recorded in the audit log — it contains the key that peer connects with. To hold a
-        tunnel up on a machine whatever the person using it does, add its computer as a peer and
-        set <strong>Always-on VPN</strong> in a policy object.
+        A configuration can only be downloaded once a peer exists, and every download is recorded in
+        the audit log — it contains the key that peer connects with. To hold a tunnel up on a
+        machine whatever the person using it does, add its computer as a peer and set{" "}
+        <strong>Always-on VPN</strong> in a policy object.
       </p>
 
       {adding && (
@@ -303,11 +297,7 @@ function PeerDialog({
       )}
 
       <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={alwaysOn}
-          onChange={(e) => setAlwaysOn(e.target.checked)}
-        />
+        <input type="checkbox" checked={alwaysOn} onChange={(e) => setAlwaysOn(e.target.checked)} />
         Intended to be held up by policy
       </label>
       <p className="muted">
@@ -401,11 +391,7 @@ function TunnelDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =
           />
         </Field>
         <Field label="Port">
-          <input
-            type="number"
-            value={port}
-            onChange={(e) => setPort(Number(e.target.value))}
-          />
+          <input type="number" value={port} onChange={(e) => setPort(Number(e.target.value))} />
         </Field>
       </div>
 
@@ -418,19 +404,15 @@ function TunnelDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 
       <h3 className="section-title">Which networks the tunnel reaches</h3>
       <p className="muted">
-        Chosen from the DHCP scopes, so a tunnel carries the networks it is meant to and no
-        others. Leave everything unticked to carry only the tunnel's own network.
+        Chosen from the DHCP scopes, so a tunnel carries the networks it is meant to and no others.
+        Leave everything unticked to carry only the tunnel's own network.
       </p>
       <ScopeSelector value={routes} onChange={setRoutes} />
 
       <h3 className="section-title">Name resolution</h3>
       <div className="inline-fields">
         <Field label="Name servers" hint="Comma separated. A domain controller, usually.">
-          <input
-            value={dns}
-            placeholder="10.10.0.10"
-            onChange={(e) => setDns(e.target.value)}
-          />
+          <input value={dns} placeholder="10.10.0.10" onChange={(e) => setDns(e.target.value)} />
         </Field>
         <Field label="Search domain">
           <input

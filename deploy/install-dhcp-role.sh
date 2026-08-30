@@ -49,6 +49,11 @@ done
 [[ -n "$REALM" && -n "$DNS_SERVER" ]] || usage
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 
+# Shared helpers: apt that survives a controller, and a dpkg that recovers.
+# shellcheck source=odm-role-common.sh
+. "$(dirname "$0")/odm-role-common.sh"
+
+
 # Failover is all three or none of them.
 HA_COUNT=0
 for VALUE in "$HA_ROLE" "$THIS_URL" "$PEER_URL"; do
@@ -67,10 +72,8 @@ THIS_NAME="$(hostname -s)"
 DOMAIN="$(printf '%s' "$REALM" | tr '[:upper:]' '[:lower:]')"
 
 echo "==> Installing Kea"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends \
-    kea-dhcp4-server kea-ctrl-agent kea-dhcp-ddns-server kea-common krb5-user
+odm_apt_install kea-dhcp4-server kea-ctrl-agent kea-dhcp-ddns-server \
+    kea-common krb5-user
 
 HOOKS_DIR="$(dirname "$(find /usr/lib -name 'libdhcp_ha.so' -print -quit 2>/dev/null || true)")"
 [[ -d "$HOOKS_DIR" ]] || { echo "cannot locate the Kea hooks directory" >&2; exit 1; }

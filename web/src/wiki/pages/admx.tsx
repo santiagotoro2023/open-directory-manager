@@ -1,4 +1,14 @@
-import { C, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -28,8 +38,8 @@ export function Content() {
               Choose the <C>.admx</C> file and its <C>.adml</C>.
             </li>
             <li>
-              <strong>Import</strong>. The result reports how many settings were found and how
-              many apply on Debian.
+              <strong>Import</strong>. The result reports how many settings were found and how many
+              apply on Debian.
             </li>
           </Steps>
         </Example>
@@ -40,7 +50,9 @@ export function Content() {
           <strong>Add</strong> → set it to Enabled or Disabled and fill in its fields.
         </Example>
 
-        <Where>Group Policy → Administrative templates to import; the Settings tab to configure.</Where>
+        <Where>
+          Group Policy → Administrative templates to import; the Settings tab to configure.
+        </Where>
       </Quickstart>
 
       <Details>
@@ -48,11 +60,20 @@ export function Content() {
           <Reference
             headers={["From the ADMX", "Used for"]}
             rows={[
-              ["Target namespace and prefix", "Identifies the template; re-importing it supersedes the previous version."],
+              [
+                "Target namespace and prefix",
+                "Identifies the template; re-importing it supersedes the previous version.",
+              ],
               ["Categories and their parents", "The category filter in the setting picker."],
               ["Policies", "One configurable setting each, with its registry key and value name."],
-              ["Enabled and disabled values", "What a setting with no fields writes in each state."],
-              ["Elements", "The form controls: text, multi-line text, number, checkbox, dropdown, list."],
+              [
+                "Enabled and disabled values",
+                "What a setting with no fields writes in each state.",
+              ],
+              [
+                "Elements",
+                "The form controls: text, multi-line text, number, checkbox, dropdown, list.",
+              ],
               ["supportedOn", "The platform note shown against a setting."],
             ]}
           />
@@ -91,7 +112,10 @@ export function Content() {
           <Reference
             headers={["Registry key", "Applied as"]}
             rows={[
-              [<C key="1">Software\\Policies\\Google\\Chrome</C>, "Chromium and Chrome managed policy"],
+              [
+                <C key="1">Software\\Policies\\Google\\Chrome</C>,
+                "Chromium and Chrome managed policy",
+              ],
               [<C key="2">Software\\Policies\\Chromium</C>, "Chromium managed policy"],
               [<C key="3">Software\\Policies\\Mozilla\\Firefox</C>, "Firefox policies.json"],
             ]}
@@ -102,9 +126,9 @@ export function Content() {
           </p>
           <Note>
             A setting under any other key can still be configured, and is reported in Resultant Set
-            of Policy as having no Debian equivalent rather than silently doing nothing. The
-            setting picker hides these by default; clear &ldquo;Only settings ODM can apply&rdquo;
-            to see them.
+            of Policy as having no Debian equivalent rather than silently doing nothing. The setting
+            picker hides these by default; clear &ldquo;Only settings ODM can apply&rdquo; to see
+            them.
           </Note>
         </Section>
 

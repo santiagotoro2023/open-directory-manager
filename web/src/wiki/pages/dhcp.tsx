@@ -1,4 +1,14 @@
-import { C, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -6,7 +16,18 @@ export const meta: WikiPageMeta = {
   title: "DHCP",
   section: "Network services",
   summary: "Scopes, pools, options, reservations, leases, failover and dynamic DNS.",
-  keywords: ["dhcp", "kea", "scope", "subnet", "pool", "reservation", "lease", "failover", "ha", "ddns"],
+  keywords: [
+    "dhcp",
+    "kea",
+    "scope",
+    "subnet",
+    "pool",
+    "reservation",
+    "lease",
+    "failover",
+    "ha",
+    "ddns",
+  ],
 };
 
 export function Content() {
@@ -20,20 +41,19 @@ export function Content() {
 
         <Example title="Install the role">
           <strong>Server Roles</strong> → <strong>Certificate authority… DHCP</strong> →{" "}
-          <strong>Install</strong>. Install it once as <C>primary</C> and once as{" "}
-          <C>standby</C>, then add the printed <C>ODM_KEA_*</C> lines to the secrets file and
-          restart the control plane.
+          <strong>Install</strong>. Install it once as <C>primary</C> and once as <C>standby</C>,
+          then add the printed <C>ODM_KEA_*</C> lines to the secrets file and restart the control
+          plane.
         </Example>
 
         <Example title="Create a scope">
-          <strong>DHCP</strong> → <strong>New scope</strong> → subnet{" "}
-          <C>10.10.0.0/24</C>, pool <C>10.10.0.100 - 10.10.0.200</C>, routers{" "}
-          <C>10.10.0.1</C>, DNS servers <C>10.10.0.10</C>.
+          <strong>DHCP</strong> → <strong>New scope</strong> → subnet <C>10.10.0.0/24</C>, pool{" "}
+          <C>10.10.0.100 - 10.10.0.200</C>, routers <C>10.10.0.1</C>, DNS servers <C>10.10.0.10</C>.
         </Example>
 
         <Example title="Reserve an address">
-          On the scope row → <strong>Reserve</strong> → hardware address{" "}
-          <C>00:11:22:33:44:55</C>, address <C>10.10.0.50</C>, host name.
+          On the scope row → <strong>Reserve</strong> → hardware address <C>00:11:22:33:44:55</C>,
+          address <C>10.10.0.50</C>, host name.
         </Example>
 
         <Where>DHCP for scopes and leases; Server Roles to install the role.</Where>
@@ -43,11 +63,10 @@ export function Content() {
         <Section title="Failover">
           <p>
             Install the DHCP role on both nodes first — a single node is a working DHCP server on
-            its own. Then pair them under <strong>DHCP</strong> →{" "}
-            <strong>Configuration</strong>: one node primary, the other standby, each with the
-            other&rsquo;s failover address. Installing a role and configuring the service it
-            provides are separate steps, so a pair can be made, changed or unmade without
-            reinstalling anything.
+            its own. Then pair them under <strong>DHCP</strong> → <strong>Configuration</strong>:
+            one node primary, the other standby, each with the other&rsquo;s failover address.
+            Installing a role and configuring the service it provides are separate steps, so a pair
+            can be made, changed or unmade without reinstalling anything.
           </p>
         </Section>
 
@@ -120,9 +139,9 @@ export function Content() {
           <Note>
             Debian does not package the GSS-TSIG hook, so on a stock install this path is
             unavailable and the role installer says so. Samba&rsquo;s zones reject unauthenticated
-            updates, so leases do not appear in DNS until the hook is built from ISC&rsquo;s
-            sources and the installer re-run, or hosts are registered another way — a domain-joined
-            machine registers itself.
+            updates, so leases do not appear in DNS until the hook is built from ISC&rsquo;s sources
+            and the installer re-run, or hosts are registered another way — a domain-joined machine
+            registers itself.
           </Note>
         </Section>
 

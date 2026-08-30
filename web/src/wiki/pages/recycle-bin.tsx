@@ -71,8 +71,8 @@ export function Content() {
 
         <Section title="What is not covered">
           <p>
-            Only deletes made through ODM are captured. An object deleted with another tool
-            directly against the directory leaves no snapshot.
+            Only deletes made through ODM are captured. An object deleted with another tool directly
+            against the directory leaves no snapshot.
           </p>
           <p>
             A container that still holds objects cannot be deleted, so a restore never has to

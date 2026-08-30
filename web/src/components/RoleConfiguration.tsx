@@ -74,9 +74,7 @@ export function RoleConfiguration({
 
   if (instances.length === 0) {
     return (
-      <p className="empty">
-        No server carries this role yet. Add it under Server Roles first.
-      </p>
+      <p className="empty">No server carries this role yet. Add it under Server Roles first.</p>
     );
   }
 
@@ -150,7 +148,12 @@ export function RoleConfiguration({
         ))}
 
       <div className="actions-row">
-        <button type="button" className="primary" disabled={busy || !node} onClick={() => void save()}>
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !node}
+          onClick={() => void save()}
+        >
           Apply
         </button>
       </div>

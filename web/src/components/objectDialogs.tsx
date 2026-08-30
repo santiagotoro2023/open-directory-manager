@@ -132,9 +132,7 @@ export function MoveDialog({
       busy={busy}
       error={error}
       onClose={onClose}
-      onSubmit={() =>
-        void run(async () => onMoved(await api.directory.move(dn, target)))
-      }
+      onSubmit={() => void run(async () => onMoved(await api.directory.move(dn, target)))}
     >
       <Field label="Destination">
         <select value={target} onChange={(e) => setTarget(e.target.value)}>

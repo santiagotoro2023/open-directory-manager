@@ -51,6 +51,7 @@ type Settings struct {
 	CertificateEnrolment []CertificateEnrolment `json:"certificate_enrolment,omitempty"`
 	Printers             []Printer              `json:"printers,omitempty"`
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
+	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
 	Agent                *AgentConfig           `json:"agent,omitempty"`
 }
 
@@ -173,6 +174,18 @@ type Printer struct {
 	Default      bool   `json:"default"`
 }
 
+// LocalAdministrator is a local account whose password this machine chooses
+// and rotates itself — what Active Directory calls LAPS. The password is
+// never in the policy: the machine generates it and reports it back, so it
+// differs on every machine and one recovered from a stolen laptop opens
+// nothing else.
+type LocalAdministrator struct {
+	Account       string `json:"account"`
+	RotateDays    int    `json:"rotate_days"`
+	Length        int    `json:"length"`
+	Administrator bool   `json:"administrator"`
+}
+
 // AlwaysOnVpn holds a tunnel up whatever the person using the machine does.
 //
 // Configuration is filled in by the control plane for the machine asking, not
@@ -213,6 +226,18 @@ type Report struct {
 	AgentVersion string   `json:"agent_version"`
 	AppliedGPOs  []GPORef `json:"applied_gpos"`
 	Results      []Result `json:"results"`
+	// Present only on the run that rotated it. The control plane stores it so
+	// an administrator can read it off the computer object when the domain is
+	// unreachable from that machine.
+	LocalAdministrator *LocalAdministratorCredential `json:"local_administrator,omitempty"`
+}
+
+// LocalAdministratorCredential is what a machine reports after rotating.
+type LocalAdministratorCredential struct {
+	Account   string `json:"account"`
+	Password  string `json:"password"`
+	Rotated   string `json:"rotated"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 func Ok(setting string) Result  { return Result{Setting: setting, Status: "success"} }

@@ -36,6 +36,7 @@ var appliers = []applier{
 	{"login_screen", applyLoginScreen},
 	{"printers", applyPrinters},
 	{"always_on_vpn", applyAlwaysOnVpn},
+	{"local_administrator", applyLocalAdministrator},
 	{"firewall", applyFirewall},
 	{"sudo_rules", applySudo},
 	{"hbac_rules", applyHbacRules},

@@ -1,4 +1,15 @@
-import { C, Code, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Code,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -16,9 +27,9 @@ export function Content() {
         <p>
           Open Directory Manager runs a Windows-compatible directory domain on Linux. A Samba domain
           controller holds the directory, Kerberos, DNS and SYSVOL. The ODM control plane is the
-          only thing that talks to it, and this console is the only thing that talks to the
-          control plane. Domain members run a small agent that applies the policy the control
-          plane resolves for them.
+          only thing that talks to it, and this console is the only thing that talks to the control
+          plane. Domain members run a small agent that applies the policy the control plane resolves
+          for them.
         </p>
 
         <Section title="Get to a working domain">
@@ -31,9 +42,9 @@ cd open-directory-manager
 sudo deploy/setup.sh`}</Code>
           <p>
             It asks what to call the domain, sets the machine&rsquo;s fully-qualified name if it
-            does not have one, provisions the domain controller, installs the control plane, sets
-            up TLS and the database, builds this console and starts everything. Run it again at
-            any point; completed steps are skipped.
+            does not have one, provisions the domain controller, installs the control plane, sets up
+            TLS and the database, builds this console and starts everything. Run it again at any
+            point; completed steps are skipped.
           </p>
           <Steps>
             <li>Sign in as a member of the domain administrators group.</li>
@@ -41,8 +52,8 @@ sudo deploy/setup.sh`}</Code>
               <strong>Group Policy</strong> → create the default policies.
             </li>
             <li>
-              <strong>Directory</strong> → build the organizational unit structure, then add
-              users, groups and computers.
+              <strong>Directory</strong> → build the organizational unit structure, then add users,
+              groups and computers.
             </li>
             <li>Join the first client and confirm its policy report arrives.</li>
           </Steps>
@@ -51,8 +62,7 @@ sudo deploy/setup.sh`}</Code>
         <Section title="Do the five things that matter">
           <Example title="Create a user">
             <strong>Directory</strong> → pick an organizational unit → <strong>New user</strong>.
-            Give an account name and a password. Without a password the account is created
-            disabled.
+            Give an account name and a password. Without a password the account is created disabled.
           </Example>
           <Example title="Group a set of users">
             <strong>Directory</strong> → <strong>New group</strong> → add members from the
@@ -74,8 +84,8 @@ sudo deploy/setup.sh`}</Code>
         </Section>
 
         <Example title="Make a pane wider">
-          Drag the border between a list and its contents. Double-click it to reset. The
-          navigation collapses to icons from the button at its top.
+          Drag the border between a list and its contents. Double-click it to reset. The navigation
+          collapses to icons from the button at its top.
         </Example>
 
         <Where>Every section in the left-hand navigation has its own page in this wiki.</Where>
@@ -148,8 +158,8 @@ sudo deploy/setup.sh`}</Code>
         <Section title="Order of operations for a new domain">
           <Steps>
             <li>
-              <strong>Provision the controller.</strong> <C>deploy/setup.sh</C> on a clean
-              Debian 12 or 13 server with a static address.
+              <strong>Provision the controller.</strong> <C>deploy/setup.sh</C> on a clean Debian 12
+              or 13 server with a static address.
             </li>
             <li>
               <strong>Create the service account.</strong> The control plane authenticates as this
@@ -158,12 +168,11 @@ sudo deploy/setup.sh`}</Code>
             </li>
             <li>
               <strong>Set up TLS and the database.</strong> The console is HTTPS only. The
-              self-signed certificate can be replaced later with one issued by the domain
-              authority.
+              self-signed certificate can be replaced later with one issued by the domain authority.
             </li>
             <li>
-              <strong>Create the default policies.</strong> These give every machine a logon
-              banner and an agent refresh interval, and give the controllers a baseline.
+              <strong>Create the default policies.</strong> These give every machine a logon banner
+              and an agent refresh interval, and give the controllers a baseline.
             </li>
             <li>
               <strong>Build the organizational unit structure</strong> before creating objects, so
@@ -180,8 +189,7 @@ sudo deploy/setup.sh`}</Code>
           <Note>
             The control plane runs as a local system account named <C>odm</C>, separate from the
             directory account it authenticates as. If a login account of that name already exists,
-            pass <C>--service-user &lt;name&gt;</C> to <C>deploy/setup.sh</C> to keep the two
-            apart.
+            pass <C>--service-user &lt;name&gt;</C> to <C>deploy/setup.sh</C> to keep the two apart.
           </Note>
         </Section>
 
@@ -195,13 +203,19 @@ sudo deploy/setup.sh`}</Code>
                 <C key="b">deploy/create-api-service-account.sh</C>,
                 "Create the control plane's service account, SPN and keytab.",
               ],
-              [<C key="c">deploy/setup-db.sh</C>, "Create the PostgreSQL role, database and schema."],
+              [
+                <C key="c">deploy/setup-db.sh</C>,
+                "Create the PostgreSQL role, database and schema.",
+              ],
               [
                 <C key="d">deploy/generate-self-signed.sh</C>,
                 "Create the console's first TLS certificate.",
               ],
               [<C key="e">odm-db migrate</C>, "Apply pending database migrations."],
-              [<C key="f">odm-client-install</C>, "Join a machine to the domain and install the agent."],
+              [
+                <C key="f">odm-client-install</C>,
+                "Join a machine to the domain and install the agent.",
+              ],
               [<C key="g">odm-agent apply --force</C>, "Apply policy immediately on a client."],
             ]}
           />
@@ -217,8 +231,8 @@ sudo deploy/setup.sh`}</Code>
           </p>
           <Note>
             The console refuses plaintext HTTP. If a browser cannot reach it, check that the
-            certificate and key are readable by the service user and that the host name matches
-            the certificate.
+            certificate and key are readable by the service user and that the host name matches the
+            certificate.
           </Note>
         </Section>
       </Details>

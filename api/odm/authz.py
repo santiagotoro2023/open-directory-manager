@@ -40,6 +40,10 @@ PERMISSIONS: tuple[str, ...] = (
     "server.read",
     "computer.manage",
     "computer.power",
+    # The machine's own local administrator password. Separate from reading a
+    # computer object because it is the credential that opens the machine when
+    # the domain cannot be reached.
+    "computer.localadmin.read",
     "printer.read",
     "printer.write",
     "vpn.read",

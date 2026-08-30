@@ -31,8 +31,8 @@ export function Enrolment() {
       <ol className="wiki-steps">
         <li>It boots from the network, on one of the scopes chosen above.</li>
         <li>
-          The boot server offers Debian&rsquo;s installer and points it at a preseed, so nothing
-          is answered by hand.
+          The boot server offers Debian&rsquo;s installer and points it at a preseed, so nothing is
+          answered by hand.
         </li>
         <li>
           The installer partitions the disk, installs the release chosen above, and creates the
@@ -46,10 +46,9 @@ export function Enrolment() {
 
       <h3 className="section-title">Pinning a version</h3>
       <p className="muted">
-        The default mirror installs whatever the release currently is, so a machine built today
-        and one built next month differ. A <C>snapshot.debian.org</C> URL installs a fixed point
-        release — for example{" "}
-        <C>https://snapshot.debian.org/archive/debian/20250801T000000Z</C>.
+        The default mirror installs whatever the release currently is, so a machine built today and
+        one built next month differ. A <C>snapshot.debian.org</C> URL installs a fixed point release
+        — for example <C>https://snapshot.debian.org/archive/debian/20250801T000000Z</C>.
       </p>
     </main>
   );

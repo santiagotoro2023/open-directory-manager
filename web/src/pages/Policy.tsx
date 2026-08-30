@@ -3,7 +3,8 @@ import { ArrowDown, ArrowLeft, ArrowUp, ClipboardList, Plus, Trash2 } from "luci
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
-import { ContainerPicker, PickerDialog } from "../components/Picker";
+import { ChoiceList, SUPPORTED_RELEASES } from "../components/ChoiceList";
+import { ContainerPicker } from "../components/Picker";
 import { SettingsEditor } from "../components/SettingsEditor";
 import { TemplateManager } from "../components/TemplateManager";
 
@@ -196,8 +197,6 @@ function GpoDetail({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [pickingFilter, setPickingFilter] = useState(false);
-  const [pickingGroup, setPickingGroup] = useState(false);
 
   const lines = (value: string) =>
     value
@@ -240,6 +239,14 @@ function GpoDetail({
       await api.policy.remove(gpo.guid);
       onClose();
     } catch (err) {
+      // Gone already is the outcome that was asked for. Reporting it as a
+      // failure left the operator on the page for an object that no longer
+      // exists, with an error saying so and no way forward but the back
+      // button.
+      if (err instanceof ApiError && err.status === 404) {
+        onClose();
+        return;
+      }
       setError(err instanceof ApiError ? err.message : String(err));
       setBusy(false);
     }
@@ -330,72 +337,60 @@ function GpoDetail({
 
           <section>
             <h3>Security filtering</h3>
-            <Field
-              label="Applies only to these principals"
-              hint="One distinguished name per line. Empty means everyone."
-            >
-              <textarea
-                rows={4}
-                className="mono"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              />
-            </Field>
-            <button type="button" className="ghost" onClick={() => setPickingFilter(true)}>
-              Add a user or group…
-            </button>
-            {pickingFilter && (
-              <PickerDialog
+            <div className="field">
+              <span>Applies only to these</span>
+              <ChoiceList
                 kind="principal"
-                onClose={() => setPickingFilter(false)}
-                onPick={(object) => {
-                  setPickingFilter(false);
-                  setFilter((current) =>
-                    current.split("\n").includes(object.distinguishedName)
-                      ? current
-                      : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
-                  );
-                }}
+                values={lines(filter)}
+                onChange={(next) => setFilter(next.join("\n"))}
+                addLabel="Add a user or group…"
+                emptyLabel="Everyone this policy object's links reach."
               />
-            )}
+            </div>
           </section>
 
           <section>
             <h3>Item-level targeting</h3>
-            <Field label="Operating systems" hint="Comma separated, e.g. debian-12, debian-13">
-              <input value={osList} onChange={(e) => setOsList(e.target.value)} />
-            </Field>
+            <div className="field">
+              <span>Operating systems</span>
+              <div className="option-row">
+                {SUPPORTED_RELEASES.map((release) => (
+                  <label key={release.value} className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={lines(osList).includes(release.value)}
+                      onChange={(e) => {
+                        const current = lines(osList);
+                        setOsList(
+                          (e.target.checked
+                            ? [...current, release.value]
+                            : current.filter((entry) => entry !== release.value)
+                          ).join(", "),
+                        );
+                      }}
+                    />
+                    {release.label}
+                  </label>
+                ))}
+              </div>
+              <small>None ticked means every operating system.</small>
+            </div>
             <Field label="Host name pattern" hint="Shell-style wildcards, e.g. ws-*">
               <input value={hostname} onChange={(e) => setHostname(e.target.value)} />
             </Field>
             <Field label="IP ranges" hint="Comma separated CIDR, e.g. 10.10.0.0/16">
               <input value={ipRanges} onChange={(e) => setIpRanges(e.target.value)} />
             </Field>
-            <Field label="Groups" hint="One distinguished name per line">
-              <textarea
-                rows={3}
-                className="mono"
-                value={groups}
-                onChange={(e) => setGroups(e.target.value)}
-              />
-            </Field>
-            <button type="button" className="ghost" onClick={() => setPickingGroup(true)}>
-              Add a group…
-            </button>
-            {pickingGroup && (
-              <PickerDialog
+            <div className="field">
+              <span>Groups</span>
+              <ChoiceList
                 kind="group"
-                onClose={() => setPickingGroup(false)}
-                onPick={(object) => {
-                  setPickingGroup(false);
-                  setGroups((current) =>
-                    current.split("\n").includes(object.distinguishedName)
-                      ? current
-                      : [current.trim(), object.distinguishedName].filter(Boolean).join("\n"),
-                  );
-                }}
+                values={lines(groups)}
+                onChange={(next) => setGroups(next.join("\n"))}
+                addLabel="Add a group…"
+                emptyLabel="Any group."
               />
-            )}
+            </div>
           </section>
         </div>
       )}

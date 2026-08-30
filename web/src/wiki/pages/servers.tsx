@@ -1,4 +1,14 @@
-import { C, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -20,8 +30,9 @@ export function Content() {
         </p>
 
         <Example title="Add a server to the domain">
-          On the machine: <C>sudo odm-client-install --domain corp.example.internal --admin-user
-          Administrator</C>. It appears here once its agent reports.
+          On the machine:{" "}
+          <C>sudo odm-client-install --domain corp.example.internal --admin-user Administrator</C>.
+          It appears here once its agent reports.
         </Example>
 
         <Example title="Give a server a role">
@@ -30,12 +41,12 @@ export function Content() {
               <strong>Server Roles</strong> → the role → <strong>Install on a server</strong>.
             </li>
             <li>
-              <strong>Select…</strong> and choose the machine. Any joined computer is offered,
-              not only controllers.
+              <strong>Select…</strong> and choose the machine. Any joined computer is offered, not
+              only controllers.
             </li>
             <li>
-              The role sits at <C>installing</C> until that machine&rsquo;s agent picks the work
-              up, then moves to <C>active</C> or <C>failed</C> with a reason.
+              The role sits at <C>installing</C> until that machine&rsquo;s agent picks the work up,
+              then moves to <C>active</C> or <C>failed</C> with a reason.
             </li>
           </Steps>
         </Example>
@@ -91,10 +102,7 @@ export function Content() {
             rows={[
               ["Is the agent running?", <C key="a">systemctl status odm-agent</C>],
               ["Can it reach the control plane?", <C key="b">odm-agent apply --force</C>],
-              [
-                "Does it have a keytab?",
-                <C key="c">klist -k /etc/krb5.keytab</C>,
-              ],
+              ["Does it have a keytab?", <C key="c">klist -k /etc/krb5.keytab</C>],
             ]}
           />
         </Section>

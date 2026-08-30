@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
-import {
-  ApiError,
-  api,
-  type AdmxElement,
-  type AdmxPolicy,
-  type AdmxSelection,
-} from "../api";
+import { ApiError, api, type AdmxElement, type AdmxPolicy, type AdmxSelection } from "../api";
 import { Field, Modal } from "./Modal";
 
 /**

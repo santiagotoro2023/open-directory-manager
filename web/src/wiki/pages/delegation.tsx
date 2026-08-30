@@ -1,4 +1,14 @@
-import { C, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -6,7 +16,16 @@ export const meta: WikiPageMeta = {
   title: "Delegation",
   section: "Administration",
   summary: "Roles, permissions and scoped assignments: who may do what, and where.",
-  keywords: ["rbac", "delegate", "permission", "role", "scope", "helpdesk", "auditor", "least privilege"],
+  keywords: [
+    "rbac",
+    "delegate",
+    "permission",
+    "role",
+    "scope",
+    "helpdesk",
+    "auditor",
+    "least privilege",
+  ],
 };
 
 export function Content() {
@@ -53,9 +72,7 @@ export function Content() {
       <Details>
         <Section title="How access is decided">
           <Steps>
-            <li>
-              A member of the domain administrators group holds every permission everywhere.
-            </li>
+            <li>A member of the domain administrators group holds every permission everywhere.</li>
             <li>
               Anyone else holds exactly the permissions their assignments grant, at exactly the
               scopes they are granted.
@@ -120,7 +137,10 @@ export function Content() {
               ],
               ["dns-admin", "Read the directory; read and write DNS."],
               ["dhcp-admin", "Read the directory; read and write DHCP."],
-              ["policy-admin", "Read the directory; read and write policy objects and administrative templates."],
+              [
+                "policy-admin",
+                "Read the directory; read and write policy objects and administrative templates.",
+              ],
               ["ca-admin", "Issue and revoke certificates from the domain authority."],
               ["backup-operator", "Take backups and force replication between controllers."],
             ]}
@@ -146,9 +166,15 @@ export function Content() {
               ["dns.read / dns.write", "Viewing and changing DNS."],
               ["dhcp.read / dhcp.write", "Viewing and changing DHCP."],
               ["ca.read / ca.issue", "Viewing the authority; issuing and revoking certificates."],
-              ["recyclebin.read / restore / purge", "Viewing, restoring and permanently purging deleted objects."],
+              [
+                "recyclebin.read / restore / purge",
+                "Viewing, restoring and permanently purging deleted objects.",
+              ],
               ["role.read / role.install", "Viewing and installing server roles."],
-              ["replication.read / replication.replicate", "Viewing replication state; forcing a run."],
+              [
+                "replication.read / replication.replicate",
+                "Viewing replication state; forcing a run.",
+              ],
               ["backup.read / backup.write", "Viewing backups; taking one."],
               ["health.read", "The health dashboard."],
               ["audit.read", "The audit log."],
@@ -156,10 +182,10 @@ export function Content() {
             ]}
           />
           <Note>
-            Some actions are reserved for domain administrators regardless of permissions:
-            managing delegation, installing and deregistering server roles, creating the
-            certificate authority, publishing its root and replacing the console certificate.
-            Every other permission is held by at least one built-in role.
+            Some actions are reserved for domain administrators regardless of permissions: managing
+            delegation, installing and deregistering server roles, creating the certificate
+            authority, publishing its root and replacing the console certificate. Every other
+            permission is held by at least one built-in role.
           </Note>
         </Section>
 
@@ -174,8 +200,7 @@ export function Content() {
         <Section title="Assignments and groups">
           <p>
             An assignment can name a user or a group. Naming a group is generally preferable:
-            membership changes take effect without touching the assignment, and nesting is
-            followed.
+            membership changes take effect without touching the assignment, and nesting is followed.
           </p>
         </Section>
       </Details>

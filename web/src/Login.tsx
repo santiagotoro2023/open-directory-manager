@@ -75,9 +75,7 @@ export function Login({ onAuthenticated }: { onAuthenticated: (s: SessionInfo) =
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
-            <small className="muted">
-              From your authenticator, or one of your recovery codes.
-            </small>
+            <small className="muted">From your authenticator, or one of your recovery codes.</small>
           </>
         )}
 

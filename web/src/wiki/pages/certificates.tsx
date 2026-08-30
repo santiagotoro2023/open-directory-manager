@@ -1,11 +1,23 @@
-import { C, Code, Details, Example, Note, Quickstart, Reference, Section, Steps, Where } from "../components";
+import {
+  C,
+  Code,
+  Details,
+  Example,
+  Note,
+  Quickstart,
+  Reference,
+  Section,
+  Steps,
+  Where,
+} from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
   id: "certificates",
   title: "Certificates",
   section: "Network services",
-  summary: "The domain certificate authority: issuing, publishing trust, revocation, and the console's own certificate.",
+  summary:
+    "The domain certificate authority: issuing, publishing trust, revocation, and the console's own certificate.",
   keywords: ["ca", "certificate", "tls", "https", "pki", "crl", "revoke", "trust", "self-signed"],
 };
 
@@ -33,22 +45,20 @@ export function Content() {
               <strong>Certificates</strong> → <strong>Create the certificate authority</strong>.
             </li>
             <li>
-              <strong>Publish to domain</strong> so members install the root into their trust
-              store.
+              <strong>Publish to domain</strong> so members install the root into their trust store.
             </li>
           </Steps>
         </Example>
 
         <Example title="Issue a certificate for a service">
-          <strong>Issue certificate</strong> → common name{" "}
-          <C>fs01.corp.example.internal</C>, additional names as needed, profile{" "}
-          <strong>Server</strong>. Copy the certificate and key from the dialog; the key is shown
-          once.
+          <strong>Issue certificate</strong> → common name <C>fs01.corp.example.internal</C>,
+          additional names as needed, profile <strong>Server</strong>. Copy the certificate and key
+          from the dialog; the key is shown once.
         </Example>
 
         <Example title="Replace the console certificate">
-          <strong>Replace console certificate</strong> → the name operators use to reach the
-          console → <strong>Issue and apply</strong>. The console restarts.
+          <strong>Replace console certificate</strong> → the name operators use to reach the console
+          → <strong>Issue and apply</strong>. The console restarts.
         </Example>
 
         <Where>Certificates. The role is installed from Server Roles.</Where>
@@ -58,8 +68,8 @@ export function Content() {
         <Section title="Certificates that arrive on their own">
           <p>
             <strong>Group Policy</strong> → <strong>Computer</strong> →{" "}
-            <strong>Certificates</strong> gives machines a certificate without anyone issuing one
-            by hand, and replaces it before it expires.
+            <strong>Certificates</strong> gives machines a certificate without anyone issuing one by
+            hand, and replaces it before it expires.
           </p>
           <Reference
             headers={["Part", "How it works"]}
@@ -71,8 +81,8 @@ export function Content() {
               [
                 "The key",
                 <>
-                  Written to the path in the policy as <C key="k">&lt;profile&gt;.key</C>, mode
-                  0600 and owned by root.
+                  Written to the path in the policy as <C key="k">&lt;profile&gt;.key</C>, mode 0600
+                  and owned by root.
                 </>,
               ],
               [
@@ -86,19 +96,18 @@ export function Content() {
             ]}
           />
           <Note>
-            This is what makes EAP-TLS on the network practical: see{" "}
-            <strong>Network access</strong>.
+            This is what makes EAP-TLS on the network practical: see <strong>Network access</strong>
+            .
           </Note>
         </Section>
 
         <Section title="Trusting certificates this domain did not issue">
           <p>
-            A domain trusts more than one authority in practice: an internal CA that predates
-            ODM, a vendor appliance, the authority in front of some internal service.{" "}
+            A domain trusts more than one authority in practice: an internal CA that predates ODM, a
+            vendor appliance, the authority in front of some internal service.{" "}
             <strong>Certificates</strong> → <strong>Trusted</strong> holds them, and{" "}
-            <strong>Publish to domain</strong> sends the whole trust store — this
-            domain&rsquo;s own root and everything added there — to every member as one policy
-            object.
+            <strong>Publish to domain</strong> sends the whole trust store — this domain&rsquo;s own
+            root and everything added there — to every member as one policy object.
           </p>
           <Reference
             headers={["Step", "What happens"]}
@@ -140,9 +149,21 @@ export function Content() {
           <Reference
             headers={["Profile", "Extended key usage", "Use"]}
             rows={[
-              ["Server", "TLS server authentication", "Web services, LDAP, SMB, anything a client connects to."],
-              ["Client", "TLS client authentication", "Authenticating a user or machine to a service."],
-              ["Console", "TLS server authentication", "Reserved for the administration console's own certificate."],
+              [
+                "Server",
+                "TLS server authentication",
+                "Web services, LDAP, SMB, anything a client connects to.",
+              ],
+              [
+                "Client",
+                "TLS client authentication",
+                "Authenticating a user or machine to a service.",
+              ],
+              [
+                "Console",
+                "TLS server authentication",
+                "Reserved for the administration console's own certificate.",
+              ],
             ]}
           />
         </Section>
@@ -208,8 +229,8 @@ export function Content() {
           </p>
           <Code>{`sudo deploy/generate-self-signed.sh --fqdn odm.corp.example.internal`}</Code>
           <p>
-            It is written to <C>/etc/odm/tls/api.crt</C> and <C>/etc/odm/tls/api.key</C>, and is
-            not overwritten if one is already present.
+            It is written to <C>/etc/odm/tls/api.crt</C> and <C>/etc/odm/tls/api.key</C>, and is not
+            overwritten if one is already present.
           </p>
         </Section>
 

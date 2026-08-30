@@ -74,8 +74,8 @@ export function TemplateManager({ onClose }: { onClose: () => void }) {
       onSubmit={upload}
     >
       <p className="muted">
-        Upload the ADMX and its matching ADML from the vendor. Re-importing a namespace replaces
-        the previous version.
+        Upload the ADMX and its matching ADML from the vendor. Re-importing a namespace replaces the
+        previous version.
       </p>
 
       <Field label="ADMX file">

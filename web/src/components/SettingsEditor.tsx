@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import type { AdmxSelection, ItemTargeting, PolicySettings } from "../api";
+import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
+import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
 import { Modal } from "./Modal";
-import { PickerDialog, PickerField, type PickerKind, type PickerValue } from "./Picker";
+import { PickerField, type PickerKind, type PickerValue } from "./Picker";
 import { Split } from "./Split";
 
 type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox";
@@ -19,7 +20,26 @@ interface FieldSpec {
   picker?: PickerKind;
   pickerValue?: PickerValue;
   pickerMultiple?: boolean;
+  // Ready-made values offered beside the field. The field stays typeable:
+  // these are the ones asked for most often, not the only ones allowed.
+  suggestions?: { value: string; label: string }[];
 }
+
+// What a helpdesk or a developer is usually given, so the common rule is a
+// choice rather than a path somebody has to look up. ALL is deliberately here
+// too: it is what "full sudo" means, and hiding it does not stop anyone.
+const COMMON_SUDO_COMMANDS = [
+  { value: "ALL", label: "Everything (full sudo)" },
+  { value: "/usr/bin/systemctl", label: "Manage services — systemctl" },
+  { value: "/usr/bin/journalctl", label: "Read logs — journalctl" },
+  { value: "/usr/bin/apt, /usr/bin/apt-get", label: "Install packages — apt" },
+  { value: "/usr/bin/dpkg", label: "Install packages — dpkg" },
+  { value: "/usr/sbin/reboot, /usr/sbin/shutdown", label: "Restart and shut down" },
+  { value: "/usr/bin/mount, /usr/bin/umount", label: "Mount and unmount" },
+  { value: "/usr/sbin/odm-agent", label: "Re-apply policy — odm-agent" },
+  { value: "/usr/bin/passwd", label: "Change local passwords — passwd" },
+  { value: "/usr/sbin/ufw, /usr/sbin/nft", label: "Firewall — ufw, nft" },
+];
 
 type Half = "Computer" | "User";
 
@@ -143,7 +163,12 @@ export const CATEGORIES: CategorySpec[] = [
         pickerValue: "principal",
         pickerMultiple: true,
       },
-      { key: "commands", label: "Commands", placeholder: "/usr/bin/systemctl" },
+      {
+        key: "commands",
+        label: "Commands",
+        placeholder: "/usr/bin/systemctl",
+        suggestions: COMMON_SUDO_COMMANDS,
+      },
       { key: "run_as", label: "Run as", width: "140px", picker: "user" },
       { key: "nopasswd", label: "NOPASSWD", kind: "checkbox", width: "110px" },
     ],
@@ -300,6 +325,7 @@ const SPECIAL = [
   { key: "updates", title: "System updates", half: "Computer" as Half },
   { key: "login_screen", title: "Login screen", half: "Computer" as Half },
   { key: "always_on_vpn", title: "Always-on VPN", half: "Computer" as Half },
+  { key: "local_administrator", title: "Local administrator", half: "Computer" as Half },
   { key: "password_self_service", title: "Self-service password", half: "User" as Half },
   { key: "wallpaper", title: "Desktop background", half: "User" as Half },
   { key: "browser", title: "Browser policy", half: "Computer" as Half },
@@ -312,6 +338,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "updates") return settings.updates ? 1 : 0;
   if (key === "login_screen") return settings.login_screen ? 1 : 0;
   if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
+  if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri ? 1 : 0;
   if (key === "browser") {
@@ -392,6 +419,9 @@ export function SettingsEditor({
           )}
           {selected === "always_on_vpn" && (
             <AlwaysOnVpnEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "local_administrator" && (
+            <LocalAdministratorEditor settings={settings} onChange={onChange} />
           )}
           {selected === "password_self_service" && (
             <SelfServiceEditor settings={settings} onChange={onChange} />
@@ -561,11 +591,10 @@ function ItemTargetingDialog({
   onClose: () => void;
   onSave: (value: ItemTargeting | null) => void;
 }) {
-  const [os, setOs] = useState((value?.os ?? []).join(", "));
+  const [os, setOs] = useState<string[]>(value?.os ?? []);
   const [hostname, setHostname] = useState(value?.hostname_pattern ?? "");
-  const [groups, setGroups] = useState((value?.security_groups ?? []).join("\n"));
+  const [groups, setGroups] = useState<string[]>(value?.security_groups ?? []);
   const [ranges, setRanges] = useState((value?.ip_ranges ?? []).join(", "));
-  const [picking, setPicking] = useState(false);
 
   const lines = (text: string) =>
     text
@@ -581,9 +610,9 @@ function ItemTargetingDialog({
       onClose={onClose}
       onSubmit={() => {
         const next: ItemTargeting = {
-          os: lines(os),
+          os,
           hostname_pattern: hostname || undefined,
-          security_groups: lines(groups),
+          security_groups: groups,
           ip_ranges: lines(ranges),
         };
         const empty =
@@ -599,46 +628,44 @@ function ItemTargetingDialog({
         here narrows it further — it can never widen it.
       </p>
 
-      <label className="field">
+      {/* The releases ODM supports, rather than a free-text field where a
+          typo produces a rule that quietly matches nothing. */}
+      <div className="field">
         <span>Operating systems</span>
-        <input
-          value={os}
-          placeholder="debian-13, debian-12"
-          onChange={(e) => setOs(e.target.value)}
-        />
-      </label>
+        <div className="option-row">
+          {SUPPORTED_RELEASES.map((release) => (
+            <label key={release.value} className="checkbox">
+              <input
+                type="checkbox"
+                checked={os.includes(release.value)}
+                onChange={(e) =>
+                  setOs(
+                    e.target.checked
+                      ? [...os, release.value]
+                      : os.filter((entry) => entry !== release.value),
+                  )
+                }
+              />
+              {release.label}
+            </label>
+          ))}
+        </div>
+        <small>None ticked means every operating system.</small>
+      </div>
       <label className="field">
         <span>Host name pattern</span>
         <input value={hostname} placeholder="ws-*" onChange={(e) => setHostname(e.target.value)} />
       </label>
-      <label className="field">
+      <div className="field">
         <span>Groups</span>
-        <textarea
-          rows={3}
-          className="mono"
-          value={groups}
-          onChange={(e) => setGroups(e.target.value)}
-        />
-      </label>
-      <div className="actions-row">
-        <button type="button" className="ghost" onClick={() => setPicking(true)}>
-          Add a group…
-        </button>
-      </div>
-      {picking && (
-        <PickerDialog
+        <ChoiceList
           kind="group"
-          onClose={() => setPicking(false)}
-          onPick={(object) => {
-            setPicking(false);
-            setGroups((existing) =>
-              existing.split("\n").includes(object.distinguishedName)
-                ? existing
-                : [existing.trim(), object.distinguishedName].filter(Boolean).join("\n"),
-            );
-          }}
+          values={groups}
+          onChange={setGroups}
+          addLabel="Add a group…"
+          emptyLabel="Any group. Add one to narrow this entry to its members."
         />
-      )}
+      </div>
       <label className="field">
         <span>Address ranges</span>
         <input
@@ -874,6 +901,16 @@ function AlwaysOnVpnEditor({
   onChange: (next: PolicySettings) => void;
 }) {
   const current = settings.always_on_vpn;
+  const [tunnels, setTunnels] = useState<string[]>([]);
+
+  // A tunnel that does not exist is a machine that never comes up, and the
+  // name is not something to remember correctly.
+  useEffect(() => {
+    api.vpn
+      .list()
+      .then((result) => setTunnels(result.tunnels.map((tunnel) => tunnel.name)))
+      .catch(() => setTunnels([]));
+  }, []);
 
   return (
     <>
@@ -910,17 +947,30 @@ function AlwaysOnVpnEditor({
         <>
           <label className="field">
             <span>Tunnel</span>
-            <input
+            <select
               value={current.tunnel}
-              placeholder="homeoffice"
               onChange={(e) =>
                 onChange({
                   ...settings,
                   always_on_vpn: { ...current, tunnel: e.target.value },
                 })
               }
-            />
-            <small>The tunnel's name, as it appears under Remote Access.</small>
+            >
+              <option value="">Not set</option>
+              {tunnels.map((tunnel) => (
+                <option key={tunnel} value={tunnel}>
+                  {tunnel}
+                </option>
+              ))}
+              {current.tunnel && !tunnels.includes(current.tunnel) && (
+                <option value={current.tunnel}>{current.tunnel} &mdash; no longer exists</option>
+              )}
+            </select>
+            <small>
+              {tunnels.length === 0
+                ? "No tunnels yet. Create one under Remote Access."
+                : "Each machine also needs a peer on this tunnel under Remote Access."}
+            </small>
           </label>
           <label className="checkbox">
             <input
@@ -935,6 +985,124 @@ function AlwaysOnVpnEditor({
             />
             Refuse to reach those networks until the tunnel is up
           </label>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Kept beside the rules the API enforces in routes_password.COMPLEXITY. */
+const COMPLEXITY_RULES = [
+  { key: "require_uppercase", label: "An upper-case letter" },
+  { key: "require_lowercase", label: "A lower-case letter" },
+  { key: "require_digit", label: "A digit" },
+  { key: "require_symbol", label: "A symbol" },
+] as const;
+
+/**
+ * A local administrator the machine manages for itself — LAPS.
+ *
+ * The password is not here and cannot be: the machine generates it, so it
+ * differs on every machine and one recovered from a stolen laptop opens
+ * nothing else. It is read off the computer object, and every read is audited.
+ */
+function LocalAdministratorEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.local_administrator;
+
+  function set(changes: Partial<NonNullable<PolicySettings["local_administrator"]>>) {
+    onChange({
+      ...settings,
+      local_administrator: {
+        account: "odmadmin",
+        rotate_days: 30,
+        length: 20,
+        administrator: true,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <header>
+        <h3>Local administrator</h3>
+        <span className="spacer" />
+        {current && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onChange({ ...settings, local_administrator: undefined })}
+          >
+            <Trash2 size={15} aria-hidden="true" />
+            Remove
+          </button>
+        )}
+      </header>
+      <p className="muted">
+        A local account on every machine this reaches, with a password the machine chooses and
+        rotates itself. It is the way in when the domain is unreachable, and because every machine
+        picks its own, one recovered from a stolen laptop opens nothing else. Read it under a
+        computer &rarr; Machine; every read is audited.
+      </p>
+
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <div className="field-grid">
+            <label className="field">
+              <span>Account name</span>
+              <input
+                value={current.account}
+                placeholder="odmadmin"
+                onChange={(e) => set({ account: e.target.value })}
+              />
+              <small>Created if it does not exist. Lower case, no spaces.</small>
+            </label>
+            <label className="field">
+              <span>Rotate every (days)</span>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={current.rotate_days}
+                onChange={(e) => set({ rotate_days: Number(e.target.value) })}
+              />
+              <small>
+                A password is also rotated the first time this policy reaches a machine.
+              </small>
+            </label>
+            <label className="field">
+              <span>Password length</span>
+              <input
+                type="number"
+                min={12}
+                max={128}
+                value={current.length}
+                onChange={(e) => set({ length: Number(e.target.value) })}
+              />
+              <small>Generated on the machine, from characters that cannot be misread.</small>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.administrator}
+              onChange={(e) => set({ administrator: e.target.checked })}
+            />
+            May use sudo
+          </label>
+          <p className="muted">
+            Without it the account is a way in but not a way up, which is enough to reach a machine
+            and read its logs.
+          </p>
         </>
       )}
     </>
@@ -973,24 +1141,15 @@ function SelfServiceEditor({
       </p>
 
       {!current ? (
-        <>
-          <p className="empty">Not configured here, so people may change their own password.</p>
-          <div className="actions-row">
-            <button
-              type="button"
-              className="primary"
-              onClick={() =>
-                onChange({
-                  ...settings,
-                  password_self_service: { enabled: true, minimum_length: 12 },
-                })
-              }
-            >
-              <Plus size={15} aria-hidden="true" />
-              Add
-            </button>
-          </div>
-        </>
+        <EmptySetting
+          message="Not configured here, so people may change their own password."
+          onAdd={() =>
+            onChange({
+              ...settings,
+              password_self_service: { enabled: true, minimum_length: 12 },
+            })
+          }
+        />
       ) : (
         <>
           <label className="checkbox">
@@ -1026,6 +1185,31 @@ function SelfServiceEditor({
               the directory on top of this.
             </small>
           </label>
+
+          <div className="field">
+            <span>Must contain</span>
+            <div className="option-row">
+              {COMPLEXITY_RULES.map((rule) => (
+                <label key={rule.key} className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(current[rule.key])}
+                    onChange={(e) =>
+                      onChange({
+                        ...settings,
+                        password_self_service: { ...current, [rule.key]: e.target.checked },
+                      })
+                    }
+                  />
+                  {rule.label}
+                </label>
+              ))}
+            </div>
+            <small>
+              Whoever is changing their password is told which of these they missed, rather than
+              getting one flat refusal from the directory.
+            </small>
+          </div>
         </>
       )}
     </>
@@ -1199,6 +1383,40 @@ function Cell({
         value={toInput(value)}
         onChange={(next) => onChange(fromInput(field, next))}
       />
+    );
+  }
+  if (field.suggestions) {
+    return (
+      <div className="with-suggestions">
+        <input
+          aria-label={field.label}
+          placeholder={field.placeholder}
+          value={toInput(value)}
+          onChange={(e) => onChange(fromInput(field, e.target.value))}
+        />
+        {/* Appends rather than replaces: a rule is usually a handful of
+            commands, and nobody should have to remember the path to visudo. */}
+        <select
+          aria-label={`Common ${field.label.toLowerCase()}`}
+          value=""
+          onChange={(e) => {
+            if (!e.target.value) return;
+            const current = toInput(value)
+              .split(",")
+              .map((part) => part.trim())
+              .filter(Boolean);
+            if (!current.includes(e.target.value)) current.push(e.target.value);
+            onChange(fromInput(field, current.join(", ")));
+          }}
+        >
+          <option value="">Common…</option>
+          {field.suggestions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
     );
   }
   return (

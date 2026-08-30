@@ -86,11 +86,9 @@ export function Printers() {
               </td>
               <td className="mono">{printer.node_fqdn}</td>
               <td>{printer.location || "—"}</td>
-              <td>{printer.has_ppd ? (printer.ppd_name || "PPD") : "Driverless"}</td>
+              <td>{printer.has_ppd ? printer.ppd_name || "PPD" : "Driverless"}</td>
               <td>
-                <span className={`badge ${STATE_BADGE[printer.state] ?? ""}`}>
-                  {printer.state}
-                </span>
+                <span className={`badge ${STATE_BADGE[printer.state] ?? ""}`}>{printer.state}</span>
                 {printer.last_error && <p className="muted">{printer.last_error}</p>}
               </td>
             </tr>
@@ -163,6 +161,20 @@ function PrinterDialog({
   const [node, setNode] = useState(printer?.node_fqdn ?? "");
   const [name, setName] = useState(printer?.name ?? "");
   const [deviceUri, setDeviceUri] = useState(printer?.device_uri ?? "");
+  const [devices, setDevices] = useState<{ uri: string; description: string }[]>([]);
+
+  // Whatever the chosen server can currently see. Re-asked when the server
+  // changes, because the answer belongs to that machine.
+  useEffect(() => {
+    if (!node) {
+      setDevices([]);
+      return;
+    }
+    api.printers
+      .devices(node)
+      .then((result) => setDevices(result.devices))
+      .catch(() => setDevices([]));
+  }, [node]);
   const [description, setDescription] = useState(printer?.description ?? "");
   const [location, setLocation] = useState(printer?.location ?? "");
   const [driverless, setDriverless] = useState(!printer?.has_ppd);
@@ -244,16 +256,40 @@ function PrinterDialog({
         </>
       )}
 
+      {/* What that server can actually see, reported with its inventory. The
+          field stays typeable: a printer that is off, or on another subnet,
+          will not be in the list and still has a working address. */}
       <Field
         label="Device address"
-        hint="How the server reaches the printer, e.g. ipp://10.10.0.31/ipp/print"
+        hint={
+          devices.length > 0
+            ? "Choose one the server found, or type an address."
+            : "How the server reaches the printer, e.g. ipp://10.10.0.31/ipp/print"
+        }
       >
-        <input
-          value={deviceUri}
-          required
-          placeholder="ipp://10.10.0.31/ipp/print"
-          onChange={(e) => setDeviceUri(e.target.value)}
-        />
+        <div className="with-suggestions">
+          <input
+            value={deviceUri}
+            required
+            placeholder="ipp://10.10.0.31/ipp/print"
+            onChange={(e) => setDeviceUri(e.target.value)}
+          />
+          <select
+            aria-label="Printers this server found"
+            value=""
+            disabled={devices.length === 0}
+            onChange={(e) => e.target.value && setDeviceUri(e.target.value)}
+          >
+            <option value="">
+              {devices.length === 0 ? "None found" : `Found (${devices.length})`}
+            </option>
+            {devices.map((device) => (
+              <option key={device.uri} value={device.uri}>
+                {device.description || device.uri}
+              </option>
+            ))}
+          </select>
+        </div>
       </Field>
 
       <div className="inline-fields">
@@ -271,19 +307,11 @@ function PrinterDialog({
 
       <h3 className="section-title">Driver</h3>
       <label className="checkbox">
-        <input
-          type="radio"
-          checked={driverless}
-          onChange={() => setDriverless(true)}
-        />
+        <input type="radio" checked={driverless} onChange={() => setDriverless(true)} />
         Driverless — the server works the printer out itself
       </label>
       <label className="checkbox">
-        <input
-          type="radio"
-          checked={!driverless}
-          onChange={() => setDriverless(false)}
-        />
+        <input type="radio" checked={!driverless} onChange={() => setDriverless(false)} />
         Upload a PPD
       </label>
       {!driverless && (

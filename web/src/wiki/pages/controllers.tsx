@@ -15,14 +15,14 @@ export function Content() {
       <Quickstart>
         <p>
           A controller holds the directory, Kerberos and DNS. More than one means the domain
-          survives losing a machine, and a read-only one lets a branch office authenticate
-          without holding credentials that matter everywhere else.
+          survives losing a machine, and a read-only one lets a branch office authenticate without
+          holding credentials that matter everywhere else.
         </p>
 
         <Example title="See the state of the domain">
           <strong>Domain Controllers</strong>. Each controller shows whether it is writable or
-          read-only, and the replication table below shows what came in from where and whether
-          it worked.
+          read-only, and the replication table below shows what came in from where and whether it
+          worked.
         </Example>
 
         <Example title="Add a controller">
@@ -37,8 +37,8 @@ export function Content() {
         <Section title="Read-only controllers are decided at join time">
           <p>
             Whether a controller is read-only is fixed when it joins the domain, and there is no
-            supported path from writable to read-only or back — in ODM, in Samba, or in Windows.
-            So this is not a switch on an existing controller: it is a choice when adding one.
+            supported path from writable to read-only or back — in ODM, in Samba, or in Windows. So
+            this is not a switch on an existing controller: it is a choice when adding one.
           </p>
           <Reference
             headers={["Writable", "Read-only"]}
@@ -54,17 +54,17 @@ export function Content() {
             ]}
           />
           <Note>
-            A read-only controller still needs a writable one reachable to serve a first sign-in
-            for an account it has not cached. It reduces what a stolen machine gives away; it
-            does not make the branch independent.
+            A read-only controller still needs a writable one reachable to serve a first sign-in for
+            an account it has not cached. It reduces what a stolen machine gives away; it does not
+            make the branch independent.
           </Note>
         </Section>
 
         <Section title="Sites and subnets">
           <p>
-            A site is a place. A subnet says which addresses are in it, and a controller assigned
-            to a site is one the machines there should prefer — rather than whichever one DNS
-            happened to return.
+            A site is a place. A subnet says which addresses are in it, and a controller assigned to
+            a site is one the machines there should prefer — rather than whichever one DNS happened
+            to return.
           </p>
           <Reference
             headers={["Step", "What it does"]}
@@ -74,10 +74,7 @@ export function Content() {
                 "Add a subnet",
                 "The addresses in that place, with a prefix. A machine is placed by the longest match, the way routing decides — so a /24 inside a /16 wins.",
               ],
-              [
-                "Assign a controller",
-                "Says which site that controller serves.",
-              ],
+              ["Assign a controller", "Says which site that controller serves."],
             ]}
           />
           <Note>
@@ -109,10 +106,10 @@ export function Content() {
 
         <Section title="Replication">
           <p>
-            Samba is multi-master: a change made on any writable controller reaches the others.
-            The table reports inbound replication as the controller ODM is running on sees it —
-            which partition, from which partner, when it last tried, and how many times in a row
-            it has failed.
+            Samba is multi-master: a change made on any writable controller reaches the others. The
+            table reports inbound replication as the controller ODM is running on sees it — which
+            partition, from which partner, when it last tried, and how many times in a row it has
+            failed.
           </p>
           <Reference
             headers={["Reading", "Means"]}
@@ -125,8 +122,8 @@ export function Content() {
               [
                 "The account may not read replication state",
                 <>
-                  Run <C key="a">deploy/create-api-service-account.sh</C> on a controller to
-                  grant the right.
+                  Run <C key="a">deploy/create-api-service-account.sh</C> on a controller to grant
+                  the right.
                 </>,
               ],
             ]}

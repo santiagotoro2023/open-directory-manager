@@ -170,7 +170,6 @@ REGISTRY: dict[str, Role] = {
             ),
         ),
         packages=(),
-        produces_settings=("ODM_CA_DIR",),
         ui_section="ca",
         notes="Create the root under Certificates once this is installed, then publish it.",
     ),

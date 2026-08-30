@@ -315,12 +315,19 @@ class CertificateEnrolment(Strict):
 
 
 class PasswordSelfService(Strict):
-    """Whether people may change their own password from the console."""
+    """Whether people may change their own password, and what it must be."""
 
     enabled: bool = True
     # Changing a password needs the current one, always. This is about whether
     # the page is offered at all.
     minimum_length: Annotated[int, Field(ge=1, le=255)] = 12
+    # Checked before the directory is asked, so somebody typing a password the
+    # domain will refuse is told which rule they missed rather than getting
+    # one flat rejection from Samba.
+    require_uppercase: bool = False
+    require_lowercase: bool = False
+    require_digit: bool = False
+    require_symbol: bool = False
 
 
 class Printer(Strict):
@@ -405,6 +412,31 @@ class SystemUpdates(Strict):
     remove_unused: bool = True
 
 
+class LocalAdministrator(Strict):
+    """A local administrator whose password the machine rotates itself.
+
+    Active Directory calls this LAPS. The point is that every machine has a
+    working local account for when the domain is unreachable, and that the
+    password is different on every machine — so one recovered from a stolen
+    laptop opens nothing else. The machine generates it, reports it to the
+    control plane over its authenticated channel, and rotates it on a
+    schedule. Nobody types it in, and it is never in a policy object.
+    """
+
+    account: Annotated[str, Field(min_length=1, max_length=32)] = "odmadmin"
+    rotate_days: Annotated[int, Field(ge=1, le=365)] = 30
+    length: Annotated[int, Field(ge=12, le=128)] = 20
+    # Whether the account may use sudo. Off makes it a way in, not a way up.
+    administrator: bool = True
+
+    @field_validator("account")
+    @classmethod
+    def _valid_account(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]*", value):
+            raise ValueError("not a valid local account name")
+        return value
+
+
 class AgentSettings(Strict):
     refresh_minutes: Annotated[int, Field(ge=1, le=1440)] = 15
 
@@ -433,6 +465,7 @@ class PolicySettings(Strict):
     password_self_service: PasswordSelfService | None = None
     printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
     always_on_vpn: AlwaysOnVpn | None = None
+    local_administrator: LocalAdministrator | None = None
     agent: AgentSettings | None = None
 
     def stored(self) -> dict[str, Any]:

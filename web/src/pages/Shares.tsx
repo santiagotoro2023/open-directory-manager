@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Trash2 } from "lucide-react";
-import {
-  ApiError,
-  api,
-  type FileShare,
-  type ShareAccess,
-  type ShareEntry,
-} from "../api";
+import { ApiError, api, type FileShare, type ShareAccess, type ShareEntry } from "../api";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
@@ -104,9 +98,7 @@ export function Shares() {
               <td className="mono">{share.node_fqdn}</td>
               <td className="mono">{share.path}</td>
               <td>
-                {share.entries.length === 0
-                  ? "Nobody yet"
-                  : `${share.entries.length} entries`}
+                {share.entries.length === 0 ? "Nobody yet" : `${share.entries.length} entries`}
               </td>
               <td>
                 <span className={`badge ${STATE_BADGE[share.state] ?? ""}`}>{share.state}</span>
@@ -159,8 +151,8 @@ export function Shares() {
           }}
         >
           <p>
-            {removing.unc} stops being reachable. The directory {removing.path} and everything in
-            it stays on {removing.node_fqdn}.
+            {removing.unc} stops being reachable. The directory {removing.path} and everything in it
+            stays on {removing.node_fqdn}.
           </p>
         </Modal>
       )}
@@ -285,11 +277,7 @@ function ShareDialog({
       </div>
 
       <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={readOnly}
-          onChange={(e) => setReadOnly(e.target.checked)}
-        />
+        <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} />
         Read only for everyone
       </label>
       <label className="checkbox">

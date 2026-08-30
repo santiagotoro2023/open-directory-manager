@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, ShieldCheck, Trash2 } from "lucide-react";
-import {
-  ApiError,
-  api,
-  type DirectoryObject,
-  type RbacAssignment,
-  type RbacRole,
-} from "../api";
+import { ApiError, api, type DirectoryObject, type RbacAssignment, type RbacRole } from "../api";
 import { Field, Modal } from "../components/Modal";
 
 type Tab = "assignments" | "roles";

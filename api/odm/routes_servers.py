@@ -242,6 +242,47 @@ async def run_action(
     return {"task": task_id, "node": fact["hostname"]}
 
 
+@router.get("/computer/localadmin",
+            dependencies=[Depends(requires("computer.localadmin.read"))])
+async def local_administrator(
+    request: Request,
+    dn: Annotated[str, Query(min_length=3, max_length=1024)],
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """The machine's own local administrator password.
+
+    Its own permission rather than something that comes with reading a
+    computer, and audited on every read: this is the credential that opens the
+    machine when the domain cannot be reached, so who looked at it and when is
+    part of what it is for.
+    """
+    row = await pool.fetchrow(
+        "SELECT * FROM local_administrator WHERE lower(computer_dn) = lower($1)", dn
+    )
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="computer.localadmin.read",
+            outcome="success" if row else "failure",
+            object_type="computer",
+            object_dn=dn,
+            detail=None if row else "no password has been reported for this machine",
+        )
+    if row is None:
+        return {"configured": False}
+    return {
+        "configured": True,
+        "account": row["account"],
+        "password": row["password"],
+        "rotated_at": row["rotated_at"],
+        "expires_at": row["expires_at"],
+    }
+
+
 @router.get("/computer/logs", dependencies=[Depends(requires("server.read"))])
 async def computer_logs(
     dn: Annotated[str, Query(min_length=3, max_length=1024)],

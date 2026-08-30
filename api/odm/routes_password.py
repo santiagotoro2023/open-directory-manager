@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Callable
 from typing import Annotated, Any
 
 import asyncpg
@@ -82,16 +83,16 @@ def _run(settings, *args: str) -> str:
     return completed.stdout
 
 
-def read_policy(settings) -> dict[str, Any]:
+def read_policy(settings: Settings) -> dict[str, Any]:
     """The domain's password policy, as the directory holds it."""
-    settings: dict[str, Any] = {}
+    policy: dict[str, Any] = {}
     for line in _run(settings, "show").splitlines():
         match = _SETTING_RE.match(line)
         if not match:
             continue
         label, value = match.group(1).strip(), match.group(2).strip()
-        settings[label] = value
-    return settings
+        policy[label] = value
+    return policy
 
 
 @router.get("/policy")
@@ -168,11 +169,25 @@ async def self_service_state(
     if setting is None:
         # No policy says anything. Changing your own password is ordinary, so
         # the default is yes; a policy object is how it is taken away.
-        return {"enabled": True, "minimum_length": 12}
+        return {"enabled": True, "minimum_length": 12, **dict.fromkeys(COMPLEXITY, False)}
     return {
         "enabled": bool(setting.get("enabled", True)),
         "minimum_length": int(setting.get("minimum_length", 12)),
+        **{rule: bool(setting.get(rule, False)) for rule in COMPLEXITY},
     }
+
+
+# What a self-service password must contain, when a policy object asks for it.
+# The description is what the person is told; the test is what decides.
+COMPLEXITY: dict[str, tuple[str, Callable[[str], bool]]] = {
+    "require_uppercase": ("an upper-case letter", lambda p: any(c.isupper() for c in p)),
+    "require_lowercase": ("a lower-case letter", lambda p: any(c.islower() for c in p)),
+    "require_digit": ("a digit", lambda p: any(c.isdigit() for c in p)),
+    "require_symbol": (
+        "a symbol",
+        lambda p: any(not c.isalnum() and not c.isspace() for c in p),
+    ),
+}
 
 
 @router.post("/change", status_code=204)
@@ -199,6 +214,15 @@ async def change_own_password(
         raise objects.ObjectError(
             f"the new password must be at least {state['minimum_length']} characters"
         )
+    # Said here rather than left to the directory, so somebody gets the rule
+    # they missed instead of one flat refusal from Samba.
+    missing = [
+        description
+        for rule, (description, holds) in COMPLEXITY.items()
+        if state.get(rule) and not holds(body.new_password)
+    ]
+    if missing:
+        raise objects.ObjectError("the new password needs " + ", ".join(missing))
     if body.new_password == body.current_password:
         raise objects.ObjectError("the new password is the same as the current one")
 

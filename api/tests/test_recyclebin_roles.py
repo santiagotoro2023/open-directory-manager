@@ -366,3 +366,24 @@ def test_every_task_the_api_queues_is_one_the_agent_runs():
 
     assert queued - handled == set(), "the API queues work no agent can run"
     assert handled - queued == set(), "the agent handles work nothing queues"
+
+
+def test_every_installer_ships_what_it_sources():
+    # The agent runs these out of /usr/lib/odm/roles, and a `.` of a file that
+    # was never copied there fails on the target machine minutes after the
+    # click, with a message about a missing file rather than about the role.
+    deploy = pathlib.Path(__file__).resolve().parents[2] / "deploy"
+    shipped = {path.name for path in deploy.glob("install-*-role.sh")}
+    shipped.add("odm-role-common.sh")
+
+    installer_copy = (deploy / "install-agent.sh").read_text()
+    for script in sorted(deploy.glob("install-*-role.sh")):
+        body = script.read_text()
+        for line in body.splitlines():
+            if not line.strip().startswith(". \"$(dirname"):
+                continue
+            sourced = line.rsplit("/", 1)[-1].strip('"')
+            assert sourced in shipped, f"{script.name} sources unknown {sourced}"
+            assert sourced in installer_copy, (
+                f"{script.name} sources {sourced}, which install-agent.sh does not copy"
+            )

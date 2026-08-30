@@ -88,7 +88,9 @@ export function RsopDialog({
                     <tr key={`${result.setting}-${index}`}>
                       <td className="mono">{result.setting}</td>
                       <td>
-                        <span className={`badge ${result.status === "failed" ? "failure" : "success"}`}>
+                        <span
+                          className={`badge ${result.status === "failed" ? "failure" : "success"}`}
+                        >
                           {result.status}
                         </span>
                       </td>

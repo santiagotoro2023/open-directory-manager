@@ -3,6 +3,7 @@ import { ChevronRight, Server } from "lucide-react";
 import {
   ApiError,
   api,
+  type DomainController,
   type ManagedServer,
   type RoleArgument,
   type RoleDescriptor,
@@ -25,6 +26,15 @@ export function Roles() {
   const [open, setOpen] = useState<RoleDescriptor | null>(null);
   const [installing, setInstalling] = useState<RoleDescriptor | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The core role runs on the controllers, so name them rather than saying so.
+  const [controllers, setControllers] = useState<DomainController[]>([]);
+
+  useEffect(() => {
+    api.controllers
+      .list()
+      .then((result) => setControllers(result.controllers))
+      .catch(() => setControllers([]));
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -82,7 +92,9 @@ export function Roles() {
               <br />
               <span className="role-summary">
                 {role.core
-                  ? "Always on"
+                  ? controllers.length
+                    ? controllers.map((dc) => dc.name).join(", ")
+                    : "Every domain controller"
                   : running.length === 0
                     ? "Not installed"
                     : running.map((instance) => instance.node_fqdn).join(", ")}
@@ -90,7 +102,7 @@ export function Roles() {
             </span>
             <span className="spacer" />
             {role.core ? (
-              <span className="badge success">always on</span>
+              <span className="badge success">active</span>
             ) : (
               running.map((instance) => (
                 <span key={instance.id} className={`badge ${STATE_BADGE[instance.state] ?? ""}`}>
@@ -107,6 +119,7 @@ export function Roles() {
         <RoleDetail
           role={open}
           instances={nodesFor(open)}
+          controllers={controllers}
           onClose={() => setOpen(null)}
           onInstall={() => {
             setInstalling(open);
@@ -133,12 +146,14 @@ export function Roles() {
 function RoleDetail({
   role,
   instances,
+  controllers,
   onClose,
   onInstall,
   onChanged,
 }: {
   role: RoleDescriptor;
   instances: RoleInstance[];
+  controllers: DomainController[];
   onClose: () => void;
   onInstall: () => void;
   onChanged: () => void;
@@ -169,6 +184,20 @@ function RoleDetail({
           </tr>
         </thead>
         <tbody>
+          {/* The core role is not installed anywhere: it is what a controller
+              is. So list the controllers, which is the answer to the question
+              the table is being asked. */}
+          {role.core &&
+            controllers.map((dc) => (
+              <tr key={dc.distinguished_name}>
+                <td className="mono">{dc.fqdn || dc.name}</td>
+                <td>
+                  <span className="badge success">active</span>
+                </td>
+                <td>{dc.read_only ? "read-only" : "writable"}</td>
+                <td />
+              </tr>
+            ))}
           {instances.map((instance) => (
             <Fragment key={instance.id}>
               <tr>
@@ -208,10 +237,10 @@ function RoleDetail({
               )}
             </Fragment>
           ))}
-          {instances.length === 0 && (
+          {instances.length === 0 && !(role.core && controllers.length > 0) && (
             <tr>
               <td colSpan={4} className="empty">
-                {role.core ? "Runs on every domain controller." : "Not installed on any server."}
+                {role.core ? "No controller has reported in yet." : "Not installed on any server."}
               </td>
             </tr>
           )}

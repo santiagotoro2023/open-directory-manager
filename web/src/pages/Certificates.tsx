@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
-import {
-  ApiError,
-  api,
-  type CaStatus,
-  type IssuedCertificate,
-  type TrustAnchor,
-} from "../api";
+import { ApiError, api, type CaStatus, type IssuedCertificate, type TrustAnchor } from "../api";
 import { Field, Modal } from "../components/Modal";
 
 export function Certificates() {
@@ -127,7 +121,9 @@ export function Certificates() {
               <td>
                 {status.issued ?? 0} active
                 {(status.expiring_soon ?? 0) > 0 && (
-                  <span className="badge failure">{status.expiring_soon} expiring within 30 days</span>
+                  <span className="badge failure">
+                    {status.expiring_soon} expiring within 30 days
+                  </span>
                 )}
               </td>
             </tr>
@@ -160,71 +156,70 @@ export function Certificates() {
 
       {tab === "issued" && (
         <>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={includeRevoked}
-          onChange={(e) => setIncludeRevoked(e.target.checked)}
-        />
-        Show revoked
-      </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={includeRevoked}
+              onChange={(e) => setIncludeRevoked(e.target.checked)}
+            />
+            Show revoked
+          </label>
 
-      <table className="data">
-        <thead>
-          <tr>
-            <th scope="col">Subject</th>
-            <th scope="col">Profile</th>
-            <th scope="col">Expires</th>
-            <th scope="col">Serial</th>
-            <th scope="col">
-              <span className="sr-only">Revoke</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {certificates.map((certificate) => (
-            <tr key={certificate.serial}>
-              <td>
-                <strong>{certificate.subject}</strong>
-                {certificate.sans.length > 1 && (
-                  <p className="muted">{certificate.sans.slice(1).join(", ")}</p>
-                )}
-              </td>
-              <td>{certificate.profile}</td>
-              <td>
-                {new Date(certificate.not_after).toLocaleDateString()}
-                {certificate.revoked_at && <span className="badge failure">revoked</span>}
-              </td>
-              <td className="mono">{certificate.serial}</td>
-              <td>
-                {!certificate.revoked_at && (
-                  <button
-                    type="button"
-                    className="icon"
-                    aria-label={`Revoke ${certificate.subject}`}
-                    onClick={() =>
-                      void run(
-                        () => api.ca.revoke(certificate.serial, "revoked from the console"),
-                        "Revoked. Publish the revocation list where relying parties read it.",
-                      )
-                    }
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {certificates.length === 0 && (
-            <tr>
-              <td colSpan={5} className="muted">
-                Nothing issued yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
+          <table className="data">
+            <thead>
+              <tr>
+                <th scope="col">Subject</th>
+                <th scope="col">Profile</th>
+                <th scope="col">Expires</th>
+                <th scope="col">Serial</th>
+                <th scope="col">
+                  <span className="sr-only">Revoke</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {certificates.map((certificate) => (
+                <tr key={certificate.serial}>
+                  <td>
+                    <strong>{certificate.subject}</strong>
+                    {certificate.sans.length > 1 && (
+                      <p className="muted">{certificate.sans.slice(1).join(", ")}</p>
+                    )}
+                  </td>
+                  <td>{certificate.profile}</td>
+                  <td>
+                    {new Date(certificate.not_after).toLocaleDateString()}
+                    {certificate.revoked_at && <span className="badge failure">revoked</span>}
+                  </td>
+                  <td className="mono">{certificate.serial}</td>
+                  <td>
+                    {!certificate.revoked_at && (
+                      <button
+                        type="button"
+                        className="icon"
+                        aria-label={`Revoke ${certificate.subject}`}
+                        onClick={() =>
+                          void run(
+                            () => api.ca.revoke(certificate.serial, "revoked from the console"),
+                            "Revoked. Publish the revocation list where relying parties read it.",
+                          )
+                        }
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {certificates.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    Nothing issued yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </>
       )}
 
@@ -389,8 +384,8 @@ function ConsoleDialog({
       }}
     >
       <p className="muted">
-        Issues a certificate for this console from the domain authority and installs it. The
-        console restarts and is briefly unavailable. Publish the root first so browsers trust it.
+        Issues a certificate for this console from the domain authority and installs it. The console
+        restarts and is briefly unavailable. Publish the root first so browsers trust it.
       </p>
       <Field label="Common name" hint="The name operators use to reach the console">
         <input value={commonName} required onChange={(e) => setCommonName(e.target.value)} />
@@ -410,7 +405,6 @@ function ConsoleDialog({
     </Modal>
   );
 }
-
 
 /** Certificates the domain trusts that ODM did not issue. */
 function TrustedTab({ onChanged }: { onChanged: () => void }) {
@@ -434,8 +428,8 @@ function TrustedTab({ onChanged }: { onChanged: () => void }) {
   return (
     <>
       <p className="muted">
-        Published to every domain member together with this domain&rsquo;s own root, as one
-        policy object. Use <strong>Publish to domain</strong> above after a change.
+        Published to every domain member together with this domain&rsquo;s own root, as one policy
+        object. Use <strong>Publish to domain</strong> above after a change.
       </p>
 
       {error && (

@@ -52,6 +52,9 @@ install -d -m 0755 /usr/lib/odm/roles
 for INSTALLER in "$(dirname "$0")"/install-*-role.sh; do
     [[ -f "$INSTALLER" ]] && install -m 0755 "$INSTALLER" /usr/lib/odm/roles/
 done
+# Every installer sources this from its own directory; without it they all
+# fail on the first line that matters.
+install -m 0644 "$(dirname "$0")/odm-role-common.sh" /usr/lib/odm/roles/
 # On a controller the agent is also what installs a re-issued console
 # certificate, for the same reason: the control plane may not write /etc or
 # restart itself.

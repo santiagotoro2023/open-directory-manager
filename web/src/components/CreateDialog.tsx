@@ -251,7 +251,9 @@ export function BulkImport({
 }) {
   const [rows, setRows] = useState<NewUser[]>([]);
   const [problems, setProblems] = useState<string[]>([]);
-  const [results, setResults] = useState<{ sam_account_name: string; created: boolean; error?: string }[]>([]);
+  const [results, setResults] = useState<
+    { sam_account_name: string; created: boolean; error?: string }[]
+  >([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

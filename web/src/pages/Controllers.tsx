@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, RefreshCw, Server as ServerIcon } from "lucide-react";
 import { ApiError, api, type ControllerOverview, type DomainController, type Site } from "../api";
 import { Field, Modal } from "../components/Modal";
+import { PickerField } from "../components/Picker";
 
 function since(value: string | null): string {
   if (!value) return "never";
@@ -170,6 +171,15 @@ export function Controllers() {
 
 function AddControllerDialog({ onClose }: { onClose: () => void }) {
   const [hostname, setHostname] = useState("");
+  const [sites, setSites] = useState<string[]>([]);
+
+  // The sites that exist, rather than a name to be spelled correctly.
+  useEffect(() => {
+    api.sites
+      .list()
+      .then((result) => setSites(result.sites.map((entry) => entry.name)))
+      .catch(() => setSites([]));
+  }, []);
   const [readOnly, setReadOnly] = useState(false);
   const [site, setSite] = useState("Default-First-Site-Name");
   const [command, setCommand] = useState<{
@@ -199,16 +209,27 @@ function AddControllerDialog({ onClose }: { onClose: () => void }) {
     >
       {!command ? (
         <>
-          <Field label="Machine to promote" hint="Its fully-qualified name">
-            <input
+          {/* A machine being promoted has almost always joined already, so
+              it is in the directory and can be chosen rather than typed. */}
+          <Field label="Machine to promote" hint="A domain member, or a name you are about to join">
+            <PickerField
+              kind="computer"
+              as="host"
+              ariaLabel="Machine to promote"
               value={hostname}
               required
               placeholder="dc2.corp.example.internal"
-              onChange={(e) => setHostname(e.target.value)}
+              onChange={setHostname}
             />
           </Field>
           <Field label="Site" hint="Which site the controller serves">
-            <input value={site} onChange={(e) => setSite(e.target.value)} />
+            <select value={site} onChange={(e) => setSite(e.target.value)}>
+              {(sites.length ? sites : ["Default-First-Site-Name"]).map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </Field>
           <label className="checkbox">
             <input

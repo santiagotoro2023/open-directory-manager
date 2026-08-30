@@ -217,11 +217,21 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	runTasks(ctx, api, env)
 	reportInventory(ctx, api, env)
 
-	if err := api.Report(ctx, policy.Report{
+	report := policy.Report{
 		PolicySerial: document.Serial,
 		AppliedGPOs:  document.AppliedGPOs,
 		Results:      results,
-	}); err != nil {
+	}
+	// A password this run generated travels with the report and nowhere else.
+	if rotated := apply.TakePendingLocalAdministrator(); rotated != nil {
+		report.LocalAdministrator = &policy.LocalAdministratorCredential{
+			Account:   rotated.Account,
+			Password:  rotated.Password,
+			Rotated:   rotated.Rotated.Format(time.RFC3339),
+			ExpiresAt: rotated.ExpiresAt.Format(time.RFC3339),
+		}
+	}
+	if err := api.Report(ctx, report); err != nil {
 		return fmt.Errorf("reporting results: %w", err)
 	}
 	if username == "" {

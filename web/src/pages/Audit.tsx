@@ -21,7 +21,10 @@ export function Audit() {
   }, [filters]);
 
   useEffect(() => {
-    api.audit.actions().then(setActions).catch(() => setActions([]));
+    api.audit
+      .actions()
+      .then(setActions)
+      .catch(() => setActions([]));
   }, []);
 
   useEffect(() => {

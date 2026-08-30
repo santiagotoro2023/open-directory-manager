@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, Trash2 } from "lucide-react";
+import { RotateCcw, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type DeletedObject } from "../api";
 import { Modal } from "../components/Modal";
 
@@ -59,12 +59,15 @@ export function RecycleBin() {
       </p>
 
       <div className="toolbar">
-        <input
-          aria-label="Search deleted objects"
-          placeholder="Search by name or distinguished name"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <div className="search">
+          <Search size={15} aria-hidden="true" />
+          <input
+            aria-label="Search deleted objects"
+            placeholder="Search by name or distinguished name"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
         <label className="checkbox">
           <input
             type="checkbox"
@@ -154,8 +157,8 @@ export function RecycleBin() {
           <p className="mono">{confirming.item.object_dn}</p>
           {confirming.purge ? (
             <p className="muted">
-              The snapshot is destroyed and the object can never be restored. This does not wait
-              for the retention window.
+              The snapshot is destroyed and the object can never be restored. This does not wait for
+              the retention window.
             </p>
           ) : (
             <>
@@ -164,8 +167,8 @@ export function RecycleBin() {
                 {confirming.item.memberships.length} group(s).
               </p>
               <p className="muted">
-                The directory issues a new SID and GUID, so access rules that named the old SID
-                need re-granting. Accounts come back disabled and need a password set.
+                The directory issues a new SID and GUID, so access rules that named the old SID need
+                re-granting. Accounts come back disabled and need a password set.
               </p>
             </>
           )}

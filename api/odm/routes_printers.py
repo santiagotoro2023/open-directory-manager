@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any
 
 import asyncpg
@@ -72,6 +73,27 @@ async def _dispatch(conn: asyncpg.Connection, row: asyncpg.Record, actor: str) -
         subject=str(row["id"]),
         requested_by=actor,
     )
+
+
+@router.get("/devices", dependencies=[Depends(requires("printer.read"))])
+async def discovered_devices(
+    node_fqdn: Annotated[str, Query(min_length=1, max_length=253)],
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """What that print server can currently print to.
+
+    Reported by the server with the rest of its inventory, so this is instant
+    rather than a request that waits for the next check-in. Empty means the
+    machine has not reported since the print-server role went on, or found
+    nothing.
+    """
+    row = await pool.fetchrow(
+        "SELECT print_devices FROM computer_fact WHERE lower(hostname) = lower($1)",
+        node_fqdn,
+    )
+    devices = json.loads(row["print_devices"]) if row and row["print_devices"] else []
+    return {"devices": devices}
 
 
 @router.get("", dependencies=[Depends(requires("printer.read"))])

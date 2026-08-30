@@ -132,11 +132,21 @@ class SettingResult(BaseModel):
     reason: Annotated[str, Field(default="", max_length=512)] = ""
 
 
+class LocalAdministratorCredential(BaseModel):
+    """What a machine reports after rotating its own local administrator."""
+
+    account: Annotated[str, Field(min_length=1, max_length=32)]
+    password: Annotated[str, Field(min_length=8, max_length=128)]
+    rotated: datetime
+    expires_at: datetime
+
+
 class Report(BaseModel):
     policy_serial: Annotated[str, Field(max_length=64)]
     agent_version: Annotated[str, Field(default="", max_length=32)] = ""
     applied_gpos: Annotated[list[dict[str, str]], Field(default_factory=list, max_length=200)]
     results: Annotated[list[SettingResult], Field(default_factory=list, max_length=1000)]
+    local_administrator: LocalAdministratorCredential | None = None
 
 
 @router.post("/report", status_code=204)
@@ -161,6 +171,30 @@ async def agent_report(
         json.dumps(results),
         sum(1 for result in results if result["status"] == "failed"),
     )
+
+    # Only on the run that rotated it. Replaced rather than appended: the
+    # previous password opens nothing once the new one is set, so keeping it
+    # would only widen what a copy of this table gives away.
+    if body.local_administrator is not None:
+        credential = body.local_administrator
+        await pool.execute(
+            """
+            INSERT INTO local_administrator (computer_dn, account, password,
+                                             rotated_at, expires_at, reported_at)
+            VALUES ($1, $2, $3, $4, $5, now())
+            ON CONFLICT (computer_dn) DO UPDATE SET
+                account     = excluded.account,
+                password    = excluded.password,
+                rotated_at  = excluded.rotated_at,
+                expires_at  = excluded.expires_at,
+                reported_at = now()
+            """,
+            machine.dn,
+            credential.account,
+            credential.password,
+            credential.rotated,
+            credential.expires_at,
+        )
 
 
 # ------------------------------------------------------------------ tasks ---
@@ -200,7 +234,10 @@ async def agent_task_result(
             # Not this machine's task, or already reported. Nothing to record.
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no such task")
 
-        detail = body.output.strip().splitlines()[-1][:500] if body.output.strip() else None
+        # The tail, not the last line. apt's final line says only that dpkg
+        # failed; the reason is the twenty lines above it, and an operator
+        # reading this in the console cannot go and look at the machine.
+        detail = "\n".join(body.output.strip().splitlines()[-40:])[-4000:] or None
         if task["kind"] == "role-install" and task["subject"]:
             await conn.execute(
                 """
@@ -275,6 +312,13 @@ class LogEntry(BaseModel):
     cursor: Annotated[str, Field(max_length=256)]
 
 
+class PrintDevice(BaseModel):
+    """One address a print server can print to, as CUPS reported it."""
+
+    uri: Annotated[str, Field(max_length=512)]
+    description: Annotated[str, Field(max_length=256)] = ""
+
+
 class Inventory(BaseModel):
     operating_system: Annotated[str, Field(max_length=128)] = ""
     kernel: Annotated[str, Field(max_length=128)] = ""
@@ -291,6 +335,7 @@ class Inventory(BaseModel):
     events: Annotated[list[MachineEvent], Field(max_length=500)] = []
     logs: Annotated[list[LogEntry], Field(max_length=500)] = []
     log_cursor: Annotated[str, Field(max_length=256)] = ""
+    print_devices: Annotated[list[PrintDevice], Field(max_length=200)] = []
 
 
 @router.post("/inventory", status_code=204)
@@ -306,10 +351,12 @@ async def agent_inventory(
             INSERT INTO computer_fact (
                 computer_dn, hostname, operating_system, kernel, booted_at,
                 local_users, sessions, pending_updates, security_updates,
-                updates, updates_checked_at, packages, package_count, reported_at
+                updates, updates_checked_at, packages, package_count,
+                addresses, site_name, print_devices, reported_at
             )
             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
-                    CASE WHEN $11 THEN now() ELSE NULL END, $12::jsonb, $13, now())
+                    CASE WHEN $11 THEN now() ELSE NULL END, $12::jsonb, $13,
+                    $14::jsonb, $15, $16::jsonb, now())
             ON CONFLICT (computer_dn) DO UPDATE SET
                 hostname           = excluded.hostname,
                 operating_system   = excluded.operating_system,
@@ -326,6 +373,7 @@ async def agent_inventory(
                 package_count      = excluded.package_count,
                 addresses          = excluded.addresses,
                 site_name          = excluded.site_name,
+                print_devices      = excluded.print_devices,
                 reported_at        = now()
             """,
             machine.dn,
@@ -352,6 +400,7 @@ async def agent_inventory(
                     for row in await conn.fetch("SELECT cidr, site_name FROM ad_subnet")
                 },
             ),
+            json.dumps([device.model_dump() for device in body.print_devices]),
         )
 
         # A report covers a window, so the same login arrives more than once.

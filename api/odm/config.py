@@ -95,9 +95,12 @@ class Settings(BaseSettings):
     kea_ca_cert: Path | None = None
 
     # --- Certificate authority ---
-    # Set by the certificate-authority role; unset, the endpoints report the
-    # role as not configured.
-    ca_dir: Path | None = None
+    # The directory the certificate-authority role creates. It used to default
+    # to nothing, so a role installed from the console reported itself "not
+    # configured" until somebody hand-edited the secrets file — for a path
+    # that had only ever had one value. Whether an authority actually exists
+    # is decided by whether the key is on disk, not by this being set.
+    ca_dir: Path | None = Path("/var/lib/odm/ca")
 
     # --- Backups ---
     backup_dir: Path | None = None

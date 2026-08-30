@@ -67,8 +67,8 @@ export function Dns() {
       <main className="content">
         <h1>DNS</h1>
         <p className="muted">
-          DNS management needs the control plane to run on a domain controller, where samba-tool
-          can reach the AD-integrated zones.
+          DNS management needs the control plane to run on a domain controller, where samba-tool can
+          reach the AD-integrated zones.
         </p>
       </main>
     );
@@ -88,7 +88,13 @@ export function Dns() {
             key={zone.name}
             {...bind([
               { label: zone.name, heading: true },
-              { label: "New record…", onSelect: () => { setSelected(zone.name); setDialog("record"); } },
+              {
+                label: "New record…",
+                onSelect: () => {
+                  setSelected(zone.name);
+                  setDialog("record");
+                },
+              },
             ])}
           >
             <button
@@ -361,11 +367,7 @@ function RecordDialog({
       </Field>
       {type === "A" && (
         <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={pointer}
-            onChange={(e) => setPointer(e.target.checked)}
-          />
+          <input type="checkbox" checked={pointer} onChange={(e) => setPointer(e.target.checked)} />
           Create the matching pointer record
         </label>
       )}
