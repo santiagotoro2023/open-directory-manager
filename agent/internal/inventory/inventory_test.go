@@ -167,3 +167,33 @@ func TestSessionsSayWhetherAnAccountIsLocalOrFromTheDomain(t *testing.T) {
 		t.Errorf("bob is not a local account: %+v", found[1])
 	}
 }
+
+// A Brother sitting on the same subnet, announcing itself over DNS-SD and
+// plainly visible to avahi, did not appear in lpinfo at all: CUPS answers
+// with the backends it has rather than the printers it can see.
+func TestABrowsedPrinterBecomesSomethingToPrintTo(t *testing.T) {
+	line := `=;ens18;IPv4;Brother\032DCP-L3560CDW\032series;_ipp._tcp;local;` +
+		`BRW4845E61C2842.local;192.168.1.73;631;"rp=ipp/print" "ty=Brother"`
+	device, ok := parseBrowse(line, "ipp")
+	if !ok {
+		t.Fatal("a resolved printer was not read")
+	}
+	if device.URI != "ipp://192.168.1.73:631/ipp/print" {
+		t.Errorf("address is %q", device.URI)
+	}
+	if device.Description != "Brother DCP-L3560CDW series" {
+		t.Errorf("name is %q", device.Description)
+	}
+}
+
+func TestBrowseIgnoresWhatCannotBePrintedTo(t *testing.T) {
+	for _, line := range []string{
+		`+;ens18;IPv4;Brother;_ipp._tcp;local`,                        // not resolved
+		`=;ens18;IPv6;Brother;_ipp._tcp;local;h.local;fe80::1;631;""`, // link-local
+		``,
+	} {
+		if _, ok := parseBrowse(line, "ipp"); ok {
+			t.Errorf("accepted %q", line)
+		}
+	}
+}

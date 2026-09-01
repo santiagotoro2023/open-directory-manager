@@ -90,7 +90,20 @@ type PrintDevice struct {
 // rather than waiting for the next check-in. seconds bounds the discovery,
 // which is a real network sweep and takes as long as it is given.
 func PrintDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice {
-	return printDevices(ctx, env, seconds)
+	// Both, because they see different things: CUPS knows about anything it
+	// already has a backend for, and avahi knows about anything announcing
+	// itself on the network — which is where a driverless printer lives.
+	found := printDevices(ctx, env, seconds)
+	seen := map[string]bool{}
+	for _, device := range found {
+		seen[device.URI] = true
+	}
+	for _, device := range BrowsedPrinters(ctx, env) {
+		if !seen[device.URI] {
+			found = append(found, device)
+		}
+	}
+	return found
 }
 
 func printDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice {

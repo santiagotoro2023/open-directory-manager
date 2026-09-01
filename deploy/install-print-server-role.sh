@@ -16,7 +16,7 @@ set -euo pipefail
 
 # python3 edits cupsd.conf below. It is on a domain controller already and
 # not necessarily on a member server, and the role installs onto either.
-odm_apt_install cups cups-ipp-utils cups-filters avahi-daemon python3 \
+odm_apt_install cups cups-ipp-utils cups-filters avahi-daemon avahi-utils python3 \
     printer-driver-gutenprint printer-driver-postscript-hp
 
 backup() { [[ -f "$1" ]] && cp -a "$1" "$1.pre-odm.$(date +%s)"; return 0; }
