@@ -568,13 +568,21 @@ async def delete_object(
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO deleted_object (object_dn, object_type, display_name, parent_dn,
+                INSERT INTO deleted_object (object_dn, object_type, object_guid, object_sid,
+                                            display_name, parent_dn,
                                             attributes, memberships, members, deleted_by,
                                             purge_after)
-                VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, now() + $9::interval)
+                VALUES ($1, $2, $3::uuid, $4, $5, $6,
+                        $7::jsonb, $8::jsonb, $9::jsonb, $10, now() + $11::interval)
                 """,
                 state["object_dn"],
                 state["object_type"],
+                # The identity the directory keeps on its tombstone. Without
+                # the GUID there is nothing to reanimate and every restore
+                # created a new object with a new SID — which is not a
+                # restore, whatever the console said.
+                objects.object_guid(state["attributes"]),
+                (state["attributes"] or {}).get("objectSid"),
                 state["display_name"],
                 state["parent_dn"],
                 db.dumps(state["attributes"]),

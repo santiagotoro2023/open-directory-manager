@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import re
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -740,6 +741,22 @@ def restore(
 # The LDAP "show deleted objects" control. A tombstone is invisible to an
 # ordinary search, including the one that finds it in order to bring it back.
 SHOW_DELETED = "1.2.840.113556.1.4.417"
+
+
+def object_guid(attributes: dict[str, Any] | None) -> str | None:
+    """The objectGUID as PostgreSQL and LDAP both spell it.
+
+    ldap3 renders it with braces on some schemas and without on others, and a
+    uuid column takes neither shape reliably, so it is normalised once here.
+    """
+    raw = (attributes or {}).get("objectGUID")
+    if not raw:
+        return None
+    text = str(raw).strip().strip("{}")
+    try:
+        return str(uuid.UUID(text))
+    except ValueError:
+        return None
 
 
 def _reanimate(conn: Connection, object_guid: Any, dn: str) -> bool:
