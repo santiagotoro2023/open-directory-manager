@@ -893,3 +893,59 @@ func TestTheGreeterStylesheetIsNotInsideTheDconfDatabase(t *testing.T) {
 		t.Fatalf("the greeter has no background key:\n%s", keyfile)
 	}
 }
+
+// A policy that stops saying something has to stop doing it, and the things
+// that are not files are the ones nothing else takes back.
+func TestUnlinkingAPolicyTakesBackWhatItDid(t *testing.T) {
+	root := t.TempDir()
+	runner := newRunner()
+	runner.output["systemd-escape"] = "mnt-shared\n"
+
+	if err := os.MkdirAll(filepath.Join(root, "usr/sbin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "usr/sbin/cupsd"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	with := Env{Root: root, Run: runner, State: NewState()}
+	applyPrinters(context.Background(), policy.Settings{
+		Printers: []policy.Printer{{Name: "brother-lab", Server: "print01"}},
+	}, with)
+	if got := loadCreated(with).Printers; len(got) != 1 || got[0] != "brother-lab" {
+		t.Fatalf("the queue was not recorded: %v", got)
+	}
+
+	// The policy no longer hands it out.
+	runner.commands = nil
+	without := Env{Root: root, Run: runner, State: NewState()}
+	applyPrinters(context.Background(), policy.Settings{}, without)
+	if !runner.ran("lpadmin", "-x brother-lab") {
+		t.Fatalf("the queue was not removed: %v", runner.commands)
+	}
+	if got := loadCreated(without).Printers; len(got) != 0 {
+		t.Fatalf("the queue is still recorded: %v", got)
+	}
+}
+
+// A user-half setting is pruned like any other. Its state used to be thrown
+// away at the end of every user run, so a background outlived its policy.
+func TestAUserHalfSettingIsPrunedWhenItsPolicyGoes(t *testing.T) {
+	root := t.TempDir()
+	runner := newRunner()
+	png := base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nx"))
+
+	with := Env{Root: root, Run: runner, State: NewState()}
+	ApplyUser(context.Background(), policy.Settings{
+		Wallpaper: &policy.Wallpaper{Image: png, ImageName: "corp.png"},
+	}, with)
+	if _, err := os.Stat(filepath.Join(root, dconfKeyfilePath)); err != nil {
+		t.Fatalf("the background was not written: %v", err)
+	}
+
+	without := Env{Root: root, Run: runner, State: NewState()}
+	ApplyUser(context.Background(), policy.Settings{}, without)
+	if _, err := os.Stat(filepath.Join(root, dconfKeyfilePath)); !os.IsNotExist(err) {
+		t.Fatalf("the background outlived the policy that set it: %v", err)
+	}
+}

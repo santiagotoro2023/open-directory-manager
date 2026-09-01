@@ -43,7 +43,11 @@ if not re.search(r"^Listen\s+\*:631", body, re.M):
     if "Listen *:631" not in body:
         body += "\nListen *:631\n"
 
-for directive, value in (("Browsing", "On"), ("BrowseLocalProtocols", "dnssd")):
+# Browsing on so the queues are shareable, but nothing is advertised over
+# DNS-SD: ODM hands printers to clients by policy, and a queue advertised as
+# well appears a second time on every desktop under a name nobody chose
+# ("Brother_DCP_L3560CDW_print01"), beside the one the policy created.
+for directive, value in (("Browsing", "On"), ("BrowseLocalProtocols", "none")):
     if re.search(rf"^{directive}\s+", body, re.M):
         body = re.sub(rf"^{directive}\s+.*$", f"{directive} {value}", body, flags=re.M)
     else:

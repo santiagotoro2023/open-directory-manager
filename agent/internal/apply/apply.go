@@ -15,6 +15,12 @@ import (
 // forever.
 const StatePath = "/var/lib/odm/managed-state.json"
 
+// And the same for the half of a policy that is resolved per person. Without
+// it a user run wrote files and never pruned any, so a desktop background
+// stayed on the machine after the policy object that set it was unlinked —
+// which is not what a linked policy means.
+const UserStatePath = "/var/lib/odm/managed-state-user.json"
+
 type applier struct {
 	name string
 	run  func(context.Context, policy.Settings, Env) []policy.Result
@@ -63,10 +69,11 @@ func ApplyUser(ctx context.Context, settings policy.Settings, env Env) []policy.
 }
 
 func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) []policy.Result {
-	var previous *State
-	if !userOnly {
-		previous = LoadState(env)
+	statePath := StatePath
+	if userOnly {
+		statePath = UserStatePath
 	}
+	previous := loadState(env, statePath)
 	results := []policy.Result{}
 
 	// A managed machine gets its printers from policy, so nothing else adds
@@ -96,9 +103,6 @@ func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) 
 		}()
 	}
 
-	if userOnly {
-		return results
-	}
 	gone := env.Prune(previous)
 	for _, removed := range gone {
 		results = append(results, policy.Result{
@@ -108,14 +112,17 @@ func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) 
 		})
 	}
 	results = append(results, reloadAfterPrune(ctx, gone, env)...)
-	if err := SaveState(env); err != nil {
+	if err := saveState(env, statePath); err != nil {
 		results = append(results, policy.Fail("state", err))
 	}
 	return results
 }
 
-func LoadState(env Env) *State {
-	raw, err := os.ReadFile(env.Path(StatePath))
+// LoadState is the machine's own record of what it owns.
+func LoadState(env Env) *State { return loadState(env, StatePath) }
+
+func loadState(env Env, statePath string) *State {
+	raw, err := os.ReadFile(env.Path(statePath))
 	if err != nil {
 		return NewState()
 	}
@@ -132,12 +139,14 @@ func LoadState(env Env) *State {
 	return state
 }
 
-func SaveState(env Env) error {
+func SaveState(env Env) error { return saveState(env, StatePath) }
+
+func saveState(env Env, statePath string) error {
 	body, err := json.MarshalIndent(env.State, "", "  ")
 	if err != nil {
 		return err
 	}
-	full := env.Path(StatePath)
+	full := env.Path(statePath)
 	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 		return err
 	}
@@ -163,6 +172,18 @@ func reloadAfterPrune(ctx context.Context, removed []string, env Env) []policy.R
 		{"/etc/dconf/db/", "removed:dconf", [][]string{{"dconf", "update"}}},
 		{"/etc/sssd/conf.d/", "removed:sssd", [][]string{
 			{"systemctl", "reload-or-restart", "sssd"},
+		}},
+		// The greeter's database is compiled from this directory rather than
+		// read out of it, so removing the keyfile is not enough: a banner
+		// stayed on the login screen after the policy that set it was gone.
+		{debianGreeterDir, "removed:greeter", [][]string{{debianGreeterConfig}}},
+		// A certificate a policy stops publishing has to leave the trust
+		// store, and the store is a compiled bundle beside the file.
+		{"/usr/local/share/ca-certificates/", "removed:trusted_certificates", [][]string{
+			{"update-ca-certificates", "--fresh"},
+		}},
+		{"/etc/cups/", "removed:printers", [][]string{
+			{"systemctl", "reload-or-restart", "cups"},
 		}},
 	}
 

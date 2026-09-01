@@ -18,7 +18,11 @@ import (
 const printersConf = "/etc/cups/client.conf"
 
 func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Result {
-	if len(s.Printers) == 0 {
+	// Not "nothing to do": a printer a policy stops handing out has to stop
+	// being on the machine, and a CUPS queue is not a file the pruner can
+	// delete. Removing the last printer from a policy used to leave it on
+	// every machine that had ever received it.
+	if len(s.Printers) == 0 && len(loadCreated(env).Printers) == 0 {
 		return nil
 	}
 	if env.Run == nil {
@@ -111,6 +115,29 @@ func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Res
 		results = append(results, runAll(ctx, env, "printers:default",
 			[]string{"lpadmin", "-d", defaultPrinter}))
 	}
+
+	// What this policy no longer names, this machine no longer has.
+	state := loadCreated(env)
+	wanted := make([]string, 0, len(s.Printers))
+	for _, printer := range s.Printers {
+		wanted = append(wanted, printer.Name)
+	}
+	for _, gone := range goneFrom(state.Printers, wanted) {
+		if _, err := env.Run.Run(ctx, "lpadmin", "-x", gone); err != nil {
+			results = append(results, policy.Result{
+				Setting: "printers:" + gone, Status: "failed",
+				Reason: "could not remove the queue: " + err.Error(),
+			})
+			wanted = append(wanted, gone) // still here; try again next time
+			continue
+		}
+		results = append(results, policy.Result{
+			Setting: "printers:" + gone, Status: "success",
+			Reason: "removed; the policy no longer hands it out",
+		})
+	}
+	state.Printers = wanted
+	saveCreated(env, state)
 	return results
 }
 
@@ -150,5 +177,14 @@ func quietBrowsing(ctx context.Context, env Env) policy.Result {
 	// removes what it made when it stops, and nothing else knows they are its.
 	_, _ = env.Run.Run(ctx, "systemctl", "stop", "cups-browsed")
 	_, _ = env.Run.Run(ctx, "systemctl", "start", "cups-browsed")
+
+	// And CUPS' own discovery, which is not cups-browsed: libcups enumerates
+	// DNS-SD directly, so a printer advertising itself on the network is
+	// listed by the desktop's printer panel beside the ones the domain gave
+	// somebody, looking exactly like them. avahi is what answers that
+	// enumeration; on a machine whose printers come from the domain, nothing
+	// else here needs it.
+	_, _ = env.Run.Run(ctx, "systemctl", "disable", "--now",
+		"avahi-daemon.service", "avahi-daemon.socket")
 	return policy.Ok("printers:browsing")
 }

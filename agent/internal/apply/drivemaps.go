@@ -52,7 +52,9 @@ func applyDriveMaps(_ context.Context, s policy.Settings, env Env) []policy.Resu
 func MountDriveMaps(
 	ctx context.Context, drives []policy.DriveMap, user string, env Env,
 ) []error {
-	if len(drives) == 0 {
+	// Not "nothing to do" when the list is empty: a drive map the policy
+	// stopped naming still has to be detached.
+	if len(drives) == 0 && len(loadCreated(env).DriveMaps) == 0 {
 		return nil
 	}
 	who, err := lookupAccount(user)
@@ -61,6 +63,7 @@ func MountDriveMaps(
 	}
 	memberships := groupsOf(user)
 	var problems []error
+	attached := []string{}
 	for _, drive := range drives {
 		if !appliesTo(drive.ForPrincipal, user, memberships) {
 			continue
@@ -88,8 +91,48 @@ func MountDriveMaps(
 		if err := bookmark(who, drive); err != nil {
 			problems = append(problems, err)
 		}
+		attached = append(attached, drive.MountPoint)
 	}
+
+	// A drive map the policy no longer names goes away, mount and bookmark
+	// both: it is not a file, so nothing else takes it back.
+	state := loadCreated(env)
+	for _, gone := range goneFrom(state.DriveMaps, attached) {
+		if mounted(env.Path(gone)) {
+			if _, err := env.Run.Run(ctx, "umount", env.Path(gone)); err != nil {
+				problems = append(problems, fmt.Errorf("detaching %s: %w", gone, err))
+				attached = append(attached, gone) // still here; try again next time
+				continue
+			}
+		}
+		unbookmark(who, gone)
+	}
+	state.DriveMaps = attached
+	saveCreated(env, state)
 	return problems
+}
+
+// unbookmark takes a drive map back out of the file manager's sidebar.
+func unbookmark(who account, mountPoint string) {
+	path := filepath.Join(who.home, ".config", "gtk-3.0", "bookmarks")
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var kept []string
+	for _, line := range strings.Split(strings.TrimRight(string(existing), "\n"), "\n") {
+		if strings.HasPrefix(line, "file://"+mountPoint+" ") || line == "file://"+mountPoint {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	body := strings.Join(kept, "\n")
+	if body != "" {
+		body += "\n"
+	}
+	if os.WriteFile(path, []byte(body), 0o644) == nil {
+		_ = os.Chown(path, who.uid, who.gid)
+	}
 }
 
 // bookmark puts the mapped drive in the file manager's sidebar.
