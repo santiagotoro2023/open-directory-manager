@@ -1827,7 +1827,7 @@ function RoamingProfileEditor({
       ...settings,
       roaming_profile: {
         path: "",
-        kind: "directory",
+        kind: "disk",
         disk_gb: 10,
         ...current,
         ...changes,
@@ -1874,8 +1874,8 @@ function RoamingProfileEditor({
                 value={current.kind}
                 onChange={(e) => set({ kind: e.target.value as "directory" | "disk" })}
               >
-                <option value="directory">A directory on the share</option>
                 <option value="disk">A disk image per person</option>
+                <option value="directory">A directory on the share</option>
               </Select>
             </Field>
             {current.kind === "disk" && (
@@ -1890,6 +1890,12 @@ function RoamingProfileEditor({
               </Field>
             )}
           </div>
+          <p className="muted">
+            A disk image is the default for the same reason Windows uses one: a desktop expects a
+            real filesystem under its home, and one mounted straight over SMB cannot rename
+            dconf&rsquo;s database into place &mdash; which stalls every application that saves a
+            setting, the file manager included.
+          </p>
           <p className="muted">
             The share needs to let these people write, and the machines they sign in to read it:
             the machine mounts the profile with its own credentials before the session starts. A

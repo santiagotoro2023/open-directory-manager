@@ -60,11 +60,15 @@ func MountProfile(ctx context.Context, profile *policy.RoamingProfile, user stri
 		return fmt.Errorf("creating %s on %s: %w", subPath, share, err)
 	}
 
+	// A disk unless the policy says otherwise: a desktop expects a real
+	// filesystem under its home, and one mounted straight over SMB cannot
+	// rename dconf's database into place, which stalls every application that
+	// saves a setting.
 	switch profile.Kind {
-	case "disk":
-		err = attachDisk(ctx, target, user, account, profile.DiskGB, env)
-	default:
+	case "directory":
 		err = bindDirectory(ctx, target, account, env)
+	default:
+		err = attachDisk(ctx, target, user, account, profile.DiskGB, env)
 	}
 	if err != nil {
 		return err

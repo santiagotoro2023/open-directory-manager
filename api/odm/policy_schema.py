@@ -333,10 +333,21 @@ class RoamingProfile(Strict):
     """
 
     path: Annotated[str, Field(min_length=5, max_length=512)]
-    # A directory on the share, or a disk image per person on it. The image is
-    # what a session host's user profile disks already are, so a collection
-    # pointed at the same share attaches the same disk.
-    kind: Literal["directory", "disk"] = "directory"
+    # A disk image per person on the share, or the directory itself.
+    #
+    # The image is the default, and for the same reason Windows uses one for
+    # its user profile disks rather than redirecting the folder: a desktop
+    # expects a real filesystem underneath it. On a directory mounted over SMB,
+    # dconf cannot rename its database into place —
+    #
+    #   failed to commit changes to dconf: Failed to rename file
+    #   '~/.config/dconf/user.AMNSU3' to '~/.config/dconf/user'
+    #
+    # — so every component that saves a setting fails, and the file manager
+    # never starts at all: "Failed to activate service 'org.gnome.Nautilus':
+    # timed out". An ext4 image on the share has none of that, and it is the
+    # same disk a remote desktop collection attaches.
+    kind: Literal["disk", "directory"] = "disk"
     disk_gb: Annotated[int, Field(ge=1, le=2048)] = 10
 
     @field_validator("path")
