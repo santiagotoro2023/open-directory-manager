@@ -689,6 +689,23 @@ if [[ "$SKIP_DC" != "yes" ]]; then
         warn "$CONSOLE_FQDN resolves to $RESOLVED, but this machine is $MY_ADDRESS."
         warn "Correct it with: samba-tool dns add 127.0.0.1 $REALM ${CONSOLE_FQDN%%.*} A $MY_ADDRESS"
     fi
+
+    # A joined machine has to find the console without being told where it is,
+    # and what it looks for is odm.<domain> — the convention the join and the
+    # agent already assume. Nothing published it, so every agent on a member
+    # started with "lookup odm.<domain>: no such host". Publish it.
+    if [[ -n "$MY_ADDRESS" && "${CONSOLE_FQDN%%.*}" != "odm" ]]; then
+        if samba-tool dns query 127.0.0.1 "$REALM" odm A >/dev/null 2>&1; then
+            :
+        elif samba-tool dns add 127.0.0.1 "$REALM" odm A "$MY_ADDRESS" \
+                --use-kerberos=off -U "Administrator%$ADMIN_PASSWORD" >/dev/null 2>&1 ||
+             samba-tool dns add 127.0.0.1 "$REALM" odm A "$MY_ADDRESS" -P >/dev/null 2>&1; then
+            ok "Published odm.$REALM for clients to find the console at"
+        else
+            warn "Could not publish odm.$REALM. Clients need it, or --api-url on the join:"
+            warn "  samba-tool dns add 127.0.0.1 $REALM odm A $MY_ADDRESS -P"
+        fi
+    fi
 fi
 
 cat <<DONE

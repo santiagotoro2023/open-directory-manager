@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 )
@@ -78,7 +79,14 @@ func (o *Options) Validate() error {
 		return fmt.Errorf("invalid server %q", o.Server)
 	}
 	if o.APIURL == "" {
+		// The convention setup publishes as an A record. When it is not
+		// there — an older domain, a console somewhere else — the machine
+		// this one joined through is the better guess than a name that does
+		// not resolve, because the agent then reports to nowhere for ever.
 		o.APIURL = "https://odm." + o.Domain + ":8443"
+		if _, err := net.LookupHost("odm." + o.Domain); err != nil && o.Server != "" {
+			o.APIURL = "https://" + o.Server + ":8443"
+		}
 	}
 	if !strings.HasPrefix(o.APIURL, "https://") {
 		return fmt.Errorf("the control plane URL must be https")
