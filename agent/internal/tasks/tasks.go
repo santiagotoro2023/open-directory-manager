@@ -93,9 +93,12 @@ func RunWithProgress(
 	case "package-remove":
 		output, err = changePackage(ctx, task.Payload, env, false)
 	case "policy-refresh":
-		// Nothing to do: fetching this task means a run is already under way,
-		// and it is that run which re-applies the policy.
-		output = "policy re-applied on this run"
+		// The agent ends its wait when it sees this and applies again with
+		// force, so there is nothing for the task itself to do. It used to say
+		// the same and there was no such run: tasks are collected between
+		// applies as well as during one, so Refresh in the console did nothing
+		// at all until the next quarter-hour tick.
+		output = "applying the policy again now"
 	case "restart":
 		output, err = power(ctx, env, "reboot")
 	case "shutdown":

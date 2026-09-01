@@ -143,17 +143,23 @@ func runDaemon(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Set by a policy-refresh task arriving while the agent is waiting: the
+	// next pass through the loop applies whether or not the policy changed,
+	// which is what somebody clicking Refresh in the console asked for.
+	forced := false
 	for {
 		wait := 15 * time.Minute
-		if err := applyOnce(ctx, *configPath, *root, "", false); err != nil {
+		if err := applyOnce(ctx, *configPath, *root, "", forced); err != nil {
 			fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		} else if cfg, err := config.Load(*configPath); err == nil && cfg.RefreshMinutes > 0 {
 			wait = time.Duration(cfg.RefreshMinutes) * time.Minute
 		}
 
-		if !waitAndPoll(ctx, *configPath, *root, wait+jitter(wait)) {
+		keepGoing, refresh := waitAndPoll(ctx, *configPath, *root, wait+jitter(wait))
+		if !keepGoing {
 			return 0
 		}
+		forced = refresh
 	}
 }
 
@@ -170,7 +176,11 @@ func runDaemon(args []string) int {
 // the next poll. Idle traffic is the same one request per machine either way.
 const taskWait = 25 * time.Second
 
-func waitAndPoll(ctx context.Context, configPath, root string, remaining time.Duration) bool {
+// Returns whether the agent should keep going, and whether a policy refresh
+// was asked for while it waited.
+func waitAndPoll(
+	ctx context.Context, configPath, root string, remaining time.Duration,
+) (bool, bool) {
 	// One Kerberos client for the whole window rather than one per poll: a
 	// ticket is good for hours, and asking the KDC for a new one every half
 	// minute on every machine in the domain is real load for nothing.
@@ -183,7 +193,7 @@ func waitAndPoll(ctx context.Context, configPath, root string, remaining time.Du
 
 	for remaining > 0 {
 		if ctx.Err() != nil {
-			return false
+			return false, false
 		}
 		if api == nil {
 			cfg, err := config.Load(configPath)
@@ -205,7 +215,7 @@ func waitAndPoll(ctx context.Context, configPath, root string, remaining time.Du
 			// Nothing to ask. Wait out the step rather than spinning.
 			select {
 			case <-ctx.Done():
-				return false
+				return false, false
 			case <-time.After(step):
 			}
 		} else {
@@ -216,16 +226,21 @@ func waitAndPoll(ctx context.Context, configPath, root string, remaining time.Du
 				// would spin against an unreachable control plane.
 				select {
 				case <-ctx.Done():
-					return false
+					return false, false
 				case <-time.After(step):
 				}
 			} else if len(queued) > 0 {
-				runQueued(ctx, api, apply.NewEnv(root), queued)
+				// A refresh ends the wait rather than being noted and
+				// forgotten: the point of asking for one is not waiting a
+				// quarter of an hour for it.
+				if runQueued(ctx, api, apply.NewEnv(root), queued) {
+					return true, true
+				}
 			}
 		}
 		remaining -= time.Since(started)
 	}
-	return true
+	return true, false
 }
 
 func applyOnce(ctx context.Context, configPath, root, username string, force bool) error {
@@ -282,7 +297,7 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 
 	// Work queued for this machine — a role to install, a share to render —
 	// is collected on the same visit rather than needing a poll of its own.
-	runTasks(ctx, api, env)
+	_ = runTasks(ctx, api, env)
 	reportInventory(ctx, api, env)
 
 	report := policy.Report{
@@ -311,17 +326,25 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	return nil
 }
 
-func runTasks(ctx context.Context, api *client.Client, env apply.Env) {
+func runTasks(ctx context.Context, api *client.Client, env apply.Env) bool {
 	queued, err := api.Tasks(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent: fetching tasks:", err)
-		return
+		return false
 	}
-	runQueued(ctx, api, env, queued)
+	return runQueued(ctx, api, env, queued)
 }
 
-func runQueued(ctx context.Context, api *client.Client, env apply.Env, queued []tasks.Task) {
+// runQueued reports whether one of the tasks asked for the policy to be
+// applied again.
+func runQueued(
+	ctx context.Context, api *client.Client, env apply.Env, queued []tasks.Task,
+) bool {
+	refresh := false
 	for _, task := range queued {
+		if task.Kind == "policy-refresh" {
+			refresh = true
+		}
 		fmt.Printf("  task %-16s running\n", task.Kind)
 		// The console shows this while the task runs, so an install that
 		// takes ten minutes reads as an install rather than as a hang. A
@@ -349,6 +372,7 @@ func runQueued(ctx context.Context, api *client.Client, env apply.Env, queued []
 			}
 		}
 	}
+	return refresh
 }
 
 // reportInventory tells the control plane what this machine looks like. It is
