@@ -95,7 +95,7 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 		if err := env.WriteFile(greeterCssPath, css, 0o644, "root", "root"); err != nil {
 			results = append(results, policy.Fail("login_screen:background", err))
 		} else {
-			results = append(results, policy.Ok("login_screen:background"))
+			results = append(results, greeterBackgroundResult(env))
 		}
 	}
 
@@ -133,4 +133,29 @@ func cssSize(fit string) string {
 	default: // zoom
 		return "cover"
 	}
+}
+
+// shellTheme is where GNOME Shell keeps the only stylesheet its greeter reads.
+const shellTheme = "/usr/share/gnome-shell/gnome-shell-theme.gresource"
+
+// greeterBackgroundResult says what actually happened to the picture.
+//
+// GNOME's greeter takes its background from the compiled shell theme and
+// ignores the background setting, so on a GNOME machine the picture is
+// written, the key is set, and the login screen stays the shell's own grey.
+// Reporting that as success would make the console say a setting applied when
+// nobody can see it; rebuilding the distribution's theme to force it would put
+// a compiler on every desktop and break at the next GNOME update. So it is
+// reported for what it is, and the banner and the user list — which do apply —
+// are reported separately.
+func greeterBackgroundResult(env Env) policy.Result {
+	if _, err := os.Stat(env.Path(shellTheme)); err == nil {
+		return policy.Result{
+			Setting: "login_screen:background",
+			Status:  "skipped",
+			Reason: "GNOME's greeter takes its background from its compiled shell theme, " +
+				"not from a setting. The banner and the user list applied.",
+		}
+	}
+	return policy.Ok("login_screen:background")
 }

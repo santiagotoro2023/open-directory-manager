@@ -1016,6 +1016,10 @@ function LoginScreenEditor({
 
           <label className="field">
             <span>Background picture</span>
+            <small>
+              GNOME&rsquo;s greeter takes its background from its compiled shell theme and
+              ignores this; the banner and the user list below do apply there.
+            </small>
             <FileInput
               accept="image/*"
               placeholder={current.background_image_name || "No picture chosen"}
