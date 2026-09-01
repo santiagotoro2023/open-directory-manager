@@ -109,6 +109,14 @@ export function Content() {
                 </>,
               ],
               [
+                '"Operation not permitted" from a package\u2019s own postinst',
+                <>
+                  Fixed: the agent&rsquo;s unit forbade a <C key="f">chmod</C> that sets the setgid
+                  bit, and a service&rsquo;s restrictions are inherited by everything it starts.
+                  Packages now install outside it. Upgrade the agent on that machine.
+                </>,
+              ],
+              [
                 "Unmet dependencies for a package the archive plainly has",
                 <>
                   An earlier failure left <C key="d">dpkg</C> half-configured, and from then on

@@ -91,3 +91,20 @@ odm_enable() {
     done
     return "$failed"
 }
+
+# A password nothing has to remember: an internal credential ODM writes to a
+# file and reads back. Drawn from /dev/urandom rather than openssl, which is
+# not a dependency of every role and is missing on a minimal Debian.
+#
+# pipefail is turned off for the pipeline: head closes the pipe once it has
+# enough, tr dies of SIGPIPE reading an endless file, and with pipefail on
+# the caller would exit here having printed nothing.
+odm_random_password() {
+    local length="${1:-32}" value
+    value="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$length")"
+    if [[ ${#value} -ne $length ]]; then
+        echo "could not read $length random characters from /dev/urandom" >&2
+        return 1
+    fi
+    printf '%s' "$value"
+}

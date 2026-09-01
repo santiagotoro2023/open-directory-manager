@@ -56,7 +56,11 @@ if [[ "$ROLE_EXISTS" == "yes" && "$HAVE_URL" == "yes" ]]; then
     echo "role $DB_USER already exists and is configured; leaving its password alone"
     DB_PASSWORD=""
 else
-    DB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n/+=' | head -c 32)"
+    # pipefail off for the pipeline: head closes the pipe once it has 32
+    # characters and the reader ahead of it dies of SIGPIPE, which would end
+    # this script silently.
+    DB_PASSWORD="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
+    [[ ${#DB_PASSWORD} -eq 32 ]] || { echo "could not generate a database password" >&2; exit 1; }
     if [[ "$ROLE_EXISTS" == "yes" ]]; then
         echo "role $DB_USER exists but no connection URL is configured; resetting its password"
         sudo -u postgres psql -v ON_ERROR_STOP=1 \

@@ -20,10 +20,17 @@ set -euo pipefail
     exit 1
 }
 
-odm_apt_install xrdp xorgxrdp xfce4 xfce4-goodies xfce4-terminal \
-    cifs-utils dbus-x11 policykit-1 || \
-    odm_apt_install xrdp xorgxrdp xfce4 xfce4-goodies xfce4-terminal \
-        cifs-utils dbus-x11 polkitd
+# Debian 12 calls it policykit-1 and Debian 13 calls it polkitd. Chosen from
+# the archive rather than tried and retried: a failed install prints its own
+# reason loudly, and an operator should not have to work out that the first of
+# two attempts was expected to fail.
+# "Candidate:" rather than "show": trixie still lists policykit-1 in the
+# index and has no version of it to install.
+POLKIT="polkitd"
+apt-cache policy policykit-1 2>/dev/null | grep -q 'Candidate: [^(]' && POLKIT="policykit-1"
+
+odm_apt_install xrdp xorgxrdp xfce4 xfce4-goodies xfce4-terminal openssl \
+    cifs-utils dbus-x11 "$POLKIT"
 
 install -d -m 0755 /etc/odm
 

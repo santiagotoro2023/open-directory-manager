@@ -109,7 +109,7 @@ MISSING
 fi
 
 echo "==> Installing packages"
-odm_apt_install dnsmasq nginx-light curl ca-certificates
+odm_apt_install dnsmasq nginx-light curl ca-certificates openssl
 
 echo "==> Fetching the $SUITE netboot image"
 install -d -m 0755 "$TFTP_ROOT"
@@ -122,7 +122,7 @@ rm -f /tmp/netboot.tar.gz
 # creates an account nobody can use. Generate a real one and say what it is.
 GENERATED_PASSWORD=""
 if [[ -z "$PASSWORD_HASH" ]]; then
-    GENERATED_PASSWORD="$(openssl rand -base64 18 | tr -d '\n/+=' | head -c 20)"
+    GENERATED_PASSWORD="$(odm_random_password 20)"
     PASSWORD_HASH="$(openssl passwd -6 "$GENERATED_PASSWORD")"
 fi
 

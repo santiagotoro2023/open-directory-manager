@@ -98,12 +98,25 @@ echo "==> Generating the Control Agent credential"
 CA_USER_FILE="/etc/kea/odm-ca.user"
 CA_PASSWORD_FILE="/etc/kea/odm-ca.password"
 if [[ ! -f "$CA_PASSWORD_FILE" ]]; then
-    ( umask 077
-      openssl rand -base64 32 | tr -d '\n/+=' | head -c 32 > "$CA_PASSWORD_FILE" )
+    ( umask 077; odm_random_password 32 > "$CA_PASSWORD_FILE" )
 fi
 printf '%s' "$CA_USER" > "$CA_USER_FILE"
-chown root:_kea "$CA_USER_FILE" "$CA_PASSWORD_FILE" 2>/dev/null || true
+
+# Whatever the packages call the account Kea runs as. The Control Agent reads
+# these two files as that account, and a credential it cannot read is a
+# configuration check it fails, which is a service that never starts.
+KEA_USER="_kea"
+id -u "$KEA_USER" >/dev/null 2>&1 || KEA_USER="kea"
+if ! id -u "$KEA_USER" >/dev/null 2>&1; then
+    echo "neither _kea nor kea exists; the Kea packages did not install cleanly" >&2
+    exit 1
+fi
+chown "root:$KEA_USER" "$CA_USER_FILE" "$CA_PASSWORD_FILE"
 chmod 0640 "$CA_USER_FILE" "$CA_PASSWORD_FILE"
+if ! su -s /bin/sh "$KEA_USER" -c "cat '$CA_PASSWORD_FILE' >/dev/null"; then
+    echo "$KEA_USER cannot read $CA_PASSWORD_FILE; the Control Agent would refuse to start" >&2
+    exit 1
+fi
 
 backup() { [[ -f "$1" ]] && cp -a "$1" "$1.pre-odm.$(date +%s)"; return 0; }
 
@@ -284,7 +297,37 @@ cat > /etc/kea/kea-ctrl-agent.conf <<JSON
 }
 JSON
 chmod 0640 /etc/kea/kea-*.conf
-chgrp _kea /etc/kea/kea-*.conf 2>/dev/null || true
+chgrp "$KEA_USER" /etc/kea/kea-*.conf
+
+# Kea refuses a configuration whose control-socket directory is not there at
+# exactly mode 0750 — it will not create it, and it says so before it says
+# anything about the rest of the file. The units ask systemd for it, but a
+# directory left behind by an earlier run at another mode outlives them, and
+# then the only symptom is a service that does not start.
+install -d -m 0750 -o "$KEA_USER" -g "$KEA_USER" /run/kea
+install -d -m 0755 /etc/tmpfiles.d
+cat > /etc/tmpfiles.d/odm-kea.conf <<TMPFILES
+# Managed by Open Directory Manager.
+d /run/kea 0750 $KEA_USER $KEA_USER -
+TMPFILES
+
+# Checked before it is started, so a bad configuration reports what is wrong
+# with it rather than "the service did not start".
+echo "==> Checking the configuration"
+CHECK_FAILED=0
+for PAIR in "kea-dhcp4:/etc/kea/kea-dhcp4.conf" \
+            "kea-dhcp-ddns:/etc/kea/kea-dhcp-ddns.conf" \
+            "kea-ctrl-agent:/etc/kea/kea-ctrl-agent.conf"; do
+    BINARY="${PAIR%%:*}"
+    FILE="${PAIR#*:}"
+    if ! su -s /bin/sh "$KEA_USER" -c "$BINARY -t '$FILE'" >/dev/null 2>/tmp/odm-kea-check.$$; then
+        echo "$FILE is not a configuration $BINARY will accept:" >&2
+        sed 's/^/    /' /tmp/odm-kea-check.$$ >&2
+        CHECK_FAILED=1
+    fi
+    rm -f /tmp/odm-kea-check.$$
+done
+[[ $CHECK_FAILED -eq 0 ]] || exit 1
 
 echo "==> Starting services"
 odm_enable kea-dhcp4-server kea-dhcp-ddns-server kea-ctrl-agent

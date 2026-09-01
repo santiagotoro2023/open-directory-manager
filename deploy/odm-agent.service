@@ -13,12 +13,24 @@ RestartSec=30
 # The agent applies policy as root: it writes /etc, manages systemd units and
 # reloads sshd. It reads its Kerberos identity from the machine keytab that
 # domain join installed, and holds no credential of its own (CLAUDE.md §2).
+#
+# Two directives that look like free hardening are not, because a service's
+# sandbox is inherited by everything it starts:
+#
+#   ProtectHome would make /home unreadable, and the agent creates and
+#   removes home directories.
+#   RestrictSUIDSGID makes a chmod that sets the setgid bit fail with EPERM,
+#   which useradd does on the mail spool and a Debian postinst does on its
+#   own configuration directory. That is what made every role install fail
+#   with "Operation not permitted" and then wedge dpkg.
+#
+# Package installs are run outside this unit anyway, as a transient unit
+# started by PID 1, so an old agent that still carries those directives is
+# not stuck.
 NoNewPrivileges=false
-ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 RestrictRealtime=true
-RestrictSUIDSGID=true
 LockPersonality=true
 SystemCallArchitectures=native
 UMask=0022

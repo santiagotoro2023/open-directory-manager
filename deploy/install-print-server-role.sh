@@ -14,7 +14,9 @@ set -euo pipefail
 . "$(dirname "$0")/odm-role-common.sh"
 
 
-odm_apt_install cups cups-ipp-utils cups-filters printer-driver-all avahi-daemon
+# python3 edits cupsd.conf below. It is on a domain controller already and
+# not necessarily on a member server, and the role installs onto either.
+odm_apt_install cups cups-ipp-utils cups-filters printer-driver-all avahi-daemon python3
 
 backup() { [[ -f "$1" ]] && cp -a "$1" "$1.pre-odm.$(date +%s)"; return 0; }
 
