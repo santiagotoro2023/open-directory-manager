@@ -115,6 +115,7 @@ async def restore(
 
         snapshot = {
             "object_dn": row["object_dn"],
+            "object_guid": row["object_guid"],
             "parent_dn": row["parent_dn"],
             "attributes": json.loads(row["attributes"]),
             "memberships": json.loads(row["memberships"]),
@@ -135,7 +136,14 @@ async def restore(
             session.principal,
         )
         entry.after = restored
-        entry.detail = "restored with a new SID; re-grant any access that named the old one"
+        # Which of the two restores happened is the difference between the
+        # object's old access still working and none of it working, so it is
+        # recorded rather than assumed.
+        entry.detail = (
+            "reanimated with its original SID"
+            if row["object_sid"] and restored.get("objectSid") == row["object_sid"]
+            else "recreated with a new SID; re-grant any access that named the old one"
+        )
         return restored
 
 

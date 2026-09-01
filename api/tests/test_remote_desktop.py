@@ -46,11 +46,17 @@ def test_a_full_desktop_says_nothing_about_applications():
 
 @pytest.mark.parametrize(
     "value",
-    ["", "/srv/shares/profiles", "fs01/Profiles", "//fs01", "//fs01/../etc", "//fs01/a;rm -rf /"],
+    ["/srv/shares/profiles", "fs01/Profiles", "//fs01", "//fs01/../etc", "//fs01/a;rm -rf /"],
 )
 def test_a_profile_share_that_is_not_a_share_is_refused(value):
     with pytest.raises(remotedesktop.RemoteDesktopError):
         remotedesktop.validate_share(value)
+
+
+def test_no_profile_share_is_a_collection_without_profile_disks():
+    """Remote desktop must not need a file server before it works at all."""
+    assert remotedesktop.validate_share("") == ""
+    assert remotedesktop.validate_share(None) == ""
 
 
 def test_a_windows_style_share_is_accepted_and_normalised():

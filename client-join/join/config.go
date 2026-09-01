@@ -118,7 +118,7 @@ func WriteSssdConf(options Options, env Env) error {
 	body := managed + fmt.Sprintf(`[sssd]
 domains = %s
 config_file_version = 2
-services = nss, pam
+services = nss, pam, ifp
 
 [domain/%s]
 id_provider = ad

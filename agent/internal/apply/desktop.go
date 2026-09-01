@@ -2,6 +2,7 @@ package apply
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -70,8 +71,12 @@ const (
 // applier interface is per-setting, so a KDE or other-desktop applier can be
 // added later without touching this one.
 func applyWallpaper(ctx context.Context, s policy.Settings, env Env) []policy.Result {
-	if s.Wallpaper == nil || s.Wallpaper.URI == "" {
+	if s.Wallpaper == nil || (s.Wallpaper.URI == "" && s.Wallpaper.Image == "") {
 		return nil
+	}
+	uri, err := backgroundURI(s.Wallpaper.URI, s.Wallpaper.Image, s.Wallpaper.ImageName, env)
+	if err != nil {
+		return []policy.Result{policy.Fail("wallpaper", err)}
 	}
 	options := s.Wallpaper.PictureOptions
 	if options == "" {
@@ -85,7 +90,7 @@ func applyWallpaper(ctx context.Context, s policy.Settings, env Env) []policy.Re
 
 	keyfile := Header + fmt.Sprintf(
 		"[org/gnome/desktop/background]\npicture-uri='%s'\npicture-uri-dark='%s'\npicture-options='%s'\n",
-		dconfEscape(s.Wallpaper.URI), dconfEscape(s.Wallpaper.URI), options,
+		dconfEscape(uri), dconfEscape(uri), options,
 	)
 	if err := env.WriteFile(dconfKeyfilePath, keyfile, 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("wallpaper", err)}
@@ -109,4 +114,28 @@ func applyWallpaper(ctx context.Context, s policy.Settings, env Env) []policy.Re
 // dconf keyfile values are single-quoted GVariant strings.
 func dconfEscape(value string) string {
 	return strings.NewReplacer("\\", "\\\\", "'", "\\'", "\n", "").Replace(value)
+}
+
+// BackgroundDir is where an uploaded picture lands. A background set from a
+// policy used to be a URI and nothing else, so a machine that had never been
+// given the file by some other means showed the desktop's blank fallback —
+// which reads as a broken machine rather than an unset policy.
+const BackgroundDir = "/usr/share/backgrounds/odm"
+
+func backgroundURI(uri, image, name string, env Env) (string, error) {
+	if image == "" {
+		return uri, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(image)
+	if err != nil {
+		return "", fmt.Errorf("background picture: %w", err)
+	}
+	if name == "" || strings.ContainsAny(name, "/\\") {
+		name = "background"
+	}
+	path := BackgroundDir + "/" + name
+	if err := env.WriteFile(path, string(raw), 0o644, "root", "root"); err != nil {
+		return "", err
+	}
+	return "file://" + path, nil
 }

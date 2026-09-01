@@ -137,6 +137,34 @@ function Health({ report, session }: { report: HealthReport; session: SessionInf
         />
       </div>
 
+      {(report.agents.failing ?? []).length > 0 && (
+        <>
+          <h2 className="section-title">Settings failing</h2>
+          <table className="data">
+            <thead>
+              <tr>
+                <th scope="col" style={{ width: "260px" }}>
+                  Machine
+                </th>
+                <th scope="col" style={{ width: "220px" }}>
+                  Setting
+                </th>
+                <th scope="col">Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(report.agents.failing ?? []).map((entry, index) => (
+                <tr key={`${entry.hostname}-${entry.setting}-${index}`}>
+                  <td className="mono">{entry.hostname}</td>
+                  <td className="mono">{entry.setting}</td>
+                  <td>{entry.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
       <table className="data">
         <thead>
           <tr>

@@ -274,11 +274,27 @@ async def _agent_health(pool: asyncpg.Pool, settings: Settings) -> dict[str, Any
         """,
         str(stale_after),
     )
+    # A count of failures nobody can turn into a name is a number to worry
+    # about and nothing to do about it. The settings themselves come back with
+    # it, so the console can say which machine failed at what and why.
+    failing = await pool.fetch(
+        """
+        SELECT latest.hostname, item->>'setting' AS setting, item->>'reason' AS reason
+        FROM (
+            SELECT DISTINCT ON (computer_dn) hostname, results
+            FROM agent_report ORDER BY computer_dn, reported_at DESC
+        ) latest, LATERAL jsonb_array_elements(latest.results) item
+        WHERE item->>'status' = 'failed'
+        ORDER BY latest.hostname
+        LIMIT 50
+        """
+    )
     return {
         "checked_in": row["total"],
         "fresh": row["fresh"],
         "stale": row["total"] - row["fresh"],
         "failing_settings": row["failures"],
+        "failing": [dict(entry) for entry in failing],
         "stale_after_minutes": stale_after,
     }
 

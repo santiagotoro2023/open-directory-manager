@@ -8,10 +8,12 @@ shapes checked, principals restricted to a sane charset (CLAUDE.md §6).
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MODE_RE = re.compile(r"^0?[0-7]{3}$")
 UNIT_RE = re.compile(r"^[A-Za-z0-9@:_.-]{1,128}\.(service|socket|timer|target|mount|path)$")
@@ -255,12 +257,60 @@ FIT = Literal["none", "wallpaper", "centered", "scaled", "stretched", "zoom", "s
 
 
 class Wallpaper(Strict):
-    uri: Annotated[str, Field(max_length=1024)]
+    # Either a location the picture is already at on every machine, or the
+    # picture itself. A background is the one setting that is a file rather
+    # than a value, and pointing the desktop at a path nothing ever puts a
+    # picture at is the difference between a corporate background and a blank
+    # blue screen — which is what it looked like until the picture could be
+    # uploaded here.
+    uri: Annotated[str, Field(max_length=1024)] = ""
+    image: Annotated[str, Field(max_length=8_000_000)] = ""
+    image_name: Annotated[str, Field(max_length=128)] = ""
     picture_options: FIT = "zoom"
     for_principal: str | None = None
     # Setting a background and letting somebody change it are different
     # decisions, so they are separate here rather than implied by each other.
     allow_user_change: bool = False
+
+    @field_validator("image")
+    @classmethod
+    def _image(cls, value: str) -> str:
+        return validate_image(value)
+
+    @field_validator("image_name")
+    @classmethod
+    def _image_name(cls, value: str) -> str:
+        return validate_image_name(value)
+
+    @model_validator(mode="after")
+    def _one_of(self) -> Wallpaper:
+        if not self.uri and not self.image:
+            raise ValueError("a background needs a picture or a location")
+        return self
+
+
+# The agent writes what arrives here to disk as root, so what arrives has to
+# actually be a picture — checked by its own leading bytes, not by the name it
+# was given.
+IMAGE_MAGIC = (b"\x89PNG\r\n", b"\xff\xd8\xff", b"RIFF", b"GIF8", b"<?xml", b"<svg")
+
+
+def validate_image(value: str) -> str:
+    if not value:
+        return value
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error):
+        raise ValueError("the picture is not base64") from None
+    if not raw.startswith(IMAGE_MAGIC):
+        raise ValueError("that file is not a PNG, JPEG, GIF, WebP or SVG")
+    return value
+
+
+def validate_image_name(value: str) -> str:
+    if value and not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value):
+        raise ValueError("the file name may contain letters, digits, dot, dash and underscore")
+    return value
 
 
 class LoginScreen(Strict):
@@ -272,12 +322,24 @@ class LoginScreen(Strict):
 
     banner_text: Annotated[str, Field(max_length=512)] = ""
     background_uri: Annotated[str, Field(max_length=1024)] = ""
+    background_image: Annotated[str, Field(max_length=8_000_000)] = ""
+    background_image_name: Annotated[str, Field(max_length=128)] = ""
     background_fit: FIT = "zoom"
     # Whether a signed-in person may then change their own desktop background.
     # It belongs here as well because an operator setting the greeter usually
     # means the same thing for the desktop.
     allow_user_background: bool = True
     disable_user_list: bool = False
+
+    @field_validator("background_image")
+    @classmethod
+    def _background_image(cls, value: str) -> str:
+        return validate_image(value)
+
+    @field_validator("background_image_name")
+    @classmethod
+    def _background_image_name(cls, value: str) -> str:
+        return validate_image_name(value)
 
     @field_validator("banner_text")
     @classmethod

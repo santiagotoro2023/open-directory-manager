@@ -61,17 +61,33 @@ func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Res
 			"lpadmin", "-p", printer.Name, "-E", "-v", uri, "-m", "everywhere",
 		)
 		if err != nil {
-			// A printer the server has not published yet, or an older queue
-			// that is not driverless. Reported per printer so one bad entry
-			// does not lose the rest.
+			// "everywhere" asks the queue to describe itself over IPP and
+			// builds the driver from the answer. A server that will not
+			// answer — an older queue, one not shared over IPP, one that does
+			// not exist yet — fails with "Unable to create PPD: No IPP
+			// attributes", and a queue with no driver at all is better than
+			// no queue: the print server renders the job either way.
+			raw, rawErr := env.Run.Run(ctx, "lpadmin", "-p", printer.Name, "-E", "-v", uri)
+			if rawErr != nil {
+				// Reported per printer so one bad entry does not lose the rest.
+				results = append(results, policy.Result{
+					Setting: setting,
+					Status:  "failed",
+					Reason: strings.TrimSpace(
+						lastLine(raw) + " " + rawErr.Error() + " (" + lastLine(out) + ")",
+					),
+				})
+				continue
+			}
 			results = append(results, policy.Result{
 				Setting: setting,
-				Status:  "failed",
-				Reason:  strings.TrimSpace(lastLine(out) + " " + err.Error()),
+				Status:  "success",
+				Reason: "added without a driver: " + printer.Server +
+					" did not describe the queue over IPP",
 			})
-			continue
+		} else {
+			results = append(results, policy.Ok(setting))
 		}
-		results = append(results, policy.Ok(setting))
 		if printer.Default {
 			defaultPrinter = printer.Name
 		}
@@ -89,6 +105,7 @@ func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Res
 	if err := env.ReplaceBlock(printersConf, "", 0o644); err != nil {
 		results = append(results, policy.Fail("printers:client", err))
 	}
+	results = append(results, quietBrowsing(ctx, env))
 	_ = fallbackServer
 
 	if defaultPrinter != "" {
@@ -101,4 +118,32 @@ func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Res
 func lastLine(out string) string {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	return lines[len(lines)-1]
+}
+
+// browsedConf is cups-browsed's configuration. cups-browsed finds printers on
+// the network by itself and makes a queue for each, which on a machine whose
+// printers come from policy means the same printer appears two and three
+// times under names nobody chose: the policy's queue, cups-browsed's copy of
+// it named after the server, and a third for the hardware it discovered
+// directly. On a domain-managed machine the policy decides which printers
+// somebody has.
+const browsedConf = "/etc/cups/cups-browsed.conf"
+
+func quietBrowsing(ctx context.Context, env Env) policy.Result {
+	if _, err := os.Stat(env.Path(browsedConf)); err != nil {
+		return policy.Result{
+			Setting: "printers:browsing", Status: "skipped", Reason: "cups-browsed is not installed",
+		}
+	}
+	block := "# A queue for a remote CUPS printer takes the remote name, so a printer\n" +
+		"# this machine already has from policy is not added a second time.\n" +
+		"LocalQueueNamingRemoteCUPS RemoteName\n" +
+		"# Printers found on the network are not turned into queues by themselves.\n" +
+		"CreateIPPPrinterQueues No\n"
+	if err := env.ReplaceBlock(browsedConf, block, 0o644); err != nil {
+		return policy.Fail("printers:browsing", err)
+	}
+	// Not an error when it is not running: nothing was discovering anything.
+	_, _ = env.Run.Run(ctx, "systemctl", "try-restart", "cups-browsed")
+	return policy.Ok("printers:browsing")
 }

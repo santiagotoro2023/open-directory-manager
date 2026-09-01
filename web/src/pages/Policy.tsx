@@ -14,7 +14,7 @@ import { Field, Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
 import { ChoiceList, SUPPORTED_RELEASES } from "../components/ChoiceList";
 import { ContainerPicker } from "../components/Picker";
-import { SettingsEditor } from "../components/SettingsEditor";
+import { SettingsEditor, halvesConfigured } from "../components/SettingsEditor";
 import { TemplateManager } from "../components/TemplateManager";
 import { FileInput } from "../components/FileInput";
 import Select from "../components/Select"
@@ -495,6 +495,8 @@ function LinksEditor({ gpo, onChanged }: { gpo: Gpo; onChanged: () => void }) {
         </p>
       )}
 
+      <LinkScope settings={gpo.settings ?? {}} />
+
       <table className="data">
         <thead>
           <tr>
@@ -726,5 +728,28 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         </>
       )}
     </Modal>
+  );
+}
+
+/** What a link to this policy object will actually reach.
+ *
+ * Group Policy applies its Computer half to the computers in a linked
+ * container and its User half to the users in one — so a policy that maps a
+ * drive or hands out a printer has to be linked where the accounts are, and
+ * one that deploys a package has to be linked where the machines are. Getting
+ * that the wrong way round looks exactly like a policy that does not work. */
+function LinkScope({ settings }: { settings: PolicySettings }) {
+  const halves = halvesConfigured(settings);
+  if (halves.length === 0) {
+    return <p className="muted">This policy object configures nothing yet.</p>;
+  }
+  const reaches = halves
+    .map((half) => (half === "Computer" ? "the computers" : "the users"))
+    .join(" and ");
+  return (
+    <p className="muted">
+      {halves.map((half) => `${half} Configuration`).join(" and ")} — this applies to {reaches} in
+      each container it is linked to.
+    </p>
   );
 }

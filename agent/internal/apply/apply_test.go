@@ -2,6 +2,7 @@ package apply
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -802,5 +803,44 @@ func TestPrintersAreSkippedWhereCupsIsNotInstalled(t *testing.T) {
 	}, env)
 	if len(results) != 1 || results[0].Status != "skipped" {
 		t.Fatalf("expected one skip, got %+v", results)
+	}
+}
+
+// The background used to be a URI and nothing else, so a policy that set one
+// pointed the desktop at a path no machine had a picture at: everybody got the
+// blank blue fallback and the setting reported success.
+func TestAWallpaperArrivesWithItsPicture(t *testing.T) {
+	env, _ := testEnv(t)
+	png := base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\ncontent"))
+	results := applyWallpaper(context.Background(), policy.Settings{
+		Wallpaper: &policy.Wallpaper{Image: png, ImageName: "corp.png"},
+	}, env)
+	for _, result := range results {
+		if result.Status == "failed" {
+			t.Fatalf("wallpaper failed: %s", result.Reason)
+		}
+	}
+	if got := read(t, env, BackgroundDir+"/corp.png"); !strings.Contains(got, "content") {
+		t.Fatalf("the picture was not written: %q", got)
+	}
+	if keyfile := read(t, env, dconfKeyfilePath); !strings.Contains(
+		keyfile, "file://"+BackgroundDir+"/corp.png",
+	) {
+		t.Fatalf("dconf does not point at the picture:\n%s", keyfile)
+	}
+}
+
+// A home directory owned by a uid no account has is the state a restored or
+// recreated user lands in, and it makes the whole desktop unusable.
+func TestTheSessionHookRepairsAnOrphanedHome(t *testing.T) {
+	env, _ := testEnv(t)
+	if result := installSessionHook(env); result.Status != "success" {
+		t.Fatalf("hook not installed: %s", result.Reason)
+	}
+	hook := read(t, env, pamHookPath)
+	for _, want := range []string{"odm_repair_home", "getent passwd \"$owner\"", "chown -R"} {
+		if !strings.Contains(hook, want) {
+			t.Fatalf("the hook does not repair a stale home (%q missing):\n%s", want, hook)
+		}
 	}
 }

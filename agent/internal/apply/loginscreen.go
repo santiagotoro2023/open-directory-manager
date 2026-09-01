@@ -51,7 +51,13 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 	}
 
 	results := []policy.Result{}
-	if screen.BackgroundURI != "" {
+	background, err := backgroundURI(
+		screen.BackgroundURI, screen.BackgroundImage, screen.BackgroundImageName, env,
+	)
+	if err != nil {
+		results = append(results, policy.Fail("login_screen:background", err))
+	}
+	if background != "" {
 		fit := screen.BackgroundFit
 		if fit == "" {
 			fit = "zoom"
@@ -64,7 +70,7 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 				"  background-repeat: no-repeat;\n"+
 				"  background-position: center;\n"+
 				"}\n",
-			strings.TrimPrefix(screen.BackgroundURI, "file://"), cssSize(fit),
+			strings.TrimPrefix(background, "file://"), cssSize(fit),
 		)
 		if err := env.WriteFile(greeterCssPath, css, 0o644, "root", "root"); err != nil {
 			results = append(results, policy.Fail("login_screen:background", err))

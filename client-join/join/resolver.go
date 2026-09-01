@@ -32,14 +32,19 @@ func EnsureDomainResolves(ctx context.Context, options Options, controller strin
 	// IP would always say the resolver is fine when it is not. What has to
 	// resolve is the domain's own records, which is what net, SSSD and
 	// Kerberos all look for.
-	if _, err := net.LookupHost(options.Domain); err == nil {
-		return nil
+	//
+	// Resolving right now is not enough to leave alone, though. A machine that
+	// only resolves the domain because DHCP happens to hand out a controller,
+	// or because somebody edited resolv.conf by hand, stops being a domain
+	// member at its next reboot. Once this machine is joining, the domain's DNS
+	// is pinned to the connection.
+	if address := controllerAddress(controller); address != "" {
+		if err := pointResolver(ctx, options, address, env); err == nil {
+			return nil
+		}
 	}
-	// --server given as an address is the operator telling us where the
-	// domain is. That machine is a domain controller, so it is also the
-	// domain's DNS.
-	if net.ParseIP(controller) != nil {
-		return pointResolver(ctx, options, controller, env)
+	if resolves(options.Domain) {
+		return nil
 	}
 	return fmt.Errorf(
 		"%s does not resolve from this machine, so no controller can be found. "+
@@ -50,20 +55,32 @@ func EnsureDomainResolves(ctx context.Context, options Options, controller strin
 	)
 }
 
-func pointResolver(ctx context.Context, options Options, address string, env Env) error {
-	body := managed + fmt.Sprintf("search %s\nnameserver %s\n", options.Domain, address)
+// controllerAddress turns whatever --server was into an address to point the
+// resolver at, resolving a name if the current resolver can still do it.
+func controllerAddress(controller string) string {
+	if net.ParseIP(controller) != nil {
+		return controller
+	}
+	addresses, err := net.LookupHost(controller)
+	if err != nil || len(addresses) == 0 {
+		return ""
+	}
+	for _, address := range addresses {
+		if ip := net.ParseIP(address); ip != nil && ip.To4() != nil {
+			return address
+		}
+	}
+	return addresses[0]
+}
 
-	// systemd-resolved owns resolv.conf as a symlink and would put its own
-	// back. Tell it instead, on the interface that reaches the controller.
-	if link, err := os.Lstat(env.Path(ResolvConfPath)); err == nil &&
-		link.Mode()&os.ModeSymlink != 0 && env.Run != nil {
+func pointResolver(ctx context.Context, options Options, address string, env Env) error {
+	if env.Run != nil {
 		iface := interfaceTowards(ctx, address, env)
-		if iface != "" {
-			_, first := env.Run.Run(ctx, "resolvectl", "dns", iface, address)
-			_, second := env.Run.Run(ctx, "resolvectl", "domain", iface, options.Domain)
-			if first == nil && second == nil {
-				return nil
-			}
+		if networkManagerDNS(ctx, options, address, iface, env) == nil && resolves(options.Domain) {
+			return nil
+		}
+		if resolvedDNS(ctx, options, address, env) == nil && resolves(options.Domain) {
+			return nil
 		}
 	}
 
@@ -72,7 +89,65 @@ func pointResolver(ctx context.Context, options Options, address string, env Env
 	}
 	// Replace the symlink rather than writing through it.
 	_ = os.Remove(env.Path(ResolvConfPath))
+	body := managed + fmt.Sprintf("search %s\nnameserver %s\n", options.Domain, address)
 	return env.WriteFile(ResolvConfPath, body, 0o644)
+}
+
+func resolves(domain string) bool {
+	_, err := net.LookupHost(domain)
+	return err == nil
+}
+
+// NetworkManager keeps a connection profile on disk, so DNS set on the
+// profile is still there next boot. ignore-auto-dns is the part that matters:
+// without it DHCP's servers are merged in ahead and the domain still does not
+// resolve.
+func networkManagerDNS(ctx context.Context, options Options, address, iface string, env Env) error {
+	if iface == "" {
+		return fmt.Errorf("no interface reaches %s", address)
+	}
+	if out, err := env.Run.Run(ctx, "systemctl", "is-active", "NetworkManager"); err != nil ||
+		strings.TrimSpace(out) != "active" {
+		return fmt.Errorf("NetworkManager is not running")
+	}
+	out, err := env.Run.Run(ctx, "nmcli", "-t", "-g", "GENERAL.CON-UUID", "device", "show", iface)
+	if err != nil {
+		return err
+	}
+	uuid := strings.TrimSpace(out)
+	if uuid == "" || uuid == "--" {
+		return fmt.Errorf("%s has no NetworkManager connection", iface)
+	}
+	for _, args := range [][]string{
+		{"connection", "modify", uuid, "ipv4.dns", address},
+		{"connection", "modify", uuid, "ipv4.dns-search", options.Domain},
+		{"connection", "modify", uuid, "ipv4.ignore-auto-dns", "yes"},
+		{"connection", "up", uuid},
+	} {
+		if _, err := env.Run.Run(ctx, "nmcli", args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// systemd-resolved without NetworkManager. A drop-in is configuration rather
+// than runtime state, so it survives both a reboot and a DHCP renewal. The
+// routing domain is what sends the domain's own names to the controller while
+// everything else keeps going wherever it went before.
+func resolvedDNS(ctx context.Context, options Options, address string, env Env) error {
+	if out, err := env.Run.Run(ctx, "systemctl", "is-active", "systemd-resolved"); err != nil ||
+		strings.TrimSpace(out) != "active" {
+		return fmt.Errorf("systemd-resolved is not running")
+	}
+	body := managed + fmt.Sprintf(
+		"[Resolve]\nDNS=%s\nDomains=%s ~%s\n", address, options.Domain, options.Domain,
+	)
+	if err := env.WriteFile("/etc/systemd/resolved.conf.d/odm-domain.conf", body, 0o644); err != nil {
+		return err
+	}
+	_, err := env.Run.Run(ctx, "systemctl", "restart", "systemd-resolved")
+	return err
 }
 
 func interfaceTowards(ctx context.Context, address string, env Env) string {

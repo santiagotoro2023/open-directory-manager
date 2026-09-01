@@ -145,6 +145,8 @@ type Browser struct {
 
 type Wallpaper struct {
 	URI             string `json:"uri"`
+	Image           string `json:"image"`
+	ImageName       string `json:"image_name"`
 	PictureOptions  string `json:"picture_options"`
 	ForPrincipal    string `json:"for_principal"`
 	AllowUserChange bool   `json:"allow_user_change"`
@@ -154,6 +156,8 @@ type Wallpaper struct {
 type LoginScreen struct {
 	BannerText          string `json:"banner_text"`
 	BackgroundURI       string `json:"background_uri"`
+	BackgroundImage     string `json:"background_image"`
+	BackgroundImageName string `json:"background_image_name"`
 	BackgroundFit       string `json:"background_fit"`
 	AllowUserBackground bool   `json:"allow_user_background"`
 	DisableUserList     bool   `json:"disable_user_list"`

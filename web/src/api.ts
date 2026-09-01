@@ -58,6 +58,8 @@ export interface AuditEntry {
 export interface LoginScreenSettings {
   banner_text: string;
   background_uri: string;
+  background_image?: string;
+  background_image_name?: string;
   background_fit: string;
   allow_user_background: boolean;
   disable_user_list: boolean;
@@ -86,7 +88,9 @@ export interface PolicySettings {
   admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
   wallpaper?: {
-    uri: string;
+    uri?: string;
+    image?: string;
+    image_name?: string;
     picture_options: string;
     for_principal?: string;
     allow_user_change?: boolean;
@@ -716,6 +720,7 @@ export interface HealthReport {
     fresh: number;
     stale: number;
     failing_settings: number;
+    failing?: { hostname: string; setting: string; reason: string }[];
     stale_after_minutes: number;
   };
   backups: {

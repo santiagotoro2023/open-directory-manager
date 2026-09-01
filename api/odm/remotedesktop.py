@@ -24,7 +24,15 @@ class RemoteDesktopError(Exception):
 
 
 def validate_share(value: str) -> str:
+    """The share holding user profile disks, or nothing.
+
+    Empty is a collection whose sessions use whatever home the host already
+    gives the user. That is the right shape for a single session host, and it
+    means remote desktop does not need a file server before it works at all.
+    """
     value = (value or "").strip().replace("\\", "/")
+    if not value:
+        return ""
     if not _SHARE_RE.match(value):
         raise RemoteDesktopError(
             "the profile share must look like //server/share, and should be one "

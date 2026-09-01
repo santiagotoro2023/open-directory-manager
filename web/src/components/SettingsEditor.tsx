@@ -3,6 +3,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
+import { FileInput } from "./FileInput";
 import { Field, Modal } from "./Modal";
 import { PickerField, type PickerKind, type PickerValue } from "./Picker";
 import { Split } from "./Split";
@@ -44,6 +45,20 @@ const COMMON_SUDO_COMMANDS = [
 
 type Half = "Computer" | "User";
 
+// A picture travels in the policy document itself, so the machines it is for
+// receive it rather than being pointed at a path nobody put it at.
+async function readBase64(file: File): Promise<string> {
+  const buffer = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (const byte of buffer) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function safeFileName(name: string): string {
+  const cleaned = name.replace(/[^A-Za-z0-9._-]/g, "-").slice(-128);
+  return cleaned || "background";
+}
+
 // Where one entry can carry targeting of its own. A drive map for laptops and
 // another for desks is one policy object in Active Directory, not two.
 const TARGETABLE = new Set([
@@ -56,8 +71,35 @@ const TARGETABLE = new Set([
   "packages",
 ]);
 
+/** Which halves of Group Policy this object actually configures.
+ *
+ * Which half a setting is in decides where the object has to be linked: a
+ * user setting linked at an OU full of computers reaches nobody, and reads as
+ * the setting not working rather than the link being in the wrong place. */
+export function halvesConfigured(settings: PolicySettings): Half[] {
+  const halves = new Set<Half>();
+  for (const entry of [...CATEGORIES, ...SPECIAL]) {
+    if (countOf(settings, "id" in entry && entry.id ? entry.id : String(entry.key)) > 0) {
+      halves.add(entry.half);
+    }
+  }
+  return (["Computer", "User"] as Half[]).filter((half) => halves.has(half));
+}
+
+function categoryId(category: CategorySpec): string {
+  return category.id ?? String(category.key);
+}
+
 interface CategorySpec {
   key: keyof PolicySettings;
+  // Set when two entries edit the same category, so each is its own item in
+  // the list. Defaults to the key.
+  id?: string;
+  // Restricts an entry to part of its category. Logon scripts are a user
+  // setting and startup scripts are a machine one; in the directory they are
+  // one list with a trigger, and showing them as one item put half of them
+  // under the wrong heading.
+  only?: { field: string; values: string[] };
   title: string;
   // Which half of the policy the setting is enforced in, as the Group Policy
   // Management Editor splits them.
@@ -86,14 +128,16 @@ export const CATEGORIES: CategorySpec[] = [
   },
   {
     key: "scripts",
-    title: "Scripts",
+    id: "scripts-computer",
+    only: { field: "trigger", values: ["startup", "shutdown"] },
+    title: "Startup and shutdown scripts",
     half: "Computer",
     fields: [
       {
         key: "trigger",
         label: "Trigger",
         kind: "select",
-        options: ["startup", "shutdown", "logon", "logoff"],
+        options: ["startup", "shutdown"],
         width: "130px",
       },
       { key: "name", label: "Name", width: "160px" },
@@ -101,6 +145,26 @@ export const CATEGORIES: CategorySpec[] = [
       { key: "content", label: "Script", kind: "textarea" },
     ],
     blank: { trigger: "startup", name: "", interpreter: "/bin/sh", content: "" },
+  },
+  {
+    key: "scripts",
+    id: "scripts-user",
+    only: { field: "trigger", values: ["logon", "logoff"] },
+    title: "Logon and logoff scripts",
+    half: "User",
+    fields: [
+      {
+        key: "trigger",
+        label: "Trigger",
+        kind: "select",
+        options: ["logon", "logoff"],
+        width: "130px",
+      },
+      { key: "name", label: "Name", width: "160px" },
+      { key: "interpreter", label: "Interpreter", width: "140px" },
+      { key: "content", label: "Script", kind: "textarea" },
+    ],
+    blank: { trigger: "logon", name: "", interpreter: "/bin/sh", content: "" },
   },
   {
     key: "systemd_units",
@@ -362,12 +426,15 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
   if (key === "remote_desktop_session") return settings.remote_desktop_session ? 1 : 0;
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
-  if (key === "wallpaper") return settings.wallpaper?.uri ? 1 : 0;
+  if (key === "wallpaper") return settings.wallpaper?.uri || settings.wallpaper?.image ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
     if (!browser) return 0;
     return Object.keys(browser.chromium ?? {}).length + Object.keys(browser.firefox ?? {}).length;
   }
+  // A category split across the two halves counts only its own half.
+  const split = CATEGORIES.find((entry) => entry.id === key);
+  if (split) return rowsOf(settings, split).mine.length;
   const value = settings[key as keyof PolicySettings];
   return Array.isArray(value) ? value.length : 0;
 }
@@ -379,11 +446,11 @@ export function SettingsEditor({
   settings: PolicySettings;
   onChange: (next: PolicySettings) => void;
 }) {
-  const [selected, setSelected] = useState<Selected>(String(CATEGORIES[0].key));
+  const [selected, setSelected] = useState<Selected>(categoryId(CATEGORIES[0]));
 
   const entries = [
     ...CATEGORIES.map((category) => ({
-      key: String(category.key),
+      key: categoryId(category),
       title: category.title,
       half: category.half,
     })),
@@ -398,7 +465,14 @@ export function SettingsEditor({
     <ul className="category-list">
       {(["Computer", "User"] as Half[]).map((half) => (
         <li key={half}>
-          <p className="category-group">{half}</p>
+          <p className="category-group">
+            {half} Configuration
+            <span>
+              {half === "Computer"
+                ? "Applies to computers in the linked OU"
+                : "Applies to users in the linked OU"}
+            </span>
+          </p>
           <ul>
             {entries
               .filter((entry) => entry.half === half)
@@ -428,7 +502,7 @@ export function SettingsEditor({
     </ul>
   );
 
-  const category = CATEGORIES.find((entry) => String(entry.key) === selected);
+  const category = CATEGORIES.find((entry) => categoryId(entry) === selected);
 
   return (
     <div className="settings-editor">
@@ -487,6 +561,21 @@ function EmptySetting({ onAdd, message }: { onAdd: () => void; message?: string 
   );
 }
 
+// The rows this entry shows, and the ones it must leave alone: two entries
+// over one category each edit their own half of it.
+function rowsOf(
+  settings: PolicySettings,
+  category: CategorySpec,
+): { mine: Record<string, unknown>[]; others: Record<string, unknown>[] } {
+  const all = (settings[category.key] as Record<string, unknown>[] | undefined) ?? [];
+  if (!category.only) return { mine: all, others: [] };
+  const { field, values } = category.only;
+  return {
+    mine: all.filter((row) => values.includes(String(row[field]))),
+    others: all.filter((row) => !values.includes(String(row[field]))),
+  };
+}
+
 function RowsEditor({
   category,
   settings,
@@ -496,7 +585,7 @@ function RowsEditor({
   settings: PolicySettings;
   onChange: (next: PolicySettings) => void;
 }) {
-  const current = (settings[category.key] as Record<string, unknown>[] | undefined) ?? [];
+  const { mine: current, others } = rowsOf(settings, category);
   const [targeting, setTargeting] = useState<number | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -507,7 +596,7 @@ function RowsEditor({
   const summary = cramped ? category.fields.slice(0, 2) : category.fields;
 
   function update(next: Record<string, unknown>[]) {
-    onChange({ ...settings, [category.key]: next });
+    onChange({ ...settings, [category.key]: [...others, ...next] });
   }
 
   return (
@@ -920,9 +1009,23 @@ function LoginScreenEditor({
             <small>Shown above the sign-in box. Empty means no message.</small>
           </label>
 
+          <label className="field">
+            <span>Background picture</span>
+            <FileInput
+              accept="image/*"
+              placeholder={current.background_image_name || "No picture chosen"}
+              onChoose={async (file) =>
+                set({
+                  background_image: await readBase64(file),
+                  background_image_name: safeFileName(file.name),
+                  background_uri: "",
+                })
+              }
+            />
+          </label>
           <div className="inline-fields">
             <label className="field">
-              <span>Background image</span>
+              <span>Or a location the picture is already at</span>
               <input
                 value={current.background_uri}
                 placeholder="file:///usr/share/backgrounds/login.png"
@@ -1400,21 +1503,42 @@ function WallpaperEditor({
       <header>
         <h3>Desktop background</h3>
       </header>
+      <label className="field">
+        <span>Picture</span>
+        <FileInput
+          accept="image/*"
+          placeholder={settings.wallpaper?.image_name ?? "No picture chosen"}
+          onChoose={async (file) =>
+            onChange({
+              ...settings,
+              wallpaper: {
+                ...settings.wallpaper,
+                image: await readBase64(file),
+                image_name: safeFileName(file.name),
+                uri: "",
+                picture_options: settings.wallpaper?.picture_options ?? "zoom",
+              },
+            })
+          }
+        />
+      </label>
       <div className="inline-fields">
         <label className="field">
-          <span>Image location</span>
+          <span>Or a location the picture is already at</span>
           <input
             value={settings.wallpaper?.uri ?? ""}
             placeholder="file:///usr/share/backgrounds/corp.png"
             onChange={(e) =>
               onChange({
                 ...settings,
-                wallpaper: e.target.value
-                  ? {
-                      uri: e.target.value,
-                      picture_options: settings.wallpaper?.picture_options ?? "zoom",
-                    }
-                  : undefined,
+                wallpaper:
+                  e.target.value || settings.wallpaper?.image
+                    ? {
+                        ...settings.wallpaper,
+                        uri: e.target.value,
+                        picture_options: settings.wallpaper?.picture_options ?? "zoom",
+                      }
+                    : undefined,
               })
             }
           />

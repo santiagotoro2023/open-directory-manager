@@ -778,8 +778,36 @@ func includeShares(env apply.Env) error {
 	if strings.Contains(string(raw), "include = "+SharesConf) {
 		return nil
 	}
-	body := string(raw) + "\n# Managed by Open Directory Manager\ninclude = " + SharesConf + "\n"
+	// Into [global], not onto the end of the file. Appended last it lands
+	// inside whatever section happens to be there — [netlogon], on a domain
+	// controller — where Samba reads it as that share's parameter rather than
+	// the domain's, and testparm shows it in a place no operator put it.
+	body := insertIntoGlobal(
+		string(raw), "\n# Managed by Open Directory Manager\ninclude = "+SharesConf+"\n",
+	)
 	return env.WriteFile("/etc/samba/smb.conf", body, 0o644, "root", "root")
+}
+
+// insertIntoGlobal puts a line at the end of the [global] section, or at the
+// end of the file when there is no other section to fall inside.
+func insertIntoGlobal(body, line string) string {
+	lines := strings.Split(body, "\n")
+	inGlobal := false
+	for index, text := range lines {
+		trimmed := strings.TrimSpace(text)
+		if !strings.HasPrefix(trimmed, "[") {
+			continue
+		}
+		if strings.EqualFold(trimmed, "[global]") {
+			inGlobal = true
+			continue
+		}
+		if inGlobal {
+			rest := strings.Join(lines[index:], "\n")
+			return strings.Join(lines[:index], "\n") + line + "\n" + rest
+		}
+	}
+	return body + line
 }
 
 // Directories that are never a share, checked here as well as in the control

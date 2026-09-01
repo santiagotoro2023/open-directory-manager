@@ -425,13 +425,14 @@ function CollectionDialog({
       <h3 className="section-title">Profiles</h3>
       <p className="muted">
         Every person gets a disk on the share below, named for them, and it follows them to
-        whichever host answers. There is no local option: a profile that stays on one host is a
-        different profile on every other one.
+        whichever host answers. Leave the share empty and sessions use whatever home directory the
+        host already gives them &mdash; right for a single session host, and wrong for a farm,
+        where a profile that stays on one host is a different profile on every other one.
       </p>
       <div className="field-grid">
         <Field label="Profile share" hint="A share you made under File Shares">
           <Select value={share} onChange={(e) => setShare(e.target.value)}>
-            <option value="">Choose a share…</option>
+            <option value="">No profile disks</option>
             {shares.map((unc) => (
               <option key={unc} value={unc}>
                 {unc}

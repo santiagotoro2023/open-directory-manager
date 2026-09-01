@@ -1636,6 +1636,19 @@ ul.plain {
   color: var(--text-muted);
 }
 
+/* Which objects the half reaches. Whether a setting is applied per machine or
+   per person decides which OU the policy has to be linked to, and that is not
+   something the setting's own name can say. */
+.category-group span {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
 .category-list button {
   display: flex;
   align-items: center;

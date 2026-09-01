@@ -669,11 +669,17 @@ def restore(
 ) -> str:
     """Recreate a deleted object from its recycle-bin snapshot.
 
-    The object comes back with its attributes, its group memberships and, for
-    a group, its members. It does *not* come back with its old SID or GUID —
-    the directory issues fresh ones — so access rules that named the old SID
-    need re-granting. That is inherent to restoring rather than reanimating a
-    tombstone, which CLAUDE.md §5.3 deliberately does not rely on.
+    Reanimating the directory's own tombstone is tried first, because it is the
+    only way the object keeps its SID. A new SID looks like a successful
+    restore and is not one: every file the account owned belongs to a uid that
+    no longer exists, so the person logs in to a home directory they cannot
+    write, and every ACL, sudo rule and share permission that named them is
+    silently pointing at nobody.
+
+    When there is no tombstone left to reanimate — purged past the directory's
+    own tombstone lifetime, or a directory that will not undelete — the object
+    is recreated from the snapshot instead and does come back with a new SID.
+    The caller is told which of the two happened.
     """
     parent = normalize_dn(settings, str(container or snapshot["parent_dn"]))
     dn = f"{str(snapshot['object_dn']).split(',', 1)[0]},{parent}"
@@ -699,6 +705,11 @@ def restore(
     if not object_classes:
         raise ObjectError("snapshot has no objectClass; cannot restore")
 
+    if _reanimate(conn, snapshot.get("object_guid"), dn):
+        _reapply(conn, dn, attributes, object_classes)
+        _rejoin_groups(conn, settings, dn, snapshot)
+        return dn
+
     payload = {
         key: value
         for key, value in attributes.items()
@@ -718,17 +729,95 @@ def restore(
     conn.add(dn, list(object_classes), payload)
     _check(conn, "restore")
 
+    _rejoin_groups(conn, settings, dn, snapshot)
+    return dn
+
+
+# The LDAP "show deleted objects" control. A tombstone is invisible to an
+# ordinary search, including the one that finds it in order to bring it back.
+SHOW_DELETED = "1.2.840.113556.1.4.417"
+
+
+def _reanimate(conn: Connection, object_guid: Any, dn: str) -> bool:
+    """Undelete the directory's own tombstone, keeping the object's SID.
+
+    A tombstone is reanimated by removing isDeleted and naming the object
+    again, in one modify that changes nothing else — the directory refuses the
+    operation otherwise. Returns False whenever there is nothing to reanimate,
+    so the caller can fall back to recreating the object.
+    """
+    if not object_guid:
+        return False
+    try:
+        found = conn.search(
+            f"<GUID={object_guid}>",
+            "(objectClass=*)",
+            search_scope=BASE,
+            attributes=["distinguishedName"],
+            controls=[(SHOW_DELETED, True, None)],
+        )
+        if not found:
+            return False
+        entries = [r for r in (conn.response or []) if r.get("type") == "searchResEntry"]
+        if not entries:
+            return False
+        tombstone = entries[0]["dn"]
+        conn.modify(
+            tombstone,
+            {
+                "isDeleted": [(MODIFY_DELETE, [])],
+                "distinguishedName": [(MODIFY_REPLACE, [dn])],
+            },
+            controls=[(SHOW_DELETED, True, None)],
+        )
+        return conn.result["result"] == 0
+    except LDAPException:
+        return False
+
+
+def _reapply(conn: Connection, dn: str, attributes: dict, object_classes: list) -> None:
+    """Put back what the tombstone did not keep.
+
+    A tombstone holds only the attributes the schema marks as preserved — the
+    identity, essentially. Everything descriptive was stripped by the delete
+    and is written back here from the snapshot, one attribute at a time so
+    that one the directory will not take does not lose the rest of them.
+    """
+    for key, value in attributes.items():
+        if key.lower() in OPERATIONAL_ATTRS or key.lower() in ("objectclass", "member"):
+            continue
+        if value in ([], "", None) or (isinstance(value, str) and _WHOLE_TIMESTAMP.match(value)):
+            continue
+        try:
+            values = value if isinstance(value, list) else [value]
+            conn.modify(dn, {key: [(MODIFY_REPLACE, values)]})
+        except LDAPException:
+            continue
+    # As with a recreated account: it comes back without a usable password, so
+    # it comes back disabled rather than open.
+    if any(str(c).lower() == "user" for c in object_classes):
+        uac = int(attributes.get("userAccountControl") or UF_NORMAL_ACCOUNT) | UF_ACCOUNTDISABLE
+        try:
+            conn.modify(dn, {"userAccountControl": [(MODIFY_REPLACE, [uac])]})
+        except LDAPException:
+            pass
+
+
+def _rejoin_groups(
+    conn: Connection, settings: Settings, dn: str, snapshot: dict[str, Any]
+) -> None:
     for group_dn in snapshot.get("memberships") or []:
         try:
             conn.modify(normalize_dn(settings, group_dn), {"member": [(MODIFY_ADD, [dn])]})
-        except NotFound:
+        except (NotFound, LDAPException):
             continue  # the group itself is gone; nothing to rejoin
 
     members = [m for m in (snapshot.get("members") or [])]
     if members:
-        conn.modify(dn, {"member": [(MODIFY_ADD, members)]})
-        _check(conn, "restore members")
-    return dn
+        try:
+            conn.modify(dn, {"member": [(MODIFY_ADD, members)]})
+        except LDAPException:
+            pass
 
 
 def edit_members(

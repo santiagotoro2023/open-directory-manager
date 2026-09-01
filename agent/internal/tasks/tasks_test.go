@@ -248,3 +248,14 @@ func TestRestartIsScheduledRatherThanImmediate(t *testing.T) {
 		t.Errorf("reboot was not scheduled a minute out: %v", runner.commands)
 	}
 }
+
+func TestIncludeGoesIntoGlobal(t *testing.T) {
+	// Appended to the end of the file the include lands inside [netlogon],
+	// which is the last section on a domain controller.
+	conf := "[global]\n\trealm = CORP\n\n[netlogon]\n\tpath = /var/lib/samba\n"
+	got := insertIntoGlobal(conf, "\ninclude = "+SharesConf+"\n")
+	global, _, ok := strings.Cut(got, "[netlogon]")
+	if !ok || !strings.Contains(global, "include = "+SharesConf) {
+		t.Fatalf("include is not in [global]:\n%s", got)
+	}
+}

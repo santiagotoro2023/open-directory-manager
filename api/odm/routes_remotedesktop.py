@@ -23,7 +23,7 @@ class CollectionIn(BaseModel):
     kind: Literal["desktop", "remoteapp"] = "desktop"
     app_path: Annotated[str, Field(max_length=255)] = ""
     app_name: Annotated[str, Field(max_length=64)] = ""
-    profile_share: Annotated[str, Field(min_length=3, max_length=255)]
+    profile_share: Annotated[str, Field(max_length=255)] = ""
     profile_gb: Annotated[int, Field(ge=1, le=2048)] = 10
     idle_minutes: Annotated[int, Field(ge=0, le=10080)] = 60
     disconnected_minutes: Annotated[int, Field(ge=0, le=10080)] = 120
@@ -159,6 +159,30 @@ async def list_sessions(
     return {"sessions": [dict(row) for row in rows]}
 
 
+async def _share_exists(conn: asyncpg.Connection, share: str) -> None:
+    """A profile share that is not a real share breaks every logon on the farm.
+
+    The session host mounts it from PAM, and a mount that fails there is not a
+    missing roaming profile, it is "Can't create session for user" for
+    everybody. The host now falls back to a local home rather than refusing,
+    but a collection pointed at a share nobody made is still a mistake worth
+    catching here, where it can still be corrected.
+    """
+    if not share:
+        return
+    node, _, name = share.lstrip("/").partition("/")
+    found = await conn.fetchval(
+        "SELECT 1 FROM file_share WHERE lower(name) = lower($1) AND lower(node_fqdn) = lower($2)",
+        name,
+        node,
+    )
+    if not found:
+        raise remotedesktop.RemoteDesktopError(
+            f"{share} is not a share on this domain. Create it under File Shares first, "
+            "or leave the profile share empty to keep each host's own home directories."
+        )
+
+
 @router.post("", status_code=201, dependencies=[Depends(requires("rd.write"))])
 async def create_collection(
     body: CollectionIn,
@@ -171,6 +195,7 @@ async def create_collection(
     app_path = remotedesktop.validate_app(body.kind, body.app_path)
 
     async with pool.acquire() as conn:
+        await _share_exists(conn, share)
         taken = await conn.fetchval(
             "SELECT 1 FROM rd_collection WHERE lower(name) = lower($1)", name
         )
@@ -233,6 +258,8 @@ async def update_collection(
             if body.profile_share is not None
             else None
         )
+        if share is not None:
+            await _share_exists(conn, share)
         kind = body.kind if body.kind is not None else row["kind"]
         app_path = (
             remotedesktop.validate_app(kind, body.app_path)

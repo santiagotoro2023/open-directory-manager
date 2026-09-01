@@ -82,6 +82,30 @@ WantedBy=multi-user.target
 	return results
 }
 
+// repairHome is part of the PAM hook rather than the agent's apply loop: it
+// has to run before the desktop starts, not fifteen minutes later.
+//
+// A home directory left behind by an earlier incarnation of an account — a
+// restored user, or one deleted and recreated by hand, gets a new SID and so a
+// new uid — belongs to nobody. Nothing else on the machine repairs it, and the
+// symptom is not a permissions error anybody would connect to it: the desktop
+// comes up with no background, applications that hang for minutes waiting to
+// write a cache, and a file manager that refuses to open the person's own home.
+// Only an owner that no account has is repaired; an ownership somebody chose
+// is somebody's decision.
+const repairHome = `odm_repair_home() {
+  [ -n "$PAM_USER" ] || return 0
+  home=$(getent passwd "$PAM_USER" | cut -d: -f6)
+  uid=$(id -u "$PAM_USER" 2>/dev/null) || return 0
+  [ -n "$home" ] && [ -d "$home" ] && [ -n "$uid" ] || return 0
+  owner=$(stat -c %u "$home" 2>/dev/null) || return 0
+  [ "$owner" = "$uid" ] && return 0
+  getent passwd "$owner" >/dev/null 2>&1 && return 0
+  chown -R "$uid:$(id -g "$PAM_USER")" "$home" 2>/dev/null || true
+}
+
+`
+
 // installSessionHook wires the agent into PAM sessions. It always runs, not
 // only when logon scripts exist, because it is also how a user's own policy
 // (per-user drive maps, desktop background) reaches the machine at login.
@@ -89,8 +113,9 @@ WantedBy=multi-user.target
 // The user apply is backgrounded behind a timeout: a slow or unreachable
 // control plane must never hold up somebody logging in.
 func installSessionHook(env Env) policy.Result {
-	hook := "#!/bin/sh\n" + Header + `case "$PAM_TYPE" in
+	hook := "#!/bin/sh\n" + Header + repairHome + `case "$PAM_TYPE" in
   open_session)
+    odm_repair_home
     [ -d ` + scriptDir + `/logon ] && /bin/run-parts --report ` + scriptDir + `/logon
     [ -n "$PAM_USER" ] && timeout 60 /usr/sbin/odm-agent apply --user "$PAM_USER" >/dev/null 2>&1 &
     ;;

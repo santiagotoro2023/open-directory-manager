@@ -42,8 +42,12 @@ func applyRemoteDesktopHost(
 	if env.Run == nil {
 		return "", fmt.Errorf("no command runner")
 	}
+	// An empty share is a collection without roaming profiles: every session
+	// keeps whatever home the host already gives the user. It is the right
+	// default for a single session host, and it means remote desktop does not
+	// need a file server before it works at all.
 	share, _ := payload["profile_share"].(string)
-	if !safeShare.MatchString(share) {
+	if share != "" && !safeShare.MatchString(share) {
 		return "", fmt.Errorf("invalid profile share %q", share)
 	}
 	kind, _ := payload["kind"].(string)
@@ -124,27 +128,39 @@ func applyRemoteDesktopHost(
 // exists to prevent.
 func profileScript() string {
 	return "#!/bin/sh\n" + apply.Header + `
-# Mount this user's profile disk over their home directory, or refuse the
-# logon. Run from PAM at session open and again at session close.
-set -eu
+# Mount this user's profile disk over their home directory. Run from PAM at
+# session open and again at session close.
+#
+# Every path out of here is exit 0. A profile disk that cannot be attached —
+# the share was renamed, the file server is down, the ticket was refused —
+# used to fail the PAM session, which does not mean "no roaming profile" to
+# xrdp, it means "Can't create session for user" and nobody on the farm can
+# log on at all. A local home for this session is a far smaller problem than
+# a session host nobody can reach, so that is what a failure falls back to,
+# with the reason in the journal.
+set -u
+
+warn() {
+    logger -t odm-rd-profile "$1"
+    exit 0
+}
 
 [ -r /etc/odm/rd-profile.conf ] || exit 0
 . /etc/odm/rd-profile.conf
+[ -n "${PROFILE_SHARE:-}" ] || exit 0
 
 USER_NAME="${PAM_USER:-}"
 [ -n "$USER_NAME" ] || exit 0
 
 # Never for a local account: root and the machine's own service accounts have
 # ordinary local homes and must keep them, or the machine is unrecoverable.
-case "$(id -u "$USER_NAME" 2>/dev/null || echo 0)" in
+USER_ID="$(id -u "$USER_NAME" 2>/dev/null || echo 0)"
+case "$USER_ID" in
     ''|*[!0-9]*) exit 0 ;;
 esac
-[ "$(id -u "$USER_NAME")" -ge 1000 ] || exit 0
-id -G "$USER_NAME" >/dev/null 2>&1 || exit 0
+[ "$USER_ID" -ge 1000 ] || exit 0
 
-SID="$(getent passwd "$USER_NAME" | cut -d: -f5 | tr -d ' ' || true)"
-[ -n "$SID" ] || SID="$(id -u "$USER_NAME")"
-IMAGE="UPD-${USER_NAME}-${SID}.img"
+IMAGE="UPD-${USER_NAME}-${USER_ID}.img"
 STORE=/run/odm/profiles
 HOME_DIR="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 [ -n "$HOME_DIR" ] || HOME_DIR="/home/$USER_NAME"
@@ -155,7 +171,7 @@ if [ "${PAM_TYPE:-}" = "close_session" ]; then
     exit 0
 fi
 
-mkdir -p "$STORE" "$HOME_DIR"
+mkdir -p "$STORE" "$HOME_DIR" 2>/dev/null || warn "cannot create $HOME_DIR"
 
 # The share is reached with the machine's own credentials: the user's ticket
 # is not available to PAM at this point, and the disk is the machine's to
@@ -164,16 +180,19 @@ if ! mountpoint -q "$STORE"; then
     mount -t cifs "$PROFILE_SHARE" "$STORE" \
         -o sec=krb5,cruid=0,multiuser,vers=3.1.1,noperm 2>/dev/null \
     || mount -t cifs "$PROFILE_SHARE" "$STORE" \
-        -o sec=krb5,vers=3.0,noperm
+        -o sec=krb5,vers=3.0,noperm 2>/dev/null \
+    || warn "$PROFILE_SHARE could not be mounted; $USER_NAME gets a local home this session"
 fi
 
 if [ ! -f "$STORE/$IMAGE" ]; then
     # Sparse: it takes the space it uses, and cannot exceed what it was made.
-    truncate -s "${PROFILE_GB}G" "$STORE/$IMAGE"
-    mkfs.ext4 -q -F "$STORE/$IMAGE"
+    truncate -s "${PROFILE_GB}G" "$STORE/$IMAGE" 2>/dev/null \
+        && mkfs.ext4 -q -F "$STORE/$IMAGE" 2>/dev/null \
+        || warn "could not create a profile disk for $USER_NAME on $PROFILE_SHARE"
 fi
 
-mount -o loop,noatime "$STORE/$IMAGE" "$HOME_DIR"
+mount -o loop,noatime "$STORE/$IMAGE" "$HOME_DIR" 2>/dev/null \
+    || warn "could not attach $USER_NAME's profile disk"
 chown "$USER_NAME" "$HOME_DIR"
 chmod 0700 "$HOME_DIR"
 `

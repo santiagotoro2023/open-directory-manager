@@ -57,6 +57,19 @@ if getent group winbindd_priv >/dev/null; then
     adduser freerad winbindd_priv >/dev/null 2>&1 || true
 fi
 
+echo "==> Giving FreeRADIUS a server certificate it can read"
+# EAP needs a key, and Debian's default configuration points at the snakeoil
+# pair. That pair is 0640 root:ssl-cert, so a freerad that is not in ssl-cert
+# gets "Failed reading private key file" and FreeRADIUS refuses to start at
+# all — which looks like the whole role failing rather than one permission.
+odm_apt_install ssl-cert
+if [[ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]]; then
+    make-ssl-cert generate-default-snakeoil --force-overwrite
+fi
+if getent group ssl-cert >/dev/null; then
+    adduser freerad ssl-cert >/dev/null 2>&1 || true
+fi
+
 echo "==> Writing the ODM configuration"
 install -d -m 0750 -o freerad -g freerad "$CONF/odm"
 # Clients and policies are rendered here by the agent, from what the console
