@@ -69,6 +69,15 @@ func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) 
 	}
 	results := []policy.Result{}
 
+	// A managed machine gets its printers from policy, so nothing else adds
+	// any. Not conditional on a printer policy existing: cups-browsed makes
+	// its queues the moment CUPS starts, long before anybody logs in and a
+	// user-half printer policy is resolved, and a desktop that came up with
+	// two printers nobody asked for is the state this prevents.
+	if !userOnly {
+		results = append(results, quietBrowsing(ctx, env))
+	}
+
 	for _, item := range appliers {
 		if userOnly && !userScoped[item.name] {
 			continue

@@ -105,7 +105,6 @@ func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Res
 	if err := env.ReplaceBlock(printersConf, "", 0o644); err != nil {
 		results = append(results, policy.Fail("printers:client", err))
 	}
-	results = append(results, quietBrowsing(ctx, env))
 	_ = fallbackServer
 
 	if defaultPrinter != "" {
