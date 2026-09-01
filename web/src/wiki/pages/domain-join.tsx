@@ -56,6 +56,12 @@ id someone@corp.example.internal
 systemctl status odm-agent`}</Code>
         </Example>
 
+        <Example title="Join without a terminal">
+          <C>ODM_ADMIN_PASSWORD</C> in the environment, or <strong>--password-file</strong>,
+          supplies the credential, and standard input is read when it is not a terminal — so a
+          provisioning script can run the same command.
+        </Example>
+
         <Where>The computer appears under Directory once the join finishes.</Where>
       </Quickstart>
 

@@ -116,7 +116,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Operations | Health dashboard on Overview, replication, domain backups |
 | Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one |
 | Audit | Every change with actor, outcome and before-and-after state |
-| Clients | One `.deb`: `odm-client-install` for scripts, **Join a Domain** for the desktop. `odm-agent` applies and reports policy |
+| Clients | One `.deb`: `odm-client-install` for scripts, **Join a Domain** for the desktop, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |
 
 ## Architecture
 

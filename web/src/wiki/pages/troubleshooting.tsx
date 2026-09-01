@@ -170,6 +170,53 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Joining a client">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                '"Invalid configuration. Exiting..." from net ads join',
+                <>
+                  Fixed: Debian&rsquo;s <C key="s">smb.conf</C> says{" "}
+                  <C key="t">server role = standalone server</C> and{" "}
+                  <C key="u">net ads join</C> reads it first. The join writes one that says
+                  the machine is a domain member. Use a client package from 0.3.2 or later.
+                </>,
+              ],
+              [
+                '"failed to find DC for domain"',
+                <>
+                  The machine cannot resolve the domain. A domain member uses the domain&rsquo;s
+                  own DNS — normally handed out by DHCP. Pass{" "}
+                  <C key="v">--server &lt;controller ip&gt;</C> and the join sets the resolver
+                  itself.
+                </>,
+              ],
+              [
+                '"Unit odm-agent.service does not exist"',
+                "Fixed: the agent and its unit are in the client package now. Reinstall it.",
+              ],
+              [
+                '"certificate signed by unknown authority" after joining',
+                <>
+                  Until the domain has its own authority the console&rsquo;s certificate is
+                  self-signed, so the client has nothing to check it against. Copy{" "}
+                  <C key="w">/etc/odm/tls/api.crt</C> from the console and join with{" "}
+                  <C key="x">--ca-cert</C>. Setup prints the two commands.
+                </>,
+              ],
+              [
+                "KDC_ERR_S_PRINCIPAL_UNKNOWN for HTTP/odm.<domain>",
+                <>
+                  Fixed: the console answers to <C key="y">odm.&lt;domain&gt;</C> as well as its
+                  own name, and that principal is registered now. Re-run{" "}
+                  <C key="z">deploy/create-api-service-account.sh</C> on a controller.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Deleted objects">
           <Reference
             headers={["Symptom", "Check"]}
