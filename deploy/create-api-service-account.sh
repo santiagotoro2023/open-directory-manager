@@ -51,6 +51,18 @@ fi
 echo "==> Registering $SPN"
 samba-tool spn add "$SPN" "$ACCOUNT" 2>/dev/null || echo "    (already registered)"
 
+# odm.<domain> is where a joined machine looks for the console, and the
+# domain's DNS publishes it. Kerberos has to know the console answers to that
+# name too, or every agent on every member gets
+#
+#   KDC_ERR_S_PRINCIPAL_UNKNOWN ... HTTP/odm.<domain>
+CONVENTION_SPN="HTTP/odm.${REALM}"
+if [[ "$CONVENTION_SPN" != "$SPN" ]]; then
+    echo "==> Registering $CONVENTION_SPN"
+    samba-tool spn add "$CONVENTION_SPN" "$ACCOUNT" 2>/dev/null ||
+        echo "    (already registered)"
+fi
+
 echo "==> Delegating directory write rights"
 # ODM manages users, groups, computers and OUs on behalf of an authenticated
 # domain admin, so the service account needs create/delete/read/write on child
@@ -123,6 +135,8 @@ rm -f "$KEYTAB"
 # one of its service principal names, so a keytab holding only the SPN gets
 # "client not found in Kerberos database".
 samba-tool domain exportkeytab "$KEYTAB" --principal="$SPN"
+[[ "$CONVENTION_SPN" == "$SPN" ]] ||
+    samba-tool domain exportkeytab "$KEYTAB" --principal="$CONVENTION_SPN"
 samba-tool domain exportkeytab "$KEYTAB" --principal="$ACCOUNT"
 
 for PRINCIPAL in "$SPN" "$ACCOUNT"; do
