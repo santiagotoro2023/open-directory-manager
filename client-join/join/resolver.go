@@ -27,7 +27,12 @@ func EnsureDomainResolves(ctx context.Context, options Options, controller strin
 	if options.DryRun || env.Root != "" {
 		return nil
 	}
-	if _, err := net.LookupHost(controller); err == nil {
+	// The domain, not the controller: LookupHost on an address answers
+	// immediately without asking anything, so checking --server given as an
+	// IP would always say the resolver is fine when it is not. What has to
+	// resolve is the domain's own records, which is what net, SSSD and
+	// Kerberos all look for.
+	if _, err := net.LookupHost(options.Domain); err == nil {
 		return nil
 	}
 	// --server given as an address is the operator telling us where the
