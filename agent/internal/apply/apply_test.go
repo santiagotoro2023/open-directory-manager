@@ -763,6 +763,10 @@ func TestPruningAConfigFileReloadsWhatReadsIt(t *testing.T) {
 // policy names are local ones pointing at the server.
 func TestPrintersAreLocalQueuesPointingAtTheServer(t *testing.T) {
 	env, runner := testEnv(t)
+	// A machine with no CUPS has nothing to add a queue to, and says so.
+	if err := env.WriteFile("/usr/sbin/cupsd", "", 0o755, "", ""); err != nil {
+		t.Fatal(err)
+	}
 	applyPrinters(context.Background(), policy.Settings{
 		Printers: []policy.Printer{
 			{Name: "finance-mfp", Server: "print01.corp.example.internal"},
@@ -786,5 +790,17 @@ func TestPrintersAreLocalQueuesPointingAtTheServer(t *testing.T) {
 		if strings.Contains(string(body), "ServerName") {
 			t.Errorf("client.conf still redirects every CUPS command:\n%s", body)
 		}
+	}
+}
+
+// A machine that has no CUPS cannot be given a printer, and should say that
+// rather than fail on a command that is not there.
+func TestPrintersAreSkippedWhereCupsIsNotInstalled(t *testing.T) {
+	env, _ := testEnv(t)
+	results := applyPrinters(context.Background(), policy.Settings{
+		Printers: []policy.Printer{{Name: "finance-mfp", Server: "print01"}},
+	}, env)
+	if len(results) != 1 || results[0].Status != "skipped" {
+		t.Fatalf("expected one skip, got %+v", results)
 	}
 }

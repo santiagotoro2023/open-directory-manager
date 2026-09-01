@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
@@ -25,6 +26,18 @@ func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Res
 			Setting: "printers", Status: "skipped", Reason: "no command runner",
 		}}
 	}
+
+	// CUPS on a desktop is socket-activated and idles out again, so lpadmin
+	// can arrive while cupsd is on its way down: "Unable to connect to
+	// server: Bad file descriptor". Ask for it once, before any of them.
+	if _, err := os.Stat(env.Path("/usr/sbin/cupsd")); err != nil {
+		return []policy.Result{{
+			Setting: "printers",
+			Status:  "skipped",
+			Reason:  "CUPS is not installed on this machine",
+		}}
+	}
+	_, _ = env.Run.Run(ctx, "systemctl", "start", "cups")
 
 	results := []policy.Result{}
 	var fallbackServer, defaultPrinter string
