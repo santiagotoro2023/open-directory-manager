@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -337,4 +338,65 @@ func TestBothFrontEndsProduceTheSameConfiguration(t *testing.T) {
 			t.Fatalf("%s differs between runs", path)
 		}
 	}
+}
+
+// Debian ships smb.conf saying "server role = standalone server", and net ads
+// join reads it before it does anything:
+//
+//	Invalid configuration.  Exiting....
+//	Host is not configured as a member server.
+//
+// Nothing wrote this file, so no client could ever join.
+func TestJoinWritesAnSmbConfNetAdsWillAccept(t *testing.T) {
+	root := t.TempDir()
+	env := Env{Root: root}
+	options := Options{
+		Domain: "corp.example.internal",
+		Realm:  "CORP.EXAMPLE.INTERNAL",
+	}
+	if err := WriteSmbConf(options, "EXAMPLE", env); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, SmbConfPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wanted := range []string{
+		"security = ADS",
+		"realm = CORP.EXAMPLE.INTERNAL",
+		"workgroup = EXAMPLE",
+	} {
+		if !strings.Contains(string(body), wanted) {
+			t.Errorf("smb.conf does not say %q:\n%s", wanted, body)
+		}
+	}
+	if strings.Contains(string(body), "standalone") {
+		t.Errorf("smb.conf still describes a standalone server:\n%s", body)
+	}
+}
+
+// The NetBIOS name is not always the realm's first label — corp.example.org
+// can be EXAMPLE — so the controller is asked, and answers when it can.
+func TestWorkgroupPrefersWhatTheControllerSays(t *testing.T) {
+	env := Env{Root: t.TempDir(), Run: fixedRunner(
+		"Realm:\tCORP.EXAMPLE.INTERNAL\nPre-Win2k Domain:\tEXAMPLE\n")}
+	got := Workgroup(context.Background(), Options{Realm: "CORP.EXAMPLE.INTERNAL"}, "dc", env)
+	if got != "EXAMPLE" {
+		t.Fatalf("workgroup is %q, not what the controller said", got)
+	}
+	// With no controller to ask, the realm's first label is the best guess.
+	quiet := Env{Root: t.TempDir()}
+	if got := Workgroup(context.Background(), Options{Realm: "CORP.EXAMPLE.INTERNAL"}, "", quiet); got != "CORP" {
+		t.Fatalf("fallback workgroup is %q", got)
+	}
+}
+
+type fixedRunner string
+
+func (f fixedRunner) Run(context.Context, string, ...string) (string, error) {
+	return string(f), nil
+}
+
+func (f fixedRunner) RunWithInput(context.Context, string, string, ...string) (string, error) {
+	return string(f), nil
 }

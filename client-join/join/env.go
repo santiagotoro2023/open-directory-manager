@@ -85,6 +85,15 @@ func (e Env) WriteFile(path, content string, mode os.FileMode) error {
 	return os.Rename(temp.Name(), full)
 }
 
+// WriteFileIfMissing creates a file only when there is not one already, so a
+// file server's own shares survive a rejoin.
+func (e Env) WriteFileIfMissing(path, content string, mode os.FileMode) error {
+	if _, err := os.Stat(e.Path(path)); err == nil {
+		return nil
+	}
+	return e.WriteFile(path, content, mode)
+}
+
 // Backup keeps a copy of a file the join is about to replace.
 func (e Env) Backup(path string) error {
 	full := e.Path(path)

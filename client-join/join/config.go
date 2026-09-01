@@ -13,11 +13,74 @@ const (
 	SssdConfPath    = "/etc/sssd/sssd.conf"
 	KeytabPath      = "/etc/krb5.keytab"
 	NsswitchPath    = "/etc/nsswitch.conf"
+	SmbConfPath     = "/etc/samba/smb.conf"
 	AgentConfigPath = "/etc/odm/agent.json"
 	PamMkHomeDir    = "/usr/share/pam-configs/odm-mkhomedir"
 
 	managed = "# Managed by Open Directory Manager. Local edits are overwritten.\n"
 )
+
+// WriteSmbConf makes this machine a domain member as far as Samba's tools are
+// concerned.
+//
+// Debian ships smb.conf saying "server role = standalone server" and
+// "workgroup = WORKGROUP", and net ads join reads it before it does anything:
+//
+//	Invalid configuration.  Exiting....
+//	Host is not configured as a member server.
+//
+// Nothing wrote this file, so no client could ever join. realmd writes the
+// same three settings for the same reason.
+func WriteSmbConf(options Options, workgroup string, env Env) error {
+	body := managed + fmt.Sprintf(`[global]
+    workgroup = %s
+    realm = %s
+    security = ADS
+    kerberos method = secrets and keytab
+    dedicated keytab file = %s
+    winbind refresh tickets = yes
+    client signing = mandatory
+    client ipc signing = mandatory
+
+# A file server adds its shares from here; joining leaves that alone.
+include = /etc/samba/odm-shares.conf
+`, workgroup, options.Realm, KeytabPath)
+
+	if err := env.Backup(SmbConfPath); err != nil {
+		return err
+	}
+	// The include must exist or Samba complains on every command.
+	if err := env.WriteFileIfMissing("/etc/samba/odm-shares.conf", managed, 0o644); err != nil {
+		return err
+	}
+	return env.WriteFile(SmbConfPath, body, 0o644)
+}
+
+// Workgroup is the domain's NetBIOS name, which is not always the first label
+// of the realm — a domain called corp.example.org can be EXAMPLE. The
+// controller knows; ask it, and fall back to the realm's first label.
+func Workgroup(ctx context.Context, options Options, controller string, env Env) string {
+	fallback := strings.ToUpper(strings.SplitN(options.Realm, ".", 2)[0])
+	if env.Run == nil || controller == "" {
+		return fallback
+	}
+	out, err := env.Run.Run(ctx, "net", "ads", "lookup", "-S", controller)
+	if err != nil {
+		return fallback
+	}
+	for _, line := range strings.Split(out, "\n") {
+		name, value, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(name), "Pre-Win2k Domain") {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				return strings.ToUpper(trimmed)
+			}
+		}
+	}
+	return fallback
+}
 
 // WriteKrb5Conf points Kerberos at the realm. Both front ends produce this
 // same file.

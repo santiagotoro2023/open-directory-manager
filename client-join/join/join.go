@@ -144,6 +144,14 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		return nil, err
 	}
 
+	// Before the join, not after: net ads join reads this file first and
+	// refuses on Debian's stock "standalone server".
+	workgroup := Workgroup(ctx, options, controller, env)
+	progress("Writing Samba configuration", SmbConfPath+" ("+workgroup+")")
+	if err := WriteSmbConf(options, workgroup, env); err != nil {
+		return nil, err
+	}
+
 	result := &Result{
 		Realm:      options.Realm,
 		Domain:     options.Domain,
