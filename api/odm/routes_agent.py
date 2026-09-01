@@ -20,7 +20,7 @@ from typing import Annotated, Any
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import audit, ca, objects, rsop, sites, tasks
 from .auth import _accept_spnego
@@ -130,7 +130,12 @@ async def agent_user_policy(
 
 class SettingResult(BaseModel):
     setting: Annotated[str, Field(max_length=256)]
-    status: Annotated[str, Field(pattern="^(success|failed|skipped)$")]
+    # Every word the appliers use. "applied" is a setting written whether or
+    # not it had changed and "unchanged" is one that was already right — and
+    # because this pattern did not know them, one such result made the control
+    # plane refuse the whole report with 422, so the console showed no
+    # Resultant Set of Policy at all for that machine.
+    status: Annotated[str, Field(pattern="^(success|applied|unchanged|failed|skipped)$")]
     reason: Annotated[str, Field(default="", max_length=512)] = ""
 
 
@@ -361,7 +366,17 @@ class LocalUser(BaseModel):
     uid: int
     shell: Annotated[str, Field(max_length=128)] = ""
     home: Annotated[str, Field(max_length=255)] = ""
-    groups: Annotated[list[Annotated[str, Field(max_length=64)]], Field(max_length=64)] = []
+    # An account with no supplementary groups arrives as null, because that
+    # is what an empty list is in Go. Rejecting it threw away the whole
+    # inventory — every local account, session and package with it.
+    groups: Annotated[
+        list[Annotated[str, Field(max_length=64)]] | None, Field(max_length=64)
+    ] = []
+
+    @field_validator("groups", mode="after")
+    @classmethod
+    def _no_groups_is_no_groups(cls, value: list[str] | None) -> list[str]:
+        return value or []
 
 
 class LoginSession(BaseModel):

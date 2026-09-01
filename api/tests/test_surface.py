@@ -555,3 +555,24 @@ def test_an_issued_certificate_may_name_any_profile_that_can_exist():
     assert "IN (" not in latest.upper(), (
         f"the constraint is still a fixed list of names: {latest.strip()}"
     )
+
+
+def test_the_control_plane_accepts_every_status_an_applier_reports():
+    """One unknown word made the whole report 422, so the console showed no
+    Resultant Set of Policy at all for that machine — and a report is how an
+    operator finds out a setting did not apply."""
+    import pathlib
+    import re
+
+    from odm.routes_agent import SettingResult
+
+    pattern = SettingResult.model_fields["status"].metadata[0].pattern
+    accepted = set(re.findall(r"[a-z]+", pattern))
+
+    appliers = (pathlib.Path(__file__).resolve().parents[2] / "agent" / "internal" / "apply")
+    used = set()
+    for path in appliers.glob("*.go"):
+        used.update(re.findall(r'Status:\s*"([a-z]+)"', path.read_text()))
+    assert used, "no applier statuses found; did the appliers move?"
+    missing = sorted(used - accepted)
+    assert not missing, f"the appliers report {missing}, which the control plane refuses"
