@@ -78,17 +78,9 @@ func (o *Options) Validate() error {
 	if o.Server != "" && !validHostname(o.Server) {
 		return fmt.Errorf("invalid server %q", o.Server)
 	}
-	if o.APIURL == "" {
-		// The convention setup publishes as an A record. When it is not
-		// there — an older domain, a console somewhere else — the machine
-		// this one joined through is the better guess than a name that does
-		// not resolve, because the agent then reports to nowhere for ever.
-		o.APIURL = "https://odm." + o.Domain + ":8443"
-		if _, err := net.LookupHost("odm." + o.Domain); err != nil && o.Server != "" {
-			o.APIURL = "https://" + o.Server + ":8443"
-		}
-	}
-	if !strings.HasPrefix(o.APIURL, "https://") {
+	// The console's address is settled after the resolver is, because until
+	// then nothing in the domain resolves. See consoleURL.
+	if o.APIURL != "" && !strings.HasPrefix(o.APIURL, "https://") {
 		return fmt.Errorf("the control plane URL must be https")
 	}
 	if o.OTP == "" && o.AdminUser == "" {
@@ -156,6 +148,10 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 	if err := EnsureDomainResolves(ctx, options, controller, env); err != nil {
 		return nil, err
 	}
+	if options.APIURL == "" {
+		options.APIURL = consoleURL(options, controller)
+		progress("Console", options.APIURL)
+	}
 
 	// Before the join, not after: net ads join reads this file first and
 	// refuses on Debian's stock "standalone server".
@@ -219,4 +215,29 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 
 	progress("Done", result.Hostname)
 	return result, nil
+}
+
+// consoleURL is where the agent will report. Settled after the resolver is
+// pointed at the domain, because until then nothing in the domain resolves —
+// and an address chosen before that fell back to the controller's IP, which
+// the console's certificate does not cover:
+//
+//	certificate is valid for lern-st-odm-01..., not 192.168.1.171
+//
+// odm.<domain> is the name setup publishes and the certificate carries.
+func consoleURL(options Options, controller string) string {
+	convention := "odm." + options.Domain
+	if _, err := net.LookupHost(convention); err == nil {
+		return "https://" + convention + ":8443"
+	}
+	// No such record. The machine this one joined through is the next best
+	// guess — by name where one is known, because a certificate names hosts
+	// and not addresses.
+	if controller != "" && net.ParseIP(controller) == nil {
+		return "https://" + controller + ":8443"
+	}
+	if names, err := net.LookupAddr(controller); err == nil && len(names) > 0 {
+		return "https://" + strings.TrimSuffix(names[0], ".") + ":8443"
+	}
+	return "https://" + convention + ":8443"
 }

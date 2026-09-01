@@ -28,7 +28,7 @@ import (
 	"odm.example.org/agent/internal/tasks"
 )
 
-const version = "0.3.2"
+const version = "0.4.0"
 
 const serialPath = "/var/lib/odm/last-serial"
 

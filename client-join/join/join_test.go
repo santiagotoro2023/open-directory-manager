@@ -86,8 +86,28 @@ func TestValidateDerivesRealmAndQualifiesTheHostName(t *testing.T) {
 	if o.Hostname != "ws01.corp.example.internal" {
 		t.Errorf("hostname = %q", o.Hostname)
 	}
-	if !strings.HasPrefix(o.APIURL, "https://") {
-		t.Errorf("api url = %q", o.APIURL)
+	// The console's address is settled after the resolver is, so Validate
+	// leaves it empty rather than choosing one nothing can resolve yet.
+	if o.APIURL != "" {
+		t.Errorf("api url settled too early: %q", o.APIURL)
+	}
+}
+
+// An address chosen before the resolver was pointed at the domain fell back
+// to the controller's IP, and the console's certificate names hosts:
+//
+//	certificate is valid for lern-st-odm-01..., not 192.168.1.171
+func TestTheConsoleIsNamedNeverAddressed(t *testing.T) {
+	options := Options{Domain: "corp.invalid"}
+	// No odm.<domain> record and an IP for a controller: the URL must not be
+	// that address.
+	url := consoleURL(options, "192.0.2.10")
+	if strings.Contains(url, "192.0.2.10") {
+		t.Errorf("the console was addressed rather than named: %s", url)
+	}
+	// A named controller is a fine fallback.
+	if got := consoleURL(options, "dc1.corp.invalid"); got != "https://dc1.corp.invalid:8443" {
+		t.Errorf("named controller fallback = %q", got)
 	}
 }
 
