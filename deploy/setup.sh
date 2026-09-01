@@ -632,6 +632,17 @@ if [[ ! -x "$AGENT_BINARY" ]]; then
     }
     if command -v go >/dev/null 2>&1; then
         info "Building the agent"
+        # Go needs somewhere to put its module cache, and root running from a
+        # service context may have neither HOME nor GOPATH. Without them every
+        # build here failed with "module cache not found: neither GOMODCACHE
+        # nor GOPATH is set", so the controller came up with no agent at all —
+        # no role could be installed on it and it reported nothing.
+        export HOME="${HOME:-/root}"
+        export GOPATH="${GOPATH:-/root/go}"
+        export GOMODCACHE="${GOMODCACHE:-$GOPATH/pkg/mod}"
+        export GOCACHE="${GOCACHE:-/root/.cache/go-build}"
+        export GOFLAGS="${GOFLAGS:--buildvcs=false}"
+        install -d -m 0755 "$GOPATH" "$GOCACHE"
         (cd "$REPO/agent" && go build -o odm-agent .) >>"$AGENT_LOG" 2>&1 || true
         # The network-boot role installs this onto machines it provisions, so
         # it has to be on the controller before that role can be installed.
@@ -705,11 +716,20 @@ if [[ "$SKIP_DC" != "yes" ]]; then
     # agent already assume. Nothing published it, so every agent on a member
     # started with "lookup odm.<domain>: no such host". Publish it.
     if [[ -n "$MY_ADDRESS" && "${CONSOLE_FQDN%%.*}" != "odm" ]]; then
-        if samba-tool dns query 127.0.0.1 "$REALM" odm A >/dev/null 2>&1; then
+        # -P on the query as well as the add. Without credentials samba-tool
+        # prompts, reads end-of-file and fails, so the record was reported as
+        # missing and then as unpublishable when it was already there.
+        odm_record() { samba-tool dns query 127.0.0.1 "$REALM" odm A -P >/dev/null 2>&1; }
+        if odm_record; then
             :
-        elif samba-tool dns add 127.0.0.1 "$REALM" odm A "$MY_ADDRESS" \
-                --use-kerberos=off -U "Administrator%$ADMIN_PASSWORD" >/dev/null 2>&1 ||
-             samba-tool dns add 127.0.0.1 "$REALM" odm A "$MY_ADDRESS" -P >/dev/null 2>&1; then
+        else
+            samba-tool dns add 127.0.0.1 "$REALM" odm A "$MY_ADDRESS" -P >/dev/null 2>&1 ||
+                samba-tool dns add 127.0.0.1 "$REALM" odm A "$MY_ADDRESS" \
+                    --use-kerberos=off -U "Administrator%$ADMIN_PASSWORD" >/dev/null 2>&1 || true
+        fi
+        # Whether the record is there now, rather than whether one command
+        # said so: an add that fails because it already exists is a success.
+        if odm_record; then
             ok "Published odm.$REALM for clients to find the console at"
         else
             warn "Could not publish odm.$REALM. Clients need it, or --api-url on the join:"
