@@ -317,7 +317,12 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	if err := api.Report(ctx, report); err != nil {
 		return fmt.Errorf("reporting results: %w", err)
 	}
-	if username == "" {
+	// Only when everything applied. Recording the serial after a failure means
+	// the next run says "policy unchanged" and skips it, so a setting that
+	// failed for a passing reason — a share that was down, a package the
+	// mirror did not have yet — is never tried again until somebody edits the
+	// policy object.
+	if username == "" && failed == 0 {
 		saveSerial(env, document.Serial)
 	}
 	if failed > 0 {
