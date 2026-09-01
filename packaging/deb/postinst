@@ -6,4 +6,10 @@ if [ "$1" = "configure" ] && [ -x /usr/bin/gtk-update-icon-cache ]; then
     gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 
+# The unit ships with the package; the join is what enables it, once there is
+# a domain to report to. systemctl only needs to know the file exists.
+if [ "$1" = "configure" ] && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
 exit 0

@@ -25,6 +25,14 @@ echo "==> Building odm-client-install"
 ( cd "$REPO/client-join" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
     go build -trimpath -ldflags "-s -w" -o "$STAGE/odm-client-install" ./cmd/odm-client-install )
 
+# The join installs the policy agent as its last step, and a client that has
+# nothing to install fails there: "Unit odm-agent.service does not exist". The
+# agent and its unit belong in the package that joins the machine, along with
+# the role installers a member server needs to be given a role.
+echo "==> Building odm-agent"
+( cd "$REPO/agent" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
+    go build -trimpath -ldflags "-s -w" -o "$STAGE/odm-agent" . )
+
 GUI_BUILT="no"
 if [[ "$WITH_GUI" != "no" ]]; then
     echo "==> Building odm-join (desktop)"
@@ -44,6 +52,14 @@ fi
 ROOT="$STAGE/root"
 install -d -m 0755 "$ROOT/DEBIAN" "$ROOT/usr/sbin" "$ROOT/usr/share/doc/odm-client"
 install -m 0755 "$STAGE/odm-client-install" "$ROOT/usr/sbin/odm-client-install"
+install -m 0755 "$STAGE/odm-agent" "$ROOT/usr/sbin/odm-agent"
+
+install -d -m 0755 "$ROOT/lib/systemd/system" "$ROOT/usr/lib/odm/roles"
+install -m 0644 "$REPO/deploy/odm-agent.service" "$ROOT/lib/systemd/system/odm-agent.service"
+# A member server is given a role by its own agent running one of these.
+install -m 0755 "$REPO"/deploy/install-*-role.sh "$ROOT/usr/lib/odm/roles/"
+install -m 0644 "$REPO/deploy/odm-role-common.sh" "$ROOT/usr/lib/odm/roles/"
+install -m 0755 "$REPO/deploy/odm-apply-console-certificate" "$ROOT/usr/lib/odm/roles/"
 
 DEPENDS="samba-common-bin, sssd-ad, sssd-tools, krb5-user, libnss-winbind, libpam-winbind, adcli"
 if [[ "$GUI_BUILT" == "yes" ]]; then
@@ -88,6 +104,7 @@ CONTROL="${CONTROL//@ARCH@/$ARCH}"
 CONTROL="${CONTROL//@DEPENDS@/$DEPENDS}"
 printf '%s\n' "$CONTROL" > "$ROOT/DEBIAN/control"
 install -m 0755 "$HERE/postinst" "$ROOT/DEBIAN/postinst"
+install -m 0755 "$HERE/prerm" "$ROOT/DEBIAN/prerm"
 install -m 0644 "$REPO/LICENSE" "$ROOT/usr/share/doc/odm-client/copyright"
 install -m 0644 "$HERE/README.deb" "$ROOT/usr/share/doc/odm-client/README"
 
@@ -98,6 +115,7 @@ dpkg-deb --root-owner-group --build "$ROOT" "$PACKAGE" >/dev/null
 echo
 echo "Built $PACKAGE"
 echo "  odm-client-install  command line, and what automated provisioning uses"
+echo "  odm-agent           applies policy and reports it back, once joined"
 if [[ "$GUI_BUILT" == "yes" ]]; then
     echo "  odm-join            desktop application, in the applications menu"
 else

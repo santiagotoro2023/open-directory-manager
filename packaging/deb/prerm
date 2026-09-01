@@ -1,0 +1,10 @@
+#!/bin/sh
+# The agent runs from this package. Removing it should not leave a service
+# pointing at a binary that is no longer there.
+set -e
+
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+    systemctl disable --now odm-agent.service >/dev/null 2>&1 || true
+fi
+
+exit 0

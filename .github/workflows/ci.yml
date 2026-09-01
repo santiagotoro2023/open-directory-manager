@@ -269,7 +269,15 @@ jobs:
           dpkg-deb --contents "$PACKAGE" | tee /tmp/contents.txt
           # A package missing the desktop application is one somebody has to
           # be told about, not one that quietly ships.
+          # odm-agent and its unit because the join's last step enables it,
+          # and a package without them fails there with "Unit
+          # odm-agent.service does not exist"; the role installers because a
+          # member server is given a role by its own agent running one.
           for path in ./usr/sbin/odm-client-install ./usr/bin/odm-join \
+                      ./usr/sbin/odm-agent \
+                      ./lib/systemd/system/odm-agent.service \
+                      ./usr/lib/odm/roles/install-dhcp-role.sh \
+                      ./usr/lib/odm/roles/odm-role-common.sh \
                       ./usr/share/applications/odm-join.desktop \
                       ./usr/share/icons/hicolor/scalable/apps/odm-join.svg; do
             grep -q "$path" /tmp/contents.txt || { echo "missing $path" >&2; exit 1; }
@@ -279,10 +287,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             "./dist/odm-client_${ODM_CLIENT_VERSION}_amd64.deb"
           odm-client-install --version
+          odm-agent --version
           # A binary whose libraries do not resolve fails on first launch
           # rather than at install: the desktop app shipped once without
           # libwayland-client0 and would have done exactly that.
-          for BINARY in /usr/sbin/odm-client-install /usr/bin/odm-join; do
+          for BINARY in /usr/sbin/odm-client-install /usr/sbin/odm-agent /usr/bin/odm-join; do
             if ldd "$BINARY" | grep "not found"; then
               echo "$BINARY has unresolved libraries" >&2
               exit 1
