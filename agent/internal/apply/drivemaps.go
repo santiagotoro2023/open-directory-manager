@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
@@ -82,9 +83,47 @@ func MountDriveMaps(
 		); err != nil {
 			problems = append(problems, fmt.Errorf(
 				"%s: %w: %s", drive.Name, err, strings.TrimSpace(lastLine(out))))
+			continue
+		}
+		if err := bookmark(who, drive); err != nil {
+			problems = append(problems, err)
 		}
 	}
 	return problems
+}
+
+// bookmark puts the mapped drive in the file manager's sidebar.
+//
+// A drive map that is only a mount point is a drive map nobody finds: it is
+// mounted, it works, and it appears nowhere somebody looking for it would
+// look. A bookmark is what a file manager shows in the place a drive letter
+// occupies on Windows.
+func bookmark(who account, drive policy.DriveMap) error {
+	path := filepath.Join(who.home, ".config", "gtk-3.0", "bookmarks")
+	line := "file://" + drive.MountPoint + " " + drive.Name
+	existing, err := os.ReadFile(path)
+	if err == nil {
+		for _, present := range strings.Split(string(existing), "\n") {
+			if strings.TrimSpace(present) == line {
+				return nil
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return nil // an unreadable home is the mount's problem, not this one
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil
+	}
+	body := string(existing)
+	if body != "" && !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	if err := os.WriteFile(path, []byte(body+line+"\n"), 0o644); err != nil {
+		return fmt.Errorf("%s: adding it to the file manager: %w", drive.Name, err)
+	}
+	_ = os.Chown(path, who.uid, who.gid)
+	_ = os.Chown(filepath.Dir(path), who.uid, who.gid)
+	return nil
 }
 
 // appliesTo answers whether a map assigned to a user or %group is this
