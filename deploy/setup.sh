@@ -89,11 +89,24 @@ on_error() {
     printf '\n%sSetup failed during: %s%s\n' "$RED" "$CURRENT" "$R" >&2
     printf '%sNothing after this point ran. Fix the problem and run setup again;%s\n' "$DIM" "$R" >&2
     printf '%ssteps that already completed are skipped on a second run.%s\n' "$DIM" "$R" >&2
+    # It says nothing after this point ran, so nothing after this point runs.
+    # Without this the message appeared and setup carried on, printing it
+    # again at every later hiccup.
+    exit 1
 }
 trap on_error ERR
 
 ask() {
     local prompt="$1" default="${2:-}" answer
+    # No terminal means a scripted install. Reading would get end-of-file
+    # straight away and loop on the complaint for ever, which is what
+    # happened when setup was driven from a pipe.
+    if [[ ! -t 0 ]]; then
+        [[ -n "$default" ]] || fail "$prompt has no answer and there is no terminal to ask at"
+        printf '%s' "$default"
+        info "$prompt: $default (no terminal; taking the default)" >&2
+        return
+    fi
     if [[ -n "$default" ]]; then
         read -rp "      $prompt [$default]: " answer
         printf '%s' "${answer:-$default}"
@@ -108,14 +121,22 @@ ask_until() {
     local prompt="$1" default="$2" pattern="$3" complaint="$4" answer
     while true; do
         answer="$(ask "$prompt" "$default")"
-        [[ "$answer" =~ $pattern ]] && { printf '%s' "$answer"; return; }
+        # if/then rather than [[ ]] && {}: a test that is meant to fail is
+        # not an error, and as a bare statement it tripped the ERR trap.
+        if [[ "$answer" =~ $pattern ]]; then
+            printf '%s' "$answer"
+            return
+        fi
         warn "$complaint"
     done
 }
 
 ask_yes_no() {
     local prompt="$1" default="${2:-no}" answer
-    [[ "$ASSUME_YES" == "yes" ]] && { printf 'yes'; return; }
+    if [[ "$ASSUME_YES" == "yes" ]]; then
+        printf 'yes'
+        return
+    fi
     while true; do
         answer="$(ask "$prompt (yes/no)" "$default")"
         case "${answer,,}" in
@@ -132,6 +153,12 @@ ask_secret() {
     # the newline after a silent read ends up *inside* the password, and the
     # account is then created with a password nobody can type.
     local prompt="$1" first second
+    # Set by an unattended install. Never defaulted and never echoed.
+    if [[ -n "${ODM_ADMIN_PASSWORD:-}" ]]; then
+        printf '%s' "$ODM_ADMIN_PASSWORD"
+        return
+    fi
+    [[ -t 0 ]] || fail "no terminal to ask for a password at; set ODM_ADMIN_PASSWORD"
     while true; do
         read -rsp "      $prompt: " first; echo >&2
         [[ ${#first} -ge 8 ]] || { warn "Use at least 8 characters."; continue; }
@@ -265,11 +292,19 @@ ok "Domain: $REALM"
 if [[ "$HOSTNAME_FQDN" != *.* ]]; then
     echo
     info "This machine is called \"$HOSTNAME_FQDN\" and has no domain part yet."
+    # --console-fqdn has already named this machine when it names this
+    # machine, so do not ask the same question twice.
+    if [[ "${CONSOLE_FQDN%%.*}" == "$HOSTNAME_SHORT" ]]; then
+        set_hostname "${CONSOLE_FQDN,,}"
+        HOSTNAME_FQDN="${CONSOLE_FQDN,,}"
+        HOSTNAME_SHORT="${HOSTNAME_FQDN%%.*}"
+    else
     NEW_HOSTNAME="$(ask_until "Full name for this machine" "$HOSTNAME_SHORT.$REALM" \
         '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$' "Include the domain, e.g. $HOSTNAME_SHORT.$REALM")"
     set_hostname "${NEW_HOSTNAME,,}"
     HOSTNAME_FQDN="${NEW_HOSTNAME,,}"
     HOSTNAME_SHORT="${HOSTNAME_FQDN%%.*}"
+    fi
 fi
 
 if [[ "$SKIP_DC" == "no" && ! -f /var/lib/samba/private/sam.ldb ]]; then
