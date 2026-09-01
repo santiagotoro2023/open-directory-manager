@@ -251,3 +251,33 @@ def test_settings_accept_a_realistic_policy():
     stored = settings.stored()
     assert "firewall" not in stored  # empty categories are not persisted
     assert stored["drive_maps"][0]["unc"] == "//fs01/shared"
+
+
+def test_a_target_in_a_group_can_be_filtered_on(monkeypatch):
+    """nested_groups describes each group — DN, account name, SID — and Target
+    wants the distinguished names. Handing it the whole description made every
+    filtering decision fail on 'dict' object has no attribute 'lower', which
+    reached an operator as a 500 on the Policy tab of any object in a group.
+    """
+    from odm import directory, objects, rsop
+    from odm.config import get_settings
+
+    group = f"CN=Testers,{BASE_DN}"
+    monkeypatch.setattr(
+        objects, "get", lambda *a, **k: {"distinguishedName": f"CN=t,{BASE_DN}", "cn": "t"}
+    )
+    monkeypatch.setattr(
+        directory,
+        "nested_groups",
+        lambda *a, **k: [{"dn": group, "sam_account_name": "Testers", "sid": "S-1-5-21-1"}],
+    )
+    target = rsop.target_facts(None, get_settings(), f"CN=t,{BASE_DN}")
+    assert target.group_dns == (group,)
+
+    # And the decision it exists for now actually runs.
+    filtered = policy.Gpo(
+        guid="g", display_name="Filtered", enabled=True, settings={},
+        security_filter=[group],
+    )
+    applies, why = policy.in_scope(filtered, target)
+    assert applies, why

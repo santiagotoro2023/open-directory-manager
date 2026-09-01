@@ -28,6 +28,7 @@ KINDS = (
     "package-install",
     "package-remove",
     "browse",
+    "printer-discover",
     "make-directory",
     "local-user-add",
     "local-user-remove",

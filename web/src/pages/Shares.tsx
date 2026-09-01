@@ -232,7 +232,22 @@ function ShareDialog({
       }}
     >
       {editing ? (
-        <p className="mono muted">{share.unc}</p>
+        // The address to type into a file manager. Both spellings, because
+        // Windows takes the first and GNOME Files and KDE take the second.
+        <table className="data" style={{ marginBottom: "6px" }}>
+          <tbody>
+            <tr>
+              <th scope="row">Windows</th>
+              <td className="mono selectable">{share.unc}</td>
+            </tr>
+            <tr>
+              <th scope="row">Linux and macOS</th>
+              <td className="mono selectable">
+                {"smb://" + share.unc.replace(/^\/\//, "").replace(/\\/g, "/")}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       ) : (
         <>
           <Field label="Server" hint="A machine carrying the file-server role">

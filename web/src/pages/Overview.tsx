@@ -226,6 +226,15 @@ export function Overview({ session }: { session: SessionInfo }) {
     void load();
   }, [load]);
 
+  // A backup takes minutes, and the row said "No backups taken yet" until
+  // something else caused a reload. Follow it while it runs.
+  useEffect(() => {
+    if (tab !== "backups") return;
+    if (!backups?.history.some((entry) => entry.state === "running")) return;
+    const timer = setInterval(() => void load(), 4000);
+    return () => clearInterval(timer);
+  }, [tab, backups, load]);
+
   return (
     <main className="content">
       <div className="page-header">
@@ -421,7 +430,15 @@ function BackupTable({ history }: { history: BackupRecord[] }) {
               >
                 {entry.state}
               </span>
-              {entry.detail && <p className="muted">{entry.detail}</p>}
+              {/* samba-tool reports no percentage, so this says how long it
+                  has been going rather than inventing one. */}
+              {entry.state === "running" && (
+                <p className="stat-note">
+                  Running for {elapsed(entry.started_at)}. A domain backup copies the whole
+                  directory and SYSVOL.
+                </p>
+              )}
+              {entry.detail && <pre className="failure-output">{entry.detail}</pre>}
             </td>
             <td>{entry.size_bytes ? bytes(entry.size_bytes) : ""}</td>
             <td className="mono">{entry.path.startsWith("pending:") ? "" : entry.path}</td>
@@ -876,4 +893,12 @@ function PasswordPolicyDialog({ onClose, onSaved }: { onClose: () => void; onSav
       )}
     </Modal>
   );
+}
+
+/** How long something has been going, in words. */
+function elapsed(since: string): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / 1000));
+  if (seconds < 60) return `${seconds} seconds`;
+  const minutes = Math.floor(seconds / 60);
+  return minutes === 1 ? "a minute" : `${minutes} minutes`;
 }

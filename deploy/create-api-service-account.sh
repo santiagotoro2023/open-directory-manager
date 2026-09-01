@@ -119,10 +119,14 @@ echo "==> Delegating replication monitoring"
 #   1131f6ab-…  Replication Synchronization           (force a run)
 #   1131f6aa-…  Replicating Directory Changes         (bind)
 #   1131f6ac-…  Manage Replication Topology           (read what showrepl reads)
+#   1131f6ad-…  Replicating Directory Changes All     (take a domain backup)
+# The last one is what samba-tool domain backup needs; without it the backup
+# fails with WERR_DS_DRA_ACCESS_DENIED after appearing to start.
 for RIGHT in f98340fb-7c5b-4cdb-a00b-2ebdfa115a96 \
              1131f6ab-9c07-11d1-f79f-00c04fc2dcd2 \
              1131f6aa-9c07-11d1-f79f-00c04fc2dcd2 \
-             1131f6ac-9c07-11d1-f79f-00c04fc2dcd2; do
+             1131f6ac-9c07-11d1-f79f-00c04fc2dcd2 \
+             1131f6ad-9c07-11d1-f79f-00c04fc2dcd2; do
     samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(OA;;CR;${RIGHT};;${SID})"
 done
 

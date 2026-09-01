@@ -114,13 +114,18 @@ def target_facts(
     """Facts that come from the directory; the agent supplies OS and addresses."""
     entry = objects.get(conn, settings, dn)
     hostname = str(entry.get("dNSHostName") or entry.get("cn") or "")
+    # nested_groups describes each group — its DN, its account name and its
+    # SID. Target wants the distinguished names, and handing it the whole
+    # description made every filtering decision fail on
+    # 'dict' object has no attribute 'lower', which is a 500 on the Policy tab
+    # of any object that belongs to a group.
     groups = directory.nested_groups(conn, settings, entry["distinguishedName"])
     return policy.Target(
         dn=entry["distinguishedName"],
         hostname=hostname,
         os_id=os_id or str(entry.get("operatingSystem") or ""),
         ip_addresses=ip_addresses,
-        group_dns=tuple(groups),
+        group_dns=tuple(str(group["dn"]) for group in groups if group.get("dn")),
     )
 
 

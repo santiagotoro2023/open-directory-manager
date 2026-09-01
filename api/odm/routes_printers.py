@@ -105,6 +105,40 @@ async def list_printers(
     return {"printers": [_json(row) for row in rows]}
 
 
+@router.get("/discover", dependencies=[Depends(requires("printer.read"))])
+async def discover(
+    node: Annotated[str, Query(min_length=1, max_length=253)],
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Ask a print server what printers it can see, now.
+
+    The same list rides the machine's check-in, so choosing one is normally
+    instant — but a server installed a minute ago has not checked in yet, and
+    a printer plugged in since then is not on that list either.
+    """
+    row = await pool.fetchrow(
+        "SELECT hostname FROM computer_fact WHERE lower(hostname) = lower($1)", node
+    )
+    if row is None:
+        raise objects.NotFound(f"{node} has not reported to the console yet")
+    try:
+        answer = await tasks.run_now(
+            pool,
+            node_fqdn=row["hostname"],
+            kind="printer-discover",
+            payload={},
+            requested_by=session.principal,
+            timeout=45.0,
+        )
+    except tasks.TaskFailed as exc:
+        raise objects.ObjectError(str(exc)) from exc
+    try:
+        return json.loads(answer)
+    except ValueError as exc:
+        raise objects.ObjectError(f"{node} sent something unreadable back") from exc
+
+
 @router.post("", status_code=201, dependencies=[Depends(requires("printer.write"))])
 async def create_printer(
     body: PrinterIn,

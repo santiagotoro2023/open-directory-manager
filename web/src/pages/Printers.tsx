@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Printer as PrinterIcon } from "lucide-react";
+import { Plus, Printer as PrinterIcon, Search } from "lucide-react";
 import { ApiError, api, type Printer } from "../api";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
@@ -164,6 +164,8 @@ function PrinterDialog({
   const [name, setName] = useState(printer?.name ?? "");
   const [deviceUri, setDeviceUri] = useState(printer?.device_uri ?? "");
   const [devices, setDevices] = useState<{ uri: string; description: string }[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   // Whatever the chosen server can currently see. Re-asked when the server
   // changes, because the answer belongs to that machine.
@@ -291,7 +293,29 @@ function PrinterDialog({
               </option>
             ))}
           </Select>
+          {/* What the server last reported is up to a check-in old, and a
+              server installed a minute ago has not reported at all. */}
+          <button
+            type="button"
+            className="ghost"
+            disabled={!node || scanning}
+            onClick={async () => {
+              setScanning(true);
+              setScanError(null);
+              try {
+                setDevices((await api.printers.discover(node)).devices);
+              } catch (err) {
+                setScanError(err instanceof ApiError ? err.message : String(err));
+              } finally {
+                setScanning(false);
+              }
+            }}
+          >
+            <Search size={15} aria-hidden="true" />
+            {scanning ? "Looking…" : "Scan"}
+          </button>
         </div>
+        {scanError && <small className="alert">{scanError}</small>}
       </Field>
 
       <div className="inline-fields">

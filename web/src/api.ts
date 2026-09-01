@@ -1213,6 +1213,13 @@ export const api = {
   },
 
   printers: {
+    /** Ask the server to sweep the network now, rather than using what it
+        last reported at check-in. */
+    discover: (node: string) =>
+      request<{ devices: { uri: string; description: string }[] }>(
+        `/printers/discover${qs({ node })}`,
+      ),
+
     devices: (node_fqdn: string) =>
       request<{ devices: { uri: string; description: string }[] }>(
         `/printers/devices${qs({ node_fqdn })}`,

@@ -86,13 +86,23 @@ type PrintDevice struct {
 
 // printDevices asks CUPS what it can print to. Empty on a machine that is not
 // a print server, which is the answer there: nothing to choose from.
-func printDevices(ctx context.Context, env apply.Env) []PrintDevice {
+// PrintDevices is printDevices, exported so an operator can ask for a scan
+// rather than waiting for the next check-in. seconds bounds the discovery,
+// which is a real network sweep and takes as long as it is given.
+func PrintDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice {
+	return printDevices(ctx, env, seconds)
+}
+
+func printDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice {
 	if _, err := os.Stat(env.Path("/usr/sbin/cupsd")); err != nil {
 		return nil
 	}
 	// -l lists local and network devices; the timeout keeps a slow network
 	// discovery from holding up the whole check-in.
-	out, err := env.Run.Run(ctx, "lpinfo", "--timeout", "10", "-l", "-v")
+	if seconds <= 0 {
+		seconds = 10
+	}
+	out, err := env.Run.Run(ctx, "lpinfo", "--timeout", strconv.Itoa(seconds), "-l", "-v")
 	if err != nil {
 		return nil
 	}
@@ -152,7 +162,7 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		report.Events = recentEvents(ctx, env)
 		report.Packages, report.PackageCount = installedPackages(ctx, env)
 
-		report.PrintDevices = printDevices(ctx, env)
+		report.PrintDevices = printDevices(ctx, env, 10)
 
 		previous := strings.TrimSpace(readFile(env, CursorPath))
 		report.Logs, report.LogCursor = CollectLogs(ctx, env, previous, LogUnits, 200)

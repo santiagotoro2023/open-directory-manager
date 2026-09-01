@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
-import { Modal } from "./Modal";
+import { Field, Modal } from "./Modal";
 import { PickerField, type PickerKind, type PickerValue } from "./Picker";
 import { Split } from "./Split";
 import Select from "./Select"
@@ -496,6 +496,13 @@ function RowsEditor({
 }) {
   const current = (settings[category.key] as Record<string, unknown>[] | undefined) ?? [];
   const [targeting, setTargeting] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
+
+  // Four or more fields in a row squeezes every one of them to nothing. Those
+  // categories show what an entry is and open the rest in a dialog, which is
+  // also where a long value has room to be read.
+  const cramped = category.fields.length > 3;
+  const summary = cramped ? category.fields.slice(0, 2) : category.fields;
 
   function update(next: Record<string, unknown>[]) {
     onChange({ ...settings, [category.key]: next });
@@ -523,12 +530,18 @@ function RowsEditor({
       <table className="data compact">
         <thead>
           <tr>
-            {category.fields.map((field) => (
+            {summary.map((field) => (
               <th key={field.key} style={field.width ? { width: field.width } : undefined}>
                 {field.label}
               </th>
             ))}
+            {cramped && <th>Settings</th>}
             {TARGETABLE.has(String(category.key)) && <th style={{ width: "120px" }}>Applies to</th>}
+            {cramped && (
+              <th style={{ width: "84px" }}>
+                <span className="sr-only">Edit</span>
+              </th>
+            )}
             <th style={{ width: "44px" }}>
               <span className="sr-only">Remove</span>
             </th>
@@ -537,7 +550,7 @@ function RowsEditor({
         <tbody>
           {current.map((row, index) => (
             <tr key={index}>
-              {category.fields.map((field) => (
+              {summary.map((field) => (
                 <td key={field.key}>
                   <Cell
                     field={field}
@@ -550,6 +563,22 @@ function RowsEditor({
                   />
                 </td>
               ))}
+              {cramped && (
+                <td className="muted truncate">
+                  {category.fields
+                    .slice(2)
+                    .map((field) => `${field.label}: ${describe(row[field.key])}`)
+                    .join(" · ")}
+                </td>
+              )}
+              {cramped && (
+                <td>
+                  <button type="button" className="ghost" onClick={() => setEditing(index)}>
+                    <Pencil size={14} aria-hidden="true" />
+                    Edit
+                  </button>
+                </td>
+              )}
               {TARGETABLE.has(String(category.key)) && (
                 <td>
                   <button type="button" className="ghost" onClick={() => setTargeting(index)}>
@@ -573,7 +602,11 @@ function RowsEditor({
             <tr>
               <td
                 className="empty"
-                colSpan={category.fields.length + (TARGETABLE.has(String(category.key)) ? 2 : 1)}
+                colSpan={
+                  summary.length +
+                  (cramped ? 2 : 0) +
+                  (TARGETABLE.has(String(category.key)) ? 2 : 1)
+                }
               >
                 Nothing configured. Add creates the first entry.
               </td>
@@ -581,6 +614,21 @@ function RowsEditor({
           )}
         </tbody>
       </table>
+
+      {editing !== null && current[editing] && (
+        <EntryDialog
+          category={category}
+          row={current[editing]}
+          index={editing}
+          onClose={() => setEditing(null)}
+          onSave={(next) => {
+            const rows = [...current];
+            rows[editing] = next;
+            update(rows);
+            setEditing(null);
+          }}
+        />
+      )}
 
       {targeting !== null && current[targeting] && (
         <ItemTargetingDialog
@@ -1577,5 +1625,50 @@ function JsonField({
         }}
       />
     </label>
+  );
+}
+
+/** What a field holds, short enough for a summary column. */
+function describe(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "—";
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  const text = String(value).replace(/\s+/g, " ").trim();
+  return text.length > 40 ? text.slice(0, 39) + "…" : text;
+}
+
+/** One entry of a category with too many fields to sit in a table row. */
+function EntryDialog({
+  category,
+  row,
+  index,
+  onClose,
+  onSave,
+}: {
+  category: CategorySpec;
+  row: Record<string, unknown>;
+  index: number;
+  onClose: () => void;
+  onSave: (next: Record<string, unknown>) => void;
+}) {
+  const [draft, setDraft] = useState<Record<string, unknown>>({ ...row });
+  return (
+    <Modal
+      title={`${category.title} — entry ${index + 1}`}
+      submitLabel="Done"
+      wide
+      onClose={onClose}
+      onSubmit={() => onSave(draft)}
+    >
+      {category.note && <p className="muted">{category.note}</p>}
+      {category.fields.map((field) => (
+        <Field key={field.key} label={field.label}>
+          <Cell
+            field={field}
+            value={draft[field.key]}
+            onChange={(value) => setDraft((was) => ({ ...was, [field.key]: value }))}
+          />
+        </Field>
+      ))}
+    </Modal>
   );
 }

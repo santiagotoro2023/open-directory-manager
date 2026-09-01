@@ -100,6 +100,8 @@ func RunWithProgress(
 		output, err = power(ctx, env, "reboot")
 	case "shutdown":
 		output, err = power(ctx, env, "poweroff")
+	case "printer-discover":
+		output, err = discoverPrinters(ctx, env)
 	case "browse":
 		output, err = browse(ctx, task.Payload, env)
 	case "make-directory":
@@ -147,6 +149,9 @@ func timeoutFor(kind string) time.Duration {
 	case "browse", "make-directory":
 		// A click in a dialog. Nobody waits five minutes for one.
 		return 30 * time.Second
+	case "printer-discover":
+		// A network sweep, which the agent bounds at twenty seconds.
+		return 60 * time.Second
 	default:
 		return 5 * time.Minute
 	}

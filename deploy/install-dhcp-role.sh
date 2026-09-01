@@ -359,6 +359,33 @@ done
 echo "==> Starting services"
 odm_enable kea-dhcp4-server kea-dhcp-ddns-server kea-ctrl-agent
 
+# Where the control plane is on this machine, tell it how to reach the Control
+# Agent. It printed these three lines and waited for somebody to paste them
+# into the secrets file, so the console said "The DHCP role is not installed"
+# on a machine where it plainly was.
+SECRETS="/etc/odm/odm.env"
+if [[ -f "$SECRETS" ]]; then
+    echo "==> Recording the Control Agent credential in $SECRETS"
+    set_secret() {
+        local key="$1" value="$2"
+        if grep -q "^${key}=" "$SECRETS"; then
+            # The value can contain anything, so it is never part of the
+            # expression: awk takes it as a variable.
+            awk -v key="$key" -v value="$value" \
+                'BEGIN{FS=OFS="="} $1==key {print key "=" value; next} {print}' \
+                "$SECRETS" > "$SECRETS.odm-new"
+            cat "$SECRETS.odm-new" > "$SECRETS"
+            rm -f "$SECRETS.odm-new"
+        else
+            printf '%s=%s\n' "$key" "$value" >> "$SECRETS"
+        fi
+    }
+    set_secret ODM_KEA_URL "http://127.0.0.1:$CA_PORT/"
+    set_secret ODM_KEA_USER "$CA_USER"
+    set_secret ODM_KEA_PASSWORD "$(cat "$CA_PASSWORD_FILE")"
+    systemctl try-restart odm-api >/dev/null 2>&1 || true
+fi
+
 # If network boot is already on this machine, Kea is what advertises it.
 odm_kea_boot_options
 

@@ -655,10 +655,12 @@ function ProfilesTab() {
           {error}
         </p>
       )}
-      <button type="button" className="primary" onClick={() => setAdding(true)}>
-        <Plus size={15} aria-hidden="true" />
-        New profile
-      </button>
+      <div className="actions-row">
+        <button type="button" className="primary" onClick={() => setAdding(true)}>
+          <Plus size={15} aria-hidden="true" />
+          New profile
+        </button>
+      </div>
 
       <table className="data">
         <thead>

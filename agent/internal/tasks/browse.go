@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"odm.example.org/agent/internal/apply"
+	"odm.example.org/agent/internal/inventory"
 )
 
 // Listing a directory is not something an agent used to be asked, because a
@@ -106,4 +107,20 @@ func absolute(path string) (string, error) {
 		return "", fmt.Errorf("invalid path")
 	}
 	return filepath.Clean(path), nil
+}
+
+// discoverPrinters asks CUPS what it can print to, now.
+//
+// The same list rides the check-in, but a print server that was installed a
+// minute ago has not checked in yet — and an operator who has just plugged a
+// printer in should not have to wait a quarter of an hour to see it. The scan
+// is a real network sweep, so it is given longer than the one on the
+// check-in but still bounded.
+func discoverPrinters(ctx context.Context, env apply.Env) (string, error) {
+	found := inventory.PrintDevices(ctx, env, 20)
+	body, err := json.Marshal(map[string]any{"devices": found})
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
