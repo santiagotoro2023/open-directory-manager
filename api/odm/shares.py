@@ -14,6 +14,7 @@ an approximation of one.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -85,7 +86,16 @@ def validate_principal(principal: str) -> str:
     return principal
 
 
-def validate_entries(raw: list[dict[str, Any]] | None) -> list[Entry]:
+def validate_entries(raw: list[dict[str, Any]] | str | None) -> list[Entry]:
+    """The access list, from a request body or straight out of the database.
+
+    entries is a jsonb column and asyncpg hands those back as text, so the
+    caller that renders a stored share into a task passed a JSON string here.
+    Iterating it walked the characters and every one of them failed on .get —
+    which is why creating a share answered 500.
+    """
+    if isinstance(raw, str):
+        raw = json.loads(raw or "[]")
     entries: list[Entry] = []
     seen: set[tuple[str, str]] = set()
     for item in raw or []:

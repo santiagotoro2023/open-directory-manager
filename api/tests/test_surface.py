@@ -533,3 +533,25 @@ def test_the_agent_never_sends_more_than_the_control_plane_accepts():
     assert keeps <= TASK_OUTPUT_LIMIT, (
         f"the agent keeps {keeps} bytes but the control plane takes {TASK_OUTPUT_LIMIT}"
     )
+
+
+def test_an_issued_certificate_may_name_any_profile_that_can_exist():
+    """profile started as a fixed list of the built-in names. Profiles an
+    operator defines came later, and issuing from one signed the certificate,
+    returned the private key — shown once, never stored — and then failed
+    writing the row. The operator got a 500 and lost the key."""
+    import pathlib
+    import re
+
+    migrations = sorted(pathlib.Path("odm/migrations").glob("*.sql"))
+    latest = None
+    for path in migrations:
+        found = re.findall(
+            r"ca_certificate_profile_check\s+CHECK \((.*?)\)\s*;", path.read_text(), re.S
+        )
+        if found:
+            latest = found[-1]
+    assert latest, "no ca_certificate profile constraint in any migration"
+    assert "IN (" not in latest.upper(), (
+        f"the constraint is still a fixed list of names: {latest.strip()}"
+    )
