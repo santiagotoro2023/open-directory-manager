@@ -458,8 +458,12 @@ func TestMachineDriveMapUsesKerberosAndNeverStoresCredentials(t *testing.T) {
 			t.Fatalf("credential material in unit:\n%s", unit)
 		}
 	}
-	if !runner.ran("systemctl", "enable mnt-shared.automount") {
-		t.Error("automount unit was not enabled")
+	// --now, or the drive map exists and does not run until a reboot.
+	if !runner.ran("systemctl", "enable --now mnt-shared.automount") {
+		t.Error("automount unit was not started")
+	}
+	if !strings.Contains(unit, "What=//fs01/shared") {
+		t.Fatalf("a backslash is an escape character in a unit file:\n%s", unit)
 	}
 }
 

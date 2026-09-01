@@ -124,14 +124,20 @@ func installSessionHook(env Env) policy.Result {
     odm_repair_home
     # Before anything else, and not in the background: a roaming profile is
     # the home directory the rest of the session is about to open files in.
-    [ -n "$PAM_USER" ] && timeout 40 /usr/sbin/odm-agent profile --user "$PAM_USER" 2>&1 |
-      logger -t odm-profile
+    # Only for a person: gdm and the machine's own service accounts open PAM
+    # sessions too, and asking the directory about one of those answers "user
+    # could not be resolved unambiguously" every time the greeter starts.
+    if [ -n "$PAM_USER" ] && [ "$(id -u "$PAM_USER" 2>/dev/null || echo 0)" -ge 1000 ]; then
+      timeout 40 /usr/sbin/odm-agent profile --user "$PAM_USER" 2>&1 | logger -t odm-profile
+    fi
     [ -d ` + scriptDir + `/logon ] && /bin/run-parts --report ` + scriptDir + `/logon
     [ -n "$PAM_USER" ] && timeout 60 /usr/sbin/odm-agent apply --user "$PAM_USER" >/dev/null 2>&1 &
     ;;
   close_session)
     [ -d ` + scriptDir + `/logoff ] && /bin/run-parts --report ` + scriptDir + `/logoff
-    [ -n "$PAM_USER" ] && /usr/sbin/odm-agent profile --user "$PAM_USER" --release >/dev/null 2>&1
+    if [ -n "$PAM_USER" ] && [ "$(id -u "$PAM_USER" 2>/dev/null || echo 0)" -ge 1000 ]; then
+      /usr/sbin/odm-agent profile --user "$PAM_USER" --release >/dev/null 2>&1
+    fi
     ;;
 esac
 exit 0

@@ -26,6 +26,8 @@ func applyDriveMaps(ctx context.Context, s policy.Settings, env Env) []policy.Re
 	}
 	var results []policy.Result
 	var perUser []policy.DriveMap
+	// setting name and unit name, in pairs, enabled once the reload is done.
+	var pending []string
 	reload := false
 
 	for _, drive := range s.DriveMaps {
@@ -40,7 +42,9 @@ func applyDriveMaps(ctx context.Context, s policy.Settings, env Env) []policy.Re
 			continue
 		}
 
-		what := strings.ReplaceAll(drive.UNC, "/", "\\")
+		// //server/share, not the backslash form: a backslash is an escape
+		// character in a unit file, and mount.cifs takes either.
+		what := strings.ReplaceAll(drive.UNC, "\\", "/")
 		options := "sec=krb5,multiuser,_netdev"
 		if drive.Options != "" {
 			options += "," + drive.Options
@@ -79,14 +83,21 @@ WantedBy=multi-user.target
 			continue
 		}
 		reload = true
-		results = append(results, runAll(ctx, env, setting,
-			[]string{"systemctl", "enable", unitName + ".automount"},
-		))
+		pending = append(pending, setting, unitName)
 	}
 
+	// Reload before enabling, and enable with --now. Without the reload first
+	// systemd enables whatever it already had; without --now the automount
+	// exists and does not run, so a drive map appeared only after a reboot —
+	// and /mnt/shared was simply not there.
 	if reload {
 		results = append(results, runAll(ctx, env, "drive_maps:reload",
 			[]string{"systemctl", "daemon-reload"}))
+		for index := 0; index < len(pending); index += 2 {
+			results = append(results, runAll(ctx, env, pending[index],
+				[]string{"systemctl", "enable", "--now", pending[index+1] + ".automount"},
+			))
+		}
 	}
 	if len(perUser) > 0 {
 		results = append(results, applyPamMount(perUser, env))
