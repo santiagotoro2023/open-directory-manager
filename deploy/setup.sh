@@ -230,6 +230,16 @@ BANNER
 [[ $EUID -eq 0 ]] || fail "run this as root: sudo deploy/setup.sh"
 [[ -d "$REPO/api" && -d "$REPO/web" ]] || fail "run this from inside a checkout of the repository"
 
+export DEBIAN_FRONTEND=noninteractive
+# A machine that booted a minute ago is usually still running apt-daily, and
+# every apt command here then failed outright with "Could not get lock
+# /var/lib/dpkg/lock-frontend" — setup stopping halfway through because
+# something unrelated was updating the package index. Waiting is what the
+# option is for, and it applies to every apt in the run, including the ones a
+# package's own postinst starts.
+install -d -m 0755 /etc/apt/apt.conf.d
+printf 'DPkg::Lock::Timeout "600";\n' > /etc/apt/apt.conf.d/99-odm-lock-timeout
+
 # ---------------------------------------------------------------- step 1 --
 
 step "Checking this machine"
