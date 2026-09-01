@@ -44,6 +44,14 @@ func MountProfile(ctx context.Context, profile *policy.RoamingProfile, user stri
 		return nil
 	}
 
+	// Already attached — a second session for the same person on the same
+	// machine, or one the display manager opened before this one. Mounting
+	// again fails with "is already mounted", and that failure used to take
+	// the rest of the logon-time work down with it.
+	if mounted(account.home) {
+		return nil
+	}
+
 	share, subPath, err := splitProfilePath(profile.Path, user)
 	if err != nil {
 		return err

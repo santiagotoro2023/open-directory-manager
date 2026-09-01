@@ -69,6 +69,10 @@ func MountDriveMaps(
 			continue
 		}
 		point := env.Path(drive.MountPoint)
+		// In the policy, so it keeps its place in the file manager whether or
+		// not this session managed to attach it: a share that is briefly down
+		// must not silently un-map somebody's drive.
+		attached = append(attached, drive.MountPoint)
 		if mounted(point) {
 			continue
 		}
@@ -91,7 +95,6 @@ func MountDriveMaps(
 		if err := bookmark(who, drive); err != nil {
 			problems = append(problems, err)
 		}
-		attached = append(attached, drive.MountPoint)
 	}
 
 	// A drive map the policy no longer names goes away, mount and bookmark

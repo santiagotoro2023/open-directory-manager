@@ -147,9 +147,14 @@ func runProfile(args []string) int {
 	// Drive maps come with the profile, and for the same reason: they are
 	// mounted with this person's ticket, which only exists inside their
 	// session.
-	for _, problem := range apply.MountDriveMaps(ctx, document.Settings.DriveMaps, *username, env) {
+	problems := apply.MountDriveMaps(ctx, document.Settings.DriveMaps, *username, env)
+	for _, problem := range problems {
 		fmt.Fprintln(os.Stderr, "odm-agent: drive map:", problem)
 	}
+	// Said either way, so a login that produced no drive says so rather than
+	// saying nothing at all.
+	fmt.Printf("%d drive map(s) for %s, %d problem(s)\n",
+		len(document.Settings.DriveMaps), *username, len(problems))
 	return 0
 }
 
