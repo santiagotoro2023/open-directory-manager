@@ -70,6 +70,16 @@ async def lifespan(app: FastAPI):
         os.environ.setdefault("KRB5_KTNAME", str(settings.keytab))
         os.environ.setdefault("KRB5_CLIENT_KTNAME", str(settings.keytab))
     app.state.pool = await db.create_pool()
+
+    # Upgrading is git pull, pip install, restart. Nothing in that runs a
+    # migration, so a release that adds one came up against yesterday's schema
+    # and failed on the first request that touched the new column — which is
+    # exactly how issuing a certificate from a new profile broke. Each
+    # migration is one transaction and already-applied ones are skipped, so
+    # doing it here is safe to repeat and cheap when there is nothing to do.
+    for applied in await db.migrate(app.state.pool):
+        print(f"applied migration {applied}", flush=True)
+
     await _check_directory(settings)
     # The recycle bin's retention window is only real if something enforces
     # it, so the sweep runs with the application (CLAUDE.md §5.3).
