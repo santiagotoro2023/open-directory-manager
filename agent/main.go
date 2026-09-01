@@ -136,6 +136,12 @@ func runProfile(args []string) int {
 		fmt.Fprintf(os.Stderr,
 			"odm-agent: %s keeps a local home this session: %v\n", *username, err)
 	}
+	// Drive maps come with the profile, and for the same reason: they are
+	// mounted with this person's ticket, which only exists inside their
+	// session.
+	for _, problem := range apply.MountDriveMaps(ctx, document.Settings.DriveMaps, *username, env) {
+		fmt.Fprintln(os.Stderr, "odm-agent: drive map:", problem)
+	}
 	return 0
 }
 

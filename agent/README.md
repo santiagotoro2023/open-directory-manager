@@ -33,7 +33,7 @@ uses it throughout.
 | Software deployment | `apt-get` install, upgrade or remove, batched per run |
 | Trusted certificates | `/usr/local/share/ca-certificates`, then `update-ca-certificates` |
 | Firewall | A dedicated `inet odm` nftables table plus `odm-firewall.service` |
-| Drive maps | `.mount`/`.automount` units machine-wide, pam_mount per user or group — always `cifs` with `sec=krb5`, never a stored credential |
+| Drive maps | Mounted from the session hook with the person's own ticket — always `cifs` with `sec=krb5`, never a stored credential |
 | Browser policy | Chromium `policies/managed/odm.json`, Firefox `policies.json` |
 | Desktop background | dconf system database plus locks, then `dconf update` |
 | Sudo rules | `/etc/sudoers.d/odm-*`, validated with `visudo -cf` before install |

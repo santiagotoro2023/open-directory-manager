@@ -160,7 +160,7 @@ d-i partman/confirm boolean true
 d-i partman/confirm_nooverwrite boolean true
 
 tasksel tasksel/first multiselect standard, ssh-server
-d-i pkgsel/include string sssd-ad sssd-tools samba-common-bin krb5-user cifs-utils keyutils libpam-mount nftables dconf-cli curl
+d-i pkgsel/include string sssd-ad sssd-tools samba-common-bin krb5-user cifs-utils keyutils nftables dconf-cli curl
 d-i pkgsel/upgrade select full-upgrade
 popularity-contest popcon/participate boolean false
 

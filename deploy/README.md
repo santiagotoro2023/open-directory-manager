@@ -152,7 +152,7 @@ sudo odm-agent apply --force
 Build the binary with `cd agent && go build -o odm-agent .`. The agent
 authenticates with the machine keytab, so it needs no credential of its own.
 `install-agent.sh` also installs the packages the appliers depend on
-(`cifs-utils`, `libpam-mount`, `nftables`, `dconf-cli`).
+(`cifs-utils`, `keyutils`, `nftables`, `dconf-cli`).
 
 `ODM_SYSVOL_PATH` mirrors group policy objects into LDAP and SYSVOL for
 GPMC and RSAT. It is off after a standard install: the control-plane service

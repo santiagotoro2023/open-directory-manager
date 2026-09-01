@@ -441,49 +441,51 @@ func TestWallpaperWritesADconfDatabaseAndLocksIt(t *testing.T) {
 
 // -------------------------------------------------------------- drive maps --
 
-func TestMachineDriveMapUsesKerberosAndNeverStoresCredentials(t *testing.T) {
+// A drive map is mounted when somebody signs in, with their ticket. Started
+// by systemd it was started by the machine, which has no ticket: the unit
+// came up and every access answered "No such device".
+func TestADriveMapIsMountedWithThePersonsOwnTicket(t *testing.T) {
 	env, runner := testEnv(t)
-	applyDriveMaps(context.Background(), policy.Settings{
+	results := applyDriveMaps(context.Background(), policy.Settings{
 		DriveMaps: []policy.DriveMap{
 			{Name: "shared", UNC: "//fs01/shared", MountPoint: "/mnt/shared"},
 		},
 	}, env)
+	if statuses(results)["drive_maps:shared"] != "success" {
+		t.Fatalf("results = %+v", results)
+	}
+	if runner.ran("systemctl", "enable") {
+		t.Error("a drive map must not be started by the machine")
+	}
 
-	unit := read(t, env, "/etc/systemd/system/mnt-shared.mount")
-	if !strings.Contains(unit, "sec=krb5") {
-		t.Fatalf("mount is not Kerberos-authenticated:\n%s", unit)
+	// Mounting needs an account this machine has, so the rest is asserted on
+	// what the mount would be rather than by running it here.
+	if !appliesTo("", "t.tester", nil) {
+		t.Error("an unassigned drive map is everybody's")
 	}
-	for _, forbidden := range []string{"password", "credentials="} {
-		if strings.Contains(unit, forbidden) {
-			t.Fatalf("credential material in unit:\n%s", unit)
-		}
+	if !appliesTo("%Testers", "t.tester", []string{"domain users", "Testers"}) {
+		t.Error("a map assigned to a group is for its members")
 	}
-	// --now, or the drive map exists and does not run until a reboot.
-	if !runner.ran("systemctl", "enable --now mnt-shared.automount") {
-		t.Error("automount unit was not started")
+	if appliesTo("%Testers", "d.denied", []string{"domain users"}) {
+		t.Error("a map assigned to a group is not for everybody else")
 	}
-	if !strings.Contains(unit, "What=//fs01/shared") {
-		t.Fatalf("a backslash is an escape character in a unit file:\n%s", unit)
+	if !appliesTo("T.Tester", "t.tester", nil) {
+		t.Error("a map assigned to a person is theirs whatever the case")
 	}
 }
 
-func TestPerUserDriveMapGoesThroughPamMount(t *testing.T) {
-	env, _ := testEnv(t)
-	results := applyDriveMaps(context.Background(), policy.Settings{
-		DriveMaps: []policy.DriveMap{
-			{Name: "home", UNC: "//fs01/home", MountPoint: "/mnt/home", ForPrincipal: "%Engineers"},
-		},
-	}, env)
-
-	if statuses(results)["drive_maps:pam_mount"] != "success" {
-		t.Fatalf("results = %+v", results)
+func TestAShareIsSplitIntoItsServerAndItsName(t *testing.T) {
+	for _, want := range []struct{ in, server, share string }{
+		{"//fs01/shared", "fs01", "shared"},
+		{`\\fs01\shared`, "fs01", "shared"},
+	} {
+		server, share, ok := splitUNC(want.in)
+		if !ok || server != want.server || share != want.share {
+			t.Fatalf("%q gave (%q, %q, %v)", want.in, server, share, ok)
+		}
 	}
-	body := read(t, env, pamMountPath)
-	if !strings.Contains(body, `sgrp="Engineers"`) {
-		t.Fatalf("group not targeted:\n%s", body)
-	}
-	if !strings.Contains(body, `server="fs01"`) || !strings.Contains(body, `path="home"`) {
-		t.Fatalf("share not parsed:\n%s", body)
+	if _, _, ok := splitUNC("//fs01"); ok {
+		t.Error("a server with no share was accepted")
 	}
 }
 

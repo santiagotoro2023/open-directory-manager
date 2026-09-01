@@ -2,186 +2,119 @@ package apply
 
 import (
 	"context"
-	"encoding/xml"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
 )
 
-const pamMountPath = "/etc/security/pam_mount.conf.xml"
-
 // Drive maps (CLAUDE.md §3.5, §5.2).
 //
-// Both flavours mount cifs with sec=krb5, so no credential is ever stored on
-// the client — single sign-on rides the user's existing Kerberos ticket.
+// Mounted with cifs and sec=krb5, so no credential is ever stored on a
+// client: single sign-on rides the person's own Kerberos ticket.
 //
-//   - A map with no principal is machine-wide: a systemd .mount plus
-//     .automount, so it is mounted on first access rather than at boot.
-//   - A map assigned to a user or group is mounted at login by pam_mount,
-//     which is the mechanism on Linux for per-user shares.
-func applyDriveMaps(ctx context.Context, s policy.Settings, env Env) []policy.Result {
+// Which is also why they are mounted when somebody signs in rather than by
+// systemd. A .mount unit is started by the machine, and the machine has no
+// ticket: the automount came up and every access answered "No such device",
+// because the only credential available at that moment belonged to nobody.
+// Mounting from the session hook, with cruid set to the person signing in, is
+// the same mechanism the roaming profile uses and the one that works.
+//
+// multiuser, so a second person signing in to the same machine reaches the
+// same mount point with their own credentials rather than the first person's.
+func applyDriveMaps(_ context.Context, s policy.Settings, env Env) []policy.Result {
 	if len(s.DriveMaps) == 0 {
 		return nil
 	}
-	var results []policy.Result
-	var perUser []policy.DriveMap
-	// setting name and unit name, in pairs, enabled once the reload is done.
-	var pending []string
-	reload := false
-
+	results := make([]policy.Result, 0, len(s.DriveMaps))
 	for _, drive := range s.DriveMaps {
-		if drive.ForPrincipal != "" {
-			perUser = append(perUser, drive)
-			continue
-		}
 		setting := "drive_maps:" + drive.Name
-		unitName, err := mountUnitName(ctx, env, drive.MountPoint)
-		if err != nil {
+		if _, _, ok := splitUNC(drive.UNC); !ok {
+			results = append(results, policy.Fail(setting,
+				fmt.Errorf("cannot parse share %q", drive.UNC)))
+			continue
+		}
+		if err := os.MkdirAll(env.Path(drive.MountPoint), 0o755); err != nil {
 			results = append(results, policy.Fail(setting, err))
 			continue
 		}
-
-		// //server/share, not the backslash form: a backslash is an escape
-		// character in a unit file, and mount.cifs takes either.
-		what := strings.ReplaceAll(drive.UNC, "\\", "/")
-		options := "sec=krb5,multiuser,_netdev"
-		if drive.Options != "" {
-			options += "," + drive.Options
-		}
-		mount := Header + fmt.Sprintf(`[Unit]
-Description=ODM drive map %s
-
-[Mount]
-What=%s
-Where=%s
-Type=cifs
-Options=%s
-
-[Install]
-WantedBy=multi-user.target
-`, drive.Name, what, drive.MountPoint, options)
-
-		automount := Header + fmt.Sprintf(`[Unit]
-Description=ODM drive map %s (automount)
-
-[Automount]
-Where=%s
-TimeoutIdleSec=600
-
-[Install]
-WantedBy=multi-user.target
-`, drive.Name, drive.MountPoint)
-
-		base := "/etc/systemd/system/" + unitName
-		if err := env.WriteFile(base+".mount", mount, 0o644, "root", "root"); err != nil {
-			results = append(results, policy.Fail(setting, err))
-			continue
-		}
-		if err := env.WriteFile(base+".automount", automount, 0o644, "root", "root"); err != nil {
-			results = append(results, policy.Fail(setting, err))
-			continue
-		}
-		reload = true
-		pending = append(pending, setting, unitName)
-	}
-
-	// Reload before enabling, and enable with --now. Without the reload first
-	// systemd enables whatever it already had; without --now the automount
-	// exists and does not run, so a drive map appeared only after a reboot —
-	// and /mnt/shared was simply not there.
-	if reload {
-		results = append(results, runAll(ctx, env, "drive_maps:reload",
-			[]string{"systemctl", "daemon-reload"}))
-		for index := 0; index < len(pending); index += 2 {
-			results = append(results, runAll(ctx, env, pending[index],
-				[]string{"systemctl", "enable", "--now", pending[index+1] + ".automount"},
-			))
-		}
-	}
-	if len(perUser) > 0 {
-		results = append(results, applyPamMount(perUser, env))
+		results = append(results, policy.Ok(setting))
 	}
 	return results
 }
 
-// mountUnitName asks systemd-escape for the unit name, rather than
-// reimplementing its escaping rules.
-func mountUnitName(ctx context.Context, env Env, mountPoint string) (string, error) {
-	if env.Run == nil {
-		return "", fmt.Errorf("no command runner")
+// MountDriveMaps attaches the maps this person gets, with their own ticket.
+// Run from PAM at session open. Every failure is reported and none is fatal:
+// a share that is down must not stop somebody signing in.
+func MountDriveMaps(
+	ctx context.Context, drives []policy.DriveMap, user string, env Env,
+) []error {
+	if len(drives) == 0 {
+		return nil
 	}
-	out, err := env.Run.Run(ctx, "systemd-escape", "--path", mountPoint)
-	if err != nil {
-		return "", err
+	who, err := lookupAccount(user)
+	if err != nil || who.uid < 1000 {
+		return nil
 	}
-	name := strings.TrimSpace(out)
-	if name == "" {
-		return "", fmt.Errorf("systemd-escape returned nothing for %q", mountPoint)
-	}
-	return name, nil
-}
-
-type pamMountVolume struct {
-	XMLName xml.Name `xml:"volume"`
-	User    string   `xml:"user,attr,omitempty"`
-	SGRP    string   `xml:"sgrp,attr,omitempty"`
-	FSType  string   `xml:"fstype,attr"`
-	Server  string   `xml:"server,attr"`
-	Path    string   `xml:"path,attr"`
-	MountP  string   `xml:"mountpoint,attr"`
-	Options string   `xml:"options,attr"`
-}
-
-// applyPamMount owns pam_mount.conf.xml outright: it is a single-file format
-// with no include mechanism for fragments, so partial ownership is not
-// possible. The managed header says so.
-func applyPamMount(drives []policy.DriveMap, env Env) policy.Result {
-	var volumes strings.Builder
+	memberships := groupsOf(user)
+	var problems []error
 	for _, drive := range drives {
-		server, share, ok := splitUNC(drive.UNC)
-		if !ok {
-			return policy.Fail("drive_maps:pam_mount",
-				fmt.Errorf("%s: cannot parse share %q", drive.Name, drive.UNC))
+		if !appliesTo(drive.ForPrincipal, user, memberships) {
+			continue
 		}
-		options := "sec=krb5,cruid=%(USERUID)"
+		point := env.Path(drive.MountPoint)
+		if mounted(point) {
+			continue
+		}
+		if err := os.MkdirAll(point, 0o755); err != nil {
+			problems = append(problems, err)
+			continue
+		}
+		unc := strings.ReplaceAll(drive.UNC, "\\", "/")
+		options := fmt.Sprintf("sec=krb5,cruid=%d,multiuser", who.uid)
 		if drive.Options != "" {
 			options += "," + drive.Options
 		}
-		volume := pamMountVolume{
-			FSType: "cifs", Server: server, Path: share,
-			MountP: drive.MountPoint, Options: options,
+		if out, err := env.Run.Run(
+			ctx, "mount", "-t", "cifs", unc, point, "-o", options,
+		); err != nil {
+			problems = append(problems, fmt.Errorf(
+				"%s: %w: %s", drive.Name, err, strings.TrimSpace(lastLine(out))))
 		}
-		if strings.HasPrefix(drive.ForPrincipal, "%") {
-			volume.SGRP = drive.ForPrincipal[1:]
-		} else {
-			volume.User = drive.ForPrincipal
-		}
-		encoded, err := xml.MarshalIndent(volume, "  ", "  ")
-		if err != nil {
-			return policy.Fail("drive_maps:pam_mount", err)
-		}
-		volumes.WriteString(string(encoded) + "\n")
 	}
+	return problems
+}
 
-	body := `<?xml version="1.0" encoding="utf-8" ?>
-<!DOCTYPE pam_mount SYSTEM "pam_mount.conf.xml">
-<!-- Managed by Open Directory Manager. Local edits are overwritten. -->
-<pam_mount>
-  <debug enable="0" />
-  <mntoptions allow="nosuid,nodev,sec,cruid,vers,uid,gid,dir_mode,file_mode" />
-  <logout wait="0" hup="no" term="no" kill="no" />
-  <mkmountpoint enable="1" remove="true" />
-` + volumes.String() + `</pam_mount>
-`
-	if err := env.WriteFile(pamMountPath, body, 0o644, "root", "root"); err != nil {
-		return policy.Fail("drive_maps:pam_mount", err)
+// appliesTo answers whether a map assigned to a user or %group is this
+// person's. An unassigned map is everybody's.
+func appliesTo(principal, user string, memberships []string) bool {
+	if principal == "" {
+		return true
 	}
-	return policy.Ok("drive_maps:pam_mount")
+	if strings.HasPrefix(principal, "%") {
+		want := strings.ToLower(strings.TrimPrefix(principal, "%"))
+		for _, group := range memberships {
+			if strings.ToLower(group) == want {
+				return true
+			}
+		}
+		return false
+	}
+	return strings.EqualFold(principal, user)
+}
+
+func groupsOf(user string) []string {
+	out, err := exec.Command("id", "-nG", user).Output()
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(out))
 }
 
 func splitUNC(unc string) (server, share string, ok bool) {
 	trimmed := strings.TrimPrefix(strings.ReplaceAll(unc, "\\", "/"), "//")
 	server, share, ok = strings.Cut(trimmed, "/")
-	return server, share, ok && server != "" && share != ""
+	return server, strings.TrimSuffix(share, "/"), ok && server != "" && share != ""
 }

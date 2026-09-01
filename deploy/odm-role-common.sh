@@ -121,9 +121,9 @@ odm_random_password() {
 
 # Run a command as another account, changing nothing else.
 #
-# su runs the full PAM session stack, which on a domain member means pam_mount
-# and pam_krb5 and a page of "HXproc_run_async: pmvarrun: No such file or
-# directory" in front of whatever the command actually said.
+# su runs the full PAM session stack, which on a domain member means a session
+# hook, a Kerberos ticket and a mounted profile in front of whatever the
+# command actually said.
 odm_as() {
     local account="$1"; shift
     setpriv --reuid="$account" --regid="$account" --init-groups -- "$@"

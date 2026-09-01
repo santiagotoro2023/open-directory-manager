@@ -395,7 +395,7 @@ user      root`}</Code>
                 "No principal set",
                 "A systemd .mount plus .automount, mounted on first access rather than at boot.",
               ],
-              ["A user or %group", "A pam_mount volume, mounted when that principal logs in."],
+              ["A user or %group", "Mounted only when that user, or a member of that group, signs in."],
             ]}
           />
           <Code>{`name          shared

@@ -49,19 +49,29 @@ for directive, value in (("Browsing", "On"), ("BrowseLocalProtocols", "dnssd")):
     else:
         body += f"\n{directive} {value}\n"
 
+# Let the network reach the queues. cupsd.conf has no include mechanism, so
+# this has to be the file itself: a drop-in under cupsd.conf.d was written and
+# never read, <Location /> kept its shipped "Order allow,deny" with nothing
+# allowed, and every client got an authentication prompt it could not satisfy
+# when it tried to print.
+#
+# @LOCAL is CUPS' own token for a directly-connected network. Administration
+# stays where the package left it: printers are managed through ODM, not
+# through CUPS' web interface from another machine.
+if re.search(r"^<Location />", body, re.M):
+    body = re.sub(
+        r"^<Location />.*?^</Location>",
+        "<Location />\n  Order allow,deny\n  Allow @LOCAL\n</Location>",
+        body,
+        flags=re.M | re.S,
+    )
+else:
+    body += "\n<Location />\n  Order allow,deny\n  Allow @LOCAL\n</Location>\n"
+
 path.write_text(body)
 PYTHON
 
-# Allow printing and browsing from anywhere on the network; keep the
-# administrative locations as the package shipped them.
-install -d -m 0755 /etc/cups/cupsd.conf.d
-cat > /etc/cups/cupsd.conf.d/odm-access.conf <<'ACCESS'
-# Managed by Open Directory Manager.
-<Location />
-  Order allow,deny
-  Allow all
-</Location>
-ACCESS
+rm -f /etc/cups/cupsd.conf.d/odm-access.conf
 
 echo "==> Starting CUPS"
 odm_enable cups

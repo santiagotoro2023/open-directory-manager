@@ -44,7 +44,7 @@ API_HOST="${API_HOST%%:*}"
 echo "==> Installing packages the appliers depend on"
 export DEBIAN_FRONTEND=noninteractive
 apt-get install -y --no-install-recommends \
-    cifs-utils keyutils libpam-mount nftables dconf-cli sudo openssh-server
+    cifs-utils keyutils nftables dconf-cli sudo openssh-server
 
 install -m 0755 "$BINARY" /usr/sbin/odm-agent
 
