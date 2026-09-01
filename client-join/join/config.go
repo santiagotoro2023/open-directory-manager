@@ -15,6 +15,7 @@ const (
 	NsswitchPath    = "/etc/nsswitch.conf"
 	SmbConfPath     = "/etc/samba/smb.conf"
 	AgentConfigPath = "/etc/odm/agent.json"
+	CACertPath      = "/etc/odm/tls/api-ca.pem"
 	PamMkHomeDir    = "/usr/share/pam-configs/odm-mkhomedir"
 
 	managed = "# Managed by Open Directory Manager. Local edits are overwritten.\n"
@@ -232,13 +233,29 @@ func InstallAgent(ctx context.Context, options Options, env Env) error {
 	host = strings.SplitN(host, "/", 2)[0]
 	host = strings.SplitN(host, ":", 2)[0]
 
+	// Copy the certificate in rather than pointing at wherever the operator
+	// happened to leave it: /tmp is cleaned, a home directory may not be
+	// readable by a service, and the agent reads this on every refresh.
+	caCert := options.CACert
+	if caCert != "" && caCert != CACertPath && caCert != env.Path(CACertPath) {
+		// Not fatal: the machine is joined by now, and a join that fails at
+		// the last step over a file that moved is worse than an agent that
+		// says it cannot verify the console.
+		if body, err := os.ReadFile(caCert); err == nil {
+			if err := env.WriteFile(CACertPath, string(body), 0o644); err != nil {
+				return err
+			}
+			caCert = CACertPath
+		}
+	}
+
 	config := AgentConfig{
 		APIURL:           options.APIURL,
 		ServicePrincipal: "HTTP/" + host,
 		Keytab:           KeytabPath,
 		Realm:            options.Realm,
 		Krb5Conf:         Krb5ConfPath,
-		CACert:           options.CACert,
+		CACert:           caCert,
 		RefreshMinutes:   15,
 	}
 	body, err := json.MarshalIndent(config, "", "  ")

@@ -728,7 +728,13 @@ cat <<DONE
 
   ${B}Join a client${R}
 
-    sudo odm-client-install --domain $REALM --admin-user Administrator
+    Copy this machine's console certificate to the client first — until the
+    domain has its own authority it is self-signed, and the client's agent
+    has nothing to check it against:
+
+    scp $CONSOLE_FQDN:/etc/odm/tls/api.crt /tmp/odm-console.crt
+    sudo odm-client-install --domain $REALM --admin-user Administrator \
+        --server ${MY_ADDRESS:-$CONSOLE_FQDN} --ca-cert /tmp/odm-console.crt
 
   ${B}On this machine${R}
 
