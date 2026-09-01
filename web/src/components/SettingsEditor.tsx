@@ -412,6 +412,7 @@ const SPECIAL = [
     half: "Computer" as Half,
   },
   { key: "password_self_service", title: "Self-service password", half: "User" as Half },
+  { key: "roaming_profile", title: "Roaming profile", half: "User" as Half },
   { key: "wallpaper", title: "Desktop background", half: "User" as Half },
   { key: "browser", title: "Browser policy", half: "Computer" as Half },
   { key: "admx", title: "Administrative templates", half: "Computer" as Half },
@@ -426,6 +427,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
   if (key === "remote_desktop_session") return settings.remote_desktop_session ? 1 : 0;
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
+  if (key === "roaming_profile") return settings.roaming_profile ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri || settings.wallpaper?.image ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
@@ -524,6 +526,9 @@ export function SettingsEditor({
           )}
           {selected === "password_self_service" && (
             <SelfServiceEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "roaming_profile" && (
+            <RoamingProfileEditor settings={settings} onChange={onChange} />
           )}
           {selected === "wallpaper" && <WallpaperEditor settings={settings} onChange={onChange} />}
           {selected === "browser" && <BrowserEditor settings={settings} onChange={onChange} />}
@@ -1796,5 +1801,99 @@ function EntryDialog({
         </Field>
       ))}
     </Modal>
+  );
+}
+
+/** A home directory that follows the person rather than staying on the desk.
+ *
+ * The same mechanism a remote desktop collection uses for its user profile
+ * disks: point both at the same share and somebody has one profile across
+ * every desktop and every session host. */
+function RoamingProfileEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.roaming_profile;
+
+  function set(changes: Partial<NonNullable<PolicySettings["roaming_profile"]>>) {
+    onChange({
+      ...settings,
+      roaming_profile: {
+        path: "",
+        kind: "directory",
+        disk_gb: 10,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <header>
+        <h3>Roaming profile</h3>
+        <span className="spacer" />
+        {current && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => onChange({ ...settings, roaming_profile: undefined })}
+          >
+            <Trash2 size={14} aria-hidden="true" />
+            Not configured
+          </button>
+        )}
+      </header>
+      {!current ? (
+        <EmptySetting
+          message="People keep a local home directory on whichever machine they sign in to."
+          onAdd={() => set({})}
+        />
+      ) : (
+        <>
+          <Field
+            label="Profile path"
+            hint="%username% becomes the person's own name, so one policy serves everybody"
+          >
+            <input
+              value={current.path}
+              placeholder="//fs01/profiles/%username%"
+              onChange={(e) => set({ path: e.target.value })}
+            />
+          </Field>
+          <div className="inline-fields">
+            <Field label="Stored as">
+              <Select
+                value={current.kind}
+                onChange={(e) => set({ kind: e.target.value as "directory" | "disk" })}
+              >
+                <option value="directory">A directory on the share</option>
+                <option value="disk">A disk image per person</option>
+              </Select>
+            </Field>
+            {current.kind === "disk" && (
+              <Field label="Each disk may grow to (GB)">
+                <input
+                  type="number"
+                  min={1}
+                  max={2048}
+                  value={current.disk_gb}
+                  onChange={(e) => set({ disk_gb: Number(e.target.value) })}
+                />
+              </Field>
+            )}
+          </div>
+          <p className="muted">
+            The share needs to let these people write, and the machines they sign in to read it:
+            the machine mounts the profile with its own credentials before the session starts. A
+            share that cannot be reached leaves that session with a local home rather than
+            refusing the sign-in.
+          </p>
+        </>
+      )}
+    </>
   );
 }

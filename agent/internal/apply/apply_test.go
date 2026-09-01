@@ -844,3 +844,21 @@ func TestTheSessionHookRepairsAnOrphanedHome(t *testing.T) {
 		}
 	}
 }
+
+func TestAProfilePathNamesTheShareAndThePersonsPlaceInIt(t *testing.T) {
+	for _, want := range []struct{ in, share, sub string }{
+		{`//fs01/profiles`, "//fs01/profiles", ""},
+		{`//fs01/profiles/%username%`, "//fs01/profiles", "t.tester"},
+		{`\\fs01\profiles\team\%username%`, "//fs01/profiles", "team/t.tester"},
+	} {
+		share, sub, err := splitProfilePath(want.in, "T.Tester")
+		if err != nil || share != want.share || sub != want.sub {
+			t.Fatalf("%q gave (%q, %q, %v)", want.in, share, sub, err)
+		}
+	}
+	for _, bad := range []string{"/srv/profiles", "//fs01", "//fs01/p/../etc"} {
+		if _, _, err := splitProfilePath(bad, "t.tester"); err == nil {
+			t.Fatalf("%q was accepted", bad)
+		}
+	}
+}

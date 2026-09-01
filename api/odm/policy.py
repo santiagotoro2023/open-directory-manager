@@ -52,6 +52,7 @@ DICT_CATEGORIES = (
     "agent",
     "updates",
     "login_screen",
+    "roaming_profile",
     "always_on_vpn",
     "password_self_service",
 )

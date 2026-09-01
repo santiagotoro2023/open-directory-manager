@@ -95,6 +95,7 @@ export interface PolicySettings {
     for_principal?: string;
     allow_user_change?: boolean;
   };
+  roaming_profile?: { path: string; kind: "directory" | "disk"; disk_gb: number };
   updates?: SystemUpdates;
   login_screen?: LoginScreenSettings;
   certificate_enrolment?: Record<string, unknown>[];

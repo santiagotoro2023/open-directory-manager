@@ -42,6 +42,8 @@ func main() {
 		os.Exit(runApply(os.Args[2:]))
 	case "daemon":
 		os.Exit(runDaemon(os.Args[2:]))
+	case "profile":
+		os.Exit(runProfile(os.Args[2:]))
 	case "--version", "-v", "version":
 		fmt.Println("odm-agent", version)
 	default:
@@ -54,6 +56,7 @@ func usage() {
 
   apply [--force] [--user NAME]   fetch and apply policy now
   daemon                          apply on the policy's refresh interval
+  profile --user NAME [--release] attach that person's roaming profile
   --version                       print the version
 
   --force is the equivalent of gpupdate /force: apply even when the policy
@@ -76,6 +79,57 @@ func runApply(args []string) int {
 	if err := applyOnce(ctx, *configPath, *root, *username, *force); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		return 1
+	}
+	return 0
+}
+
+// runProfile attaches a roaming profile, and is run from PAM before the
+// session starts rather than from the ordinary apply loop: a home directory
+// has to be in place before anything opens a file in it.
+//
+// Every failure is reported and none of them is fatal. A profile share that
+// cannot be reached must leave somebody with a local home for that session,
+// never with no way to sign in.
+func runProfile(args []string) int {
+	flags := flag.NewFlagSet("profile", flag.ExitOnError)
+	configPath := flags.String("config", config.DefaultPath, "agent configuration file")
+	root := flags.String("root", "", "write beneath this directory instead of /")
+	username := flags.String("user", "", "the person signing in")
+	release := flags.Bool("release", false, "detach at the end of the session")
+	_ = flags.Parse(args)
+	if *username == "" {
+		return 0
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	env := apply.NewEnv(*root)
+
+	if *release {
+		apply.ReleaseProfile(ctx, *username, env)
+		return 0
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: roaming profile:", err)
+		return 0
+	}
+	api, err := client.New(cfg, version)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: roaming profile:", err)
+		return 0
+	}
+	defer api.Close()
+
+	document, err := api.UserPolicy(ctx, *username)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: roaming profile:", err)
+		return 0
+	}
+	if err := apply.MountProfile(ctx, document.Settings.RoamingProfile, *username, env); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"odm-agent: %s keeps a local home this session: %v\n", *username, err)
 	}
 	return 0
 }

@@ -313,6 +313,49 @@ def validate_image_name(value: str) -> str:
     return value
 
 
+# //server/share, then any number of path segments. %username% is the whole
+# point of the setting: one policy naming a different directory per person.
+PROFILE_PATH_RE = re.compile(
+    r"^//[A-Za-z0-9._-]{1,253}/[A-Za-z0-9._$ -]{1,80}(/[A-Za-z0-9._%-]{1,64})*$"
+)
+
+
+class RoamingProfile(Strict):
+    """Where a person's home directory lives, instead of on each machine.
+
+    Off unless a policy says otherwise, and a user setting rather than a
+    machine one: it follows the person, not the desk. Point this and a remote
+    desktop collection at the same share and somebody has one profile across
+    every desktop and every session host in the domain.
+
+    A profile that cannot be reached is never a reason somebody cannot sign
+    in: the machine says so and gives them a local home for that session.
+    """
+
+    path: Annotated[str, Field(min_length=5, max_length=512)]
+    # A directory on the share, or a disk image per person on it. The image is
+    # what a session host's user profile disks already are, so a collection
+    # pointed at the same share attaches the same disk.
+    kind: Literal["directory", "disk"] = "directory"
+    disk_gb: Annotated[int, Field(ge=1, le=2048)] = 10
+
+    @field_validator("path")
+    @classmethod
+    def _path(cls, value: str) -> str:
+        value = value.strip().replace("\\", "/").rstrip("/")
+        if not PROFILE_PATH_RE.match(value):
+            raise ValueError(
+                "the profile path must look like //server/share or "
+                "//server/share/folder/%username%"
+            )
+        if ".." in value.split("/"):
+            raise ValueError("the profile path may not contain ..")
+        placeholders = re.findall(r"%[A-Za-z]+%", value)
+        if any(name != "%username%" for name in placeholders):
+            raise ValueError("the only placeholder is %username%")
+        return value
+
+
 class LoginScreen(Strict):
     """The greeter, before anyone has signed in.
 
@@ -538,6 +581,7 @@ class PolicySettings(Strict):
     admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None
+    roaming_profile: RoamingProfile | None = None
     updates: SystemUpdates | None = None
     login_screen: LoginScreen | None = None
     certificate_enrolment: Annotated[

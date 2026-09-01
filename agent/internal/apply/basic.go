@@ -116,11 +116,16 @@ func installSessionHook(env Env) policy.Result {
 	hook := "#!/bin/sh\n" + Header + repairHome + `case "$PAM_TYPE" in
   open_session)
     odm_repair_home
+    # Before anything else, and not in the background: a roaming profile is
+    # the home directory the rest of the session is about to open files in.
+    [ -n "$PAM_USER" ] && timeout 40 /usr/sbin/odm-agent profile --user "$PAM_USER" 2>&1 |
+      logger -t odm-profile
     [ -d ` + scriptDir + `/logon ] && /bin/run-parts --report ` + scriptDir + `/logon
     [ -n "$PAM_USER" ] && timeout 60 /usr/sbin/odm-agent apply --user "$PAM_USER" >/dev/null 2>&1 &
     ;;
   close_session)
     [ -d ` + scriptDir + `/logoff ] && /bin/run-parts --report ` + scriptDir + `/logoff
+    [ -n "$PAM_USER" ] && /usr/sbin/odm-agent profile --user "$PAM_USER" --release >/dev/null 2>&1
     ;;
 esac
 exit 0

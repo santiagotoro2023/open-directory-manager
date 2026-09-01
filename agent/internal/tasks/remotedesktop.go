@@ -160,7 +160,10 @@ case "$USER_ID" in
 esac
 [ "$USER_ID" -ge 1000 ] || exit 0
 
-IMAGE="UPD-${USER_NAME}-${USER_ID}.img"
+# Named for the account and nothing else, so the same person gets the same
+# disk here as a roaming-profile policy gives them on an ordinary desktop.
+# A uid does not travel between machines; a name does.
+IMAGE="UPD-$(printf '%s' "$USER_NAME" | tr 'A-Z' 'a-z').img"
 STORE=/run/odm/profiles
 HOME_DIR="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 [ -n "$HOME_DIR" ] || HOME_DIR="/home/$USER_NAME"
@@ -170,6 +173,10 @@ if [ "${PAM_TYPE:-}" = "close_session" ]; then
     umount "$STORE" 2>/dev/null || true
     exit 0
 fi
+
+# A roaming-profile policy runs from the ordinary session hook, which is in
+# this PAM stack too. Whichever got there first, the profile is attached.
+mountpoint -q "$HOME_DIR" && exit 0
 
 mkdir -p "$STORE" "$HOME_DIR" 2>/dev/null || warn "cannot create $HOME_DIR"
 

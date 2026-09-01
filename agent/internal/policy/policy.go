@@ -46,6 +46,7 @@ type Settings struct {
 	Packages             []Package              `json:"packages,omitempty"`
 	Browser              *Browser               `json:"browser,omitempty"`
 	Wallpaper            *Wallpaper             `json:"wallpaper,omitempty"`
+	RoamingProfile       *RoamingProfile        `json:"roaming_profile,omitempty"`
 	Updates              *Updates               `json:"updates,omitempty"`
 	LoginScreen          *LoginScreen           `json:"login_screen,omitempty"`
 	CertificateEnrolment []CertificateEnrolment `json:"certificate_enrolment,omitempty"`
@@ -141,6 +142,14 @@ type TrustedCert struct {
 type Browser struct {
 	Chromium map[string]any `json:"chromium,omitempty"`
 	Firefox  map[string]any `json:"firefox,omitempty"`
+}
+
+// RoamingProfile puts a person's home directory on a share rather than on the
+// machine they signed in to.
+type RoamingProfile struct {
+	Path   string `json:"path"`
+	Kind   string `json:"kind"`
+	DiskGB int    `json:"disk_gb"`
 }
 
 type Wallpaper struct {
