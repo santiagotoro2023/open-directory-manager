@@ -135,15 +135,21 @@ func quietBrowsing(ctx context.Context, env Env) policy.Result {
 			Setting: "printers:browsing", Status: "skipped", Reason: "cups-browsed is not installed",
 		}
 	}
-	block := "# A queue for a remote CUPS printer takes the remote name, so a printer\n" +
-		"# this machine already has from policy is not added a second time.\n" +
-		"LocalQueueNamingRemoteCUPS RemoteName\n" +
-		"# Printers found on the network are not turned into queues by themselves.\n" +
-		"CreateIPPPrinterQueues No\n"
+	// Nothing is discovered on a machine whose printers come from policy. Left
+	// on, cups-browsed added the network printer it found by itself, and then
+	// a second copy of the queue policy had already created — named
+	// "brother-lab@print01.local", because the name it wanted was taken. Three
+	// entries for one printer, two of which nobody asked for.
+	block := "# Printers on this machine come from group policy.\n" +
+		"BrowseRemoteProtocols none\n" +
+		"CreateIPPPrinterQueues No\n" +
+		"LocalQueueNamingRemoteCUPS RemoteName\n"
 	if err := env.ReplaceBlock(browsedConf, block, 0o644); err != nil {
 		return policy.Fail("printers:browsing", err)
 	}
-	// Not an error when it is not running: nothing was discovering anything.
-	_, _ = env.Run.Run(ctx, "systemctl", "try-restart", "cups-browsed")
+	// Queues an earlier run let it create stay behind otherwise: cups-browsed
+	// removes what it made when it stops, and nothing else knows they are its.
+	_, _ = env.Run.Run(ctx, "systemctl", "stop", "cups-browsed")
+	_, _ = env.Run.Run(ctx, "systemctl", "start", "cups-browsed")
 	return policy.Ok("printers:browsing")
 }
