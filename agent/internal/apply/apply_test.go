@@ -318,9 +318,9 @@ func TestDenyRulesArePlacedBeforeAllowRules(t *testing.T) {
 		},
 	}, env)
 
-	body := read(t, env, accessConf)
-	deny := strings.Index(body, "-:%Contractors")
-	allow := strings.Index(body, "+:%Engineers")
+	body := read(t, env, accessFileFor("ssh"))
+	deny := strings.Index(body, "-:(Contractors)")
+	allow := strings.Index(body, "+:(Engineers)")
 	if deny == -1 || allow == -1 || deny > allow {
 		t.Fatalf("pam_access takes the first match, so deny must come first:\n%s", body)
 	}
@@ -334,7 +334,7 @@ func TestAnAllowListNeverLocksOutRoot(t *testing.T) {
 		},
 	}, env)
 
-	body := read(t, env, accessConf)
+	body := read(t, env, accessFileFor("local"))
 	closing := strings.Index(body, "-:ALL:ALL")
 	keepRoot := strings.Index(body, "+:root")
 	if closing == -1 {
@@ -345,7 +345,31 @@ func TestAnAllowListNeverLocksOutRoot(t *testing.T) {
 	}
 }
 
-func TestSshUsersAndGroupsUseTheirOwnDirectives(t *testing.T) {
+// A rule for one service must not gate another: "may use SSH" is not "may sit
+// at the console".
+func TestEachServiceIsGatedOnItsOwn(t *testing.T) {
+	env, _ := testEnv(t)
+	applyHbacRules(context.Background(), policy.Settings{
+		HbacRules: []policy.HbacRule{
+			{Principal: "%Engineers", Service: "ssh", Access: "allow"},
+		},
+	}, env)
+
+	ssh := read(t, env, accessFileFor("ssh"))
+	if !strings.Contains(ssh, "+:(Engineers)") || !strings.Contains(ssh, "-:ALL:ALL") {
+		t.Errorf("the ssh rule did not close its own list:\n%s", ssh)
+	}
+	local := read(t, env, accessFileFor("local"))
+	if strings.Contains(local, "-:ALL:ALL") {
+		t.Errorf("an ssh rule closed the console's list too:\n%s", local)
+	}
+}
+
+// sshd requires a user to match AllowUsers *and* AllowGroups when both are
+// present, so an allow rule naming a group used to lock that group out: the
+// group went in AllowGroups, root went in AllowUsers, and nobody satisfied
+// both. Allowing is pam_access's job; sshd only refuses.
+func TestSshdIsOnlyToldWhoToRefuse(t *testing.T) {
 	env, _ := testEnv(t)
 	applyHbacRules(context.Background(), policy.Settings{
 		HbacRules: []policy.HbacRule{
@@ -355,14 +379,11 @@ func TestSshUsersAndGroupsUseTheirOwnDirectives(t *testing.T) {
 	}, env)
 
 	body := read(t, env, sshdDropIn)
-	if !strings.Contains(body, "AllowGroups Engineers sudo") {
-		t.Errorf("group allow wrong:\n%s", body)
+	if strings.Contains(body, "AllowUsers") || strings.Contains(body, "AllowGroups") {
+		t.Errorf("sshd was given an allow list, which it ANDs:\n%s", body)
 	}
 	if !strings.Contains(body, "DenyUsers contractor1") {
 		t.Errorf("user deny wrong:\n%s", body)
-	}
-	if strings.Contains(body, "AllowGroups contractor1") {
-		t.Errorf("a user ended up in a group directive:\n%s", body)
 	}
 }
 

@@ -178,12 +178,14 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "hbac_rules",
     title: "HBAC rules",
-    note: "Who may open a session on a machine, and how.",
+    note:
+      "Who may open a session on a machine, and how. A group is written with a leading % — " +
+      "Select… does that for you. Deny beats allow, and root is never locked out.",
     half: "Computer",
     fields: [
       {
         key: "principal",
-        label: "User or group",
+        label: "User, or %group",
         placeholder: "%Engineers",
         picker: "principal",
         pickerValue: "principal",

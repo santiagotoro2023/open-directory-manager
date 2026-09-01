@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
@@ -70,68 +71,99 @@ func applySudo(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 // machine — locally, over SSH, or over RDP — and through which service. Deny
 // overrides allow.
 //
-// Local and RDP sessions are gated with pam_access; SSH additionally gets an
-// sshd drop-in so denied principals are refused before PAM runs.
+// Every service is gated with pam_access reading its own file, and each
+// service's PAM stack is told which file to read. That is what gives real
+// per-service control: pam_access matches users and groups with the "or"
+// an operator expects, and the PAM stack is what knows whether this is ssh,
+// a console login, or a remote desktop session.
+//
+// sshd's own AllowUsers and AllowGroups are deliberately not used for allow
+// rules. sshd requires a user to match *both* when both are present, so an
+// allow rule naming a group locked that group out — the group went in
+// AllowGroups, root went in AllowUsers, and nobody satisfied both. Denies
+// still get an sshd drop-in, because those are refused before PAM runs and
+// carry no such trap.
 func applyHbacRules(ctx context.Context, s policy.Settings, env Env) []policy.Result {
 	if len(s.HbacRules) == 0 {
 		return nil
 	}
 
-	var lines []string
-	var allowAll []string
-	var denySSHUsers, denySSHGroups, allowSSHUsers, allowSSHGroups []string
+	// Which PAM service each kind of session arrives through.
+	services := map[string][]string{
+		"local": {"login", "gdm-password", "sddm", "lightdm"},
+		"ssh":   {"sshd"},
+		"rdp":   {"xrdp-sesman"},
+	}
 
-	// pam_access takes the first matching rule, so every deny is written
-	// before any allow.
-	for _, right := range s.HbacRules {
-		if right.Access != "deny" {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("-:%s:ALL", right.Principal))
-		if right.Service == "ssh" || right.Service == "all" {
-			if group, name := sshName(right.Principal); group {
-				denySSHGroups = append(denySSHGroups, name)
-			} else {
-				denySSHUsers = append(denySSHUsers, name)
+	var results []policy.Result
+	var denySSHUsers, denySSHGroups []string
+
+	for _, service := range []string{"local", "ssh", "rdp"} {
+		var lines []string
+		var allows int
+
+		// pam_access takes the first matching rule, so every deny comes
+		// before any allow.
+		for _, pass := range []string{"deny", "allow"} {
+			for _, right := range s.HbacRules {
+				if right.Access != pass {
+					continue
+				}
+				if right.Service != "all" && right.Service != service {
+					continue
+				}
+				sign := "+"
+				if pass == "deny" {
+					sign = "-"
+				}
+				lines = append(lines, fmt.Sprintf("%s:%s:ALL", sign, accessName(right.Principal)))
+				if pass == "allow" {
+					allows++
+				}
+				if service == "ssh" && pass == "deny" {
+					if group, name := sshName(right.Principal); group {
+						denySSHGroups = append(denySSHGroups, name)
+					} else {
+						denySSHUsers = append(denySSHUsers, name)
+					}
+				}
 			}
 		}
-	}
-	for _, right := range s.HbacRules {
-		if right.Access == "deny" {
+
+		// An allow list only means anything with a closing deny — but root
+		// and the local administrators are never locked out by policy.
+		if allows > 0 {
+			lines = append(lines, "+:"+strings.Join(alwaysAllowed, " ")+":ALL")
+			lines = append(lines, "-:ALL:ALL")
+		}
+
+		path := accessFileFor(service)
+		if len(lines) == 0 {
+			// Nothing said about this service means nothing gated for it.
+			lines = []string{"# No rules for " + service + "."}
+		}
+		if err := env.WriteFile(path, Header+strings.Join(lines, "\n")+"\n", 0o644,
+			"root", "root"); err != nil {
+			results = append(results, policy.Fail("hbac:"+service, err))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("+:%s:ALL", right.Principal))
-		allowAll = append(allowAll, right.Principal)
-		if right.Service == "ssh" || right.Service == "all" {
-			if group, name := sshName(right.Principal); group {
-				allowSSHGroups = append(allowSSHGroups, name)
-			} else {
-				allowSSHUsers = append(allowSSHUsers, name)
+		for _, pam := range services[service] {
+			target := "/etc/pam.d/" + pam
+			if _, err := os.Stat(env.Path(target)); err != nil {
+				// A machine without a desktop has no gdm stack to gate.
+				continue
+			}
+			if err := env.ReplaceBlock(
+				target, "account required pam_access.so accessfile="+path+"\n", 0o644,
+			); err != nil {
+				results = append(results, policy.Fail("hbac:"+service, err))
 			}
 		}
+		results = append(results, policy.Ok("hbac:"+service))
 	}
 
-	results := []policy.Result{}
-	if len(allowAll) > 0 {
-		// An allow list is only meaningful with a closing deny, but root and
-		// local administrators are always kept.
-		lines = append(lines, "+:"+strings.Join(alwaysAllowed, " ")+":ALL")
-		lines = append(lines, "-:ALL:ALL")
-	}
-
-	if err := env.ReplaceBlock(accessConf, strings.Join(lines, "\n")+"\n", 0o644); err != nil {
-		results = append(results, policy.Fail("hbac:access", err))
-	} else if err := env.ReplaceBlock(
-		pamAccountPath, "account required pam_access.so\n", 0o644,
-	); err != nil {
-		results = append(results, policy.Fail("hbac:access", err))
-	} else {
-		results = append(results, policy.Ok("hbac:access"))
-	}
-
-	// sshd keeps users and groups in separate directives, and an Allow*
-	// directive is itself a deny-by-default for everyone else — so the local
-	// administrators are always added to it.
+	// Denied principals are refused before PAM runs. Deny directives are
+	// independent of each other, so naming both users and groups is safe.
 	var sshd strings.Builder
 	sshd.WriteString(Header)
 	for _, directive := range []struct {
@@ -140,8 +172,6 @@ func applyHbacRules(ctx context.Context, s policy.Settings, env Env) []policy.Re
 	}{
 		{"DenyUsers", denySSHUsers},
 		{"DenyGroups", denySSHGroups},
-		{"AllowUsers", withRoot(allowSSHUsers, "root")},
-		{"AllowGroups", withRoot(allowSSHGroups, "sudo")},
 	} {
 		if len(directive.values) > 0 {
 			sshd.WriteString(directive.keyword + " " + strings.Join(directive.values, " ") + "\n")
@@ -151,15 +181,27 @@ func applyHbacRules(ctx context.Context, s policy.Settings, env Env) []policy.Re
 		results = append(results, policy.Fail("hbac:ssh", err))
 		return results
 	}
-	results = append(results, runAll(ctx, env, "hbac:ssh",
+	results = append(results, runAll(ctx, env, "hbac:sshd",
 		[]string{"sshd", "-t"},
 		[]string{"systemctl", "reload-or-restart", "ssh"},
 	))
 	return results
 }
 
-// sshName reports whether the principal is a group, and its bare name;
-// pam_access marks groups with a leading %, sshd does not.
+// accessFileFor is where one service's rules live.
+func accessFileFor(service string) string {
+	return "/etc/security/odm-access-" + service + ".conf"
+}
+
+// accessName is how pam_access spells a principal. A group is written in
+// parentheses; ODM writes it with a leading % the way sudo and sshd do.
+func accessName(principal string) string {
+	if group, name := sshName(principal); group {
+		return "(" + name + ")"
+	}
+	return principal
+}
+
 func sshName(principal string) (bool, string) {
 	if strings.HasPrefix(principal, "%") {
 		return true, principal[1:]
