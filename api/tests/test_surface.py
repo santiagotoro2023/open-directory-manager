@@ -576,3 +576,40 @@ def test_the_control_plane_accepts_every_status_an_applier_reports():
     assert used, "no applier statuses found; did the appliers move?"
     missing = sorted(used - accepted)
     assert not missing, f"the appliers report {missing}, which the control plane refuses"
+
+
+def test_every_task_with_a_subject_moves_something_on():
+    """A task that carries a subject is one the console shows a state for.
+    Without an entry in the finish table that thing sits at "applying" for
+    ever — which is what a printer, a tunnel and a remote-desktop collection
+    all did while the queue, the interface and the broker worked perfectly."""
+    import pathlib
+    import re
+
+    from odm.routes_agent import FINISHED_BY_TASK
+
+    # Kinds that finish somewhere of their own, outside the table.
+    handled_separately = {"role-install", "domain-backup"}
+    # Kinds that answer a question rather than change a thing.
+    no_subject = {
+        "browse", "make-directory", "printer-discover", "console-certificate",
+        "update-check", "update-install", "package-install", "package-remove",
+        "policy-refresh", "restart", "shutdown", "share-remove", "printer-remove",
+        "local-user-add", "local-user-remove", "radius-apply",
+    }
+
+    routes = pathlib.Path("odm")
+    enqueued: set[str] = set()
+    for path in routes.glob("routes_*.py"):
+        body = path.read_text()
+        starts = [m for m in re.finditer(r'kind="([a-z-]+)"', body)]
+        for index, match in enumerate(starts):
+            # Everything up to the next enqueue, so a subject on the line
+            # after the payload still counts.
+            end = starts[index + 1].start() if index + 1 < len(starts) else len(body)
+            if "subject=" in body[match.end():end]:
+                enqueued.add(match.group(1))
+    assert enqueued, "no enqueue with a subject found; did the routes move?"
+
+    missing = sorted(enqueued - set(FINISHED_BY_TASK) - handled_separately - no_subject)
+    assert not missing, f"these tasks carry a subject nothing finishes: {missing}"

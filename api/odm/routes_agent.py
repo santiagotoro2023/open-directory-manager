@@ -280,6 +280,38 @@ async def agent_task_progress(
     )
 
 
+# What a task's outcome moves on. Anything the console shows a state for has
+# a task with a subject, and this is where that thing learns how it went —
+# without an entry here it sits at "applying" for ever, which is what a
+# printer, a tunnel and a remote-desktop collection all did while the queue,
+# the interface and the broker were working perfectly.
+#
+# Written out rather than interpolated: an identity system does not build SQL
+# from a value, even one it chose itself.
+FINISHED_BY_TASK = {
+    "share-apply": """
+        UPDATE file_share SET state = $2, last_error = $3, updated_at = now()
+        WHERE id = $1::uuid
+    """,
+    "printer-apply": """
+        UPDATE printer SET state = $2, last_error = $3, updated_at = now()
+        WHERE id = $1::uuid
+    """,
+    "vpn-apply": """
+        UPDATE vpn_tunnel SET state = $2, last_error = $3, updated_at = now()
+        WHERE id = $1::uuid
+    """,
+    "rd-broker-apply": """
+        UPDATE rd_collection SET state = $2, last_error = $3, updated_at = now()
+        WHERE id = $1::uuid
+    """,
+    "rd-host-apply": """
+        UPDATE rd_collection SET state = $2, last_error = $3, updated_at = now()
+        WHERE id = $1::uuid
+    """,
+}
+
+
 @router.post("/tasks/result", status_code=204)
 async def agent_task_result(
     body: TaskResult,
@@ -334,12 +366,9 @@ async def agent_task_result(
                 path,
                 size,
             )
-        elif task["kind"] == "share-apply" and task["subject"]:
+        elif task["subject"] and task["kind"] in FINISHED_BY_TASK:
             await conn.execute(
-                """
-                UPDATE file_share SET state = $2, last_error = $3, updated_at = now()
-                WHERE id = $1::uuid
-                """,
+                FINISHED_BY_TASK[task["kind"]],
                 task["subject"],
                 "active" if body.ok else "failed",
                 None if body.ok else detail,
