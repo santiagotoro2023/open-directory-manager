@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
@@ -22,6 +23,15 @@ const (
 	// directory is parsed as a keyfile, and a stylesheet there made "dconf
 	// update" fail — taking the banner and the user list down with it.
 	greeterCssPath = "/etc/odm/login-background.css"
+
+	// Debian does not compile /etc/dconf/db/gdm.d at all. Its greeter runs
+	// with DCONF_PROFILE=Debian-gdm against a database built by
+	// /usr/share/gdm/generate-config out of this directory, so a banner
+	// written only the upstream way was never read: the keys were right, the
+	// database was right, and the login screen showed none of it.
+	debianGreeterDir     = "/usr/share/gdm/dconf"
+	debianGreeterKeyfile = debianGreeterDir + "/95-odm-login-screen"
+	debianGreeterConfig  = "/usr/share/gdm/generate-config"
 )
 
 func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.Result {
@@ -94,6 +104,18 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 	}
 
 	results = append(results, runAll(ctx, env, "login_screen", []string{"dconf", "update"}))
+
+	// And again where Debian's greeter will actually look.
+	if _, err := os.Stat(env.Path(debianGreeterDir)); err == nil {
+		if err := env.WriteFile(
+			debianGreeterKeyfile, keyfile.String(), 0o644, "root", "root",
+		); err != nil {
+			results = append(results, policy.Fail("login_screen:greeter", err))
+		} else {
+			results = append(results, runAll(ctx, env, "login_screen:greeter",
+				[]string{debianGreeterConfig}))
+		}
+	}
 	return results
 }
 
