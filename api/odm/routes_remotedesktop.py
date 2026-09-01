@@ -111,7 +111,7 @@ async def _dispatch(conn: asyncpg.Connection, row: asyncpg.Record, actor: str) -
             conn,
             node_fqdn=host,
             kind="rd-host-apply",
-            payload=remotedesktop.host_task(dict(row)),
+            payload=remotedesktop.host_task(dict(row), host),
             subject=str(row["id"]),
             requested_by=actor,
         )

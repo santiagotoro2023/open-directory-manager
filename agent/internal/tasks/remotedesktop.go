@@ -26,6 +26,7 @@ const (
 	rdPamFile        = "/etc/pam.d/xrdp-sesman"
 	rdBrokerConfig   = "/etc/haproxy/conf.d/odm-remote-desktop.cfg"
 	rdSesmanIni      = "/etc/xrdp/sesman.ini"
+	rdXrdpIni        = "/etc/xrdp/xrdp.ini"
 )
 
 var (
@@ -94,6 +95,18 @@ func applyRemoteDesktopHost(
 		"DisconnectedTimeLimit": fmt.Sprint(disconnected * 60),
 		"IdleTimeLimit":         fmt.Sprint(idle * 60),
 	}); err != nil {
+		return "", err
+	}
+
+	// Where xrdp listens. The broker owns 3389, so a machine that is both a
+	// broker and a host moves xrdp aside: on one machine they both bound
+	// 3389, xrdp won, and haproxy exited with "cannot bind socket (Address
+	// already in use)" — the broker was not brokering at all.
+	port := intOf(payload["rdp_port"], 3389)
+	if port < 1 || port > 65535 {
+		return "", fmt.Errorf("invalid rdp port %d", port)
+	}
+	if err := setXrdpPort(env, port); err != nil {
 		return "", err
 	}
 
@@ -224,7 +237,7 @@ func applyRemoteDesktopBroker(
 		return "", fmt.Errorf("no command runner")
 	}
 	name, _ := payload["collection"].(string)
-	hosts, err := stringList(payload["hosts"], safeHostName)
+	hosts, err := brokerHosts(payload["hosts"])
 	if err != nil {
 		return "", err
 	}
@@ -267,7 +280,7 @@ backend odm_rd_hosts
 `, balance, affinity))
 		for index, host := range hosts {
 			config.WriteString(fmt.Sprintf(
-				"    server host%d %s:3389 check inter 10s\n", index+1, host))
+				"    server host%d %s:%d check inter 10s\n", index+1, host.Name, host.Port))
 		}
 	}
 
@@ -318,4 +331,63 @@ func intOf(value any, fallback int) int {
 		return int(number)
 	}
 	return fallback
+}
+
+// brokerHost is one session host and the port its xrdp answers on. A host that
+// shares a machine with the broker is moved aside, because the broker owns
+// 3389 there.
+type brokerHost struct {
+	Name string
+	Port int
+}
+
+func brokerHosts(value any) ([]brokerHost, error) {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil, nil
+	}
+	hosts := make([]brokerHost, 0, len(raw))
+	for _, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("a host is not an object")
+		}
+		name := str(entry["host"])
+		if !safeHostName.MatchString(name) {
+			return nil, fmt.Errorf("invalid host name %q", name)
+		}
+		port := intOf(entry["port"], 3389)
+		if port < 1 || port > 65535 {
+			return nil, fmt.Errorf("invalid port %d for %s", port, name)
+		}
+		hosts = append(hosts, brokerHost{Name: name, Port: port})
+	}
+	return hosts, nil
+}
+
+// setXrdpPort rewrites the listening port in xrdp.ini, leaving the rest of
+// the file alone: it is the machine's own configuration, not ODM's.
+func setXrdpPort(env apply.Env, port int) error {
+	path := env.Path(rdXrdpIni)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	lines := strings.Split(string(body), "\n")
+	wanted := fmt.Sprintf("port=%d", port)
+	// Only the one in [Globals], which is the first: the others belong to
+	// channel definitions and are -1 on purpose.
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "port=") {
+			if strings.TrimSpace(line) == wanted {
+				return nil
+			}
+			lines[index] = wanted
+			break
+		}
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }

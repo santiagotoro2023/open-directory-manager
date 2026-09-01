@@ -95,7 +95,7 @@ def test_a_new_session_is_spread_and_a_returning_one_is_not():
         ["a.example.org", "b.example.org"],
     )
     assert task["balance_method"] == "roundrobin"
-    assert task["hosts"] == ["a.example.org", "b.example.org"]
+    assert [entry["host"] for entry in task["hosts"]] == ["a.example.org", "b.example.org"]
 
 
 def test_the_affinity_window_outlives_the_session_it_protects():
@@ -118,3 +118,30 @@ def test_a_short_timeout_still_gets_a_usable_window():
     # Not just disconnected + idle: the host ends the session on its own
     # clock, and the two are not synchronised to the second.
     assert remotedesktop.affinity_minutes(5, 0) > 5
+
+
+def test_a_host_that_shares_a_machine_with_the_broker_moves_aside():
+    """They both bound 3389, xrdp won, and haproxy exited with "cannot bind
+    socket (Address already in use)" — so the broker was not brokering at all
+    and every client reached one host directly."""
+    from odm import remotedesktop
+
+    row = {
+        "name": "desktops", "kind": "desktop", "app_path": "",
+        "profile_share": "//fs01/profiles", "profile_gb": 10,
+        "idle_minutes": 30, "disconnected_minutes": 60,
+        "broker_fqdn": "rdb01.corp.example.internal",
+    }
+    beside = remotedesktop.host_task(row, "rdb01.corp.example.internal")
+    assert beside["rdp_port"] == remotedesktop.HOST_BESIDE_BROKER_PORT
+
+    apart = remotedesktop.host_task(row, "rdh01.corp.example.internal")
+    assert apart["rdp_port"] == remotedesktop.DEFAULT_RDP_PORT
+
+    # And the broker reaches each host where it actually listens.
+    broker = remotedesktop.broker_task(
+        row, ["rdb01.corp.example.internal", "rdh01.corp.example.internal"]
+    )
+    ports = {entry["host"]: entry["port"] for entry in broker["hosts"]}
+    assert ports["rdb01.corp.example.internal"] == remotedesktop.HOST_BESIDE_BROKER_PORT
+    assert ports["rdh01.corp.example.internal"] == remotedesktop.DEFAULT_RDP_PORT

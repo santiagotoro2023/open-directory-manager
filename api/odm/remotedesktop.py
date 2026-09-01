@@ -51,7 +51,22 @@ def validate_app(kind: str, path: str) -> str:
     return path
 
 
-def host_task(row: dict[str, Any]) -> dict[str, Any]:
+# Where a session host listens. The broker owns 3389 — clients connect to the
+# broker, never to a host — so a machine that is both moves xrdp aside. On one
+# machine they both bound 3389, xrdp won, and haproxy exited with "cannot bind
+# socket (Address already in use)": the broker was not brokering at all.
+DEFAULT_RDP_PORT = 3389
+HOST_BESIDE_BROKER_PORT = 3390
+
+
+def host_port(node_fqdn: str, broker_fqdn: str) -> int:
+    """Which port this host's xrdp listens on."""
+    if node_fqdn.lower() == (broker_fqdn or "").lower():
+        return HOST_BESIDE_BROKER_PORT
+    return DEFAULT_RDP_PORT
+
+
+def host_task(row: dict[str, Any], node_fqdn: str = "") -> dict[str, Any]:
     """What a session host is told about the collection it serves."""
     return {
         "collection": row["name"],
@@ -61,6 +76,7 @@ def host_task(row: dict[str, Any]) -> dict[str, Any]:
         "profile_gb": row["profile_gb"],
         "idle_minutes": row["idle_minutes"],
         "disconnected_minutes": row["disconnected_minutes"],
+        "rdp_port": host_port(node_fqdn, row.get("broker_fqdn") or ""),
     }
 
 
@@ -73,9 +89,12 @@ def broker_task(row: dict[str, Any], hosts: list[str]) -> dict[str, Any]:
     mounted there, exclusively, and landing them anywhere else would refuse
     the logon rather than start a second session.
     """
+    broker = row.get("broker_fqdn") or ""
     return {
         "collection": row["name"],
-        "hosts": hosts,
+        # Each host with the port its xrdp is on, so a host that shares a
+        # machine with the broker is reached where it actually listens.
+        "hosts": [{"host": host, "port": host_port(host, broker)} for host in hosts],
         "balance_method": row.get("balance_method") or "leastconn",
         "affinity_minutes": affinity_minutes(
             row.get("disconnected_minutes") or 0, row.get("idle_minutes") or 0
