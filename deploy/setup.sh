@@ -28,7 +28,7 @@ SKIP_CONSOLE="no"
 ASSUME_YES="no"
 
 STEP=0
-STEPS=8
+STEPS=9
 CURRENT="starting up"
 
 usage() {
@@ -220,6 +220,7 @@ ${B}Open Directory Manager — setup${R}
     6. set up TLS and the database
     7. build the console
     8. start everything and tell you where to sign in
+    9. install the policy agent on this controller
 
   ${YELLOW}This reconfigures Samba, DNS and networking here. Use a dedicated
   server or virtual machine.${R}
