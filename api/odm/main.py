@@ -176,6 +176,10 @@ def create_app() -> FastAPI:
         (objects.ProtectedObject, status.HTTP_409_CONFLICT),
         (objects.ObjectError, status.HTTP_400_BAD_REQUEST),
         (directory.NotAuthorized, status.HTTP_403_FORBIDDEN),
+        # A name the directory will not accept is the caller's mistake, not
+        # the control plane's: unmapped, it came back as a 500 and every
+        # logon-time setting failed with "Internal Server Error".
+        (directory.InvalidCredentials, status.HTTP_400_BAD_REQUEST),
         (directory.DirectoryError, status.HTTP_503_SERVICE_UNAVAILABLE),
         (dns.DnsUnavailable, status.HTTP_501_NOT_IMPLEMENTED),
         (dns.DnsError, status.HTTP_400_BAD_REQUEST),

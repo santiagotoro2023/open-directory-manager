@@ -69,10 +69,22 @@ def read_sid(value: object) -> str | None:
 
 
 def validate_username(username: str) -> str:
-    """Reject anything that is not a plain sAMAccountName or UPN."""
+    """Normalise a logon name, or reject what is not one.
+
+    All three spellings a person may be given are accepted: the bare
+    sAMAccountName, the user principal name, and DOMAIN\\name — which is what
+    the GNOME greeter itself suggests, and what the display manager then hands
+    to the agent. Rejecting it made the whole logon-time policy fail with a
+    500 for somebody who had signed in perfectly well.
+    """
     candidate = username.strip()
     if not candidate:
         raise InvalidCredentials("empty username")
+    domain_prefix, sep, rest = candidate.partition("\\")
+    if sep:
+        if not re.match(r"^[A-Za-z0-9.\-]{1,253}$", domain_prefix):
+            raise InvalidCredentials("invalid username")
+        candidate = rest
     local, sep, domain = candidate.partition("@")
     if not _USERNAME_RE.match(local):
         raise InvalidCredentials("invalid username")

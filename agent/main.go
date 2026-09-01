@@ -102,9 +102,17 @@ func runProfile(args []string) int {
 	username := flags.String("user", "", "the person signing in")
 	release := flags.Bool("release", false, "detach at the end of the session")
 	_ = flags.Parse(args)
-	if *username == "" {
+	// PAM hands over whatever the person typed at the greeter, and the greeter
+	// suggests DOMAIN\name. The directory is asked about the account.
+	name := *username
+	if _, rest, found := strings.Cut(name, `\`); found {
+		name = rest
+	}
+	name, _, _ = strings.Cut(name, "@")
+	if name == "" {
 		return 0
 	}
+	username = &name
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

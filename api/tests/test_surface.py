@@ -637,3 +637,26 @@ def test_a_machine_that_mounts_a_share_can_ask_for_a_ticket_for_it():
                 assert "keyutils" in line or "keyutils" in body, (
                     f"{source.name} installs cifs-utils without keyutils: {line.strip()}"
                 )
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    ["t.tester", "t.tester@corp.example.internal", r"EXAMPLE\t.tester"],
+)
+def test_every_spelling_of_a_logon_name_resolves_to_the_account(spelling):
+    """The greeter itself suggests DOMAIN\\name, and hands that to the agent.
+
+    Rejecting it made every logon-time setting fail for somebody who had just
+    signed in successfully.
+    """
+    from odm.directory import validate_username
+
+    assert validate_username(spelling).split("@", 1)[0] == "t.tester"
+
+
+def test_a_name_that_is_not_one_is_still_refused():
+    from odm.directory import InvalidCredentials, validate_username
+
+    for bad in [r"EXAMPLE\ ", "", r"..\..\etc\passwd", "t.tester)(uid=*"]:
+        with pytest.raises(InvalidCredentials):
+            validate_username(bad)

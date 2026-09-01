@@ -378,8 +378,12 @@ def find_computer(
 
 
 def find_user(conn: Connection, settings: Settings, sam_account_name: str) -> dict[str, Any]:
-    """Resolve a user account by logon name."""
-    validate_username(sam_account_name)
+    """Resolve a user account by logon name.
+
+    Whatever spelling arrived — the bare name, a UPN, or DOMAIN\\name — the
+    directory is asked about the account name.
+    """
+    sam_account_name = validate_username(sam_account_name).split("@", 1)[0]
     found = _search(
         conn,
         safe_dn(settings.base_dn),
