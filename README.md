@@ -101,8 +101,8 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | DNS | Zones and records in the domain's integrated DNS |
 | DHCP | ISC Kea scopes, reservations, leases, failover pair and dynamic DNS |
 | File shares | SMB shares on any file server, with per-user and per-group access levels, choosing the directory by browsing the server itself |
-| Printing | CUPS printers on any print server, handed to people by policy |
-| Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share, published applications, and downloadable connection files |
+| Printing | CUPS printers on any print server, found on the network by scanning for them, handed to people by policy |
+| Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share, published applications, and downloadable connection files. The broker owns 3389; a host sharing its machine moves to 3390 |
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
 | Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
@@ -113,7 +113,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them |
-| Operations | Health dashboard on Overview, replication, domain backups |
+| Operations | Health dashboard on Overview, replication, and domain backups taken by the controller's own agent |
 | Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one |
 | Audit | Every change with actor, outcome and before-and-after state |
 | Clients | One `.deb`: `odm-client-install` for scripts, **Join a Domain** for the desktop, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |

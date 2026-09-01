@@ -65,6 +65,12 @@ export function Content() {
         <Where>Printers, once a server carries the print-server role.</Where>
       </Quickstart>
 
+        <Example title="Find a printer on the network">
+          <strong>New printer</strong> → pick the server → <strong>Scan</strong>. The server asks
+          CUPS and asks avahi, so a driverless printer announcing itself over DNS-SD turns up as
+          the address to print to and the name it announces. Typing an address still works.
+        </Example>
+
       <Details>
         <Section title="Drivers">
           <p>

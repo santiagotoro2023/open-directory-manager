@@ -282,6 +282,23 @@ export function Content() {
             ]}
           />
         </Section>
+        <Section title="Ports">
+          <p>
+            Clients connect to the broker, never to a host, so the broker owns 3389. A session
+            host on the <em>same</em> machine as the broker is moved to 3390 automatically and the
+            broker is told to reach it there — otherwise both would bind 3389, xrdp would win, and
+            every client would land on that one host with no balancing and no affinity.
+          </p>
+          <Reference
+            headers={["Listens on", "What"]}
+            rows={[
+              ["3389", "The broker. This is the address people type."],
+              ["3389", "A session host on its own machine."],
+              ["3390", "A session host sharing a machine with the broker."],
+            ]}
+          />
+        </Section>
+
       </Details>
     </>
   );

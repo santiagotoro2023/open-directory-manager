@@ -170,6 +170,43 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Policies that did not take">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                "The console shows no report for a machine",
+                <>
+                  Fixed: the appliers report five words and the control plane accepted three, so
+                  one <C key="a">applied</C> made it refuse the whole report. Upgrade both.
+                </>,
+              ],
+              [
+                "A removed policy is still being enforced",
+                <>
+                  Fixed: taking a file away is a change to whatever reads it. Removing an HBAC
+                  rule left sshd refusing a user with a rule that existed nowhere on disk; the
+                  services that read a pruned file are reloaded now.
+                </>,
+              ],
+              [
+                'An HBAC rule for a group refused everyone',
+                <>
+                  Fixed, and worth knowing: a group is written <C key="b">%Engineers</C> —{" "}
+                  <strong>Select…</strong> does that for you. A bare name is a user.
+                </>,
+              ],
+              [
+                "A printer handed out by policy never appeared",
+                <>
+                  The machine needs CUPS; without it the report says so rather than failing. It is
+                  socket-activated on a desktop, and the agent starts it before adding a queue.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Joining a client">
           <Reference
             headers={["Symptom", "Check"]}
@@ -211,6 +248,46 @@ export function Content() {
                   Fixed: the console answers to <C key="y">odm.&lt;domain&gt;</C> as well as its
                   own name, and that principal is registered now. Re-run{" "}
                   <C key="z">deploy/create-api-service-account.sh</C> on a controller.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="Roles that will not settle">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                'A printer, tunnel or collection sits at "applying"',
+                <>
+                  Fixed: only three kinds of work ever wrote their outcome back, so a queue that
+                  was created, an interface that was up and a broker that was balancing all
+                  looked unfinished. Upgrade the control plane.
+                </>,
+              ],
+              [
+                "DHCP says the role is not installed",
+                <>
+                  The installer writes <C key="k">ODM_KEA_URL</C> and its credential into the
+                  secrets file when the console is on that machine, and the console restarts half
+                  a minute later to pick them up. On a separate node, add the three lines the
+                  installer prints.
+                </>,
+              ],
+              [
+                "A DHCP scope disappears after a restart",
+                <>
+                  Fixed: Kea rewrites its own configuration to persist one, and both the file
+                  ownership and its AppArmor profile refused. Re-run the DHCP role.
+                </>,
+              ],
+              [
+                "Remote desktop connects but never balances",
+                <>
+                  The broker owns 3389. A session host on the same machine is moved to 3390
+                  automatically; before that they clashed and xrdp won, so every client reached
+                  one host directly.
                 </>,
               ],
             ]}
