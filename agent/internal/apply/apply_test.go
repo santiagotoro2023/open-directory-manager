@@ -723,3 +723,36 @@ func TestPruningAFileODMOnlyEditedTakesTheBlockNotTheFile(t *testing.T) {
 		t.Errorf("the system's own lines were lost:\n%s", body)
 	}
 }
+
+// Taking a configuration file away is a change to whatever reads it, and a
+// service does not notice on its own: removing the sshd drop-in that carried
+// an HBAC deny left sshd refusing that user with a rule that existed nowhere
+// on disk, and nothing said so.
+func TestPruningAConfigFileReloadsWhatReadsIt(t *testing.T) {
+	root := t.TempDir()
+	runner := &fakeRunner{}
+	drop := "/etc/ssh/sshd_config.d/50-odm.conf"
+
+	first := Env{Root: root, Run: runner, State: NewState()}
+	if err := first.WriteFile(drop, "DenyUsers someone\n", 0o644, "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	second := Env{Root: root, Run: runner, State: NewState()}
+	removed := second.Prune(first.State)
+	if len(removed) != 1 {
+		t.Fatalf("the drop-in was not pruned: %v", removed)
+	}
+	runner.commands = nil
+	reloadAfterPrune(context.Background(), removed, second)
+
+	var reloaded bool
+	for _, command := range runner.commands {
+		if len(command) >= 3 && command[0] == "systemctl" && command[2] == "ssh" {
+			reloaded = true
+		}
+	}
+	if !reloaded {
+		t.Fatalf("ssh was not reloaded after its drop-in went away: %v", runner.commands)
+	}
+}

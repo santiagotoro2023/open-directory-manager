@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"odm.example.org/agent/internal/policy"
 )
@@ -89,13 +90,15 @@ func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) 
 	if userOnly {
 		return results
 	}
-	for _, removed := range env.Prune(previous) {
+	gone := env.Prune(previous)
+	for _, removed := range gone {
 		results = append(results, policy.Result{
 			Setting: "removed:" + removed,
 			Status:  "success",
 			Reason:  "no longer in policy",
 		})
 	}
+	results = append(results, reloadAfterPrune(ctx, gone, env)...)
 	if err := SaveState(env); err != nil {
 		results = append(results, policy.Fail("state", err))
 	}
@@ -132,4 +135,41 @@ func SaveState(env Env) error {
 	// Written directly rather than through WriteFile: the state file is not
 	// itself policy-owned, and must not be pruned by the next run.
 	return os.WriteFile(full, body, 0o600)
+}
+
+// Taking a configuration file away is a change to whatever reads it, and a
+// service does not notice on its own. Removing the sshd drop-in that carried
+// an HBAC deny left sshd refusing that user with a rule that no longer
+// existed anywhere on disk — and nothing said so.
+func reloadAfterPrune(ctx context.Context, removed []string, env Env) []policy.Result {
+	type reload struct {
+		prefix   string
+		setting  string
+		commands [][]string
+	}
+	reloads := []reload{
+		{"/etc/ssh/sshd_config.d/", "removed:sshd", [][]string{
+			{"sshd", "-t"}, {"systemctl", "reload-or-restart", "ssh"},
+		}},
+		{"/etc/dconf/db/", "removed:dconf", [][]string{{"dconf", "update"}}},
+		{"/etc/sssd/conf.d/", "removed:sssd", [][]string{
+			{"systemctl", "reload-or-restart", "sssd"},
+		}},
+	}
+
+	var results []policy.Result
+	for _, entry := range reloads {
+		wanted := false
+		for _, path := range removed {
+			if strings.HasPrefix(path, entry.prefix) {
+				wanted = true
+				break
+			}
+		}
+		if !wanted {
+			continue
+		}
+		results = append(results, runAll(ctx, env, entry.setting, entry.commands...))
+	}
+	return results
 }
