@@ -306,11 +306,11 @@ backend odm_rd_hosts
 	// says "Resumed frontend GLOBAL" and carries on serving nothing. That is
 	// exactly the state a port clash leaves behind, so make sure the
 	// frontend is actually bound and restart if it is not.
-	if len(hosts) > 0 && !listening(ctx, env, brokerPort) {
+	if len(hosts) > 0 && !haproxyListening(ctx, env, brokerPort) {
 		if out, err := env.Run.Run(ctx, "systemctl", "restart", "haproxy"); err != nil {
 			return out, fmt.Errorf("haproxy would not start: %w", err)
 		}
-		if !listening(ctx, env, brokerPort) {
+		if !haproxyListening(ctx, env, brokerPort) {
 			return out, fmt.Errorf(
 				"haproxy is running but nothing is listening on %d; check its journal",
 				brokerPort,
@@ -324,15 +324,26 @@ backend odm_rd_hosts
 // machine is moved aside by the control plane.
 const brokerPort = 3389
 
-// listening reports whether anything holds a TCP port here.
-func listening(ctx context.Context, env apply.Env, port int) bool {
-	out, err := env.Run.Run(ctx, "ss", "-lnt")
+// haproxyListening reports whether haproxy itself holds the port.
+//
+// Not "anything holds it": on a machine that is also a session host, xrdp
+// still had 3389 at the moment the broker was configured, so a check for the
+// port alone said yes, no restart happened, and when xrdp moved aside nothing
+// took the port back.
+func haproxyListening(ctx context.Context, env apply.Env, port int) bool {
+	out, err := env.Run.Run(ctx, "ss", "-lntp")
 	if err != nil {
 		// No ss is not evidence either way; assume it came up rather than
 		// restarting a working broker on every refresh.
 		return true
 	}
-	return strings.Contains(out, fmt.Sprintf(":%d ", port))
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, fmt.Sprintf(":%d ", port)) &&
+			strings.Contains(line, "haproxy") {
+			return true
+		}
+	}
+	return false
 }
 
 // balanceMethod maps what the collection asked for onto haproxy's name for

@@ -98,14 +98,9 @@ async def _dispatch(conn: asyncpg.Connection, row: asyncpg.Record, actor: str) -
         "UPDATE rd_collection SET state = 'applying', updated_at = now() WHERE id = $1",
         row["id"],
     )
-    await tasks.enqueue(
-        conn,
-        node_fqdn=row["broker_fqdn"],
-        kind="rd-broker-apply",
-        payload=remotedesktop.broker_task(dict(row), hosts),
-        subject=str(row["id"]),
-        requested_by=actor,
-    )
+    # Hosts first, then the broker. A host that shares a machine with the
+    # broker has to move xrdp off 3389 before haproxy can take it; the other
+    # way round the broker found the port busy and gave up.
     for host in hosts:
         await tasks.enqueue(
             conn,
@@ -115,6 +110,14 @@ async def _dispatch(conn: asyncpg.Connection, row: asyncpg.Record, actor: str) -
             subject=str(row["id"]),
             requested_by=actor,
         )
+    await tasks.enqueue(
+        conn,
+        node_fqdn=row["broker_fqdn"],
+        kind="rd-broker-apply",
+        payload=remotedesktop.broker_task(dict(row), hosts),
+        subject=str(row["id"]),
+        requested_by=actor,
+    )
 
 
 @router.get("", dependencies=[Depends(requires("rd.read"))])
