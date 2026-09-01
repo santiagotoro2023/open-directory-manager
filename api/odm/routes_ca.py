@@ -456,11 +456,19 @@ async def console_certificate(
         request, session, pool, "ca.console_certificate", object_type="certificate",
         object_dn=body.common_name,
     ) as entry:
+        # odm.<domain> is the name a joined machine looks for the console at,
+        # published in the domain's DNS by setup. A replacement certificate
+        # that does not cover it turns every agent on every member into
+        # "certificate is valid for <this host>, not odm.<domain>".
+        convention = f"odm.{settings.domain}"
+        sans = list(body.sans)
+        if convention not in {body.common_name, *sans}:
+            sans.append(convention)
         issued = await run_in_threadpool(
             lambda: ca.issue(
                 settings,
                 common_name=body.common_name,
-                sans=body.sans,
+                sans=sans,
                 profile="console",
                 validity_days=body.validity_days,
             )

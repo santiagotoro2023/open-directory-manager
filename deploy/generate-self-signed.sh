@@ -40,11 +40,20 @@ if [[ -f "$TLS_DIR/api.crt" ]]; then
     exit 0
 fi
 
+# odm.<domain> is the name a joined machine looks for the console at, and the
+# domain's DNS publishes it. A certificate that does not cover it turns every
+# agent on every member into "certificate is valid for <this host>, not
+# odm.<domain>".
+ALT="DNS:$FQDN,DNS:localhost,IP:127.0.0.1"
+if [[ "$FQDN" == *.* && "${FQDN%%.*}" != "odm" ]]; then
+    ALT="$ALT,DNS:odm.${FQDN#*.}"
+fi
+
 umask 077
 openssl req -x509 -newkey rsa:4096 -sha256 -days "$DAYS" -nodes \
     -keyout "$TLS_DIR/api.key" -out "$TLS_DIR/api.crt" \
     -subj "/CN=$FQDN" \
-    -addext "subjectAltName=DNS:$FQDN,DNS:localhost,IP:127.0.0.1" \
+    -addext "subjectAltName=$ALT" \
     -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
     -addext "extendedKeyUsage=serverAuth" >/dev/null 2>&1
 
