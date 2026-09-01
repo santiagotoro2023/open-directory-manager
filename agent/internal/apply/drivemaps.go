@@ -111,7 +111,7 @@ func bookmark(who account, drive policy.DriveMap) error {
 	} else if !os.IsNotExist(err) {
 		return nil // an unreadable home is the mount's problem, not this one
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := makeUnder(who, filepath.Dir(path)); err != nil {
 		return nil
 	}
 	body := string(existing)
@@ -122,7 +122,21 @@ func bookmark(who account, drive policy.DriveMap) error {
 		return fmt.Errorf("%s: adding it to the file manager: %w", drive.Name, err)
 	}
 	_ = os.Chown(path, who.uid, who.gid)
-	_ = os.Chown(filepath.Dir(path), who.uid, who.gid)
+	return nil
+}
+
+// makeUnder creates a directory inside somebody's home and gives them every
+// level of it. Creating one as root and chowning only the last leaves the
+// parent unreadable to its owner, and the symptom is not a directory anybody
+// looks at: "Cannot open dconf database: Permission denied" from every
+// application in the session, because ~/.config itself belonged to root.
+func makeUnder(who account, dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	for path := dir; strings.HasPrefix(path, who.home) && path != who.home; path = filepath.Dir(path) {
+		_ = os.Chown(path, who.uid, who.gid)
+	}
 	return nil
 }
 
