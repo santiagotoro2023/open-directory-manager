@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import asyncpg
 
@@ -28,6 +30,18 @@ CREATE TABLE IF NOT EXISTS schema_migration (
     applied_at  timestamptz NOT NULL DEFAULT now()
 );
 """
+
+
+def dumps(value: Any) -> str:
+    """Serialise something for a jsonb column.
+
+    default=str because what goes into these columns comes from database rows
+    and from the directory, and both carry datetimes, UUIDs and addresses that
+    json refuses. Deleting a group policy object snapshotted the row it was
+    about to remove and failed on its updated_at — after the object was gone
+    from the console's list but before it reached the recycle bin.
+    """
+    return json.dumps(value, default=str)
 
 
 async def create_pool() -> asyncpg.Pool:

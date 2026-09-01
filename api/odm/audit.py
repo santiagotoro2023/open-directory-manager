@@ -6,13 +6,13 @@ database level, so this module only ever inserts.
 
 from __future__ import annotations
 
-import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
 import asyncpg
 
+from . import db
 from .objects import NotFound, ObjectError, ProtectedObject
 
 
@@ -65,7 +65,7 @@ def _json(state: dict[str, Any] | None) -> str | None:
     """
     if state is None:
         return None
-    return json.dumps(state, default=str)
+    return db.dumps(state)
 
 
 @dataclass

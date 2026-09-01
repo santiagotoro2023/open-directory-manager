@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import objects, rsop, sysvol
+from . import db, objects, rsop, sysvol
 from .config import Settings, get_settings
 from .policy_schema import PolicySettings, Targeting
 from .routes_directory import _audit_context, _bound
@@ -465,7 +465,7 @@ async def delete_gpo(
             """,
             f"CN={{{guid}}},CN=Policies,CN=System,{settings.base_dn}",
             row["display_name"],
-            json.dumps(_gpo_json(row)),
+            db.dumps(_gpo_json(row)),
             json.dumps(targets),
             session.principal,
             timedelta(days=settings.retention_days),
@@ -736,7 +736,7 @@ async def bootstrap(
                 guid,
                 name,
                 description,
-                json.dumps(document),
+                db.dumps(document),
                 session.principal,
             )
             await pool.execute(

@@ -12,7 +12,6 @@ later (CLAUDE.md §7.2).
 
 from __future__ import annotations
 
-import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Annotated, Any, Literal
@@ -22,7 +21,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, directory, objects
+from . import audit, db, directory, objects
 from .config import Settings, get_settings
 from .security import Authz, authorization, client_ip, get_pool, require_admin
 from .sessions import Session
@@ -578,9 +577,9 @@ async def delete_object(
                 state["object_type"],
                 state["display_name"],
                 state["parent_dn"],
-                json.dumps(state["attributes"]),
-                json.dumps(state["memberships"]),
-                json.dumps(state["members"]),
+                db.dumps(state["attributes"]),
+                db.dumps(state["memberships"]),
+                db.dumps(state["members"]),
                 session.principal,
                 timedelta(days=settings.retention_days),
             )

@@ -437,3 +437,26 @@ async def test_a_write_whose_state_holds_a_timestamp_still_audits(client):
 
     entries = (await client.get("/api/v1/audit?limit=20")).json()["entries"]
     assert any(e["action"] == "gpo.update" for e in entries), [e["action"] for e in entries]
+
+
+async def test_deleting_a_policy_object_puts_it_in_the_recycle_bin(client):
+    """Deleting one snapshots the row it is about to remove, and that row
+    carries an updated_at. json refused it, so the object vanished from the
+    list, never reached the recycle bin, and the console showed a 500 — which
+    is what an operator saw as "it says it does not exist"."""
+    await sign_in(client)
+
+    created = await client.post(
+        "/api/v1/policy/gpos", json={"display_name": "Disposable", "description": ""}
+    )
+    assert created.status_code == 201, created.text
+    guid = created.json()["guid"]
+
+    removed = await client.delete(f"/api/v1/policy/gpo?guid={guid}")
+    assert removed.status_code == 204, removed.text
+
+    listed = (await client.get("/api/v1/recyclebin")).json()["items"]
+    assert any(
+        item["object_type"] == "gpo" and item["display_name"] == "Disposable"
+        for item in listed
+    ), listed
