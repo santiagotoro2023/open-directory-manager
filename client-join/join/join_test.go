@@ -400,3 +400,24 @@ func (f fixedRunner) Run(context.Context, string, ...string) (string, error) {
 func (f fixedRunner) RunWithInput(context.Context, string, string, ...string) (string, error) {
 	return string(f), nil
 }
+
+// A domain member resolves names with the domain's own DNS. Without it net
+// ads join reports "failed to find DC for domain CORP", which says nothing
+// about DNS; the join should say what to do instead.
+func TestJoinExplainsWhenTheDomainDoesNotResolve(t *testing.T) {
+	env := Env{} // a real root, so the check runs
+	err := EnsureDomainResolves(
+		context.Background(),
+		Options{Domain: "corp.invalid"},
+		"nothing.corp.invalid",
+		env,
+	)
+	if err == nil {
+		t.Fatal("a name that cannot resolve was accepted")
+	}
+	for _, wanted := range []string{"does not resolve", "--server"} {
+		if !strings.Contains(err.Error(), wanted) {
+			t.Errorf("the message does not mention %q: %s", wanted, err)
+		}
+	}
+}

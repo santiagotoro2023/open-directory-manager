@@ -144,6 +144,11 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		return nil, err
 	}
 
+	// Before anything asks the network where the domain is.
+	if err := EnsureDomainResolves(ctx, options, controller, env); err != nil {
+		return nil, err
+	}
+
 	// Before the join, not after: net ads join reads this file first and
 	// refuses on Debian's stock "standalone server".
 	workgroup := Workgroup(ctx, options, controller, env)
