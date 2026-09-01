@@ -36,6 +36,11 @@ func main() {
 	if len(os.Args) < 2 {
 		usage()
 	}
+	// Started from PAM there is no environment at all, and the appliers run
+	// mount, getent and systemctl by name.
+	if os.Getenv("PATH") == "" {
+		_ = os.Setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	}
 
 	switch os.Args[1] {
 	case "apply":

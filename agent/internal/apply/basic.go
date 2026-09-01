@@ -93,7 +93,13 @@ WantedBy=multi-user.target
 // write a cache, and a file manager that refuses to open the person's own home.
 // Only an owner that no account has is repaired; an ownership somebody chose
 // is somebody's decision.
-const repairHome = `odm_repair_home() {
+const repairHome = `# PAM runs this with almost no environment, and an unset PATH means every
+# command below is "not found" — reported as an account that does not exist on
+# a machine that had just authenticated it.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+odm_repair_home() {
   [ -n "$PAM_USER" ] || return 0
   home=$(getent passwd "$PAM_USER" | cut -d: -f6)
   uid=$(id -u "$PAM_USER" 2>/dev/null) || return 0
