@@ -11,6 +11,7 @@ objects a domain cannot function without are refused outright.
 from __future__ import annotations
 
 import base64
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -618,6 +619,15 @@ def delete(conn: Connection, settings: Settings, dn: str) -> dict[str, Any]:
 
 # Attributes the directory owns. A restored object gets fresh ones; trying to
 # write them back is rejected by the DC and would fail the whole restore.
+# ldap3 decodes AD's 64-bit timestamps into datetimes on the way in, so the
+# snapshot holds their ISO strings — and the directory will not take one back.
+# accountExpires is on every user, which is the second reason no restore ever
+# worked. The named set below catches the ones we know of; this catches the
+# next one. A whole value, not a prefix: a description that begins with a date
+# is still a description.
+_WHOLE_TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)?$")
+
+
 OPERATIONAL_ATTRS = frozenset(
     {
         "distinguishedname",
@@ -639,6 +649,8 @@ OPERATIONAL_ATTRS = frozenset(
         "badpwdcount",
         "badpasswordtime",
         "pwdlastset",
+        "accountexpires",
+        "lockouttime",
         "samaccounttype",
         "primarygroupid",
         "admincount",
@@ -690,7 +702,10 @@ def restore(
     payload = {
         key: value
         for key, value in attributes.items()
-        if key.lower() not in OPERATIONAL_ATTRS and key.lower() != "objectclass" and value != []
+        if key.lower() not in OPERATIONAL_ATTRS
+        and key.lower() != "objectclass"
+        and value != []
+        and not (isinstance(value, str) and _WHOLE_TIMESTAMP.match(value))
     }
     # A restored account starts disabled: it has no password, and an enabled
     # account without one is worse than an obvious one to re-enable.

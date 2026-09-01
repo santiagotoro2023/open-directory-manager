@@ -137,6 +137,28 @@ def test_a_search_for_something_that_is_not_there_answers_nothing(ldap_only):
         objects.get(ldap_only, get_settings(), f"CN=nobody,OU=Nowhere,{BASE_DN}")
 
 
+def test_restore_drops_the_timestamps_the_directory_decoded_on_the_way_in(ldap_only):
+    """ldap3 turns AD's 64-bit timestamps into datetimes when it reads them,
+    so the snapshot holds ISO strings — and the directory refuses one back:
+
+        value '9999-12-31T23:59:59.999999+00:00' non valid for attribute
+        'accountExpires'
+
+    accountExpires is on every user, so this failed every restore of one.
+    """
+    snapshot = snapshot_of(f"CN=grace,{PARENT}")
+    snapshot["attributes"]["accountExpires"] = "9999-12-31T23:59:59.999999+00:00"
+    snapshot["attributes"]["lockoutTime"] = "1601-01-01T00:00:00+00:00"
+    # Not a timestamp, whatever it starts with.
+    snapshot["attributes"]["description"] = "2026-01-01T00:00:00 is when she joined"
+
+    dn = objects.restore(ldap_only, get_settings(), snapshot)
+    entry = ldap_only.entries[dn]
+    assert "accountExpires" not in entry
+    assert "lockoutTime" not in entry
+    assert entry["description"] == "2026-01-01T00:00:00 is when she joined"
+
+
 def test_restore_refuses_a_snapshot_with_no_object_class(ldap_only):
     broken = snapshot_of(f"CN=grace,{PARENT}")
     broken["attributes"].pop("objectClass")
