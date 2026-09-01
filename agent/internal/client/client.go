@@ -324,7 +324,7 @@ func (c *Client) Inventory(ctx context.Context, report inventory.Report) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("inventory: %s", response.Status)
+		return fmt.Errorf("inventory: %s", why(response))
 	}
 	return nil
 }
