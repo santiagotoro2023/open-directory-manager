@@ -651,6 +651,19 @@ export interface RoleInstance {
   installed_by: string | null;
   installed_at: string | null;
   updated_at: string;
+  /** State of the queued work, so "installing" can say whether the machine
+      has actually picked it up. */
+  task_state?: "pending" | "claimed" | "done" | "failed" | null;
+  task_started_at?: string | null;
+  /** What the installer has printed so far, while it is still running. */
+  task_output?: string | null;
+}
+
+export interface DirectoryListing {
+  path: string;
+  parent: string | null;
+  entries: { name: string; path: string }[];
+  truncated: boolean;
 }
 
 export interface CaStatus {
@@ -1266,6 +1279,13 @@ export const api = {
         queued: { dn: string; node: string; task: string }[];
         skipped: { dn: string; reason: string }[];
       }>("/servers/computers/action", json({ dns, action, package: pkg })),
+
+    /** List the folders under a path on one machine. The agent answers in
+        about a second, so this is a dialog rather than a queued job. */
+    browse: (node: string, path: string, make = false) =>
+      request<DirectoryListing>(
+        `/servers/computer/browse${qs({ node, path, make: make ? "true" : undefined })}`,
+      ),
 
     action: (dn: string, action: ComputerAction, pkg?: string, localUser?: NewLocalUser) =>
       request<{ task: string; node: string }>(

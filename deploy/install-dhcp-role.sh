@@ -47,6 +47,26 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$REALM" && -n "$DNS_SERVER" ]] || usage
+
+# Kea wants a literal address for a DNS server and a name for the Kerberos
+# principal it updates as, and the console knows the controller by name.
+# Passing the name to both made kea-dhcp-ddns reject the whole configuration
+# with "Dns Server : invalid IP address".
+if [[ "$DNS_SERVER" =~ ^[0-9.]+$ || "$DNS_SERVER" == *:* ]]; then
+    DNS_IP="$DNS_SERVER"
+    DNS_HOST="$DNS_SERVER"
+else
+    DNS_HOST="$DNS_SERVER"
+    # getent exits non-zero for a name that does not resolve, and under
+    # pipefail that ends the script here — before the message below that says
+    # what to do about it.
+    DNS_IP="$(getent ahostsv4 "$DNS_SERVER" 2>/dev/null | awk 'NR==1 {print $1}' || true)"
+    [[ -n "$DNS_IP" ]] || {
+        echo "$DNS_SERVER does not resolve to an address from this machine;" >&2
+        echo "dynamic DNS needs one. Check /etc/resolv.conf, or pass --dns-server <ip>." >&2
+        exit 1
+    }
+fi
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 
 # Shared helpers: apt that survives a controller, and a dpkg that recovers.
@@ -113,7 +133,7 @@ if ! id -u "$KEA_USER" >/dev/null 2>&1; then
 fi
 chown "root:$KEA_USER" "$CA_USER_FILE" "$CA_PASSWORD_FILE"
 chmod 0640 "$CA_USER_FILE" "$CA_PASSWORD_FILE"
-if ! su -s /bin/sh "$KEA_USER" -c "cat '$CA_PASSWORD_FILE' >/dev/null"; then
+if ! odm_as "$KEA_USER" cat "$CA_PASSWORD_FILE" >/dev/null 2>&1; then
     echo "$KEA_USER cannot read $CA_PASSWORD_FILE; the Control Agent would refuse to start" >&2
     exit 1
 fi
@@ -214,13 +234,13 @@ if [[ -f "$GSS_HOOK" ]]; then
     "hooks-libraries": [ {
       "library": "$GSS_HOOK",
       "parameters": {
-        "server-principal": "DNS/$DNS_SERVER@$REALM",
+        "server-principal": "DNS/$DNS_HOST@$REALM",
         "client-keytab": "FILE:/etc/odm/kea-ddns.keytab",
         "credentials-cache": "FILE:/var/lib/kea/ddns.ccache",
         "tkey-lifetime": 3600,
         "servers": [ {
           "id": "samba-dns",
-          "ip-address": "$DNS_SERVER",
+          "ip-address": "$DNS_IP",
           "port": 53
         } ]
       }
@@ -243,13 +263,13 @@ $GSS_BLOCK
     "forward-ddns": {
       "ddns-domains": [ {
         "name": "$DOMAIN.",
-        "dns-servers": [ { "ip-address": "$DNS_SERVER" } ]
+        "dns-servers": [ { "ip-address": "$DNS_IP" } ]
       } ]
     },
     "reverse-ddns": {
       "ddns-domains": [ {
         "name": "in-addr.arpa.",
-        "dns-servers": [ { "ip-address": "$DNS_SERVER" } ]
+        "dns-servers": [ { "ip-address": "$DNS_IP" } ]
       } ]
     },
     "loggers": [ {
@@ -320,7 +340,7 @@ for PAIR in "kea-dhcp4:/etc/kea/kea-dhcp4.conf" \
             "kea-ctrl-agent:/etc/kea/kea-ctrl-agent.conf"; do
     BINARY="${PAIR%%:*}"
     FILE="${PAIR#*:}"
-    if ! su -s /bin/sh "$KEA_USER" -c "$BINARY -t '$FILE'" >/dev/null 2>/tmp/odm-kea-check.$$; then
+    if ! odm_as "$KEA_USER" "$BINARY" -t "$FILE" >/dev/null 2>/tmp/odm-kea-check.$$; then
         echo "$FILE is not a configuration $BINARY will accept:" >&2
         sed 's/^/    /' /tmp/odm-kea-check.$$ >&2
         CHECK_FAILED=1

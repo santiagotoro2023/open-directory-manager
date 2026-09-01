@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import {
   ApiError,
   api,
@@ -8,6 +8,7 @@ import {
   type IssuedCertificate,
   type TrustAnchor,
 } from "../api";
+import { FileInput } from "../components/FileInput";
 import { Field, Modal } from "../components/Modal";
 import Select from "../components/Select"
 
@@ -606,22 +607,12 @@ function TrustDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () =>
           onChange={(e) => setPem(e.target.value)}
         />
       </Field>
-      <label className="button-link ghost" style={{ alignSelf: "flex-start" }}>
-        <Upload size={15} aria-hidden="true" />
-        Choose a file
-        <input
-          type="file"
-          accept=".pem,.crt,.cer,.txt,application/x-pem-file"
-          hidden
-          onChange={async (e) => {
-            const file = e.target.files?.[0];
-            // A PEM is text, so it goes straight into the box the operator
-            // would otherwise have pasted into, and stays reviewable.
-            if (file) setPem((await file.text()).trim());
-            e.target.value = "";
-          }}
-        />
-      </label>
+      {/* A PEM is text, so a chosen file goes straight into the box the
+          operator would otherwise have pasted into, and stays reviewable. */}
+      <FileInput
+        accept=".pem,.crt,.cer,.txt,application/x-pem-file"
+        onChoose={async (file) => setPem((await file.text()).trim())}
+      />
       <p className="muted">
         It is read before it is stored, so the subject and expiry shown afterwards come from the
         certificate itself.

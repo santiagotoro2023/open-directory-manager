@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight, Server } from "lucide-react";
 import {
   ApiError,
@@ -52,10 +52,11 @@ export function Roles() {
     void load();
   }, [load]);
 
-  // An install is apt work and service restarts; poll while one is running.
+  // An install is apt work and service restarts. While one is running the
+  // machine reports what it has printed every few seconds, so poll for it.
   useEffect(() => {
     if (!installed.some((instance) => instance.state === "installing")) return;
-    const timer = setInterval(() => void load(), 5000);
+    const timer = setInterval(() => void load(), 4000);
     return () => clearInterval(timer);
   }, [installed, load]);
 
@@ -163,6 +164,7 @@ function RoleDetail({
     <Modal
       title={role.title}
       submitLabel={role.core ? "Close" : "Install on a server"}
+      wide
       onClose={onClose}
       onSubmit={() => (role.core ? onClose() : onInstall())}
     >
@@ -207,6 +209,7 @@ function RoleDetail({
                   <span className={`badge ${STATE_BADGE[instance.state] ?? ""}`}>
                     {instance.state}
                   </span>
+                  {instance.state === "installing" && <Progress instance={instance} />}
                 </td>
                 <td>
                   {instance.installed_at
@@ -229,6 +232,13 @@ function RoleDetail({
               {/* An installer's last words are often several lines of shell
                   output. Squeezed into the state column it turned a table into
                   a wall one word wide, so it gets the full width underneath. */}
+              {instance.state === "installing" && instance.task_output && (
+                <tr className="detail-row">
+                  <td colSpan={4}>
+                    <LiveOutput text={instance.task_output} />
+                  </td>
+                </tr>
+              )}
               {instance.last_error && (
                 <tr className="detail-row">
                   <td colSpan={4}>
@@ -388,5 +398,46 @@ function InstallDialog({
         </p>
       )}
     </Modal>
+  );
+}
+
+/** "installing" alone cannot be told apart from a hang. This says whether the
+    machine has picked the work up, and how long it has had it. */
+function Progress({ instance }: { instance: RoleInstance }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => tick((n) => n + 1), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  if (instance.task_state !== "claimed" || !instance.task_started_at) {
+    return (
+      <p className="stat-note">
+        Waiting for {instance.node_fqdn} to collect it. Is odm-agent running there?
+      </p>
+    );
+  }
+  const minutes = Math.floor((Date.now() - new Date(instance.task_started_at).getTime()) / 60_000);
+  return (
+    <p className="stat-note">
+      Running on the machine {minutes < 1 ? "now" : `for ${minutes} min`}. It is marked failed if it
+      has not finished within 45.
+    </p>
+  );
+}
+
+/** The installer's own output while it is still running, newest at the
+    bottom. Nothing here invents a percentage: apt does not report one, and a
+    made-up bar is worse than the machine's actual words. */
+function LiveOutput({ text }: { text: string }) {
+  const box = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    // Follow the tail the way a terminal does.
+    if (box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [text]);
+  return (
+    <pre className="live-output" ref={box} aria-live="polite" aria-label="Installer output">
+      {text}
+    </pre>
   );
 }

@@ -277,6 +277,50 @@ async def run_action(
     return {"task": task_id, "node": fact["hostname"]}
 
 
+@router.get("/computer/browse", dependencies=[Depends(requires("computer.manage"))])
+async def browse_computer(
+    node: Annotated[str, Query(min_length=1, max_length=253)],
+    path: Annotated[str, Query(max_length=1024, pattern=r"^(/[^\x00]*)?$")] = "/",
+    make: Annotated[bool, Query()] = False,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """List the directories under a path on one machine.
+
+    Choosing where a share lives meant typing a path and finding out whether
+    it existed when the share failed to come up. The agent answers this in
+    about a second, so the console can browse the server instead.
+
+    Only directory names cross the wire, never file contents, and the caller
+    needs the same right as any other change to that machine.
+    """
+    # Named by host name here, because that is what the share dialog has. The
+    # right is still checked against the machine's own object.
+    row = await pool.fetchrow(
+        "SELECT computer_dn, hostname FROM computer_fact WHERE lower(hostname) = lower($1)", node
+    )
+    if row is None:
+        raise objects.NotFound(
+            f"{node} has not reported to the console yet, so there is nothing to browse"
+        )
+    authz.require("computer.manage", row["computer_dn"])
+    try:
+        answer = await tasks.run_now(
+            pool,
+            node_fqdn=row["hostname"],
+            kind="make-directory" if make else "browse",
+            payload={"path": path or "/"},
+            requested_by=session.principal,
+        )
+    except tasks.TaskFailed as exc:
+        raise objects.ObjectError(str(exc)) from exc
+    try:
+        return json.loads(answer)
+    except ValueError as exc:
+        raise objects.ObjectError(f"{row['hostname']} sent something unreadable back") from exc
+
+
 @router.get("/computer/localadmin",
             dependencies=[Depends(requires("computer.localadmin.read"))])
 async def local_administrator(

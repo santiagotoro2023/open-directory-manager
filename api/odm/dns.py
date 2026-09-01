@@ -211,8 +211,16 @@ def connection_flags(settings: Settings) -> list[str]:
     as root. Every subcommand that took this path failed with "Unable to open
     tdb ... Permission denied" rather than doing its work over LDAP the way
     the DNS commands already did.
+
+    ldap://, not ldaps://, and this is not a plaintext bind. Kerberos here
+    means a GSSAPI SASL bind, which signs and seals the connection itself;
+    Samba refuses to negotiate that inside a TLS channel that is already
+    doing the same job and fails the whole command with
+    NT_STATUS_INVALID_PARAMETER_MIX. The traffic is encrypted either way —
+    by Kerberos rather than by TLS. Everything the console does with ldap3
+    still goes over LDAPS.
     """
-    return ["-H", settings.ldap_uri, "-k", "yes"]
+    return ["-H", f"ldap://{server(settings)}", "-k", "yes"]
 
 
 # ------------------------------------------------------------------- zones ---

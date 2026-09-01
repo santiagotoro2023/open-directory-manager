@@ -4,6 +4,7 @@ import { ApiError, api, type FileShare, type ShareAccess, type ShareEntry } from
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
+import { DirectoryField } from "../components/DirectoryPicker";
 import Select from "../components/Select"
 
 const ACCESS: { value: ShareAccess; label: string }[] = [
@@ -248,12 +249,16 @@ function ShareDialog({
           <Field label="Share name" hint="What clients see, as //server/name">
             <input value={name} required onChange={(e) => setName(e.target.value)} />
           </Field>
-          <Field label="Directory on the server">
-            <input
+          <Field
+            label="Directory on the server"
+            hint="Browse the server for it, or type a path that will be created"
+          >
+            <DirectoryField
+              node={node}
               value={path}
               required
               placeholder="/srv/shares/shared"
-              onChange={(e) => setPath(e.target.value)}
+              onChange={setPath}
             />
           </Field>
         </>

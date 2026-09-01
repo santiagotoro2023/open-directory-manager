@@ -477,3 +477,34 @@ def test_no_route_reads_a_field_the_session_does_not_have() -> None:
                 f"{path.name} reads session.{attribute}, which is not a field: "
                 f"{sorted(fields)}"
             )
+
+
+def test_the_database_allows_every_task_kind_the_control_plane_queues():
+    """The kind column has a check constraint, and it is easy to add a kind to
+    tasks.KINDS without widening it.
+
+    Four features did exactly that: replacing the console certificate and
+    configuring a session host or broker failed with a check violation the
+    moment the row was written, which reaches an operator as a 500 with
+    nothing in it.
+    """
+    import pathlib
+    import re
+
+    from odm import tasks
+
+    migrations = sorted(pathlib.Path("odm/migrations").glob("*.sql"))
+    latest = None
+    for path in migrations:
+        found = re.findall(
+            r"node_task_kind_check CHECK \(\s*kind IN \((.*?)\)\s*\)", path.read_text(), re.S
+        )
+        if found:
+            latest = found[-1]
+    assert latest, "no node_task kind constraint in any migration"
+
+    allowed = set(re.findall(r"'([a-z-]+)'", latest))
+    missing = sorted(set(tasks.KINDS) - allowed)
+    assert not missing, f"the database would reject these task kinds: {missing}"
+    extra = sorted(allowed - set(tasks.KINDS))
+    assert not extra, f"the constraint allows kinds nothing queues: {extra}"

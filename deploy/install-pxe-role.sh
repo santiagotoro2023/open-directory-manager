@@ -63,7 +63,7 @@ done
 # decision an operator should have to look up: default to the one carrying the
 # default route, which on a single-homed server is the only one there is.
 if [[ -z "$INTERFACE" ]]; then
-    INTERFACE="$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}')"
+    INTERFACE="$(ip -4 route show default 2>/dev/null | awk '{print $5; exit}' || true)"
     [[ -n "$INTERFACE" ]] || {
         echo "no default route to pick an interface from; pass --interface" >&2
         exit 1

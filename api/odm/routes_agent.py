@@ -227,13 +227,42 @@ async def agent_tasks(
     async with pool.acquire() as conn:
         # Once per request, not once per second: this is a write.
         await tasks.reap(conn)
-        claimed = await tasks.claim(conn, machine.hostname)
+        claimed = await tasks.claim(conn, machine.hostname, limit=1)
     deadline = time.monotonic() + wait
     while not claimed and time.monotonic() < deadline:
         await asyncio.sleep(1)
         async with pool.acquire() as conn:
-            claimed = await tasks.claim(conn, machine.hostname)
+            claimed = await tasks.claim(conn, machine.hostname, limit=1)
     return {"tasks": claimed}
+
+
+class TaskProgress(BaseModel):
+    id: Annotated[str, Field(min_length=36, max_length=36)]
+    output: Annotated[str, Field(max_length=64_000)] = ""
+
+
+@router.post("/tasks/progress", status_code=204)
+async def agent_task_progress(
+    body: TaskProgress,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """What a long task has printed so far.
+
+    Installing a role is minutes of apt, and "installing" cannot be told apart
+    from a hang. The machine's own output is put in front of the operator
+    while it is still running. Never a result: the task stays claimed, and
+    only /tasks/result decides how it went.
+    """
+    await pool.execute(
+        """
+        UPDATE node_task SET output = $3
+        WHERE id = $1::uuid AND lower(node_fqdn) = lower($2) AND state = 'claimed'
+        """,
+        body.id,
+        machine.hostname,
+        body.output[-64_000:],
+    )
 
 
 @router.post("/tasks/result", status_code=204)

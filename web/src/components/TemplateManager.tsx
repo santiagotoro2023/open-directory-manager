@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Trash2, Upload } from "lucide-react";
 import { ApiError, api, type AdmxTemplate } from "../api";
 import { Field, Modal } from "./Modal";
+import { FileInput } from "./FileInput";
 
 async function base64(file: File): Promise<string> {
   const buffer = new Uint8Array(await file.arrayBuffer());
@@ -79,18 +80,10 @@ export function TemplateManager({ onClose }: { onClose: () => void }) {
       </p>
 
       <Field label="ADMX file">
-        <input
-          type="file"
-          accept=".admx,application/xml,text/xml"
-          onChange={(e) => setAdmxFile(e.target.files?.[0] ?? null)}
-        />
+        <FileInput accept=".admx,application/xml,text/xml" onChoose={setAdmxFile} />
       </Field>
       <Field label="ADML file" hint="Language resources; without it settings show raw identifiers">
-        <input
-          type="file"
-          accept=".adml,application/xml,text/xml"
-          onChange={(e) => setAdmlFile(e.target.files?.[0] ?? null)}
-        />
+        <FileInput accept=".adml,application/xml,text/xml" onChoose={setAdmlFile} />
       </Field>
 
       {imported && (

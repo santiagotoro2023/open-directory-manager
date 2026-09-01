@@ -113,8 +113,6 @@ input[type="radio"] {
   appearance: none;
   flex: none;
   min-height: 0;
-  width: 17px;
-  height: 17px;
   margin: 0;
   padding: 0;
   border: 1px solid #cbd5e1;
@@ -122,9 +120,11 @@ input[type="radio"] {
   cursor: pointer;
   display: inline-grid;
   place-content: center;
-  /* Explicit, because the shared input radius is 8px and on a 17px box that
-     is a circle: every tick box on the console read as a radio button. */
-  border-radius: 5px;
+  /* Explicit, because the shared input radius is 8px and on a box this small
+     that is a circle: every tick box on the console read as a radio button. */
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
 }
 
 input[type="radio"] {
@@ -628,9 +628,9 @@ button.ghost:hover {
 .checkbox {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 0;
-  margin-top: 10px;
+  gap: 12px;
+  padding: 4px 0;
+  margin-top: 12px;
   cursor: pointer;
 }
 
@@ -880,8 +880,8 @@ table.data.compact td {
    the size the control actually is. */
 .settings-editor input[type="checkbox"],
 .settings-editor input[type="radio"] {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   flex: none;
 }
 
@@ -2316,4 +2316,62 @@ tr.detail-row td {
 .select-empty {
   padding: 7px 10px;
   color: var(--text-muted);
+}
+
+/* A file input draws its own button and "no file chosen" from the operating
+   system, which nothing in here can reach. FileInput draws both instead. */
+.file-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.file-input > span {
+  min-width: 0;
+}
+
+/* Where you are while browsing a server's folders. */
+.path-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.path-crumbs span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-muted);
+}
+
+.path-crumbs button:not(.icon) {
+  min-height: 28px;
+  padding: 0 6px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.path-crumbs button:hover {
+  background: var(--surface-recessed);
+}
+
+/* An installer's output while it is still running. Same shape as the failure
+   output below a row, but this one is not a failure. */
+.live-output {
+  margin: 0;
+  max-height: 240px;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }

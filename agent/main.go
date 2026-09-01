@@ -27,7 +27,7 @@ import (
 	"odm.example.org/agent/internal/tasks"
 )
 
-const version = "0.3.0"
+const version = "0.3.1"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -268,7 +268,15 @@ func runTasks(ctx context.Context, api *client.Client, env apply.Env) {
 func runQueued(ctx context.Context, api *client.Client, env apply.Env, queued []tasks.Task) {
 	for _, task := range queued {
 		fmt.Printf("  task %-16s running\n", task.Kind)
-		result := tasks.Run(ctx, task, env)
+		// The console shows this while the task runs, so an install that
+		// takes ten minutes reads as an install rather than as a hang. A
+		// failure to report progress is not a failure of the task.
+		progress := func(output string) {
+			if err := api.TaskProgress(ctx, task.ID, output); err != nil {
+				fmt.Fprintln(os.Stderr, "odm-agent: reporting progress:", err)
+			}
+		}
+		result := tasks.RunWithProgress(ctx, task, env, progress)
 		if !result.OK {
 			fmt.Fprintf(os.Stderr, "  task %-16s failed: %s\n", task.Kind, result.Output)
 		}

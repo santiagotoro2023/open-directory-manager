@@ -11,7 +11,9 @@ twice by an agent that polls again while it runs.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from typing import Any
 
 import asyncpg
@@ -25,6 +27,8 @@ KINDS = (
     "update-install",
     "package-install",
     "package-remove",
+    "browse",
+    "make-directory",
     "local-user-add",
     "local-user-remove",
     "policy-refresh",
@@ -113,8 +117,13 @@ async def reap(conn: asyncpg.Connection) -> None:
         await conn.execute(statement, row["subject"], row["output"])
 
 
-async def claim(conn: asyncpg.Connection, node_fqdn: str, limit: int = 5) -> list[dict[str, Any]]:
-    """Hand this machine its pending work, marking it taken in the same step."""
+async def claim(conn: asyncpg.Connection, node_fqdn: str, limit: int = 1) -> list[dict[str, Any]]:
+    """Hand this machine its pending work, marking it taken in the same step.
+
+    One at a time by default. The agent runs tasks serially, so handing it
+    five made four of them say "claimed" — and four roles say "installing" —
+    while one machine installed one thing.
+    """
     rows = await conn.fetch(
         """
         UPDATE node_task SET state = 'claimed', claimed_at = now()
@@ -158,3 +167,49 @@ async def finish(
     if row is None:
         return None
     return {"id": str(row["id"]), "kind": row["kind"], "subject": row["subject"]}
+
+
+async def run_now(
+    pool: Any,
+    *,
+    node_fqdn: str,
+    kind: str,
+    payload: dict[str, Any],
+    requested_by: str,
+    timeout: float = 20.0,
+) -> str:
+    """Queue a task and wait for its answer.
+
+    Only for the small, interactive ones — listing a directory while somebody
+    chooses where a share goes. The agent holds a request open with the
+    control plane, so a queued task starts within about a second; anything
+    slower than that belongs in the ordinary fire-and-poll path instead of
+    holding a request open here.
+    """
+    async with pool.acquire() as conn:
+        task_id = await enqueue(
+            conn, node_fqdn=node_fqdn, kind=kind, payload=payload, requested_by=requested_by
+        )
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        await asyncio.sleep(0.4)
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT state, output FROM node_task WHERE id = $1::uuid", task_id
+            )
+        if row is None or row["state"] in ("pending", "claimed"):
+            continue
+        if row["state"] == "failed":
+            raise TaskFailed(row["output"] or "the machine did not say why")
+        return row["output"] or ""
+
+    raise TaskFailed(
+        f"{node_fqdn} did not answer within {int(timeout)} seconds. Its agent runs one "
+        "thing at a time, so it may be part way through installing something; "
+        "otherwise check that odm-agent is running there."
+    )
+
+
+class TaskFailed(Exception):
+    """A task the caller was waiting for did not succeed."""

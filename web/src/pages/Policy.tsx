@@ -16,6 +16,7 @@ import { ChoiceList, SUPPORTED_RELEASES } from "../components/ChoiceList";
 import { ContainerPicker } from "../components/Picker";
 import { SettingsEditor } from "../components/SettingsEditor";
 import { TemplateManager } from "../components/TemplateManager";
+import { FileInput } from "../components/FileInput";
 import Select from "../components/Select"
 
 type Tab = "settings" | "links" | "scope";
@@ -693,13 +694,9 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
       ) : (
         <>
           <Field label="Export file" hint="Choose the .json an export produced">
-            <input
-              type="file"
+            <FileInput
               accept="application/json,.json"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void file.text().then(setText);
-              }}
+              onChoose={(file) => void file.text().then(setText)}
             />
           </Field>
 

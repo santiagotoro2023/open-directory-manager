@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError, api, type NewUser, type ObjectType } from "../api";
 import { Field, Modal } from "./Modal";
+import { FileInput } from "./FileInput";
 import Select from "./Select"
 
 const GROUP_KINDS = [
@@ -319,11 +320,7 @@ export function BulkImport({
         label="CSV file"
         hint="Columns: sam_account_name, name, given_name, surname, display_name, mail, description, password"
       >
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(e) => e.target.files?.[0] && read(e.target.files[0])}
-        />
+        <FileInput accept=".csv,text/csv" onChoose={read} />
       </Field>
 
       {problems.map((problem) => (

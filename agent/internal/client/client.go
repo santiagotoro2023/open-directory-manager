@@ -255,6 +255,31 @@ func (c *Client) tasks(ctx context.Context, wait time.Duration) ([]tasks.Task, e
 
 // TaskResult records how a task went. Reported even on failure, so a stuck
 // install shows a reason in the console rather than staying "installing".
+// TaskProgress reports what a long task has printed so far, so the console can
+// show a machine's own output instead of the word "installing".
+func (c *Client) TaskProgress(ctx context.Context, id, output string) error {
+	body, err := json.Marshal(map[string]string{"id": id, "output": output})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+"/api/v1/agent/tasks/progress", bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode >= 300 {
+		return fmt.Errorf("task progress: %s", response.Status)
+	}
+	return nil
+}
+
 func (c *Client) TaskResult(ctx context.Context, result tasks.Result) error {
 	body, err := json.Marshal(result)
 	if err != nil {

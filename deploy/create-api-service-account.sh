@@ -61,7 +61,10 @@ echo "==> Delegating directory write rights"
 # provision, so give it one rather than failing on a cold start.
 SID=""
 for _ in $(seq 1 15); do
-    SID="$(wbinfo -n "$ACCOUNT" 2>/dev/null | awk '{print $1}')"
+    # || true: wbinfo fails while Samba is still starting, which is the
+    # case this loop exists for. Without it the script ends here instead of
+    # retrying and then explaining itself.
+    SID="$(wbinfo -n "$ACCOUNT" 2>/dev/null | awk '{print $1}' || true)"
     [[ -n "$SID" ]] && break
     sleep 2
 done

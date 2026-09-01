@@ -4,6 +4,7 @@ import { ApiError, api, type Printer } from "../api";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
+import { FileInput } from "../components/FileInput";
 import Select from "../components/Select"
 
 const STATE_BADGE: Record<string, string> = {
@@ -317,14 +318,7 @@ function PrinterDialog({
       </label>
       {!driverless && (
         <Field label="PPD file" hint={ppdName || "The printer's .ppd, from its manufacturer"}>
-          <input
-            type="file"
-            accept=".ppd,.PPD,text/plain"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void readPpd(file);
-            }}
-          />
+          <FileInput accept=".ppd,.PPD,text/plain" onChoose={(file) => void readPpd(file)} />
         </Field>
       )}
 

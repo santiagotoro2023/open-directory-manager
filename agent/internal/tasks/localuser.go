@@ -59,14 +59,14 @@ func addLocalUser(ctx context.Context, payload map[string]any, env apply.Env) (s
 	if len(groups) > 0 {
 		arguments = append(arguments, "--groups", strings.Join(groups, ","))
 	}
-	if out, err := unsandboxed(ctx, env, "useradd", append(arguments, name)...); err != nil {
+	if out, err := unsandboxed(ctx, env, nil, "useradd", append(arguments, name)...); err != nil {
 		return out, fmt.Errorf("useradd %s: %w", name, err)
 	}
 
 	password := str(payload["password"])
 	if password == "" {
 		// No password means no password login, not an empty one.
-		if out, err := unsandboxed(ctx, env, "passwd", "--lock", name); err != nil {
+		if out, err := unsandboxed(ctx, env, nil, "passwd", "--lock", name); err != nil {
 			return out, fmt.Errorf("locking %s: %w", name, err)
 		}
 		return name + " created, with password login locked", nil
@@ -98,7 +98,7 @@ func removeLocalUser(ctx context.Context, payload map[string]any, env apply.Env)
 	if env.Run == nil {
 		return "", fmt.Errorf("no command runner")
 	}
-	out, err := unsandboxed(ctx, env, "userdel", "--remove", name)
+	out, err := unsandboxed(ctx, env, nil, "userdel", "--remove", name)
 	if err != nil {
 		return out, fmt.Errorf("userdel %s: %w", name, err)
 	}

@@ -33,7 +33,7 @@ odm_apt_install() {
             echo "    (dpkg is still half-configured; the install below may fail because of it)" >&2
     fi
 
-    apt-get update -qq || echo "    (apt-get update failed; using the cached index)" >&2
+    apt-get -o DPkg::Lock::Timeout=600 update -qq || echo "    (apt-get update failed; using the cached index)" >&2
 
     # 101 means "do not start". Removed again below, whatever happens, so a
     # machine is never left silently refusing to start its own services.
@@ -49,6 +49,7 @@ odm_apt_install() {
     apt-get install -y --no-install-recommends \
         -o Dpkg::Options::=--force-confold \
         -o Dpkg::Options::=--force-confdef \
+        -o DPkg::Lock::Timeout=600 \
         "$@" || status=$?
 
     rm -f "$rc_d"
@@ -101,10 +102,23 @@ odm_enable() {
 # the caller would exit here having printed nothing.
 odm_random_password() {
     local length="${1:-32}" value
-    value="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$length")"
+    # stderr as well as the exit status: head closes the pipe once it has
+    # enough and tr, still reading an endless file, prints "write error:
+    # Broken pipe" — which the console showed as the reason the role failed.
+    value="$(set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c "$length")"
     if [[ ${#value} -ne $length ]]; then
         echo "could not read $length random characters from /dev/urandom" >&2
         return 1
     fi
     printf '%s' "$value"
+}
+
+# Run a command as another account, changing nothing else.
+#
+# su runs the full PAM session stack, which on a domain member means pam_mount
+# and pam_krb5 and a page of "HXproc_run_async: pmvarrun: No such file or
+# directory" in front of whatever the command actually said.
+odm_as() {
+    local account="$1"; shift
+    setpriv --reuid="$account" --regid="$account" --init-groups -- "$@"
 }

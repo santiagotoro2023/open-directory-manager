@@ -57,6 +57,14 @@ var (
 // reported, never retried silently: an operator watching the console should
 // see the reason rather than a spinner.
 func Run(ctx context.Context, task Task, env apply.Env) Result {
+	return RunWithProgress(ctx, task, env, nil)
+}
+
+// RunWithProgress is Run, reporting a long task's output while it is still
+// running. progress may be nil.
+func RunWithProgress(
+	ctx context.Context, task Task, env apply.Env, progress Progress,
+) Result {
 	var output string
 	var err error
 
@@ -69,7 +77,7 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 
 	switch task.Kind {
 	case "role-install":
-		output, err = installRole(ctx, task.Payload, env)
+		output, err = installRole(ctx, task.Payload, env, progress)
 	case "console-certificate":
 		output, err = applyConsoleCertificate(ctx, env)
 	case "share-apply":
@@ -92,6 +100,10 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 		output, err = power(ctx, env, "reboot")
 	case "shutdown":
 		output, err = power(ctx, env, "poweroff")
+	case "browse":
+		output, err = browse(ctx, task.Payload, env)
+	case "make-directory":
+		output, err = makeDirectory(ctx, task.Payload, env)
 	case "local-user-add":
 		output, err = addLocalUser(ctx, task.Payload, env)
 	case "local-user-remove":
@@ -132,12 +144,17 @@ func timeoutFor(kind string) time.Duration {
 		return 30 * time.Minute
 	case "update-check", "package-install", "package-remove":
 		return 10 * time.Minute
+	case "browse", "make-directory":
+		// A click in a dialog. Nobody waits five minutes for one.
+		return 30 * time.Second
 	default:
 		return 5 * time.Minute
 	}
 }
 
-func installRole(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+func installRole(
+	ctx context.Context, payload map[string]any, env apply.Env, progress Progress,
+) (string, error) {
 	role, _ := payload["role"].(string)
 	if !safeRole.MatchString(role) {
 		return "", fmt.Errorf("invalid role name %q", role)
@@ -157,7 +174,7 @@ func installRole(ctx context.Context, payload map[string]any, env apply.Env) (st
 	if env.Run == nil {
 		return "", fmt.Errorf("no command runner")
 	}
-	return unsandboxed(ctx, env, installer, arguments...)
+	return unsandboxed(ctx, env, progress, installer, arguments...)
 }
 
 // unsandboxed runs a command as a transient systemd unit instead of as a
@@ -175,7 +192,9 @@ func installRole(ctx context.Context, payload map[string]any, env apply.Env) (st
 // systemd-run asks PID 1 to start the command, so it runs with the system's
 // own defaults rather than ours. Where there is no systemd — a container, a
 // test — run it directly.
-func unsandboxed(ctx context.Context, env apply.Env, name string, args ...string) (string, error) {
+func unsandboxed(
+	ctx context.Context, env apply.Env, progress Progress, name string, args ...string,
+) (string, error) {
 	if env.Root != "" {
 		return env.Run.Run(ctx, name, args...)
 	}
@@ -183,7 +202,10 @@ func unsandboxed(ctx context.Context, env apply.Env, name string, args ...string
 		return env.Run.Run(ctx, name, args...)
 	}
 	run := append([]string{"--pipe", "--wait", "--collect", "--quiet", "--", name}, args...)
-	return env.Run.Run(ctx, "systemd-run", run...)
+	if progress == nil {
+		return env.Run.Run(ctx, "systemd-run", run...)
+	}
+	return stream(ctx, progress, "systemd-run", run...)
 }
 
 // applyConsoleCertificate installs a certificate the control plane has already
@@ -214,7 +236,7 @@ func checkUpdates(ctx context.Context, env apply.Env) (string, error) {
 	if env.Run == nil {
 		return "", fmt.Errorf("no command runner")
 	}
-	if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
+	if out, err := env.Run.Run(ctx, "apt-get", "-o", "DPkg::Lock::Timeout=600", "update", "-qq"); err != nil {
 		return out, fmt.Errorf("refreshing the package index: %w", err)
 	}
 	pending, security, names := inventory.PendingUpdates(ctx, env)
@@ -234,13 +256,17 @@ func installUpdates(ctx context.Context, env apply.Env) (string, error) {
 	if env.Run == nil {
 		return "", fmt.Errorf("no command runner")
 	}
-	if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
+	if out, err := env.Run.Run(ctx, "apt-get", "-o", "DPkg::Lock::Timeout=600", "update", "-qq"); err != nil {
 		return out, fmt.Errorf("refreshing the package index: %w", err)
 	}
-	out, err := unsandboxed(ctx, env,
+	out, err := unsandboxed(ctx, env, nil,
 		"apt-get", "upgrade", "-y",
 		"-o", "Dpkg::Options::=--force-confold",
 		"-o", "Dpkg::Options::=--force-confdef",
+		// Without this apt waits for the dpkg lock for ever, which on a
+		// machine that has just booted means until unattended-upgrades
+		// finishes — and the console shows nothing but "installing".
+		"-o", "DPkg::Lock::Timeout=600",
 	)
 	if err != nil {
 		return out, fmt.Errorf("upgrading: %w", err)
@@ -279,7 +305,7 @@ func changePackage(
 	}
 
 	if install {
-		if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
+		if out, err := env.Run.Run(ctx, "apt-get", "-o", "DPkg::Lock::Timeout=600", "update", "-qq"); err != nil {
 			return out, fmt.Errorf("refreshing the package index: %w", err)
 		}
 	}
@@ -289,10 +315,11 @@ func changePackage(
 		// "uninstall" means to someone reading a button.
 		action = "remove"
 	}
-	out, err := unsandboxed(ctx, env,
+	out, err := unsandboxed(ctx, env, nil,
 		"apt-get", action, "-y",
 		"-o", "Dpkg::Options::=--force-confold",
 		"-o", "Dpkg::Options::=--force-confdef",
+		"-o", "DPkg::Lock::Timeout=600",
 		"--no-install-recommends", name,
 	)
 	if err != nil {

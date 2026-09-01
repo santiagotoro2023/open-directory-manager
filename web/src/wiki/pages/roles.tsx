@@ -122,10 +122,22 @@ export function Content() {
           />
           <Note>
             Installing a role means package installation and service restarts, so it takes minutes.
-            The request returns immediately and the state is polled. A machine that stops reporting
-            mid-install does not leave the role saying <strong>installing</strong> for ever: after
-            45 minutes it is marked failed, with the reason on the row, and can be installed again.
+            A machine that stops reporting mid-install does not leave the role saying{" "}
+            <strong>installing</strong> for ever: after 45 minutes it is marked failed, with the
+            reason on the row, and can be installed again.
           </Note>
+          <p>
+            Open the role while it installs and the row says whether the machine has picked the
+            work up and for how long it has had it, with the installer&rsquo;s own output
+            underneath, updated every few seconds. There is no percentage because apt does not
+            report one; the machine&rsquo;s actual words are the honest answer to whether anything
+            is happening. The same output is kept as the failure reason if it ends badly.
+          </p>
+          <p>
+            A machine runs one task at a time. A second role queued behind a long install says{" "}
+            <strong>installing</strong> and &ldquo;waiting for the machine to collect it&rdquo;
+            until the first finishes.
+          </p>
           <p>
             A role that fails on a machine can leave that machine&rsquo;s package manager
             half-configured, and from then on every later install fails complaining about

@@ -67,6 +67,12 @@ export function Content() {
           on the server.
         </Example>
 
+        <Example title="Choose where the share lives">
+          <strong>Directory on the server</strong> → <strong>Browse…</strong> walks the server&rsquo;s
+          own folders, a click at a time. <strong>New folder here</strong> creates one where you are.
+          Typing a path still works; it is created if it does not exist.
+        </Example>
+
         <Where>File Shares. The section appears once a server carries the file-server role.</Where>
       </Quickstart>
 

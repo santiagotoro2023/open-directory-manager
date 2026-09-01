@@ -67,7 +67,7 @@ open it, and use **Join a Domain** from the applications menu. Or from a
 terminal:
 
 ```bash
-sudo apt install ./odm-client_0.3.0_amd64.deb
+sudo apt install ./odm-client_0.3.1_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -100,7 +100,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
 | DHCP | ISC Kea scopes, reservations, leases, failover pair and dynamic DNS |
-| File shares | SMB shares on any file server, with per-user and per-group access levels |
+| File shares | SMB shares on any file server, with per-user and per-group access levels, choosing the directory by browsing the server itself |
 | Printing | CUPS printers on any print server, handed to people by policy |
 | Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share, published applications, and downloadable connection files |
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
@@ -112,7 +112,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Sign-in | A second factor for the console, enrolled with a QR code, with single-use recovery codes |
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit |
-| Servers | Every joined machine, the roles it carries, and its agent's state |
+| Servers | Every joined machine, the roles it carries, its agent's state, and an installer's own output while it runs |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them |
 | Operations | Health dashboard on Overview, replication, domain backups |
 | Recycle bin | Every delete snapshotted and restorable within the retention window |
@@ -191,7 +191,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.3.0   # -> dist/odm-client_0.3.0_amd64.deb
+bash packaging/deb/build-in-container.sh 0.3.1   # -> dist/odm-client_0.3.1_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

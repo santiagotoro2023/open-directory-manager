@@ -8,11 +8,13 @@ set -euo pipefail
 
 API_URL=""
 BINARY="./odm-agent"
+CLIENT_BINARY=""
 CA_CERT=""
 
 usage() {
     cat >&2 <<'USAGE'
-usage: install-agent.sh --api-url https://<api fqdn>:8443 [--binary <path>] [--ca-cert <path>]
+usage: install-agent.sh --api-url https://<api fqdn>:8443 [--binary <path>]
+                        [--client-binary <path>] [--ca-cert <path>]
 USAGE
     exit 2
 }
@@ -21,6 +23,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --api-url) API_URL="${2:?}"; shift 2 ;;
         --binary) BINARY="${2:?}"; shift 2 ;;
+        --client-binary) CLIENT_BINARY="${2:?}"; shift 2 ;;
         --ca-cert) CA_CERT="${2:?}"; shift 2 ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
@@ -33,7 +36,7 @@ done
 [[ -f /etc/krb5.keytab ]] || { echo "no machine keytab; join the domain first" >&2; exit 1; }
 [[ -f "$BINARY" ]] || { echo "agent binary not found: $BINARY" >&2; exit 1; }
 
-REALM="$(awk -F'=' '/default_realm/ {gsub(/ /,"",$2); print $2}' /etc/krb5.conf | head -1)"
+REALM="$(awk -F'=' '/default_realm/ {gsub(/ /,"",$2); print $2}' /etc/krb5.conf 2>/dev/null | head -1 || true)"
 [[ -n "$REALM" ]] || { echo "cannot read default_realm from /etc/krb5.conf" >&2; exit 1; }
 API_HOST="${API_URL#https://}"
 API_HOST="${API_HOST%%:*}"
@@ -60,6 +63,33 @@ install -m 0644 "$(dirname "$0")/odm-role-common.sh" /usr/lib/odm/roles/
 # restart itself.
 HELPER="$(dirname "$0")/odm-apply-console-certificate"
 [[ -f "$HELPER" ]] && install -m 0755 "$HELPER" /usr/lib/odm/roles/
+
+# The network-boot role hands installed machines something to join the domain
+# with, and that something is this binary. Without it the role refuses to
+# install, on the one machine an operator is most likely to install it from.
+if [[ -z "$CLIENT_BINARY" ]]; then
+    for CANDIDATE in "$(dirname "$0")/../client-join/odm-client-install" \
+                     "$(dirname "$0")/odm-client-install"; do
+        [[ -f "$CANDIDATE" ]] && { CLIENT_BINARY="$CANDIDATE"; break; }
+    done
+fi
+if [[ -n "$CLIENT_BINARY" && -f "$CLIENT_BINARY" ]]; then
+    install -m 0755 "$CLIENT_BINARY" /usr/sbin/odm-client-install
+fi
+# Debian 13 ships systemd-ssh-generator, which runs on every daemon-reload
+# and, on a virtual machine with no vsock device, logs
+#
+#   Failed to query local AF_VSOCK CID: Cannot assign requested address
+#
+# to the console each time. Installing a role is hundreds of daemon-reloads,
+# so the console fills with a message about a feature the machine does not
+# have. Masking the generator is the documented way to turn one off; nothing
+# here or in Debian uses SSH over vsock.
+if [[ ! -e /dev/vsock && -x /usr/lib/systemd/system-generators/systemd-ssh-generator ]]; then
+    install -d -m 0755 /etc/systemd/system-generators
+    ln -sf /dev/null /etc/systemd/system-generators/systemd-ssh-generator
+fi
+
 install -d -m 0750 /etc/odm /var/lib/odm
 
 if [[ -n "$CA_CERT" ]]; then

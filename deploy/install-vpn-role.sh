@@ -48,7 +48,9 @@ install -d -m 0700 /etc/wireguard
 # configuration ODM writes can build its own masquerade rule without asking
 # again per tunnel.
 if [[ -z "$EXTERNAL_INTERFACE" ]]; then
-    EXTERNAL_INTERFACE="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}')"
+    # No route to the internet is not a reason to refuse to install; the
+    # fallback below covers it. Without || true the failing ip ends the script.
+    EXTERNAL_INTERFACE="$(ip -o route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}' || true)"
 fi
 printf '%s\n' "${EXTERNAL_INTERFACE:-eth0}" > /etc/wireguard/odm-external-interface
 chmod 0644 /etc/wireguard/odm-external-interface

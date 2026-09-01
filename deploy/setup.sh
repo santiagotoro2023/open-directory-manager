@@ -587,6 +587,10 @@ if [[ ! -x "$AGENT_BINARY" ]]; then
     if command -v go >/dev/null 2>&1; then
         info "Building the agent"
         (cd "$REPO/agent" && go build -o odm-agent .) >>"$AGENT_LOG" 2>&1 || true
+        # The network-boot role installs this onto machines it provisions, so
+        # it has to be on the controller before that role can be installed.
+        (cd "$REPO/client-join" && go build -o odm-client-install ./cmd/odm-client-install) \
+            >>"$AGENT_LOG" 2>&1 || true
     fi
 fi
 
@@ -637,7 +641,8 @@ fi
 # The console answering on 127.0.0.1 proves nothing to a client, which has to
 # find this machine by name first. That name is served by this DC's own DNS.
 if [[ "$SKIP_DC" != "yes" ]]; then
-    RESOLVED="$(getent ahostsv4 "$CONSOLE_FQDN" 2>/dev/null | awk 'NR==1{print $1}')"
+    # A name that does not resolve is exactly what the warning below is for.
+    RESOLVED="$(getent ahostsv4 "$CONSOLE_FQDN" 2>/dev/null | awk 'NR==1{print $1}' || true)"
     MY_ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
     if [[ -z "$RESOLVED" ]]; then
         echo

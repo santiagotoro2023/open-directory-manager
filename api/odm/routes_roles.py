@@ -72,6 +72,14 @@ def _instance(row: asyncpg.Record) -> dict[str, Any]:
         "installed_by": row["installed_by"],
         "installed_at": row["installed_at"],
         "updated_at": row["updated_at"],
+        # "installing" says nothing about whether anything is happening.
+        # These say whether the machine has picked the work up and when, so a
+        # long install reads as a long install rather than as a hang.
+        "task_state": row.get("task_state"),
+        "task_started_at": row.get("task_claimed_at"),
+        # What the machine has printed so far. An install is minutes of apt,
+        # and its own output is the only honest answer to "is it stuck?".
+        "task_output": row.get("task_output"),
     }
 
 
@@ -85,7 +93,19 @@ async def list_roles(
         # A machine that stopped reporting mid-install would otherwise leave
         # its role saying "installing" for ever, with nothing to retry from.
         await tasks.reap(conn)
-        rows = await conn.fetch("SELECT * FROM server_role ORDER BY role_name, node_fqdn")
+        rows = await conn.fetch(
+            """
+            SELECT r.*, t.state AS task_state, t.claimed_at AS task_claimed_at,
+                   t.output AS task_output
+            FROM server_role r
+            LEFT JOIN LATERAL (
+                SELECT state, claimed_at, output FROM node_task
+                WHERE subject = r.id::text AND kind = 'role-install'
+                ORDER BY created_at DESC LIMIT 1
+            ) t ON true
+            ORDER BY r.role_name, r.node_fqdn
+            """
+        )
     return {
         "available": [_descriptor(role) for role in roles.REGISTRY.values()],
         "installed": [_instance(row) for row in rows],
