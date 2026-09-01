@@ -508,3 +508,28 @@ def test_the_database_allows_every_task_kind_the_control_plane_queues():
     assert not missing, f"the database would reject these task kinds: {missing}"
     extra = sorted(allowed - set(tasks.KINDS))
     assert not extra, f"the constraint allows kinds nothing queues: {extra}"
+
+
+def test_the_agent_never_sends_more_than_the_control_plane_accepts():
+    """A result the control plane refuses leaves the task claimed and the
+    console saying "installing" with the work long finished.
+
+    The agent keeps the tail of a long install; the API bounds what it will
+    take. When those two numbers disagreed — 60000 against 8000 — every role
+    whose installer printed more than 8KB stuck at "installing" for ever.
+    """
+    import pathlib
+    import re
+
+    from odm.routes_agent import TASK_OUTPUT_LIMIT
+
+    stream = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "agent" / "internal" / "tasks" / "stream.go"
+    ).read_text()
+    found = re.search(r"const keepBytes = ([0-9_]+)", stream)
+    assert found, "the agent's output cap moved"
+    keeps = int(found.group(1).replace("_", ""))
+    assert keeps <= TASK_OUTPUT_LIMIT, (
+        f"the agent keeps {keeps} bytes but the control plane takes {TASK_OUTPUT_LIMIT}"
+    )

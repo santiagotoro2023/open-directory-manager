@@ -205,10 +205,20 @@ async def agent_report(
 # the tasks queued for that machine (CLAUDE.md §5.5).
 
 
+# What a machine may send back about one task. The agent keeps the tail of a
+# long install and reports it both while it runs and when it finishes, so both
+# ends of that are bounded by this one number.
+TASK_OUTPUT_LIMIT = 64_000
+
+
 class TaskResult(BaseModel):
     id: Annotated[str, Field(min_length=36, max_length=36)]
     ok: bool
-    output: Annotated[str, Field(max_length=8000)] = ""
+    # The same ceiling as the progress reports this task has been sending all
+    # along, and above the agent's own. It was 8000, which a role install
+    # exceeds easily: the result was refused with 422, the task stayed claimed
+    # and the console said "installing" for ever with the work long finished.
+    output: Annotated[str, Field(max_length=TASK_OUTPUT_LIMIT)] = ""
 
 
 @router.get("/tasks")
@@ -238,7 +248,7 @@ async def agent_tasks(
 
 class TaskProgress(BaseModel):
     id: Annotated[str, Field(min_length=36, max_length=36)]
-    output: Annotated[str, Field(max_length=64_000)] = ""
+    output: Annotated[str, Field(max_length=TASK_OUTPUT_LIMIT)] = ""
 
 
 @router.post("/tasks/progress", status_code=204)
@@ -261,7 +271,7 @@ async def agent_task_progress(
         """,
         body.id,
         machine.hostname,
-        body.output[-64_000:],
+        body.output[-TASK_OUTPUT_LIMIT:],
     )
 
 

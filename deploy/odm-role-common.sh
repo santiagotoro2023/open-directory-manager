@@ -140,8 +140,15 @@ odm_kea_boot_options() {
     [[ -f "$conf" ]] || return 0
     [[ -e "$tftp/pxelinux.0" ]] || return 0
 
-    echo "==> Adding the network-boot options to $conf"
-    BOOT_SERVER="$(hostname -f)" python3 - "$conf" <<'PYTHON'
+    # An address, not a name: next-server becomes the siaddr field of a DHCP
+    # reply, which is four bytes. A machine that is still network-booting has
+    # no resolver to turn a name into one either.
+    local boot_server
+    boot_server="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    [[ -n "$boot_server" ]] || boot_server="$(hostname -f)"
+
+    echo "==> Adding the network-boot options to $conf (boot server $boot_server)"
+    BOOT_SERVER="$boot_server" python3 - "$conf" <<'PYTHON'
 import json
 import os
 import re

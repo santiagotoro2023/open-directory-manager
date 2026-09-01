@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -282,6 +283,16 @@ func runQueued(ctx context.Context, api *client.Client, env apply.Env, queued []
 		}
 		if err := api.TaskResult(ctx, result); err != nil {
 			fmt.Fprintln(os.Stderr, "odm-agent: reporting task:", err)
+			// A result the control plane will not take leaves the task
+			// claimed and the console saying "installing" with the work
+			// long finished — which is what a too-long output did. The
+			// outcome matters more than the transcript, so say it again
+			// with almost none of one.
+			short := result
+			short.Output = lastLines(result.Output, 20)
+			if err := api.TaskResult(ctx, short); err != nil {
+				fmt.Fprintln(os.Stderr, "odm-agent: reporting task, briefly:", err)
+			}
 		}
 	}
 }
@@ -332,4 +343,19 @@ func jitter(interval time.Duration) time.Duration {
 		return 0
 	}
 	return time.Duration(n.Int64())
+}
+
+// lastLines keeps the end of some output, which is where a command says how
+// it went.
+func lastLines(text string, count int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > count {
+		lines = lines[len(lines)-count:]
+	}
+	kept := strings.Join(lines, "\n")
+	// Belt and braces: twenty lines of one very long line is still long.
+	if len(kept) > 2000 {
+		kept = kept[len(kept)-2000:]
+	}
+	return kept
 }
