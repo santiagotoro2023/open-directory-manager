@@ -125,7 +125,8 @@ export function Content() {
               [
                 "Did the configuration apply?",
                 <>
-                  Servers → the machine → its queued work. The agent checks the configuration with{" "}
+                  Directory → the machine → Machine → its recent work. The agent checks the
+                  configuration with{" "}
                   <C key="a">freeradius -CX</C> before restarting, so a bad rule fails visibly
                   rather than taking the service down.
                 </>,

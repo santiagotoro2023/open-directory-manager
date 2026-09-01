@@ -93,7 +93,7 @@ DOMAIN="$(printf '%s' "$REALM" | tr '[:upper:]' '[:lower:]')"
 
 echo "==> Installing Kea"
 odm_apt_install kea-dhcp4-server kea-ctrl-agent kea-dhcp-ddns-server \
-    kea-common krb5-user
+    kea-common krb5-user python3
 
 HOOKS_DIR="$(dirname "$(find /usr/lib -name 'libdhcp_ha.so' -print -quit 2>/dev/null || true)")"
 [[ -d "$HOOKS_DIR" ]] || { echo "cannot locate the Kea hooks directory" >&2; exit 1; }
@@ -115,8 +115,15 @@ echo "==> Generating the Control Agent credential"
 # These live with Kea's own configuration because the Control Agent is what
 # reads them, and it runs as _kea. Under /etc/odm they would be behind a
 # directory only the control plane may enter.
-CA_USER_FILE="/etc/kea/odm-ca.user"
-CA_PASSWORD_FILE="/etc/kea/odm-ca.password"
+CA_USER_FILE="/etc/kea/kea-api-user"
+# This exact path, because Debian's kea-ctrl-agent.service carries
+#
+#   ConditionFileNotEmpty=/etc/kea/kea-api-password
+#
+# and refuses to start without it — "Active: inactive (dead), start condition
+# unmet", which is not a failure any amount of checking the configuration
+# would have found.
+CA_PASSWORD_FILE="/etc/kea/kea-api-password"
 if [[ ! -f "$CA_PASSWORD_FILE" ]]; then
     ( umask 077; odm_random_password 32 > "$CA_PASSWORD_FILE" )
 fi
@@ -351,6 +358,9 @@ done
 
 echo "==> Starting services"
 odm_enable kea-dhcp4-server kea-dhcp-ddns-server kea-ctrl-agent
+
+# If network boot is already on this machine, Kea is what advertises it.
+odm_kea_boot_options
 
 cat <<SUMMARY
 

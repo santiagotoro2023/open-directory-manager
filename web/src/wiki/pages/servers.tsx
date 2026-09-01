@@ -13,9 +13,9 @@ import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
   id: "servers",
-  title: "Servers",
+  title: "Member servers",
   section: "Administration",
-  summary: "Every joined machine, what it runs, and how work reaches one that is not a controller.",
+  summary: "Joining a machine, giving it a role, and how work reaches one that is not a controller.",
   keywords: ["server", "member", "node", "fleet", "estate", "agent", "task", "distribute"],
 };
 
@@ -25,8 +25,9 @@ export function Content() {
       <Quickstart>
         <p>
           A domain is more than its controllers. Any joined machine can carry a role — a file
-          server, a DHCP node, a certificate authority — and Servers is where the estate is seen
-          from one place rather than by logging into each one.
+          server, a DHCP node, a certificate authority. Each machine is a computer object under{" "}
+          <strong>Directory</strong>, where its software, local accounts, sign-in history, logs and
+          updates are; <strong>Server Roles</strong> is where roles are installed on it.
         </p>
 
         <Example title="Add a server to the domain">
@@ -56,7 +57,7 @@ export function Content() {
           reported.
         </Example>
 
-        <Where>Servers.</Where>
+        <Where>Directory for the machine itself; Server Roles for what it carries.</Where>
       </Quickstart>
 
       <Details>

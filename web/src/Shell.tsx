@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   BookOpen,
   ClipboardList,
@@ -18,7 +18,6 @@ import {
   HardDriveDownload,
   ScrollText,
   Server,
-  ServerCog,
   ShieldCheck,
   ShieldHalf,
   Trash2,
@@ -97,7 +96,6 @@ const NAV = [
     permission: "role.read",
     roles: ["pxe", "dhcp"],
   },
-  { label: "Servers", to: "/servers", icon: ServerCog, permission: "server.read" },
   {
     label: "Domain Controllers",
     to: "/controllers",
@@ -144,24 +142,31 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
 
   // Sections that only manage what a role provides stay out of the way until
   // the role exists. Server Roles is where they are turned on.
+  const location = useLocation();
   useEffect(() => {
     if (!holds(session, "role.read")) return;
-    api.roles
-      .list()
-      .then((result) =>
-        setInstalled(
-          new Set(
-            result.installed
-              // Only a role that actually came up. A failed install left its
-              // section in the sidebar, so the console offered to manage
-              // printers on a machine where CUPS had never installed.
-              .filter((instance) => instance.state === "active")
-              .map((instance) => instance.role_name),
+    const read = () =>
+      api.roles
+        .list()
+        .then((result) =>
+          setInstalled(
+            new Set(
+              result.installed
+                // Only a role that actually came up. A failed install left its
+                // section in the sidebar, so the console offered to manage
+                // printers on a machine where CUPS had never installed.
+                .filter((instance) => instance.state === "active")
+                .map((instance) => instance.role_name),
+            ),
           ),
-        ),
-      )
-      .catch(() => setInstalled(new Set()));
-  }, [session]);
+        )
+        .catch(() => setInstalled(new Set()));
+    void read();
+    // An install finishes minutes after it was asked for, and until this was
+    // re-read the new section only appeared after a hard refresh.
+    const timer = setInterval(() => void read(), 20_000);
+    return () => clearInterval(timer);
+  }, [session, location.pathname]);
 
   function toggle() {
     setCollapsed((current) => {

@@ -223,6 +223,19 @@ export const CATEGORIES: CategorySpec[] = [
     blank: { name: "", state: "present" },
   },
   {
+    key: "trusted_certificates",
+    title: "Trusted certificates",
+    half: "Computer",
+    note:
+      "Authorities every machine trusts. Certificates → Publish to domain writes this one; " +
+      "editing it here is unusual.",
+    fields: [
+      { key: "name", label: "Name", placeholder: "internal-root-ca" },
+      { key: "certificate_pem", label: "PEM", kind: "textarea" },
+    ],
+    blank: { name: "", certificate_pem: "" },
+  },
+  {
     key: "certificate_enrolment",
     title: "Certificates",
     half: "Computer",

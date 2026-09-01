@@ -88,6 +88,11 @@ def read_policy(settings: Settings) -> dict[str, Any]:
     """The domain's password policy, as the directory holds it."""
     policy: dict[str, Any] = {}
     for line in _run(settings, "show").splitlines():
+        # samba-tool writes its notices on stdout alongside the policy, and
+        # "label: value" matches them: the console showed a row reading
+        # WARNING / The option -k|--kerberos is deprecated!
+        if line.startswith(("WARNING", "ERROR", "Note:")):
+            continue
         match = _SETTING_RE.match(line)
         if not match:
             continue

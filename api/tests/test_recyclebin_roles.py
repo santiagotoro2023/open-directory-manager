@@ -102,13 +102,39 @@ def test_restore_refuses_when_the_object_is_back_already(ldap_only):
         objects.restore(ldap_only, get_settings(), snapshot_of(f"CN=ada,{PARENT}"))
 
 
-def test_restore_refuses_when_the_parent_container_is_gone(ldap_only):
-    with pytest.raises(objects.NotFound):
+def test_restore_says_which_container_is_gone(ldap_only):
+    """And says it in a way that names the fix, because the object still has
+    to be restorable — into somewhere else."""
+    with pytest.raises(objects.ObjectError) as raised:
         objects.restore(
             ldap_only,
             get_settings(),
             snapshot_of(f"CN=grace,OU=Gone,{BASE_DN}", parent_dn=f"OU=Gone,{BASE_DN}"),
         )
+    assert "no longer exists" in str(raised.value)
+
+
+def test_restore_puts_an_object_wherever_it_is_asked_to(ldap_only):
+    """An object whose container was deleted after it was has to be restorable
+    somewhere, so the caller may name a different one."""
+    dn = objects.restore(
+        ldap_only,
+        get_settings(),
+        snapshot_of(f"CN=grace,OU=Gone,{BASE_DN}", parent_dn=f"OU=Gone,{BASE_DN}"),
+        container=PARENT,
+    )
+    assert dn == f"CN=grace,{PARENT}"
+
+
+def test_a_search_for_something_that_is_not_there_answers_nothing(ldap_only):
+    """The directory reports noSuchObject for a base that does not exist.
+
+    Treating that as an error rather than an answer is why restoring anything
+    failed: the check for whether the object is already back searches a DN
+    that, by definition, is not.
+    """
+    with pytest.raises(objects.NotFound):
+        objects.get(ldap_only, get_settings(), f"CN=nobody,OU=Nowhere,{BASE_DN}")
 
 
 def test_restore_refuses_a_snapshot_with_no_object_class(ldap_only):

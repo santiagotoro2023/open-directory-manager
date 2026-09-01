@@ -31,6 +31,9 @@ PURGE_INTERVAL_SECONDS = 3600
 
 class RestoreRequest(BaseModel):
     id: Annotated[str, Field(min_length=36, max_length=36)]
+    # Where to put it back. Empty means where it came from; an object whose
+    # container was deleted after it was has to be restorable somewhere.
+    container: Annotated[str | None, Field(default=None, max_length=1024)] = None
 
 
 def _row(row: asyncpg.Record) -> dict[str, Any]:
@@ -121,7 +124,9 @@ async def restore(
         entry.object_type = row["object_type"]
 
         async with _bound(settings, write=True) as conn:
-            dn = await run_in_threadpool(objects.restore, conn, settings, snapshot)
+            dn = await run_in_threadpool(
+                objects.restore, conn, settings, snapshot, body.container
+            )
             restored = await run_in_threadpool(objects.get, conn, settings, dn)
 
         await pool.execute(

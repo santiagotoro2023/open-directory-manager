@@ -38,7 +38,7 @@ def _run(*args: str) -> str:
         )
     try:
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell, validated arguments
-            [SAMBA_TOOL, "drs", *args, "-k", "yes"],
+            [SAMBA_TOOL, "drs", *args, "--use-kerberos=required"],
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,

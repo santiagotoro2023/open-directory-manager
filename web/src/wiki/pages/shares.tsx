@@ -133,7 +133,7 @@ export function Content() {
             rows={[
               [
                 "Has the server's agent checked in?",
-                "Servers → the machine → Agent last reported.",
+                "Directory → the machine → Machine → Last reported.",
               ],
               [
                 "Does the server carry the file-server role?",

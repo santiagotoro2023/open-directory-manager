@@ -30,6 +30,11 @@ export function Content() {
         </Example>
 
         <Where>Deleted Objects.</Where>
+        <Example title="Restore into a different container">
+          <strong>Restore</strong> → <strong>Restore into</strong> → <strong>Select…</strong>. It
+          defaults to where the object came from; change it when that container was deleted too.
+        </Example>
+
       </Quickstart>
 
       <Details>

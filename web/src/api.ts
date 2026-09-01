@@ -1067,7 +1067,8 @@ export const api = {
         `/recyclebin/item${qs({ id })}`,
       ),
 
-    restore: (id: string) => request<Record<string, unknown>>("/recyclebin/restore", json({ id })),
+    restore: (id: string, container?: string) =>
+      request<Record<string, unknown>>("/recyclebin/restore", json({ id, container })),
 
     purge: (id: string) => request<void>(`/recyclebin/item${qs({ id })}`, { method: "DELETE" }),
   },

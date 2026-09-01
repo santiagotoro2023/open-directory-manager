@@ -1,4 +1,5 @@
 import { useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 export function Modal({
@@ -35,7 +36,11 @@ export function Modal({
     onSubmit();
   }
 
-  return (
+  /* Through a portal, because a dialog opened from inside another dialog
+     would otherwise be a <form> nested inside a <form>: the browser gives the
+     inner submit button the outer form as its owner, so the inner dialog's
+     button did nothing at all. */
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
         className={wide ? "modal wide" : "modal"}
@@ -67,7 +72,8 @@ export function Modal({
           </footer>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

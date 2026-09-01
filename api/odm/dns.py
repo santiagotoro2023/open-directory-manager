@@ -159,7 +159,7 @@ def _run(settings: Settings, *args: str) -> str:
             "samba-tool is not installed on the API host; DNS management requires "
             "the control plane to run on a domain controller"
         )
-    command = [SAMBA_TOOL, "dns", *args, "-k", "yes"]
+    command = [SAMBA_TOOL, "dns", *args, "--use-kerberos=required"]
     try:
         completed = subprocess.run(  # noqa: S603 - fixed argv, no shell, validated arguments
             command,
@@ -196,6 +196,8 @@ def message(stderr: str, stdout: str, fallback: str) -> str:
     useful = [
         line.strip()
         for line in (stderr or stdout or "").splitlines()
+        # A deprecation notice is not why the command failed.
+        if not line.startswith("WARNING:")
         # An indented line is a traceback frame or its source; the exception
         # itself, and every ERROR() samba-tool prints, start at column zero.
         if line.strip() and not line.startswith((" ", "\t")) and not _NOISE.match(line.strip())
@@ -220,7 +222,10 @@ def connection_flags(settings: Settings) -> list[str]:
     by Kerberos rather than by TLS. Everything the console does with ldap3
     still goes over LDAPS.
     """
-    return ["-H", f"ldap://{server(settings)}", "-k", "yes"]
+    # --use-kerberos, not -k: samba-tool prints "The option -k|--kerberos is
+    # deprecated!" on stderr for the old spelling, and that warning was being
+    # read back as though it were a line of the policy.
+    return ["-H", f"ldap://{server(settings)}", "--use-kerberos=required"]
 
 
 # ------------------------------------------------------------------- zones ---

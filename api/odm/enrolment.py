@@ -17,6 +17,10 @@ from pathlib import Path
 from .config import Settings
 from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available, message
 
+# The spelling samba-tool wants. "-k yes" is deprecated and says so on stdout,
+# where a caller reading the output takes the notice for a line of it.
+KERBEROS = "--use-kerberos=required"
+
 TIMEOUT_SECONDS = 120
 HOSTNAME_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?"
                          r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*$")
@@ -79,22 +83,19 @@ def provision_machine(settings: Settings, hostname: str, container_dn: str) -> b
     short = short_name(fqdn)
     password = machine_password()
 
-    existing = _run(
-        "computer", "list", "-k", "yes"
-    ).splitlines()
+    existing = _run("computer", "list", KERBEROS).splitlines()
     if short in {line.strip().rstrip("$") for line in existing}:
         # Re-enrolling a machine resets its account rather than failing.
-        _run("user", "setpassword", f"{short}$", f"--newpassword={password}", "-k", "yes")
+        _run("user", "setpassword", f"{short}$", f"--newpassword={password}", KERBEROS)
     else:
         _run(
             "computer",
             "create",
             short,
             f"--computerou={container_dn}",
-            "-k",
-            "yes",
+            KERBEROS,
         )
-        _run("user", "setpassword", f"{short}$", f"--newpassword={password}", "-k", "yes")
+        _run("user", "setpassword", f"{short}$", f"--newpassword={password}", KERBEROS)
 
     with tempfile.TemporaryDirectory() as workspace:
         keytab = Path(workspace) / "machine.keytab"

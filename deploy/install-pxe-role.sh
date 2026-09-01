@@ -215,19 +215,40 @@ fi
 # lab and the wrong one for a network with workstations on it.
 [[ -n "$RANGES" ]] || RANGES="dhcp-range=$INTERFACE,proxy"$'\n'
 
+# Proxy DHCP answers alongside the real DHCP server, which means binding UDP
+# 67 — and only one process on a machine can. Where the DHCP role is on this
+# same machine, dnsmasq serves TFTP alone and Kea is told to advertise the
+# boot files itself, which is what a DHCP server and a boot server sharing a
+# host have always had to do.
+KEA_CONF="/etc/kea/kea-dhcp4.conf"
+SHARES_HOST_WITH_KEA="no"
+if [[ -f "$KEA_CONF" ]]; then
+    SHARES_HOST_WITH_KEA="yes"
+    echo "==> The DHCP role is on this machine, so Kea advertises boot rather than dnsmasq"
+    RANGES=""
+fi
+
 cat > /etc/dnsmasq.d/odm-pxe.conf <<DNSMASQ
 # Managed by Open Directory Manager.
-# Proxy DHCP only: address assignment stays with whatever already does it.
 interface=$INTERFACE
 port=0
 ${RANGES}enable-tftp
 tftp-root=$TFTP_ROOT
+DNSMASQ
+if [[ "$SHARES_HOST_WITH_KEA" == "no" ]]; then
+    # Proxy DHCP: address assignment stays with whatever already does it.
+    cat >> /etc/dnsmasq.d/odm-pxe.conf <<DNSMASQ
 pxe-service=x86PC,"Install Debian $SUITE",pxelinux
 dhcp-option-force=209,odm.cfg
 dhcp-option-force=210,http://$(hostname -f)/
 DNSMASQ
-systemctl enable --now dnsmasq
-systemctl restart dnsmasq
+fi
+
+odm_enable dnsmasq
+
+if [[ "$SHARES_HOST_WITH_KEA" == "yes" ]]; then
+    odm_kea_boot_options "$TFTP_ROOT"
+fi
 
 cat <<SUMMARY
 

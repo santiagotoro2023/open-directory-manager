@@ -126,6 +126,24 @@ export function Content() {
                 </>,
               ],
               [
+                'kea-ctrl-agent "start condition unmet"',
+                <>
+                  Fixed: Debian&rsquo;s unit carries{" "}
+                  <C key="k">ConditionFileNotEmpty=/etc/kea/kea-api-password</C> and refuses to
+                  start without that exact file. The DHCP role writes its Control Agent credential
+                  there now.
+                </>,
+              ],
+              [
+                "Network boot and DHCP on the same machine",
+                <>
+                  Only one process can bind UDP 67, so dnsmasq cannot answer as a proxy DHCP server
+                  beside Kea. Installing both on one machine now leaves dnsmasq serving TFTP alone
+                  and puts <C key="n">next-server</C> and the boot files into Kea, which is what a
+                  DHCP server and a boot server sharing a host have always had to do.
+                </>,
+              ],
+              [
                 "A service the role installed refuses to start",
                 "Server Roles → the role → the failed server. The unit's own journal is under the row, not just its name.",
               ],
@@ -152,6 +170,27 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Deleted objects">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                'Restore fails with "search failed: noSuchObject"',
+                <>
+                  Fixed, and it was every restore: the directory reports{" "}
+                  <C key="r">noSuchObject</C> for a search whose base is not there, and the check
+                  for whether the object is already back searches a name that by definition is not.
+                  Upgrade the control plane.
+                </>,
+              ],
+              [
+                "The container it came from is gone",
+                "Restore → Restore into → Select… puts it somewhere else. Nothing is unrestorable.",
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Directory writes">
           <Reference
             headers={["Symptom", "Check"]}
@@ -163,6 +202,14 @@ export function Content() {
                   Re-run <C key="p">deploy/create-api-service-account.sh</C> on a domain controller
                   &mdash; it is safe to run again &mdash; and restart the control plane. Domains
                   provisioned before this was granted are the ones that hit it.
+                </>,
+              ],
+              [
+                "A row reading WARNING / The option -k is deprecated",
+                <>
+                  Fixed: samba-tool writes that notice on standard output, next to the policy, and
+                  it was read back as a line of it. The control plane passes{" "}
+                  <C key="u">--use-kerberos=required</C> now.
                 </>,
               ],
               [

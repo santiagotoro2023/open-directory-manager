@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type DeletedObject } from "../api";
-import { Modal } from "../components/Modal";
+import { Field, Modal } from "../components/Modal";
+import { PickerField } from "../components/Picker";
 
 export function RecycleBin() {
   const [items, setItems] = useState<DeletedObject[]>([]);
@@ -11,6 +12,7 @@ export function RecycleBin() {
   const [confirming, setConfirming] = useState<{ item: DeletedObject; purge: boolean } | null>(
     null,
   );
+  const [container, setContainer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -38,7 +40,7 @@ export function RecycleBin() {
         await api.recyclebin.purge(item.id);
         setNotice(`Purged ${item.object_dn}.`);
       } else {
-        await api.recyclebin.restore(item.id);
+        await api.recyclebin.restore(item.id, container || undefined);
         setNotice(
           `Restored ${item.object_dn}. It has a new SID, so re-grant any access that named the old one; accounts come back disabled.`,
         );
@@ -120,7 +122,10 @@ export function RecycleBin() {
                   <button
                     type="button"
                     className="ghost"
-                    onClick={() => setConfirming({ item, purge: false })}
+                    onClick={() => {
+                      setContainer(item.parent_dn);
+                      setConfirming({ item, purge: false });
+                    }}
                   >
                     <RotateCcw size={14} aria-hidden="true" />
                     Restore
@@ -163,9 +168,21 @@ export function RecycleBin() {
           ) : (
             <>
               <p className="muted">
-                Recreated in {confirming.item.parent_dn} with its attributes, and rejoined to{" "}
+                Recreated with its attributes, and rejoined to{" "}
                 {confirming.item.memberships.length} group(s).
               </p>
+              <Field
+                label="Restore into"
+                hint="Where it came from. Change it if that container is gone."
+              >
+                <PickerField
+                  kind="ou"
+                  as="dn"
+                  ariaLabel="Restore into"
+                  value={container}
+                  onChange={setContainer}
+                />
+              </Field>
               <p className="muted">
                 The directory issues a new SID and GUID, so access rules that named the old SID need
                 re-granting. Accounts come back disabled and need a password set.

@@ -78,8 +78,14 @@ odm_apt_install() {
 # whatever the unit logged comes back with the failure.
 odm_enable() {
     systemctl daemon-reload
+
+    # Bounded, because "systemctl restart" waits for the job to finish and a
+    # unit that never finishes starting takes the whole install with it —
+    # which is what "stuck at Starting CUPS" was. A start that has not
+    # happened in three minutes is a start that is not going to; whatever the
+    # unit logged comes back either way.
     systemctl enable "$@" >/dev/null 2>&1 || true
-    systemctl restart "$@" >/dev/null 2>&1 || true
+    timeout 180 systemctl restart "$@" >/dev/null 2>&1 || true
 
     local unit failed=0
     for unit in "$@"; do
@@ -121,4 +127,49 @@ odm_random_password() {
 odm_as() {
     local account="$1"; shift
     setpriv --reuid="$account" --regid="$account" --init-groups -- "$@"
+}
+
+# Tell Kea to advertise the network-boot files. Used when the DHCP role and the
+# network-boot role are on the same machine: only one process can bind UDP 67,
+# so dnsmasq cannot answer as a proxy DHCP server there, and the real DHCP
+# server has to carry the boot options itself.
+#
+# Called by both installers, so whichever is installed second finds the other.
+odm_kea_boot_options() {
+    local conf="/etc/kea/kea-dhcp4.conf" tftp="${1:-/srv/tftp}"
+    [[ -f "$conf" ]] || return 0
+    [[ -e "$tftp/pxelinux.0" ]] || return 0
+
+    echo "==> Adding the network-boot options to $conf"
+    BOOT_SERVER="$(hostname -f)" python3 - "$conf" <<'PYTHON'
+import json
+import os
+import re
+import sys
+
+# Kea's configuration allows // comments, which json refuses.
+path = sys.argv[1]
+config = json.loads(re.sub(r"^\s*//.*$", "", open(path).read(), flags=re.M))
+dhcp4 = config["Dhcp4"]
+
+# Option 93 is the client's architecture. A machine booting UEFI cannot use the
+# BIOS loader and the other way round, so each is told its own file.
+dhcp4["next-server"] = os.environ["BOOT_SERVER"]
+wanted = [
+    {"name": "odm-uefi-64", "test": "option[93].hex == 0x0007",
+     "boot-file-name": "debian-installer/amd64/bootnetx64.efi"},
+    {"name": "odm-uefi-64-alt", "test": "option[93].hex == 0x0009",
+     "boot-file-name": "debian-installer/amd64/bootnetx64.efi"},
+    {"name": "odm-pxe-bios", "test": "option[93].hex == 0x0000",
+     "boot-file-name": "pxelinux.0"},
+]
+names = {entry["name"] for entry in wanted}
+kept = [c for c in dhcp4.get("client-classes", []) if c.get("name") not in names]
+dhcp4["client-classes"] = kept + wanted
+
+json.dump(config, open(path, "w"), indent=2)
+PYTHON
+    chmod 0640 "$conf"
+    chgrp _kea "$conf" 2>/dev/null || chgrp kea "$conf" 2>/dev/null || true
+    odm_enable kea-dhcp4-server
 }

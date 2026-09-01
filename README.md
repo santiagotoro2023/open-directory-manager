@@ -67,7 +67,7 @@ open it, and use **Join a Domain** from the applications menu. Or from a
 terminal:
 
 ```bash
-sudo apt install ./odm-client_0.3.1_amd64.deb
+sudo apt install ./odm-client_0.3.2_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -106,16 +106,15 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
 | Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
-| Machine management | Installed software, local accounts to add and remove, sign-in history, recent logs, updates, restart — per machine, or across a selection at once, starting within a second rather than at the next check-in |
+| Machine management | Installed software, local accounts to add and remove, sign-in history, recent logs, updates, restart — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, and re-issues the console's own certificate |
 | Passwords | Domain policy, per-group and per-OU policies, helpdesk resets, and self-service change gated by policy |
 | Sign-in | A second factor for the console, enrolled with a QR code, with single-use recovery codes |
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit |
-| Servers | Every joined machine, the roles it carries, its agent's state, and an installer's own output while it runs |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them |
 | Operations | Health dashboard on Overview, replication, domain backups |
-| Recycle bin | Every delete snapshotted and restorable within the retention window |
+| Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one |
 | Audit | Every change with actor, outcome and before-and-after state |
 | Clients | One `.deb`: `odm-client-install` for scripts, **Join a Domain** for the desktop. `odm-agent` applies and reports policy |
 
@@ -191,7 +190,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.3.1   # -> dist/odm-client_0.3.1_amd64.deb
+bash packaging/deb/build-in-container.sh 0.3.2   # -> dist/odm-client_0.3.2_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

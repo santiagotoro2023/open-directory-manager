@@ -281,6 +281,13 @@ def _search(
         )
     except LDAPException as exc:
         raise DirectoryError(f"ldap search failed: {exc}") from exc
+    # 32 is noSuchObject: the base is not there, so the answer is "nothing",
+    # not an error. Raising here meant every "does this exist?" check failed
+    # with a directory error instead of answering no — which is why restoring
+    # a deleted object could never work. The check for whether the object is
+    # already back is a search for a DN that, by definition, is not.
+    if conn.result["result"] == 32:
+        return []
     if conn.result["result"] not in (0, 4):  # 4 = sizeLimitExceeded, expected when paging
         _check(conn, "search")
     return [e for e in conn.response if e.get("type") == "searchResEntry"]
@@ -642,7 +649,12 @@ OPERATIONAL_ATTRS = frozenset(
 )
 
 
-def restore(conn: Connection, settings: Settings, snapshot: dict[str, Any]) -> str:
+def restore(
+    conn: Connection,
+    settings: Settings,
+    snapshot: dict[str, Any],
+    container: str | None = None,
+) -> str:
     """Recreate a deleted object from its recycle-bin snapshot.
 
     The object comes back with its attributes, its group memberships and, for
@@ -651,12 +663,18 @@ def restore(conn: Connection, settings: Settings, snapshot: dict[str, Any]) -> s
     need re-granting. That is inherent to restoring rather than reanimating a
     tombstone, which CLAUDE.md §5.3 deliberately does not rely on.
     """
-    dn = normalize_dn(settings, str(snapshot["object_dn"]))
-    parent = normalize_dn(settings, str(snapshot["parent_dn"]))
+    parent = normalize_dn(settings, str(container or snapshot["parent_dn"]))
+    dn = f"{str(snapshot['object_dn']).split(',', 1)[0]},{parent}"
 
-    # Prove the parent still exists; restoring into a deleted OU would fail
-    # with a confusing directory error.
-    get(conn, settings, parent)
+    # An object whose container was deleted after it was has to be restorable
+    # somewhere, so say which container is missing rather than failing on the
+    # add with a directory error about a DN nobody chose.
+    try:
+        get(conn, settings, parent)
+    except NotFound:
+        raise ObjectError(
+            f"{parent} no longer exists. Restore this object into another container."
+        ) from None
     try:
         get(conn, settings, dn)
     except NotFound:

@@ -141,7 +141,6 @@ sudo deploy/setup.sh`}</Code>
               ["DHCP", "Scopes, reservations, leases and failover state."],
               ["Certificates", "The domain certificate authority and what it has issued."],
               ["Overview", "Health, replication between controllers, and backups."],
-              ["Servers", "Every joined machine and the roles it carries."],
               ["File Shares", "Shared directories and who may reach them."],
               ["Client Enrolment", "What a machine installed over the network gets."],
               ["Printers", "Printers on a print server, and who gets them."],

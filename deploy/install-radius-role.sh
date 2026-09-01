@@ -18,7 +18,31 @@ set -euo pipefail
 . "$(dirname "$0")/odm-role-common.sh"
 
 
+# freeradius-config's postinst generates Diffie-Hellman parameters if the
+# file is not already there, and "Generating DH parameters, 1024 bit long safe
+# prime" is minutes of CPU on a virtual machine with the install apparently
+# hung. This is RFC 3526 group 14, the published 2048-bit MODP group — a
+# standard constant, not a key and not something invented here — so there is
+# nothing to generate and the group is stronger than the one it replaces.
+install -d -m 0755 /etc/freeradius /etc/freeradius/3.0 /etc/freeradius/3.0/certs
+if [[ ! -s /etc/freeradius/3.0/certs/dh ]]; then
+    cat > /etc/freeradius/3.0/certs/dh <<'DHPARAM'
+-----BEGIN DH PARAMETERS-----
+MIIBCAKCAQEA///////////JD9qiIWjCNMTGYouA3BzRKQJOCIpnzHQCC76mOxOb
+IlFKCHmONATd75UZs806QxswKwpt8l8UN0/hNW1tUcJF5IW1dmJefsb0TELppjft
+awv/XLb0Brft7jhr+1qJn6WunyQRfEsf5kkoZlHs5Fs9wgB8uKFjvwWY2kg2HFXT
+mmkWP6j9JM9fg2VdI9yjrZYcYvNWIIVSu57VKQdwlpZtZww1Tkq8mATxdGwIyhgh
+fDKQXkYuNs474553LBgOhgObJ4Oi7Aeij7XFXfBvTFLJ3ivL9pVYFxg5lUl86pVq
+5RXSJhiY+gUQFXKOWoqsqmj//////////wIBAg==
+-----END DH PARAMETERS-----
+DHPARAM
+fi
+
 odm_apt_install freeradius freeradius-utils winbind krb5-user
+
+# The package owns this directory; give the file back to it.
+chown freerad:freerad /etc/freeradius/3.0/certs/dh 2>/dev/null || true
+chmod 0640 /etc/freeradius/3.0/certs/dh
 
 CONF="/etc/freeradius/3.0"
 [[ -d "$CONF" ]] || { echo "freeradius 3.0 configuration not found at $CONF" >&2; exit 1; }
