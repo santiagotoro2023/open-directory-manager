@@ -26,7 +26,11 @@ func (e Env) ReplaceBlock(path, body string, mode os.FileMode) error {
 		if len(existing) == 0 {
 			return nil
 		}
-		return e.WriteFile(path, kept, mode, "", "")
+		// Removing the block is not owning the file either.
+		err := e.WriteFile(path, kept, mode, "", "")
+		e.State.OwnBlock(path)
+		delete(e.State.Blocks, path)
+		return err
 	}
 
 	section := blockStart + "\n" + body
@@ -38,7 +42,14 @@ func (e Env) ReplaceBlock(path, body string, mode os.FileMode) error {
 	if kept != "" && !strings.HasSuffix(kept, "\n") {
 		kept += "\n"
 	}
-	return e.WriteFile(path, kept+section, mode, "", "")
+	if err := e.WriteFile(path, kept+section, mode, "", ""); err != nil {
+		return err
+	}
+	// After the write, because WriteFile records the path as a file ODM owns
+	// and this one is not: pruning it must take the block out, not delete a
+	// file the system owns.
+	e.State.OwnBlock(path)
+	return nil
 }
 
 func stripBlock(content string) string {

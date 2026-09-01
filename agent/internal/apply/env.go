@@ -131,14 +131,46 @@ func ParseMode(mode string, fallback os.FileMode) os.FileMode {
 // setting from a GPO actually removes the file it produced.
 type State struct {
 	Owned map[string]bool `json:"owned"`
+	// Files ODM did not create and only keeps a block inside: PAM stacks,
+	// sshd's configuration, nsswitch. Pruning one of these means taking the
+	// block back out, never deleting the file — deleting
+	// /etc/pam.d/common-account because a policy stopped mentioning it takes
+	// authentication off the machine entirely.
+	Blocks map[string]bool `json:"blocks,omitempty"`
 }
 
-func NewState() *State { return &State{Owned: map[string]bool{}} }
+func NewState() *State {
+	return &State{Owned: map[string]bool{}, Blocks: map[string]bool{}}
+}
 
 func (s *State) Own(path string) {
 	if s != nil {
 		s.Owned[path] = true
 	}
+}
+
+// OwnBlock records a file ODM edits but does not own.
+func (s *State) OwnBlock(path string) {
+	if s == nil {
+		return
+	}
+	if s.Blocks == nil {
+		s.Blocks = map[string]bool{}
+	}
+	s.Blocks[path] = true
+	// A file cannot be both; the block wins, because it is the safer of the
+	// two and ReplaceBlock is what wrote it.
+	delete(s.Owned, path)
+}
+
+// SortedBlocks returns block-owned paths in a stable order.
+func (s *State) SortedBlocks() []string {
+	paths := make([]string, 0, len(s.Blocks))
+	for path := range s.Blocks {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 // Sorted returns owned paths in a stable order.
@@ -159,11 +191,21 @@ func (e Env) Prune(previous *State) []string {
 		return removed
 	}
 	for _, path := range previous.Sorted() {
-		if e.State.Owned[path] {
+		if e.State.Owned[path] || e.State.Blocks[path] {
 			continue
 		}
 		if err := os.Remove(e.Path(path)); err == nil {
 			removed = append(removed, path)
+		}
+	}
+	// A file ODM only kept a block inside belongs to the system. Take the
+	// block out and leave the file.
+	for _, path := range previous.SortedBlocks() {
+		if e.State.Blocks[path] || e.State.Owned[path] {
+			continue
+		}
+		if err := e.ReplaceBlock(path, "", 0o644); err == nil {
+			removed = append(removed, path+" (block)")
 		}
 	}
 	return removed

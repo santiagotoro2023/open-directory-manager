@@ -114,6 +114,9 @@ func LoadState(env Env) *State {
 	if state.Owned == nil {
 		state.Owned = map[string]bool{}
 	}
+	if state.Blocks == nil {
+		state.Blocks = map[string]bool{}
+	}
 	return state
 }
 

@@ -684,3 +684,42 @@ func TestNoPackagesMeansNoAptRun(t *testing.T) {
 		t.Fatalf("apt was run with nothing to do: %v", runner.commands)
 	}
 }
+
+// A file ODM only keeps a block inside belongs to the system. Pruning one
+// took /etc/pam.d/common-account off a machine because a policy stopped
+// mentioning it, and with it every way of authenticating.
+func TestPruningAFileODMOnlyEditedTakesTheBlockNotTheFile(t *testing.T) {
+	root := t.TempDir()
+	runner := &fakeRunner{}
+	stack := "/etc/pam.d/common-account"
+
+	first := Env{Root: root, Run: runner, State: NewState()}
+	if err := first.WriteFile(stack, "# the system's own stack\naccount required pam_unix.so\n",
+		0o644, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	// Pretend the system, not ODM, wrote that: a fresh state for the run
+	// that adds the block.
+	second := Env{Root: root, Run: runner, State: NewState()}
+	if err := second.ReplaceBlock(stack, "account required pam_access.so\n", 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !second.State.Blocks[stack] {
+		t.Fatal("a block edit was not recorded as one")
+	}
+
+	// A later run that no longer wants the block.
+	third := Env{Root: root, Run: runner, State: NewState()}
+	third.Prune(second.State)
+
+	body, err := os.ReadFile(filepath.Join(root, stack))
+	if err != nil {
+		t.Fatalf("the file was deleted rather than edited: %v", err)
+	}
+	if strings.Contains(string(body), "pam_access") {
+		t.Errorf("the block was not removed:\n%s", body)
+	}
+	if !strings.Contains(string(body), "pam_unix") {
+		t.Errorf("the system's own lines were lost:\n%s", body)
+	}
+}
