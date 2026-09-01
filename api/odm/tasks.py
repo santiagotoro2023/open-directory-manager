@@ -29,6 +29,7 @@ KINDS = (
     "package-remove",
     "browse",
     "printer-discover",
+    "domain-backup",
     "make-directory",
     "local-user-add",
     "local-user-remove",

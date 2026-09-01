@@ -307,6 +307,28 @@ async def agent_task_result(
                 "active" if body.ok else "failed",
                 None if body.ok else detail,
             )
+        elif task["kind"] == "domain-backup" and task["subject"]:
+            path, size = "", 0
+            if body.ok:
+                try:
+                    answer = json.loads(body.output)
+                    path, size = str(answer.get("path") or ""), int(answer.get("size_bytes") or 0)
+                except (ValueError, TypeError):
+                    path, size = "", 0
+            await conn.execute(
+                """
+                UPDATE domain_backup
+                SET state = $2, finished_at = now(), detail = $3,
+                    path = CASE WHEN $4 = '' THEN path ELSE $4 END,
+                    size_bytes = $5
+                WHERE id = $1::uuid
+                """,
+                task["subject"],
+                "complete" if body.ok else "failed",
+                None if body.ok else detail,
+                path,
+                size,
+            )
         elif task["kind"] == "share-apply" and task["subject"]:
             await conn.execute(
                 """

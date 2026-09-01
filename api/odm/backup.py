@@ -32,6 +32,20 @@ def configured(settings: Settings) -> bool:
     return settings.backup_dir is not None
 
 
+def offline_arguments(target_dir: str) -> list[str]:
+    """What the agent runs on the controller to take a backup.
+
+    Offline, not online: an online backup replicates the whole directory over
+    DRSUAPI, which needs rights close to a Domain Admin's — the control
+    plane's account deliberately does not have them (CLAUDE.md §6) and the
+    backup failed with WERR_DS_DRA_ACCESS_DENIED. An offline backup reads the
+    controller's own database, so it needs root on that machine and nothing
+    in the directory at all. The agent is root there; the control plane is
+    not, which is the same reason it does not install roles itself.
+    """
+    return ["domain", "backup", "offline", f"--targetdir={target_dir}"]
+
+
 def take(settings: Settings, server: str | None = None) -> dict[str, Any]:
     """Run an online backup. Blocking, and slow — run it in the background."""
     if not available():

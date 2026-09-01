@@ -124,3 +124,55 @@ func discoverPrinters(ctx context.Context, env apply.Env) (string, error) {
 	}
 	return string(body), nil
 }
+
+// takeDomainBackup asks samba-tool for a backup of this controller.
+//
+// Offline, because an online backup replicates the whole directory over
+// DRSUAPI and needs rights close to a Domain Admin's. The agent is root on
+// the controller, so it reads the database directly and needs nothing in the
+// directory. Same reason the agent installs roles and the control plane does
+// not.
+func takeDomainBackup(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	target, err := absolute(str(payload["target_dir"]))
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(env.Path(target), 0o700); err != nil {
+		return "", err
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	out, err := env.Run.Run(ctx, "samba-tool", "domain", "backup", "offline",
+		"--targetdir="+target)
+	if err != nil {
+		return out, fmt.Errorf("samba-tool domain backup: %w", err)
+	}
+
+	// The archive it just wrote, so the console can name it without guessing.
+	entries, _ := os.ReadDir(env.Path(target))
+	newest, when := "", int64(0)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "samba-backup-") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Unix() >= when {
+			newest, when = filepath.Join(target, entry.Name()), info.ModTime().Unix()
+		}
+	}
+	size := int64(0)
+	if newest != "" {
+		if info, err := os.Stat(env.Path(newest)); err == nil {
+			size = info.Size()
+		}
+	}
+	body, err := json.Marshal(map[string]any{"path": newest, "size_bytes": size, "output": out})
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}

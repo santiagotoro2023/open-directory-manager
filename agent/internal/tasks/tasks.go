@@ -100,6 +100,8 @@ func RunWithProgress(
 		output, err = power(ctx, env, "reboot")
 	case "shutdown":
 		output, err = power(ctx, env, "poweroff")
+	case "domain-backup":
+		output, err = takeDomainBackup(ctx, task.Payload, env)
 	case "printer-discover":
 		output, err = discoverPrinters(ctx, env)
 	case "browse":
@@ -142,7 +144,7 @@ func RunWithProgress(
 // legitimately take a while; everything else is local and quick.
 func timeoutFor(kind string) time.Duration {
 	switch kind {
-	case "role-install", "update-install":
+	case "role-install", "update-install", "domain-backup":
 		return 30 * time.Minute
 	case "update-check", "package-install", "package-remove":
 		return 10 * time.Minute

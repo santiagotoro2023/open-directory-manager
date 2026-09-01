@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import socket
 from typing import Annotated, Any
 
 import asyncpg
@@ -11,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, backup, ca, kea, objects, replication
+from . import audit, backup, ca, kea, objects, replication, tasks
 from .config import Settings, get_settings
 from .routes_directory import _audit_context, _bound
 from .security import get_pool, require_admin, requires
@@ -104,7 +105,18 @@ async def take_backup(
         f"pending:{session.principal}:{asyncio.get_running_loop().time()}",
         session.principal,
     )
-    asyncio.create_task(_run_backup(pool, settings, str(row["id"]), session.principal))  # noqa: RUF006
+    # Queued for this controller's own agent, which is root there. The
+    # control plane is not, and an online backup would need directory rights
+    # its account deliberately does not hold (CLAUDE.md §6).
+    async with pool.acquire() as conn:
+        await tasks.enqueue(
+            conn,
+            node_fqdn=socket.getfqdn(),
+            kind="domain-backup",
+            payload={"target_dir": str(backup.directory(settings))},
+            subject=str(row["id"]),
+            requested_by=session.principal,
+        )
     return {"id": str(row["id"]), "state": "running"}
 
 
