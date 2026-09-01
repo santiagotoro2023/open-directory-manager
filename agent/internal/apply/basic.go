@@ -93,7 +93,17 @@ WantedBy=multi-user.target
 // write a cache, and a file manager that refuses to open the person's own home.
 // Only an owner that no account has is repaired; an ownership somebody chose
 // is somebody's decision.
-const repairHome = `# PAM runs this with almost no environment, and an unset PATH means every
+const repairHome = `# Everything here is for a person signing in. The display manager, cron and
+# the machine's own service accounts open PAM sessions too: a logon script that
+# runs for gdm is a logon script that ran for nobody, and asking the directory
+# about gdm answers "user could not be resolved unambiguously" every time the
+# greeter starts.
+odm_person() {
+  [ -n "$PAM_USER" ] || return 1
+  [ "$(id -u "$PAM_USER" 2>/dev/null || echo 0)" -ge 1000 ]
+}
+
+# PAM runs this with almost no environment, and an unset PATH means every
 # command below is "not found" — reported as an account that does not exist on
 # a machine that had just authenticated it.
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -121,23 +131,18 @@ odm_repair_home() {
 func installSessionHook(env Env) policy.Result {
 	hook := "#!/bin/sh\n" + Header + repairHome + `case "$PAM_TYPE" in
   open_session)
+    odm_person || exit 0
     odm_repair_home
     # Before anything else, and not in the background: a roaming profile is
     # the home directory the rest of the session is about to open files in.
-    # Only for a person: gdm and the machine's own service accounts open PAM
-    # sessions too, and asking the directory about one of those answers "user
-    # could not be resolved unambiguously" every time the greeter starts.
-    if [ -n "$PAM_USER" ] && [ "$(id -u "$PAM_USER" 2>/dev/null || echo 0)" -ge 1000 ]; then
-      timeout 40 /usr/sbin/odm-agent profile --user "$PAM_USER" 2>&1 | logger -t odm-profile
-    fi
+    timeout 40 /usr/sbin/odm-agent profile --user "$PAM_USER" 2>&1 | logger -t odm-profile
     [ -d ` + scriptDir + `/logon ] && /bin/run-parts --report ` + scriptDir + `/logon
-    [ -n "$PAM_USER" ] && timeout 60 /usr/sbin/odm-agent apply --user "$PAM_USER" >/dev/null 2>&1 &
+    timeout 60 /usr/sbin/odm-agent apply --user "$PAM_USER" >/dev/null 2>&1 &
     ;;
   close_session)
+    odm_person || exit 0
     [ -d ` + scriptDir + `/logoff ] && /bin/run-parts --report ` + scriptDir + `/logoff
-    if [ -n "$PAM_USER" ] && [ "$(id -u "$PAM_USER" 2>/dev/null || echo 0)" -ge 1000 ]; then
-      /usr/sbin/odm-agent profile --user "$PAM_USER" --release >/dev/null 2>&1
-    fi
+    /usr/sbin/odm-agent profile --user "$PAM_USER" --release >/dev/null 2>&1
     ;;
 esac
 exit 0
