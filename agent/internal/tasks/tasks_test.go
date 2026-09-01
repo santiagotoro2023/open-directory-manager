@@ -259,3 +259,33 @@ func TestIncludeGoesIntoGlobal(t *testing.T) {
 		t.Fatalf("include is not in [global]:\n%s", got)
 	}
 }
+
+// /srv/shares itself got the share's 2770, so nothing could traverse into the
+// share it contained: published, correct access list, "Permission denied".
+func TestAShareIsReachableThroughItsParents(t *testing.T) {
+	root := t.TempDir()
+	env := apply.Env{Root: root, Run: &recordingRunner{}, State: apply.NewState()}
+	if err := os.MkdirAll(filepath.Join(root, "etc/samba"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, "etc/samba/smb.conf"), []byte("[global]\n"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyShare(context.Background(), map[string]any{
+		"name": "Profiles", "path": "/srv/shares/profiles", "owner": "root",
+		"group": "root", "acl": []any{}, "browseable": true,
+	}, env); err != nil {
+		t.Fatalf("applying the share: %v", err)
+	}
+	for _, path := range []string{"/srv", "/srv/shares"} {
+		info, err := os.Stat(filepath.Join(root, path))
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if info.Mode().Perm()&0o005 != 0o005 {
+			t.Fatalf("%s is %o; nobody can traverse into the share", path, info.Mode().Perm())
+		}
+	}
+}

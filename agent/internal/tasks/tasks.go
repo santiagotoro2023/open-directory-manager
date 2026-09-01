@@ -630,10 +630,32 @@ func applyShare(ctx context.Context, payload map[string]any, env apply.Env) (str
 	var log strings.Builder
 
 	full := env.Path(share.Path)
-	// setgid, so files created in the share inherit its owning group whatever
-	// the creator's own primary group is.
+	// The parents are made traversable and the share itself is not: MkdirAll
+	// gave every level the share's own mode, so /srv/shares ended up 0750
+	// root:root and nobody could reach the share inside it. The share was
+	// published, its access list was right, and every client got
+	// "Permission denied" from a directory nobody had looked at.
+	if parent := filepath.Dir(full); parent != "/" {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return log.String(), fmt.Errorf("creating %s: %w", filepath.Dir(share.Path), err)
+		}
+		// MkdirAll leaves a directory that already exists alone, including one
+		// an earlier version of this made unreachable.
+		for path := parent; path != "/" && path != "."; path = filepath.Dir(path) {
+			info, err := os.Stat(path)
+			if err != nil || info.Mode().Perm()&0o005 == 0o005 {
+				break
+			}
+			_ = os.Chmod(path, info.Mode().Perm()|0o005)
+		}
+	}
+	// setgid on the share itself, so files created in it inherit its owning
+	// group whatever the creator's own primary group is.
 	if err := os.MkdirAll(full, 0o2770); err != nil {
 		return log.String(), fmt.Errorf("creating %s: %w", share.Path, err)
+	}
+	if err := os.Chmod(full, 0o2770); err != nil {
+		return log.String(), fmt.Errorf("setting the mode of %s: %w", share.Path, err)
 	}
 	fmt.Fprintf(&log, "directory %s ready\n", share.Path)
 
