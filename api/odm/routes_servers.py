@@ -58,8 +58,16 @@ def _computers(conn, settings: Settings) -> list[dict[str, Any]]:
 # console could not find it at all: "this machine has not reported yet" about
 # a machine that had been reporting for weeks. Its name does not change when
 # it moves, so that is the fallback.
-FACT_BY_DN = """
-    SELECT {columns} FROM computer_fact
+FACTS_BY_DN = """
+    SELECT * FROM computer_fact
+    WHERE lower(computer_dn) = lower($1)
+       OR lower(split_part(computer_dn, ',', 1)) = lower(split_part($1, ',', 1))
+    ORDER BY (lower(computer_dn) = lower($1)) DESC
+    LIMIT 1
+"""
+
+HOSTNAME_BY_DN = """
+    SELECT hostname FROM computer_fact
     WHERE lower(computer_dn) = lower($1)
        OR lower(split_part(computer_dn, ',', 1)) = lower(split_part($1, ',', 1))
     ORDER BY (lower(computer_dn) = lower($1)) DESC
@@ -124,7 +132,7 @@ async def computer_detail(
 ) -> dict[str, Any]:
     """Everything the machine has told us about itself."""
     fact = await pool.fetchrow(
-        FACT_BY_DN.format(columns="*"), dn
+        FACTS_BY_DN, dn
     )
     events = await pool.fetch(
         """
@@ -252,7 +260,7 @@ async def run_action(
 
     async with pool.acquire() as conn:
         fact = await conn.fetchrow(
-            FACT_BY_DN.format(columns="hostname"), body.dn
+            HOSTNAME_BY_DN, body.dn
         )
         if fact is None:
             raise objects.NotFound(
@@ -481,7 +489,7 @@ async def run_bulk_action(
                 continue
 
             fact = await conn.fetchrow(
-                FACT_BY_DN.format(columns="hostname"), dn
+                HOSTNAME_BY_DN, dn
             )
             if fact is None:
                 skipped.append({"dn": dn, "reason": "has not reported yet"})
