@@ -862,3 +862,28 @@ func TestAProfilePathNamesTheShareAndThePersonsPlaceInIt(t *testing.T) {
 		}
 	}
 }
+
+// A stylesheet inside a dconf database directory makes "dconf update" fail on
+// the whole database, so the banner and the user-list setting went down with
+// the background.
+func TestTheGreeterStylesheetIsNotInsideTheDconfDatabase(t *testing.T) {
+	env, _ := testEnv(t)
+	png := base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nx"))
+	results := applyLoginScreen(context.Background(), policy.Settings{
+		LoginScreen: &policy.LoginScreen{
+			BannerText: "Example Corp", BackgroundImage: png, BackgroundImageName: "g.png",
+		},
+	}, env)
+	for _, result := range results {
+		if result.Status == "failed" {
+			t.Fatalf("login screen failed: %s: %s", result.Setting, result.Reason)
+		}
+	}
+	if strings.HasPrefix(greeterCssPath, "/etc/dconf/") {
+		t.Fatalf("the stylesheet is in a dconf database directory: %s", greeterCssPath)
+	}
+	keyfile := read(t, env, greeterKeyfilePath)
+	if !strings.Contains(keyfile, "[org/gnome/desktop/background]") {
+		t.Fatalf("the greeter has no background key:\n%s", keyfile)
+	}
+}

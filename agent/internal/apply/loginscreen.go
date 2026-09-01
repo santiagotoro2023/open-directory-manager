@@ -17,9 +17,11 @@ import (
 const (
 	greeterProfilePath = "/etc/dconf/profile/gdm"
 	greeterKeyfilePath = "/etc/dconf/db/gdm.d/00-odm-login-screen"
-	// A background needs a stylesheet as well as a key: GNOME's greeter takes
-	// its image from the shell theme, not from a dconf value.
-	greeterCssPath = "/etc/dconf/db/gdm.d/odm-login-background.css"
+	// The stylesheet a shell theme can pick the background up from. It is
+	// deliberately not under /etc/dconf: everything in a dconf database
+	// directory is parsed as a keyfile, and a stylesheet there made "dconf
+	// update" fail — taking the banner and the user list down with it.
+	greeterCssPath = "/etc/odm/login-background.css"
 )
 
 func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.Result {
@@ -46,9 +48,6 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 		fmt.Fprintf(&keyfile, "banner-message-text='%s'\n", dconfEscape(screen.BannerText))
 	}
 	fmt.Fprintf(&keyfile, "disable-user-list=%t\n", screen.DisableUserList)
-	if err := env.WriteFile(greeterKeyfilePath, keyfile.String(), 0o644, "root", "root"); err != nil {
-		return []policy.Result{policy.Fail("login_screen", err)}
-	}
 
 	results := []policy.Result{}
 	background, err := backgroundURI(
@@ -62,6 +61,17 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 		if fit == "" {
 			fit = "zoom"
 		}
+		// The greeter session reads the ordinary background keys out of GDM's
+		// own database, so the picture is a dconf value like any other rather
+		// than something only a rebuilt shell theme could carry.
+		fmt.Fprintf(&keyfile, "\n[org/gnome/desktop/background]\n")
+		fmt.Fprintf(&keyfile, "picture-uri='%s'\n", dconfEscape(background))
+		fmt.Fprintf(&keyfile, "picture-uri-dark='%s'\n", dconfEscape(background))
+		fmt.Fprintf(&keyfile, "picture-options='%s'\n", fit)
+
+		// And a stylesheet beside it, for the greeters that take a background
+		// from the theme instead. Outside the dconf database, which parses
+		// everything in its directory as a keyfile.
 		css := fmt.Sprintf(
 			"/* Managed by Open Directory Manager. */\n"+
 				"#lockDialogGroup {\n"+
@@ -77,6 +87,10 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 		} else {
 			results = append(results, policy.Ok("login_screen:background"))
 		}
+	}
+
+	if err := env.WriteFile(greeterKeyfilePath, keyfile.String(), 0o644, "root", "root"); err != nil {
+		return []policy.Result{policy.Fail("login_screen", err)}
 	}
 
 	results = append(results, runAll(ctx, env, "login_screen", []string{"dconf", "update"}))
