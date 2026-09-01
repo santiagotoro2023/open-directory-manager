@@ -53,6 +53,19 @@ def _computers(conn, settings: Settings) -> list[dict[str, Any]]:
     return machines
 
 
+# A machine's facts are stored against the DN it reported. Moving it to
+# another organizational unit changes that DN, and until it next reports the
+# console could not find it at all: "this machine has not reported yet" about
+# a machine that had been reporting for weeks. Its name does not change when
+# it moves, so that is the fallback.
+FACT_BY_DN = """
+    SELECT {columns} FROM computer_fact
+    WHERE lower(computer_dn) = lower($1)
+       OR lower(split_part(computer_dn, ',', 1)) = lower(split_part($1, ',', 1))
+    ORDER BY (lower(computer_dn) = lower($1)) DESC
+    LIMIT 1
+"""
+
 @router.get("", dependencies=[Depends(requires("server.read"))])
 async def list_servers(
     _: Session = Depends(require_admin),
@@ -111,7 +124,7 @@ async def computer_detail(
 ) -> dict[str, Any]:
     """Everything the machine has told us about itself."""
     fact = await pool.fetchrow(
-        "SELECT * FROM computer_fact WHERE lower(computer_dn) = lower($1)", dn
+        FACT_BY_DN.format(columns="*"), dn
     )
     events = await pool.fetch(
         """
@@ -239,7 +252,7 @@ async def run_action(
 
     async with pool.acquire() as conn:
         fact = await conn.fetchrow(
-            "SELECT hostname FROM computer_fact WHERE lower(computer_dn) = lower($1)", body.dn
+            FACT_BY_DN.format(columns="hostname"), body.dn
         )
         if fact is None:
             raise objects.NotFound(
@@ -468,7 +481,7 @@ async def run_bulk_action(
                 continue
 
             fact = await conn.fetchrow(
-                "SELECT hostname FROM computer_fact WHERE lower(computer_dn) = lower($1)", dn
+                FACT_BY_DN.format(columns="hostname"), dn
             )
             if fact is None:
                 skipped.append({"dn": dn, "reason": "has not reported yet"})
