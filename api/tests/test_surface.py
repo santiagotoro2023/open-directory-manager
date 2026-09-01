@@ -7,6 +7,8 @@ deliberately public endpoints changes.
 
 from __future__ import annotations
 
+import pathlib
+
 import conftest  # noqa: F401  (environment setup ordering)
 import pytest
 from fastapi.routing import APIRoute
@@ -613,3 +615,25 @@ def test_every_task_with_a_subject_moves_something_on():
 
     missing = sorted(enqueued - set(FINISHED_BY_TASK) - handled_separately - no_subject)
     assert not missing, f"these tasks carry a subject nothing finishes: {missing}"
+
+
+def test_a_machine_that_mounts_a_share_can_ask_for_a_ticket_for_it():
+    """cifs-utils without keyutils cannot do Kerberos.
+
+    The kernel asks for the ticket through request-key, which is in keyutils.
+    Without it every drive map and every roaming profile fails with
+    "Send error in SessSetup = -2", which names neither Kerberos nor the
+    package that is missing.
+    """
+    root = pathlib.Path(__file__).resolve().parents[2]
+    sources = [
+        root / "packaging" / "deb" / "build.sh",
+        *(root / "deploy").glob("*.sh"),
+    ]
+    for source in sources:
+        body = source.read_text()
+        for line in body.splitlines():
+            if "cifs-utils" in line and not line.lstrip().startswith("#"):
+                assert "keyutils" in line or "keyutils" in body, (
+                    f"{source.name} installs cifs-utils without keyutils: {line.strip()}"
+                )

@@ -61,7 +61,13 @@ install -m 0755 "$REPO"/deploy/install-*-role.sh "$ROOT/usr/lib/odm/roles/"
 install -m 0644 "$REPO/deploy/odm-role-common.sh" "$ROOT/usr/lib/odm/roles/"
 install -m 0755 "$REPO/deploy/odm-apply-console-certificate" "$ROOT/usr/lib/odm/roles/"
 
+# cifs-utils and keyutils are what a drive map and a roaming profile are made
+# of. Without keyutils there is no request-key, so the kernel cannot ask for a
+# Kerberos ticket for the mount and every one of them fails with
+# "Send error in SessSetup = -2" — an error that names neither Kerberos nor
+# the missing package.
 DEPENDS="samba-common-bin, sssd-ad, sssd-tools, krb5-user, libnss-winbind, libpam-winbind, adcli"
+DEPENDS="$DEPENDS, cifs-utils, keyutils"
 if [[ "$GUI_BUILT" == "yes" ]]; then
     install -d -m 0755 "$ROOT/usr/bin" \
         "$ROOT/usr/share/applications" \

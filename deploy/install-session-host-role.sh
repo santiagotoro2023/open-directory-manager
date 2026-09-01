@@ -30,7 +30,7 @@ POLKIT="polkitd"
 apt-cache policy policykit-1 2>/dev/null | grep -q 'Candidate: [^(]' && POLKIT="policykit-1"
 
 odm_apt_install xrdp xorgxrdp xfce4 xfce4-goodies xfce4-terminal openssl \
-    cifs-utils dbus-x11 "$POLKIT"
+    cifs-utils keyutils dbus-x11 "$POLKIT"
 
 install -d -m 0755 /etc/odm
 
