@@ -48,7 +48,7 @@ func MountProfile(ctx context.Context, profile *policy.RoamingProfile, user stri
 	if err != nil {
 		return err
 	}
-	if err := mountShare(ctx, share, env); err != nil {
+	if err := mountShare(ctx, share, account, env); err != nil {
 		return err
 	}
 
@@ -138,27 +138,36 @@ func splitProfilePath(path, user string) (share, sub string, err error) {
 	return "//" + parts[0] + "/" + parts[1], strings.Join(parts[2:], "/"), nil
 }
 
-// mountShare mounts the profile share with the machine's own credentials. The
-// person signing in does have a ticket by now, but PAM's session phase is the
-// wrong place to depend on one: the mount has to survive their session ending
-// while another of their sessions is still using it.
-func mountShare(ctx context.Context, share string, env Env) error {
+// mountShare mounts the profile share with the credentials of the person
+// signing in. Their own ticket is the right one for their own profile: the
+// alternative is granting every machine in the domain access to everybody's,
+// which is a worse thing to have than a profile that occasionally does not
+// mount. PAM's session phase runs after their ticket exists, which is why
+// this is attached from there and not by the agent's refresh loop.
+//
+// The machine's own credentials are tried second, for a share deliberately
+// set up to let machines mount profiles on people's behalf.
+func mountShare(ctx context.Context, share string, who account, env Env) error {
 	if mounted(ProfileStore) {
 		return nil
 	}
 	if err := os.MkdirAll(ProfileStore, 0o755); err != nil {
 		return err
 	}
-	_, err := env.Run.Run(ctx, "mount", "-t", "cifs", share, ProfileStore,
-		"-o", "sec=krb5,cruid=0,multiuser,vers=3.1.1,noperm")
-	if err == nil {
-		return nil
+	attempts := []string{
+		fmt.Sprintf("sec=krb5,cruid=%d,vers=3.1.1,noperm", who.uid),
+		fmt.Sprintf("sec=krb5,cruid=%d,vers=3.0,noperm", who.uid),
+		"sec=krb5,cruid=0,multiuser,vers=3.1.1,noperm",
 	}
-	if _, second := env.Run.Run(ctx, "mount", "-t", "cifs", share, ProfileStore,
-		"-o", "sec=krb5,vers=3.0,noperm"); second != nil {
-		return fmt.Errorf("mounting %s: %w", share, err)
+	var last error
+	for _, options := range attempts {
+		out, err := env.Run.Run(ctx, "mount", "-t", "cifs", share, ProfileStore, "-o", options)
+		if err == nil {
+			return nil
+		}
+		last = fmt.Errorf("mounting %s: %w: %s", share, err, strings.TrimSpace(lastLine(out)))
 	}
-	return nil
+	return last
 }
 
 func bindDirectory(ctx context.Context, target string, who account, env Env) error {
