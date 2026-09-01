@@ -326,6 +326,32 @@ JSON
 chmod 0640 /etc/kea/kea-*.conf
 chgrp "$KEA_USER" /etc/kea/kea-*.conf
 
+# Kea persists a scope by rewriting its own configuration, and it runs as
+# $KEA_USER under an AppArmor profile that allows reading /etc/kea and not
+# writing it. Both had to be true, or every change the console made lived
+# only until the next restart, reported as
+#
+#   Error during config-write: Unable to open file ... for writing
+#
+# The directory stays root's, so nothing else in /etc/kea becomes writable,
+# and the AppArmor override names the two files rather than the tree.
+chown "$KEA_USER" /etc/kea/kea-dhcp4.conf /etc/kea/kea-dhcp-ddns.conf
+
+for PROFILE in usr.sbin.kea-dhcp4 usr.sbin.kea-dhcp-ddns; do
+    [[ -f "/etc/apparmor.d/$PROFILE" ]] || continue
+    install -d -m 0755 /etc/apparmor.d/local
+    cat > "/etc/apparmor.d/local/$PROFILE" <<'PROFILE_LOCAL'
+# Managed by Open Directory Manager.
+# Kea writes its own configuration back when a scope changes; the shipped
+# profile allows reading it and not writing it.
+  /etc/kea/kea-dhcp4.conf rw,
+  /etc/kea/kea-dhcp-ddns.conf rw,
+  /etc/kea/*.conf.bak rw,
+PROFILE_LOCAL
+    apparmor_parser -r -T -W "/etc/apparmor.d/$PROFILE" >/dev/null 2>&1 ||
+        echo "    (could not reload the AppArmor profile $PROFILE)"
+done
+
 # Kea refuses a configuration whose control-socket directory is not there at
 # exactly mode 0750 — it will not create it, and it says so before it says
 # anything about the rest of the file. The units ask systemd for it, but a
