@@ -46,9 +46,26 @@ async def record(
         object_dn,
         outcome,
         detail,
-        json.dumps(before) if before is not None else None,
-        json.dumps(after) if after is not None else None,
+        _json(before),
+        _json(after),
     )
+
+
+def _json(state: dict[str, Any] | None) -> str | None:
+    """Serialise a before/after state, whatever the caller handed us.
+
+    Callers pass rows straight from the database and objects straight from the
+    directory, and those carry datetimes, UUIDs and IP addresses. json.dumps
+    refuses them, and it refused them from inside the audit write — after the
+    operation itself had already succeeded, so the change was made and the
+    request still answered 500. Saving a group policy object did exactly that.
+
+    default=str because this is a record of what happened, not a wire format:
+    a timestamp written as its ISO string is worth more than an exception.
+    """
+    if state is None:
+        return None
+    return json.dumps(state, default=str)
 
 
 @dataclass

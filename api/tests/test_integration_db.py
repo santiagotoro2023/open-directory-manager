@@ -405,3 +405,35 @@ async def test_a_certificate_profile_round_trips_its_purpose_array(client):
 
     removed = await client.request("DELETE", "/api/v1/ca/profiles?name=mail-gateway")
     assert removed.status_code == 204, removed.text
+
+
+async def test_a_write_whose_state_holds_a_timestamp_still_audits(client):
+    """Callers hand the audit log rows from the database and objects from the
+    directory, and those carry datetimes. json.dumps refuses them, and it
+    refused them from inside the audit write — after the change had already
+    been made — so saving a group policy object made the change and answered
+    500. Exercised through a real write because the failure is in the encoder,
+    not in the SQL."""
+    await sign_in(client)
+
+    created = await client.post(
+        "/api/v1/policy/gpos",
+        json={"display_name": "Timestamped", "description": "has an updated_at"},
+    )
+    assert created.status_code == 201, created.text
+    guid = created.json()["guid"]
+
+    # PATCH audits the row it read back, updated_at and all.
+    saved = await client.patch(
+        "/api/v1/policy/gpo",
+        json={
+            "guid": guid,
+            "settings": {
+                "files": [{"path": "/etc/odm-audit-test", "content": "x\n", "mode": "0644"}]
+            },
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    entries = (await client.get("/api/v1/audit?limit=20")).json()["entries"]
+    assert any(e["action"] == "gpo.update" for e in entries), [e["action"] for e in entries]

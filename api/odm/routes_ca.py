@@ -285,8 +285,7 @@ async def create_profile(
             body.validity_days, body.key_size, session.principal,
         )
         profile = {**dict(row), "built_in": False}
-        # created_at is a datetime and the audit entry is JSON.
-        entry.after = {key: value for key, value in profile.items() if key != "created_at"}
+        entry.after = profile
         return profile
 
 
