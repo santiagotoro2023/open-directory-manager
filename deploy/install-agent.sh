@@ -92,9 +92,21 @@ fi
 
 install -d -m 0750 /etc/odm /var/lib/odm
 
+# On the console's own machine, point at the live certificate rather than a
+# copy of it. Replacing the console certificate — which the CA role does, and
+# which regenerating the self-signed one does — otherwise leaves every local
+# copy stale and the agent stops with "certificate signed by unknown
+# authority" until somebody notices.
+if [[ -n "$CA_CERT" ]] && [[ "$(readlink -f "$CA_CERT")" == "/etc/odm/tls/api.crt" ]]; then
+    CA_PATH="/etc/odm/tls/api.crt"
+elif [[ -n "$CA_CERT" ]]; then
+    CA_PATH="/etc/odm/tls/api-ca.pem"
+fi
+
 if [[ -n "$CA_CERT" ]]; then
     install -d -m 0755 /etc/odm/tls
-    install -m 0644 "$CA_CERT" /etc/odm/tls/api-ca.pem
+    [[ "$CA_PATH" == "/etc/odm/tls/api.crt" ]] ||
+        install -m 0644 "$CA_CERT" /etc/odm/tls/api-ca.pem
 fi
 
 umask 077
@@ -105,7 +117,7 @@ cat > /etc/odm/agent.json <<JSON
   "keytab": "/etc/krb5.keytab",
   "realm": "$REALM",
   "krb5_conf": "/etc/krb5.conf",
-  "ca_cert": "$([[ -n "$CA_CERT" ]] && echo /etc/odm/tls/api-ca.pem)",
+  "ca_cert": "${CA_PATH:-}",
   "refresh_minutes": 15
 }
 JSON

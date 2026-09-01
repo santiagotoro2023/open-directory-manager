@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -142,7 +143,7 @@ func (c *Client) get(ctx context.Context, path string) (*policy.Document, error)
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %s", path, response.Status)
+		return nil, fmt.Errorf("%s: %s", path, why(response))
 	}
 	document := &policy.Document{}
 	if err := json.NewDecoder(response.Body).Decode(document); err != nil {
@@ -173,7 +174,7 @@ func (c *Client) Report(ctx context.Context, report policy.Report) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("report: %s", response.Status)
+		return fmt.Errorf("report: %s", why(response))
 	}
 	return nil
 }
@@ -242,7 +243,7 @@ func (c *Client) tasks(ctx context.Context, wait time.Duration) ([]tasks.Task, e
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("tasks: %s", response.Status)
+		return nil, fmt.Errorf("tasks: %s", why(response))
 	}
 	var body struct {
 		Tasks []tasks.Task `json:"tasks"`
@@ -275,7 +276,7 @@ func (c *Client) TaskProgress(ctx context.Context, id, output string) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 300 {
-		return fmt.Errorf("task progress: %s", response.Status)
+		return fmt.Errorf("task progress: %s", why(response))
 	}
 	return nil
 }
@@ -298,7 +299,7 @@ func (c *Client) TaskResult(ctx context.Context, result tasks.Result) error {
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("task result: %s", response.Status)
+		return fmt.Errorf("task result: %s", why(response))
 	}
 	return nil
 }
@@ -365,4 +366,17 @@ func waitQuery(wait time.Duration) string {
 		return ""
 	}
 	return "?wait=" + strconv.Itoa(int(wait.Seconds()))
+}
+
+// why is the status and whatever the control plane said about it.
+//
+// "422 Unprocessable Content" on its own is a dead end: the body names the
+// field it refused and why, and an operator reading the agent's journal
+// should not have to go and reproduce the request to see it.
+func why(response *http.Response) string {
+	body, err := io.ReadAll(io.LimitReader(response.Body, 600))
+	if err != nil || len(body) == 0 {
+		return response.Status
+	}
+	return response.Status + ": " + strings.TrimSpace(string(body))
 }
