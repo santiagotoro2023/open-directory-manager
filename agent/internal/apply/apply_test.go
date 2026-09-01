@@ -756,3 +756,35 @@ func TestPruningAConfigFileReloadsWhatReadsIt(t *testing.T) {
 		t.Fatalf("ssh was not reloaded after its drop-in went away: %v", runner.commands)
 	}
 }
+
+// ServerName in client.conf makes every CUPS command on the machine talk to
+// the print server instead of to itself, so lpadmin tried to create the queue
+// on the server and the server refused it: "lpadmin: Forbidden". The queues a
+// policy names are local ones pointing at the server.
+func TestPrintersAreLocalQueuesPointingAtTheServer(t *testing.T) {
+	env, runner := testEnv(t)
+	applyPrinters(context.Background(), policy.Settings{
+		Printers: []policy.Printer{
+			{Name: "finance-mfp", Server: "print01.corp.example.internal"},
+		},
+	}, env)
+
+	var created bool
+	for _, command := range runner.commands {
+		if len(command) > 5 && command[0] == "lpadmin" {
+			created = true
+			joined := strings.Join(command, " ")
+			if !strings.Contains(joined, "ipp://print01.corp.example.internal/printers/finance-mfp") {
+				t.Errorf("the queue does not point at the server: %v", command)
+			}
+		}
+	}
+	if !created {
+		t.Fatalf("no queue was created: %v", runner.commands)
+	}
+	if body, err := os.ReadFile(filepath.Join(env.Root, "/etc/cups/client.conf")); err == nil {
+		if strings.Contains(string(body), "ServerName") {
+			t.Errorf("client.conf still redirects every CUPS command:\n%s", body)
+		}
+	}
+}

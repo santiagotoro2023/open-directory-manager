@@ -64,14 +64,19 @@ func applyPrinters(ctx context.Context, s policy.Settings, env Env) []policy.Res
 		}
 	}
 
-	// Pointing the client at the server as well means a printer added there
-	// later is browsable without waiting for a policy refresh.
-	if fallbackServer != "" {
-		body := Header + "ServerName " + fallbackServer + "\n"
-		if err := env.WriteFile(printersConf, body, 0o644, "root", "root"); err != nil {
-			results = append(results, policy.Fail("printers:client", err))
-		}
+	// Deliberately no client.conf. ServerName there makes every CUPS command
+	// on this machine talk to the print server instead of to itself — so
+	// lpadmin tried to create the queue *on the server*, which refused it:
+	//
+	//	printers:finance-mfp  failed: lpadmin: Forbidden
+	//
+	// It would also hand the machine every queue the server publishes, which
+	// is the opposite of a policy that names the printers somebody gets. The
+	// queues created above point at the server and are local to this machine.
+	if err := env.ReplaceBlock(printersConf, "", 0o644); err != nil {
+		results = append(results, policy.Fail("printers:client", err))
 	}
+	_ = fallbackServer
 
 	if defaultPrinter != "" {
 		results = append(results, runAll(ctx, env, "printers:default",
