@@ -196,6 +196,11 @@ func readPassword(options *join.Options, passwordFile string, unattended bool) e
 		return nil
 	}
 	switch {
+	// Set by an unattended install. The same name setup.sh takes, so one
+	// provisioning script does not need two spellings. Never echoed, and
+	// never written anywhere.
+	case os.Getenv("ODM_ADMIN_PASSWORD") != "":
+		options.Password = os.Getenv("ODM_ADMIN_PASSWORD")
 	case passwordFile != "":
 		body, err := os.ReadFile(passwordFile)
 		if err != nil {
@@ -225,6 +230,20 @@ func prompt(reader *bufio.Reader, label string) (string, error) {
 
 func promptSecret(label string) (string, error) {
 	fmt.Printf("%s: ", label)
+	// A pipe is not a terminal, and term.ReadPassword on one fails with
+	// "inappropriate ioctl for device" — which made the command that exists
+	// for scripted provisioning impossible to script. Read the line instead;
+	// there is no echo to turn off when nobody is typing.
+	if !term.IsTerminal(int(syscall.Stdin)) {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		fmt.Println()
+		if line == "" && err != nil {
+			return "", fmt.Errorf(
+				"no password on standard input; use --password-file or ODM_ADMIN_PASSWORD",
+			)
+		}
+		return strings.TrimRight(line, "\r\n"), nil
+	}
 	secret, err := term.ReadPassword(int(syscall.Stdin))
 	fmt.Println()
 	if err != nil {
@@ -244,7 +263,9 @@ policy agent.
   --server          a specific domain controller (discovered when omitted)
   --api-url         the ODM control plane (derived from the domain when omitted)
   --admin-user      join with this domain credential
-  --password-file   read that credential's password from a file
+  --password-file   read that credential's password from a file. ODM_ADMIN_PASSWORD
+                    in the environment does the same, and standard input is
+                    read when it is not a terminal.
   --otp             enrol with a one-time token instead of a credential
   --ou              container for the host account
   --hostname        override this machine's name
