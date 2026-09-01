@@ -97,6 +97,15 @@ fi
 BASE_DN="$(printf 'DC=%s' "${REALM//./,DC=}")"
 samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(A;CI;CCDCLCRPWP;;;${SID})"
 
+echo "==> Delegating DNS management"
+# Samba's AD-integrated DNS is its own access-controlled tree, and the object
+# rights granted below do not reach it: every record the console tried to
+# write came back "Insufficient permissions [WERR_ACCESS_DENIED]". DnsAdmins
+# is the built-in group AD has for exactly this, so the account joins it
+# rather than being made a Domain Admin.
+samba-tool group addmembers DnsAdmins "$ACCOUNT" >/dev/null 2>&1 ||
+    echo "    (already a member, or DnsAdmins is missing)"
+
 echo "==> Delegating password resets"
 # Writing unicodePwd is not a property write, whatever the attribute looks
 # like: AD gates it behind the Reset Password control-access right, and
