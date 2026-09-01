@@ -295,11 +295,44 @@ backend odm_rd_hosts
 		"-f", "/etc/haproxy/conf.d"); err != nil {
 		return out, fmt.Errorf("the generated routing is not valid: %w", err)
 	}
+	// A reload keeps the sessions haproxy is already carrying, which is the
+	// point of a broker — so it is tried first.
 	out, err := env.Run.Run(ctx, "systemctl", "reload", "haproxy")
 	if err != nil {
 		return out, fmt.Errorf("reloading haproxy: %w", err)
 	}
+
+	// But a reload cannot rescue a master process whose last load failed: it
+	// says "Resumed frontend GLOBAL" and carries on serving nothing. That is
+	// exactly the state a port clash leaves behind, so make sure the
+	// frontend is actually bound and restart if it is not.
+	if len(hosts) > 0 && !listening(ctx, env, brokerPort) {
+		if out, err := env.Run.Run(ctx, "systemctl", "restart", "haproxy"); err != nil {
+			return out, fmt.Errorf("haproxy would not start: %w", err)
+		}
+		if !listening(ctx, env, brokerPort) {
+			return out, fmt.Errorf(
+				"haproxy is running but nothing is listening on %d; check its journal",
+				brokerPort,
+			)
+		}
+	}
 	return fmt.Sprintf("routing %d host(s) for %s", len(hosts), name), nil
+}
+
+// The port clients connect to. The broker owns it; a session host on the same
+// machine is moved aside by the control plane.
+const brokerPort = 3389
+
+// listening reports whether anything holds a TCP port here.
+func listening(ctx context.Context, env apply.Env, port int) bool {
+	out, err := env.Run.Run(ctx, "ss", "-lnt")
+	if err != nil {
+		// No ss is not evidence either way; assume it came up rather than
+		// restarting a working broker on every refresh.
+		return true
+	}
+	return strings.Contains(out, fmt.Sprintf(":%d ", port))
 }
 
 // balanceMethod maps what the collection asked for onto haproxy's name for
