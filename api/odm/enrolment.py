@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 from .config import Settings
-from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available
+from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available, message
 
 TIMEOUT_SECONDS = 120
 HOSTNAME_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?"
@@ -64,8 +64,7 @@ def _run(*args: str) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise EnrolmentError(f"samba-tool failed: {exc}") from exc
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise EnrolmentError(detail[-1] if detail else "samba-tool failed")
+        raise EnrolmentError(message(completed.stderr, completed.stdout, "samba-tool failed"))
     return completed.stdout
 
 

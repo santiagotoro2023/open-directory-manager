@@ -16,6 +16,7 @@ import { ChoiceList, SUPPORTED_RELEASES } from "../components/ChoiceList";
 import { ContainerPicker } from "../components/Picker";
 import { SettingsEditor } from "../components/SettingsEditor";
 import { TemplateManager } from "../components/TemplateManager";
+import Select from "../components/Select"
 
 type Tab = "settings" | "links" | "scope";
 
@@ -703,14 +704,14 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
           </Field>
 
           <Field label="If a name already exists">
-            <select
+            <Select
               value={conflict}
               onChange={(e) => setConflict(e.target.value as typeof conflict)}
             >
               <option value="skip">Leave the existing one alone</option>
               <option value="replace">Replace it with the imported one</option>
               <option value="rename">Bring the imported one in beside it</option>
-            </select>
+            </Select>
           </Field>
 
           <label className="checkbox">

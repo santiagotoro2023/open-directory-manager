@@ -29,14 +29,27 @@ TRUST_GPO_NAME = "ODM Certificate Trust"
 
 class InitialiseRequest(BaseModel):
     common_name: Annotated[str | None, Field(default=None, max_length=64)] = None
+    # A domain authority nobody trusts issues certificates nobody accepts, so
+    # publishing is the default rather than a second thing to remember.
+    publish_root: bool = True
 
 
 class IssueRequest(BaseModel):
     common_name: Annotated[str, Field(min_length=1, max_length=253)]
     sans: Annotated[list[Annotated[str, Field(max_length=253)]], Field(default_factory=list,
                                                                       max_length=32)]
-    profile: Annotated[str, Field(pattern="^(server|client|console)$")] = "server"
+    # A profile an operator defined is named here too, so the pattern is the
+    # union of the built-in names and what the profile table allows.
+    profile: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{1,30}$")] = "server"
     validity_days: Annotated[int, Field(ge=1, le=ca.MAX_VALIDITY_DAYS)] = ca.DEFAULT_VALIDITY_DAYS
+
+
+class ProfileRequest(BaseModel):
+    name: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{1,30}$")]
+    description: Annotated[str, Field(default="", max_length=200)] = ""
+    purposes: Annotated[list[str], Field(min_length=1, max_length=8)]
+    validity_days: Annotated[int, Field(ge=1, le=ca.MAX_VALIDITY_DAYS)] = ca.DEFAULT_VALIDITY_DAYS
+    key_size: Annotated[int, Field(default=2048)] = 2048
 
 
 class RevokeRequest(BaseModel):
@@ -85,6 +98,14 @@ async def initialise(
         await run_in_threadpool(ca.initialise, settings, body.common_name)
         described = ca.describe(settings)
         entry.after = {"subject": described["subject"], "fingerprint": described["fingerprint"]}
+        if body.publish_root:
+            # An authority no machine trusts issues certificates no machine
+            # accepts. Not fatal: the authority exists either way, and the
+            # Publish to domain button is still there.
+            try:
+                described["published"] = await _publish(pool, settings, session.principal)
+            except Exception as exc:  # noqa: BLE001 - reported, not raised
+                described["publish_error"] = str(exc)
         return described
 
 
@@ -138,6 +159,19 @@ async def issue(
         request, session, pool, "ca.issue", object_type="certificate",
         object_dn=body.common_name,
     ) as entry:
+        # A profile the operator defined decides the purposes and the key
+        # size; a built-in name means what it has always meant.
+        purposes: list[str] | None = None
+        key_size = ca.LEAF_KEY_SIZE
+        if body.profile not in ca.PROFILES:
+            row = await pool.fetchrow(
+                "SELECT purposes, key_size FROM certificate_profile WHERE name = $1",
+                body.profile,
+            )
+            if row is None:
+                raise objects.ObjectError(f"unknown certificate profile {body.profile!r}")
+            purposes = list(row["purposes"])
+            key_size = row["key_size"]
         issued = await run_in_threadpool(
             lambda: ca.issue(
                 settings,
@@ -145,6 +179,8 @@ async def issue(
                 sans=body.sans,
                 profile=body.profile,
                 validity_days=body.validity_days,
+                purposes=purposes,
+                key_size=key_size,
             )
         )
         await _record(pool, issued, session.principal)
@@ -183,6 +219,92 @@ async def _record(pool: asyncpg.Pool, issued: ca.Issued, actor: str) -> None:
         issued.not_after,
         actor,
     )
+
+
+@router.get("/profiles", dependencies=[Depends(requires("ca.read"))])
+async def list_profiles(pool: asyncpg.Pool = Depends(get_pool)) -> dict[str, Any]:
+    """The profiles a certificate can be issued from.
+
+    The two built-in ones are what AD CS calls Web Server and User; the rest
+    are the operator's own, and both kinds are issued the same way.
+    """
+    rows = await pool.fetch("SELECT * FROM certificate_profile ORDER BY name")
+    return {
+        "purposes": sorted(ca.PURPOSES),
+        "profiles": [
+            {
+                "name": "server",
+                "description": "Server — TLS service",
+                "purposes": ["server"],
+                "validity_days": ca.DEFAULT_VALIDITY_DAYS,
+                "key_size": ca.LEAF_KEY_SIZE,
+                "built_in": True,
+            },
+            {
+                "name": "client",
+                "description": "Client — authentication",
+                "purposes": ["client"],
+                "validity_days": ca.DEFAULT_VALIDITY_DAYS,
+                "key_size": ca.LEAF_KEY_SIZE,
+                "built_in": True,
+            },
+            *[{**dict(row), "built_in": False} for row in rows],
+        ],
+    }
+
+
+@router.post("/profiles", status_code=201, dependencies=[Depends(requires_domain_admin())])
+async def create_profile(
+    body: ProfileRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    if body.name in ca.PROFILES:
+        raise objects.ObjectError(f"{body.name} is a built-in profile")
+    unknown = [name for name in body.purposes if name not in ca.PURPOSES]
+    if unknown:
+        raise objects.ObjectError(f"unknown purpose {unknown[0]!r}")
+    if body.key_size not in (2048, 3072, 4096):
+        raise objects.ObjectError("key size must be 2048, 3072 or 4096")
+    async with _audit_context(
+        request, session, pool, "ca.profile.create", object_type="certificate-profile",
+        object_dn=body.name,
+    ) as entry:
+        row = await pool.fetchrow(
+            """
+            INSERT INTO certificate_profile
+                (name, description, purposes, validity_days, key_size, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (name) DO UPDATE SET
+                description = excluded.description, purposes = excluded.purposes,
+                validity_days = excluded.validity_days, key_size = excluded.key_size
+            RETURNING *
+            """,
+            body.name, body.description, body.purposes,
+            body.validity_days, body.key_size, session.principal,
+        )
+        profile = {**dict(row), "built_in": False}
+        # created_at is a datetime and the audit entry is JSON.
+        entry.after = {key: value for key, value in profile.items() if key != "created_at"}
+        return profile
+
+
+@router.delete("/profiles", status_code=204, dependencies=[Depends(requires_domain_admin())])
+async def delete_profile(
+    name: Annotated[str, Query(pattern=r"^[a-z0-9][a-z0-9-]{1,30}$")],
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> Response:
+    async with _audit_context(
+        request, session, pool, "ca.profile.delete", object_type="certificate-profile",
+        object_dn=name,
+    ):
+        # Certificates already issued from it keep the name they were issued
+        # under; the profile only decides what a new one looks like.
+        await pool.execute("DELETE FROM certificate_profile WHERE name = $1", name)
+    return Response(status_code=204)
 
 
 @router.post("/revoke", status_code=204, dependencies=[Depends(requires("ca.issue"))])
@@ -243,63 +365,77 @@ async def publish_trust(
     async with _audit_context(
         request, session, pool, "ca.publish", object_type="gpo", object_dn=TRUST_GPO_NAME
     ) as entry:
-        trusted = []
-        if ca.initialised(settings):
-            trusted.append({"name": "odm-root-ca", "certificate_pem": ca.root_pem(settings)})
-        # Everything else the domain has been told to trust goes with it, so
-        # one policy object holds the whole trust store rather than one each.
-        for row in await pool.fetch("SELECT name, certificate_pem FROM trust_anchor ORDER BY name"):
-            trusted.append({"name": row["name"], "certificate_pem": row["certificate_pem"]})
-        if not trusted:
-            raise objects.ObjectError("there is nothing to publish yet")
-        settings_document = {"trusted_certificates": trusted}
+        result = await _publish(pool, settings, session.principal)
+        entry.after = {
+            "gpo": result["gpo_guid"],
+            "linked_to": settings.base_dn,
+            "certificates": result["published"],
+        }
+        return result
 
+
+async def _publish(
+    pool: asyncpg.Pool, settings: Settings, actor: str
+) -> dict[str, Any]:
+    """Put the domain's trust store into one policy object and link it.
+
+    Called both by the Publish button and by creating the authority, because
+    an authority nobody trusts is not much of an authority.
+    """
+    trusted = []
+    if ca.initialised(settings):
+        trusted.append({"name": "odm-root-ca", "certificate_pem": ca.root_pem(settings)})
+    # Everything else the domain has been told to trust goes with it, so
+    # one policy object holds the whole trust store rather than one each.
+    for row in await pool.fetch("SELECT name, certificate_pem FROM trust_anchor ORDER BY name"):
+        trusted.append({"name": row["name"], "certificate_pem": row["certificate_pem"]})
+    if not trusted:
+        raise objects.ObjectError("there is nothing to publish yet")
+    settings_document = {"trusted_certificates": trusted}
+
+    guid = await pool.fetchval(
+        "SELECT guid FROM gpo WHERE display_name = $1", TRUST_GPO_NAME
+    )
+    if guid is None:
         guid = await pool.fetchval(
-            "SELECT guid FROM gpo WHERE display_name = $1", TRUST_GPO_NAME
+            """
+            INSERT INTO gpo (guid, display_name, description, settings, created_by)
+            VALUES (gen_random_uuid(), $1, $2, $3::jsonb, $4)
+            RETURNING guid
+            """,
+            TRUST_GPO_NAME,
+            "Installs the domain's trusted certificates into the system trust store",
+            json.dumps(settings_document),
+            actor,
         )
-        if guid is None:
-            guid = await pool.fetchval(
-                """
-                INSERT INTO gpo (guid, display_name, description, settings, created_by)
-                VALUES (gen_random_uuid(), $1, $2, $3::jsonb, $4)
-                RETURNING guid
-                """,
-                TRUST_GPO_NAME,
-                "Installs the domain's trusted certificates into the system trust store",
-                json.dumps(settings_document),
-                session.principal,
-            )
-        else:
-            await pool.execute(
-                """
-                UPDATE gpo SET settings = $2::jsonb, version = version + 1, updated_at = now()
-                WHERE guid = $1
-                """,
-                guid,
-                json.dumps(settings_document),
-            )
-
+    else:
         await pool.execute(
             """
-            INSERT INTO gpo_link (gpo_guid, target_dn, link_order, enforced, enabled)
-            VALUES ($1, $2,
-                    (SELECT coalesce(max(link_order), 0) + 1 FROM gpo_link WHERE target_dn = $2),
-                    false, true)
-            ON CONFLICT (gpo_guid, target_dn) DO NOTHING
+            UPDATE gpo SET settings = $2::jsonb, version = version + 1, updated_at = now()
+            WHERE guid = $1
             """,
             guid,
-            settings.base_dn,
+            json.dumps(settings_document),
         )
-        entry.after = {
-            "gpo": str(guid),
-            "linked_to": settings.base_dn,
-            "certificates": [entry["name"] for entry in trusted],
-        }
-        return {
-            "gpo_guid": str(guid),
-            "display_name": TRUST_GPO_NAME,
-            "published": [entry["name"] for entry in trusted],
-        }
+
+    await pool.execute(
+        """
+        INSERT INTO gpo_link (gpo_guid, target_dn, link_order, enforced, enabled)
+        VALUES ($1, $2,
+                (SELECT coalesce(max(link_order), 0) + 1 FROM gpo_link WHERE target_dn = $2),
+                false, true)
+        ON CONFLICT (gpo_guid, target_dn) DO NOTHING
+        """,
+        guid,
+        settings.base_dn,
+    )
+    return {
+        "gpo_guid": str(guid),
+        "display_name": TRUST_GPO_NAME,
+        "published": [item["name"] for item in trusted],
+    }
+
+
 
 
 @router.post("/console-certificate", status_code=202,

@@ -15,6 +15,7 @@ from ldap3 import Connection
 from . import objects
 from .config import Settings
 from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available
+from .dns import message as samba_message
 
 TIMEOUT_SECONDS = 120
 
@@ -46,8 +47,7 @@ def _run(*args: str) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ReplicationError(f"samba-tool drs failed: {exc}") from exc
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        message = detail[-1] if detail else "samba-tool drs failed"
+        message = samba_message(completed.stderr, completed.stdout, "samba-tool drs failed")
         if "ACCESS_DENIED" in message:
             raise ReplicationError(
                 "the control plane's account may not read replication state. "

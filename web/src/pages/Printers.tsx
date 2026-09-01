@@ -4,6 +4,7 @@ import { ApiError, api, type Printer } from "../api";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
+import Select from "../components/Select"
 
 const STATE_BADGE: Record<string, string> = {
   active: "success",
@@ -274,7 +275,7 @@ function PrinterDialog({
             placeholder="ipp://10.10.0.31/ipp/print"
             onChange={(e) => setDeviceUri(e.target.value)}
           />
-          <select
+          <Select
             aria-label="Printers this server found"
             value=""
             disabled={devices.length === 0}
@@ -288,7 +289,7 @@ function PrinterDialog({
                 {device.description || device.uri}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </Field>
 

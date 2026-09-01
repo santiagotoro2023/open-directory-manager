@@ -7,9 +7,11 @@ import {
   Folder,
   KeyRound,
   Monitor,
+  Plus,
   Power,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   User,
   Users,
 } from "lucide-react";
@@ -20,6 +22,7 @@ import {
   type ComputerDetail,
   type DirectoryObject,
   type LogGroup,
+  type NewLocalUser,
 } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { RsopDialog } from "../components/RsopDialog";
@@ -34,6 +37,7 @@ import {
   isDisabled,
   text,
 } from "../components/objectDialogs";
+import Select from "../components/Select";
 
 const ICONS = {
   user: User,
@@ -257,7 +261,7 @@ export function ObjectDetail() {
           {object.objectType === "group" && (
             <>
               <h3 className="section-title">Group type</h3>
-              <select
+              <Select
                 aria-label="Group type"
                 value={String(object.groupKind ?? "user")}
                 disabled={busy}
@@ -269,7 +273,7 @@ export function ObjectDetail() {
               >
                 <option value="user">User group</option>
                 <option value="computer">Computer group</option>
-              </select>
+              </Select>
             </>
           )}
 
@@ -472,6 +476,8 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   const [installing, setInstalling] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [power, setPower] = useState<"restart" | "shutdown" | null>(null);
+  const [addingUser, setAddingUser] = useState(false);
+  const [removingUser, setRemovingUser] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -486,14 +492,14 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
     void load();
   }, [load]);
 
-  async function ask(action: ComputerAction, pkg?: string) {
+  async function ask(action: ComputerAction, pkg?: string, localUser?: NewLocalUser) {
     setBusy(true);
     setNotice(null);
     setError(null);
     try {
-      const result = await api.servers.action(dn, action, pkg);
+      const result = await api.servers.action(dn, action, pkg, localUser);
       setNotice(
-        `Queued for ${result.node}. It runs at the machine's next check-in, or immediately with odm-agent apply --force on it.`,
+        `Sent to ${result.node}. Its agent picks this up within a second unless the machine is off.`,
       );
       await load();
     } catch (err) {
@@ -609,33 +615,84 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
 
   if (tab === "users") {
     return (
-      <table className="data">
-        <thead>
-          <tr>
-            <th scope="col">Account</th>
-            <th scope="col">UID</th>
-            <th scope="col">Groups</th>
-            <th scope="col">Shell</th>
-          </tr>
-        </thead>
-        <tbody>
-          {facts.local_users.map((user) => (
-            <tr key={user.name}>
-              <td>{user.name}</td>
-              <td>{user.uid}</td>
-              <td>{user.groups.join(", ") || "—"}</td>
-              <td className="mono">{user.shell}</td>
-            </tr>
-          ))}
-          {facts.local_users.length === 0 && (
+      <>
+        <div className="page-header">
+          <h3 className="section-title">Accounts on this machine only</h3>
+          <span className="spacer" />
+          <button type="button" className="primary" disabled={busy} onClick={() => setAddingUser(true)}>
+            <Plus size={15} aria-hidden="true" />
+            New local account
+          </button>
+        </div>
+        {notice && <p className="muted">{notice}</p>}
+        <table className="data">
+          <thead>
             <tr>
-              <td colSpan={4} className="empty">
-                No local accounts outside the system range.
-              </td>
+              <th scope="col">Account</th>
+              <th scope="col">UID</th>
+              <th scope="col">Groups</th>
+              <th scope="col">Shell</th>
+              <th scope="col" className="actions" />
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {facts.local_users.map((user) => (
+              <tr key={user.name}>
+                <td>{user.name}</td>
+                <td>{user.uid}</td>
+                <td>{user.groups.join(", ") || "—"}</td>
+                <td className="mono">{user.shell}</td>
+                <td className="actions">
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={busy}
+                    aria-label={`Delete ${user.name}`}
+                    onClick={() => setRemovingUser(user.name)}
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {facts.local_users.length === 0 && (
+              <tr>
+                <td colSpan={5} className="empty">
+                  No local accounts outside the system range.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        {addingUser && (
+          <LocalUserDialog
+            onClose={() => setAddingUser(false)}
+            onSubmit={async (account) => {
+              setAddingUser(false);
+              await ask("local-user-add", undefined, account);
+            }}
+          />
+        )}
+
+        {removingUser && (
+          <Modal
+            title={`Delete ${removingUser}`}
+            submitLabel="Delete"
+            onClose={() => setRemovingUser(null)}
+            onSubmit={async () => {
+              const account = removingUser;
+              setRemovingUser(null);
+              await ask("local-user-remove", undefined, { name: account });
+            }}
+          >
+            <p>
+              Removes the account and its home directory from this machine. Nothing in the directory
+              changes, and system accounts cannot be removed from here.
+            </p>
+          </Modal>
+        )}
+      </>
     );
   }
 
@@ -649,7 +706,7 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
               <tr key={index}>
                 <td>
                   {session.user}
-                  <span className="badge">{session.source}</span>
+                  {session.source && <span className="badge">{session.source}</span>}
                 </td>
                 <td className="mono">{session.line}</td>
                 <td>{session.since}</td>
@@ -910,16 +967,16 @@ function LogsTab({ dn }: { dn: string }) {
           {total} {total === 1 ? "entry" : "entries"}
         </h3>
         <span className="spacer" />
-        <select
+        <Select
           aria-label="How far back"
-          value={hours}
+          value={String(hours)}
           onChange={(e) => setHours(Number(e.target.value))}
         >
           <option value={6}>Last 6 hours</option>
           <option value={24}>Last 24 hours</option>
           <option value={72}>Last 3 days</option>
           <option value={336}>Last 14 days</option>
-        </select>
+        </Select>
         <button type="button" className="ghost" onClick={() => void load()}>
           <RefreshCw size={15} aria-hidden="true" />
           Refresh
@@ -979,5 +1036,69 @@ function LogsTab({ dn }: { dn: string }) {
         )}
       </ul>
     </>
+  );
+}
+
+/** A local account on one machine — a service login, a break-glass account. */
+function LocalUserDialog({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void;
+  onSubmit: (account: NewLocalUser) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [shell, setShell] = useState("/bin/bash");
+  const [groups, setGroups] = useState("");
+  const [password, setPassword] = useState("");
+
+  return (
+    <Modal
+      title="New local account"
+      submitLabel="Create"
+      onClose={onClose}
+      onSubmit={() =>
+        onSubmit({
+          name,
+          full_name: fullName,
+          shell,
+          groups: groups
+            .split(/[\s,]+/)
+            .map((one) => one.trim())
+            .filter(Boolean),
+          password,
+        })
+      }
+    >
+      <p className="muted">
+        This account exists on this machine alone. For an account that works across the domain,
+        create a user in the directory instead.
+      </p>
+      <Field label="Login name" hint="Lower case, no spaces">
+        <input value={name} required onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="Full name">
+        <input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+      </Field>
+      <Field label="Shell">
+        <Select value={shell} onChange={(e) => setShell(e.target.value)}>
+          <option value="/bin/bash">/bin/bash</option>
+          <option value="/bin/sh">/bin/sh</option>
+          <option value="/usr/sbin/nologin">/usr/sbin/nologin — no interactive login</option>
+        </Select>
+      </Field>
+      <Field label="Groups" hint="Comma separated. sudo grants administrative rights here.">
+        <input value={groups} onChange={(e) => setGroups(e.target.value)} />
+      </Field>
+      <Field label="Password" hint="Leave empty to create it with password login locked">
+        <input
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </Field>
+    </Modal>
   );
 }

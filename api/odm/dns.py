@@ -171,14 +171,36 @@ def _run(settings: Settings, *args: str) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise DnsError(f"samba-tool dns failed: {exc}") from exc
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise DnsError(detail[-1] if detail else "samba-tool dns failed")
+        raise DnsError(message(completed.stderr, completed.stdout, "samba-tool dns failed"))
     return completed.stdout
 
 
 def server(settings: Settings) -> str:
     """The DC samba-tool talks to."""
     return settings.ldap_uri.removeprefix("ldaps://").split(":")[0]
+
+
+# Lines of a Python traceback that carry no message: the frame headers and
+# the ~~~^^^ marker Python 3.11 draws under the expression that raised.
+_NOISE = re.compile(r'^(Traceback \(most recent call last\):|[~^ ]+|\.\.\.)$')
+
+
+def message(stderr: str, stdout: str, fallback: str) -> str:
+    """The line of samba-tool output worth putting in front of an operator.
+
+    samba-tool reports a failure by letting a Python traceback out. Taking its
+    last line — the obvious thing — gives the marker under the failing
+    expression, so the console showed a row of tildes and carets where the
+    error should have been.
+    """
+    useful = [
+        line.strip()
+        for line in (stderr or stdout or "").splitlines()
+        # An indented line is a traceback frame or its source; the exception
+        # itself, and every ERROR() samba-tool prints, start at column zero.
+        if line.strip() and not line.startswith((" ", "\t")) and not _NOISE.match(line.strip())
+    ]
+    return useful[-1] if useful else fallback
 
 
 def connection_flags(settings: Settings) -> list[str]:

@@ -321,3 +321,87 @@ async def test_a_write_round_trips_arrays_and_audit(client):
     # second set of conversions.
     audit_entries = (await client.get("/api/v1/audit")).json()["entries"]
     assert any(e["action"] == "rbac.assign" for e in audit_entries), audit_entries
+
+
+async def test_a_task_nobody_collects_stops_a_role_saying_installing(fresh):
+    """A machine that never comes back left its role saying "installing" for
+    ever, with no way to retry it and nothing on screen saying why.
+
+    Exercised through the real tables because the whole of it is SQL: the
+    state transition, the array of returned rows, and the join back onto the
+    thing that was waiting."""
+    from odm import tasks
+
+    async with fresh.acquire() as conn:
+        role_id = await conn.fetchval(
+            """
+            INSERT INTO server_role (role_name, node_fqdn, state, config, installed_by)
+            VALUES ('dhcp', 'reaped.example.org', 'installing', '{}'::jsonb, 'suite')
+            RETURNING id
+            """
+        )
+        task_id = await tasks.enqueue(
+            conn,
+            node_fqdn="reaped.example.org",
+            kind="role-install",
+            payload={"role": "dhcp", "arguments": [], "password": "not stored"},
+            subject=str(role_id),
+            requested_by="suite",
+        )
+
+        # Fresh work is left alone; an agent that is slow is not an agent
+        # that is gone.
+        await tasks.reap(conn)
+        assert await conn.fetchval(
+            "SELECT state FROM server_role WHERE id = $1", role_id
+        ) == "installing"
+
+        await conn.execute(
+            "UPDATE node_task SET created_at = now() - interval '2 hours' WHERE id = $1::uuid",
+            task_id,
+        )
+        await tasks.reap(conn)
+
+        assert await conn.fetchval(
+            "SELECT state FROM node_task WHERE id = $1::uuid", task_id
+        ) == "failed"
+        state, error = await conn.fetchrow(
+            "SELECT state, last_error FROM server_role WHERE id = $1", role_id
+        )
+        assert state == "failed"
+        assert "odm-agent" in error, error
+        # A password travels in a task only until the machine has it.
+        payload = await conn.fetchval(
+            "SELECT payload FROM node_task WHERE id = $1::uuid", task_id
+        )
+        assert "password" not in payload, payload
+
+
+
+
+async def test_a_certificate_profile_round_trips_its_purpose_array(client):
+    """purposes is text[]; PREPARE cannot tell whether Python's list survives
+    the conversion, and the issue route reads it straight back out."""
+    await sign_in(client)
+
+    created = await client.post(
+        "/api/v1/ca/profiles",
+        json={
+            "name": "mail-gateway",
+            "description": "TLS and S/MIME",
+            "purposes": ["server", "email"],
+            "validity_days": 365,
+            "key_size": 3072,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    listed = (await client.get("/api/v1/ca/profiles")).json()
+    mine = [one for one in listed["profiles"] if one["name"] == "mail-gateway"]
+    assert mine and mine[0]["purposes"] == ["server", "email"], listed
+    assert not mine[0]["built_in"]
+    # The built-in pair is always offered alongside.
+    assert {"server", "client"} <= {one["name"] for one in listed["profiles"]}
+
+    removed = await client.request("DELETE", "/api/v1/ca/profiles?name=mail-gateway")
+    assert removed.status_code == 204, removed.text

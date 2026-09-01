@@ -6,6 +6,7 @@ import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
 import { Modal } from "./Modal";
 import { PickerField, type PickerKind, type PickerValue } from "./Picker";
 import { Split } from "./Split";
+import Select from "./Select"
 
 type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox";
 
@@ -745,23 +746,23 @@ function UpdatesEditor({
           <div className="inline-fields">
             <label className="field">
               <span>What to install</span>
-              <select
+              <Select
                 value={current.security_only ? "security" : "all"}
                 onChange={(e) => set({ security_only: e.target.value === "security" })}
               >
                 <option value="security">Security updates only</option>
                 <option value="all">Every available update</option>
-              </select>
+              </Select>
             </label>
             <label className="field">
               <span>How often</span>
-              <select
+              <Select
                 value={current.schedule}
                 onChange={(e) => set({ schedule: e.target.value as "daily" | "weekly" })}
               >
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
-              </select>
+              </Select>
             </label>
           </div>
 
@@ -867,7 +868,7 @@ function LoginScreenEditor({
             </label>
             <label className="field">
               <span>Fit</span>
-              <select
+              <Select
                 value={current.background_fit}
                 onChange={(e) => set({ background_fit: e.target.value })}
               >
@@ -876,7 +877,7 @@ function LoginScreenEditor({
                     {option}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           </div>
 
@@ -956,7 +957,7 @@ function AlwaysOnVpnEditor({
         <>
           <label className="field">
             <span>Tunnel</span>
-            <select
+            <Select
               value={current.tunnel}
               onChange={(e) =>
                 onChange({
@@ -974,7 +975,7 @@ function AlwaysOnVpnEditor({
               {current.tunnel && !tunnels.includes(current.tunnel) && (
                 <option value={current.tunnel}>{current.tunnel} &mdash; no longer exists</option>
               )}
-            </select>
+            </Select>
             <small>
               {tunnels.length === 0
                 ? "No tunnels yet. Create one under Remote Access."
@@ -1200,7 +1201,7 @@ function RemoteDesktopSessionEditor({
 
           <label className="field">
             <span>Most colour depth</span>
-            <select
+            <Select
               value={String(current.max_colour_depth)}
               onChange={(e) => set({ max_colour_depth: Number(e.target.value) })}
             >
@@ -1208,7 +1209,7 @@ function RemoteDesktopSessionEditor({
               <option value="24">24-bit</option>
               <option value="16">16-bit</option>
               <option value="8">8-bit</option>
-            </select>
+            </Select>
             <small>Lower is less to send, which shows on a slow or distant link.</small>
           </label>
         </>
@@ -1357,7 +1358,7 @@ function WallpaperEditor({
         </label>
         <label className="field">
           <span>Fit</span>
-          <select
+          <Select
             value={settings.wallpaper?.picture_options ?? "zoom"}
             onChange={(e) =>
               onChange({
@@ -1375,7 +1376,7 @@ function WallpaperEditor({
                 </option>
               ),
             )}
-          </select>
+          </Select>
         </label>
       </div>
       <label className="checkbox">
@@ -1457,7 +1458,7 @@ function Cell({
   }
   if (field.kind === "select") {
     return (
-      <select
+      <Select
         aria-label={field.label}
         value={toInput(value)}
         onChange={(e) => onChange(e.target.value)}
@@ -1467,7 +1468,7 @@ function Cell({
             {option}
           </option>
         ))}
-      </select>
+      </Select>
     );
   }
   if (field.kind === "textarea") {
@@ -1504,7 +1505,7 @@ function Cell({
         />
         {/* Appends rather than replaces: a rule is usually a handful of
             commands, and nobody should have to remember the path to visudo. */}
-        <select
+        <Select
           aria-label={`Common ${field.label.toLowerCase()}`}
           value=""
           onChange={(e) => {
@@ -1523,7 +1524,7 @@ function Cell({
               {option.label}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
     );
   }

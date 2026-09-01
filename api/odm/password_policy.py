@@ -19,7 +19,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-from .dns import SAMBA_TOOL, DnsUnavailable, available, connection_flags
+from .dns import SAMBA_TOOL, DnsUnavailable, available, connection_flags, message
 
 TIMEOUT_SECONDS = 60
 
@@ -64,8 +64,9 @@ def _run(settings, *args: str) -> str:
         check=False,
     )
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise PasswordPolicyError(detail[-1] if detail else "samba-tool refused the policy")
+        raise PasswordPolicyError(
+            message(completed.stderr, completed.stdout, "samba-tool refused the policy")
+        )
     return completed.stdout
 
 

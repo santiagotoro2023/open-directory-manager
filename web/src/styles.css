@@ -60,6 +60,7 @@ body {
    the descender of a g or a y at the top of a field. */
 input,
 select,
+.select,
 textarea {
   min-height: 38px;
   padding: 8px 11px;
@@ -73,6 +74,7 @@ textarea {
 
 input:focus,
 select:focus,
+.select:focus-visible,
 textarea:focus {
   border-color: var(--accent);
   outline: 2px solid rgb(79 70 229 / 0.25);
@@ -86,6 +88,7 @@ textarea::placeholder {
 
 input:disabled,
 select:disabled,
+.select:disabled,
 textarea:disabled {
   background: var(--surface-recessed);
   color: var(--text-muted);
@@ -93,7 +96,8 @@ textarea:disabled {
 
 /* A native select renders as an OS widget that matches nothing else here.
    The arrow is drawn instead, so the control is ours on every platform. */
-select {
+select,
+.select {
   appearance: none;
   padding-right: 32px;
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -118,6 +122,9 @@ input[type="radio"] {
   cursor: pointer;
   display: inline-grid;
   place-content: center;
+  /* Explicit, because the shared input radius is 8px and on a 17px box that
+     is a circle: every tick box on the console read as a radio button. */
+  border-radius: 5px;
 }
 
 input[type="radio"] {
@@ -862,6 +869,7 @@ table.data.compact td {
 
 .settings-editor input,
 .settings-editor select,
+.settings-editor .select,
 .settings-editor textarea {
   width: 100%;
 }
@@ -975,6 +983,7 @@ textarea.mono,
 
 .admx-row .field input,
 .admx-row .field select,
+.admx-row .field .select,
 .admx-row .field textarea {
   width: 100%;
 }
@@ -2216,7 +2225,8 @@ tr.detail-row td {
   min-width: 0;
 }
 
-.with-suggestions select {
+.with-suggestions select,
+.with-suggestions .select {
   flex: none;
   max-width: 130px;
 }
@@ -2229,4 +2239,81 @@ tr.detail-row td {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   display: inline-block;
+}
+
+/* ------------------------------------------------------- drawn dropdown -- */
+
+.select {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  font-weight: inherit;
+}
+
+.select .select-value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+/* Fixed so an open list is never clipped by a modal or a scrolling panel. */
+.select-menu {
+  position: fixed;
+  z-index: 200;
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 28px rgb(15 23 42 / 0.16);
+}
+
+.select-menu li button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.select-menu li button > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-menu li button[data-active="true"] {
+  background: var(--surface-recessed);
+}
+
+.select-menu li button[aria-selected="true"] {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.select-menu li button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  background: none;
+}
+
+.select-empty {
+  padding: 7px 10px;
+  color: var(--text-muted);
 }

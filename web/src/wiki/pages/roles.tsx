@@ -122,8 +122,17 @@ export function Content() {
           />
           <Note>
             Installing a role means package installation and service restarts, so it takes minutes.
-            The request returns immediately and the state is polled.
+            The request returns immediately and the state is polled. A machine that stops reporting
+            mid-install does not leave the role saying <strong>installing</strong> for ever: after
+            45 minutes it is marked failed, with the reason on the row, and can be installed again.
           </Note>
+          <p>
+            A role that fails on a machine can leave that machine&rsquo;s package manager
+            half-configured, and from then on every later install fails complaining about
+            dependencies the archive plainly has. The installers repair that state before they
+            begin, and a service that then refuses to start reports its own journal rather than
+            just its name.
+          </p>
         </Section>
 
         <Section title="Client enrolment (PXE)">

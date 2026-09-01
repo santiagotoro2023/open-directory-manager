@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
+import Select from "../components/Select"
 
 const STATE_BADGE: Record<string, string> = {
   active: "success",
@@ -276,13 +277,13 @@ function ArgumentField({
   if (argument.kind === "choice") {
     return (
       <Field label={argument.label} hint={hint}>
-        <select value={value || argument.default} onChange={(e) => onChange(e.target.value)}>
+        <Select value={value || argument.default} onChange={(e) => onChange(e.target.value)}>
           {argument.choices.map((choice) => (
             <option key={choice} value={choice}>
               {choice}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
     );
   }

@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { ContainerPicker, PickerDialog } from "../components/Picker";
+import Select from "../components/Select"
 
 type Tab = "health" | "replication" | "backups" | "passwords";
 
@@ -515,14 +516,14 @@ function PasswordPolicy() {
       <div className="field-grid">
         <label className="field">
           <span>Complexity</span>
-          <select
+          <Select
             value={draft.complexity ?? ""}
             onChange={(e) => setDraft({ ...draft, complexity: e.target.value })}
           >
             <option value="">Leave as it is</option>
             <option value="on">Required</option>
             <option value="off">Not required</option>
-          </select>
+          </Select>
         </label>
         {fields.map((field) => (
           <label key={field.key} className="field">

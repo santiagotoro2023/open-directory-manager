@@ -181,16 +181,37 @@ PACKAGE_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]{1,127}$")
 POWER_ACTIONS = {"restart", "shutdown"}
 
 
+class LocalUser(BaseModel):
+    """A local account on one machine. Not a directory object."""
+
+    # Debian's own rule for a login name; the agent checks it again as root.
+    name: Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,31}$")]
+    full_name: Annotated[str, Field(default="", max_length=128)] = ""
+    shell: Annotated[str, Field(default="/bin/bash", pattern=r"^/[A-Za-z0-9._/-]{1,127}$")] = (
+        "/bin/bash"
+    )
+    groups: Annotated[
+        list[Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_-]{0,31}$")]],
+        Field(default_factory=list, max_length=16),
+    ]
+    # Empty means the account is created with password login locked, which is
+    # what a service account wants. Never stored, never logged.
+    password: Annotated[str, Field(default="", max_length=256)] = ""
+
+
 class ComputerAction(BaseModel):
     dn: Annotated[str, Field(min_length=3, max_length=1024)]
     action: Annotated[
         str,
         Field(
             pattern="^(update-check|update-install|package-install|package-remove"
-            "|policy-refresh|restart|shutdown)$"
+            "|local-user-add|local-user-remove|policy-refresh|restart|shutdown)$"
         ),
     ]
     package: Annotated[str, Field(max_length=128)] | None = None
+    # A local account, for the two local-user actions. Directory accounts are
+    # objects in the directory and are not created from here.
+    local_user: LocalUser | None = None
 
 
 @router.post("/computer/action", status_code=202,
@@ -211,6 +232,10 @@ async def run_action(
         if not body.package or not PACKAGE_RE.match(body.package):
             raise objects.ObjectError("that is not a package name")
         payload["package"] = body.package
+    if body.action in ("local-user-add", "local-user-remove"):
+        if body.local_user is None:
+            raise objects.ObjectError("no local account was given")
+        payload = body.local_user.model_dump(exclude_none=True)
 
     async with pool.acquire() as conn:
         fact = await conn.fetchrow(
@@ -237,7 +262,17 @@ async def run_action(
             outcome="success",
             object_type="computer",
             object_dn=body.dn,
-            detail=" ".join(filter(None, [f"queued for {fact['hostname']}", body.package])),
+            detail=" ".join(
+                filter(
+                    None,
+                    [
+                        f"queued for {fact['hostname']}",
+                        body.package,
+                        # The name, never the password.
+                        body.local_user.name if body.local_user else None,
+                    ],
+                )
+            ),
         )
     return {"task": task_id, "node": fact["hostname"]}
 

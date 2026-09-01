@@ -188,7 +188,7 @@ export function Servers() {
           }}
         >
           <p>
-            {BULK_LABELS[bulk]} runs on each machine at its next check-in, or immediately with{" "}
+            {BULK_LABELS[bulk]} runs on each machine as soon as its agent picks it up, or now with{" "}
             odm-agent apply --force on it.
           </p>
           {(bulk === "restart" || bulk === "shutdown") && (

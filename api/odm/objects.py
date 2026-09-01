@@ -433,8 +433,15 @@ def create_user(conn: Connection, settings: Settings, payload: dict[str, Any]) -
 
     password = payload.get("password")
     if password:
-        set_password(conn, settings, dn, password, bool(payload.get("must_change_password")))
-        set_enabled(conn, settings, dn, enabled=payload.get("enabled", True))
+        try:
+            set_password(conn, settings, dn, password, bool(payload.get("must_change_password")))
+            set_enabled(conn, settings, dn, enabled=payload.get("enabled", True))
+        except Exception:
+            # The account exists at this point but is disabled and has no
+            # password. Leaving it there turns one clear failure into a
+            # confusing "already exists" on the retry.
+            conn.delete(dn)
+            raise
     return dn
 
 
@@ -538,6 +545,14 @@ def set_password(
         raise ObjectError("invalid password")
     encoded = f'"{password}"'.encode("utf-16-le")
     conn.modify(canonical, {"unicodePwd": [(MODIFY_REPLACE, [encoded])]})
+    if conn.result and conn.result.get("result") == 50:
+        # Property writes are not enough for this one attribute, so the
+        # generic "insufficient access" says nothing about what to fix.
+        raise DirectoryError(
+            "set password failed: this account may not reset passwords in the directory. "
+            "Re-run deploy/create-api-service-account.sh on a domain controller to grant "
+            "it the Reset Password right."
+        )
     _check(conn, "set password")
     if must_change:
         conn.modify(canonical, {"pwdLastSet": [(MODIFY_REPLACE, [0])]})

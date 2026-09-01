@@ -20,8 +20,18 @@
 odm_apt_install() {
     export DEBIAN_FRONTEND=noninteractive
 
-    # A machine wedged by an earlier failure fails everything until this runs.
-    dpkg --configure -a >/dev/null 2>&1 || true
+    # A machine wedged by an earlier failure fails everything until this runs,
+    # and fails it with a message about the package being installed now rather
+    # than the one that broke. Say so, rather than reporting unmet
+    # dependencies for a package the archive has.
+    if ! dpkg --configure -a >/dev/null 2>&1; then
+        echo "    (a previous install left dpkg half-configured; repairing)" >&2
+        apt-get --fix-broken install -y \
+            -o Dpkg::Options::=--force-confold \
+            -o Dpkg::Options::=--force-confdef >/dev/null 2>&1 || true
+        dpkg --configure -a >/dev/null 2>&1 || \
+            echo "    (dpkg is still half-configured; the install below may fail because of it)" >&2
+    fi
 
     apt-get update -qq || echo "    (apt-get update failed; using the cached index)" >&2
 
@@ -61,7 +71,23 @@ odm_apt_install() {
 
 # Start a service ODM has just configured. Separate from installing it,
 # because the install deliberately did not.
+#
+# A service that refuses to start says why in its journal and nowhere else.
+# "kea-ctrl-agent did not start" is not something an operator can act on, so
+# whatever the unit logged comes back with the failure.
 odm_enable() {
     systemctl daemon-reload
-    systemctl enable --now "$@"
+    systemctl enable "$@" >/dev/null 2>&1 || true
+    systemctl restart "$@" >/dev/null 2>&1 || true
+
+    local unit failed=0
+    for unit in "$@"; do
+        systemctl is-active --quiet "$unit" && continue
+        failed=1
+        echo "" >&2
+        echo "$unit did not start:" >&2
+        systemctl --no-pager --lines=0 status "$unit" 2>&1 | sed 's/^/    /' >&2
+        journalctl -u "$unit" --no-pager --lines=25 2>&1 | sed 's/^/    /' >&2
+    done
+    return "$failed"
 }

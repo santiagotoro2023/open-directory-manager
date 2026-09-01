@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Folder, Monitor, Search, User, Users } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
 import { Modal } from "./Modal";
+import Select from "./Select"
 
 const ICONS = {
   user: User,
@@ -170,7 +171,7 @@ export function PickerDialog({
           />
         </div>
         {WANTED[kind].length > 1 && (
-          <select
+          <Select
             aria-label="Filter by type"
             value={type}
             onChange={(event) => setType(event.target.value as ObjectType | "")}
@@ -181,7 +182,7 @@ export function PickerDialog({
                 {option === "user" ? "Users" : option === "group" ? "Groups" : "Computers"}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </div>
 

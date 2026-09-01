@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ApiError, api, type NewUser, type ObjectType } from "../api";
 import { Field, Modal } from "./Modal";
+import Select from "./Select"
 
 const GROUP_KINDS = [
   ["user", "User group — holds people"],
@@ -98,10 +99,16 @@ export function CreateDialog({
 
       {type === "user" && (
         <>
-          <Field label="Account name">
+          <Field
+            label="User logon name"
+            hint="What they type to sign in (sAMAccountName), e.g. a.smith"
+          >
             <input value={form.sam ?? ""} required onChange={set("sam")} />
           </Field>
-          <Field label="Full name" hint="Used as the object's common name">
+          <Field
+            label="Full name"
+            hint="How the account is displayed and listed (its common name), e.g. Alex Smith"
+          >
             <input value={form.name ?? ""} onChange={set("name")} />
           </Field>
           <Field label="First name">
@@ -138,7 +145,7 @@ export function CreateDialog({
             <input value={form.name ?? ""} required onChange={set("name")} />
           </Field>
           <Field label="Group type">
-            <select
+            <Select
               value={groupKind}
               onChange={(e) => setGroupKind(e.target.value as "user" | "computer")}
             >
@@ -147,16 +154,16 @@ export function CreateDialog({
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Scope" hint="Where the group can be used across the forest">
-            <select value={groupScope} onChange={(e) => setGroupScope(e.target.value)}>
+            <Select value={groupScope} onChange={(e) => setGroupScope(e.target.value)}>
               {GROUP_SCOPES.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Description">
             <input value={form.description ?? ""} onChange={set("description")} />

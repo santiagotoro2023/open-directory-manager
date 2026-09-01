@@ -92,6 +92,10 @@ func Run(ctx context.Context, task Task, env apply.Env) Result {
 		output, err = power(ctx, env, "reboot")
 	case "shutdown":
 		output, err = power(ctx, env, "poweroff")
+	case "local-user-add":
+		output, err = addLocalUser(ctx, task.Payload, env)
+	case "local-user-remove":
+		output, err = removeLocalUser(ctx, task.Payload, env)
 	case "printer-apply":
 		output, err = applyPrinter(ctx, task.Payload, env)
 	case "printer-remove":
@@ -153,7 +157,33 @@ func installRole(ctx context.Context, payload map[string]any, env apply.Env) (st
 	if env.Run == nil {
 		return "", fmt.Errorf("no command runner")
 	}
-	return env.Run.Run(ctx, installer, arguments...)
+	return unsandboxed(ctx, env, installer, arguments...)
+}
+
+// unsandboxed runs a command as a transient systemd unit instead of as a
+// child of the agent.
+//
+// A service's sandbox is inherited by everything it spawns, and the agent's
+// unit is hardened because applying policy should be. A package's postinst is
+// not policy: it is arbitrary root code written against an ordinary machine,
+// and under our restrictions it fails in ways that read as a broken package.
+// freeradius' postinst chmods /etc/freeradius and gets EPERM from
+// RestrictSUIDSGID; dpkg is then left half-configured, and from that point
+// every later install fails with unmet dependencies that are in fact
+// perfectly installable — which is what "no role could be installed" was.
+//
+// systemd-run asks PID 1 to start the command, so it runs with the system's
+// own defaults rather than ours. Where there is no systemd — a container, a
+// test — run it directly.
+func unsandboxed(ctx context.Context, env apply.Env, name string, args ...string) (string, error) {
+	if env.Root != "" {
+		return env.Run.Run(ctx, name, args...)
+	}
+	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		return env.Run.Run(ctx, name, args...)
+	}
+	run := append([]string{"--pipe", "--wait", "--collect", "--quiet", "--", name}, args...)
+	return env.Run.Run(ctx, "systemd-run", run...)
 }
 
 // applyConsoleCertificate installs a certificate the control plane has already
@@ -207,7 +237,7 @@ func installUpdates(ctx context.Context, env apply.Env) (string, error) {
 	if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
 		return out, fmt.Errorf("refreshing the package index: %w", err)
 	}
-	out, err := env.Run.Run(ctx,
+	out, err := unsandboxed(ctx, env,
 		"apt-get", "upgrade", "-y",
 		"-o", "Dpkg::Options::=--force-confold",
 		"-o", "Dpkg::Options::=--force-confdef",
@@ -259,7 +289,7 @@ func changePackage(
 		// "uninstall" means to someone reading a button.
 		action = "remove"
 	}
-	out, err := env.Run.Run(ctx,
+	out, err := unsandboxed(ctx, env,
 		"apt-get", action, "-y",
 		"-o", "Dpkg::Options::=--force-confold",
 		"-o", "Dpkg::Options::=--force-confdef",

@@ -100,7 +100,7 @@ func applyLocalAdministrator(
 	}
 	// chpasswd reads the pair from standard input rather than argv, so the
 	// password never appears in the process list.
-	if err := setPassword(ctx, env, wanted.Account, password); err != nil {
+	if err := SetPassword(ctx, env, wanted.Account, password); err != nil {
 		return failed("setting the password: " + err.Error())
 	}
 
@@ -142,10 +142,10 @@ func applyLocalAdministrator(
 	}}
 }
 
-// setPassword pipes "account:password" into chpasswd. Done here rather than
+// SetPassword pipes "account:password" into chpasswd. Done here rather than
 // through the shared Runner because that one takes no standard input, and a
 // password passed as an argument is readable by every process on the machine.
-func setPassword(ctx context.Context, env Env, account, password string) error {
+func SetPassword(ctx context.Context, env Env, account, password string) error {
 	command := exec.CommandContext(ctx, "chpasswd")
 	command.Stdin = strings.NewReader(account + ":" + password + "\n")
 	var errOut bytes.Buffer

@@ -8,9 +8,11 @@ identity, and it names the computer object whose policy is being served.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Any
@@ -213,10 +215,25 @@ class TaskResult(BaseModel):
 async def agent_tasks(
     machine: Machine = Depends(require_machine),
     pool: asyncpg.Pool = Depends(get_pool),
+    wait: Annotated[int, Query(ge=0, le=25)] = 0,
 ) -> dict[str, Any]:
-    """Claim this machine's pending work."""
+    """Claim this machine's pending work, waiting for some to appear.
+
+    An operator who clicks Restart wants the machine to restart, not to be
+    told it will within half a minute. The agent leaves this request open, so
+    work is picked up as it is queued rather than at the next poll. It costs
+    one idle request per machine, which is what the poll cost anyway.
+    """
     async with pool.acquire() as conn:
-        return {"tasks": await tasks.claim(conn, machine.hostname)}
+        # Once per request, not once per second: this is a write.
+        await tasks.reap(conn)
+        claimed = await tasks.claim(conn, machine.hostname)
+    deadline = time.monotonic() + wait
+    while not claimed and time.monotonic() < deadline:
+        await asyncio.sleep(1)
+        async with pool.acquire() as conn:
+            claimed = await tasks.claim(conn, machine.hostname)
+    return {"tasks": claimed}
 
 
 @router.post("/tasks/result", status_code=204)

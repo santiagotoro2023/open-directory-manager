@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, type RoleArgument, type RoleInstance } from "../api";
 import { Field } from "./Modal";
 import { ScopeSelector } from "./ScopeSelector";
+import Select from "./Select"
 
 /**
  * The settings a role takes after it exists.
@@ -91,13 +92,13 @@ export function RoleConfiguration({
       {notice && <p className="muted">{notice}</p>}
 
       <Field label="Server">
-        <select value={node} onChange={(e) => setNode(e.target.value)}>
+        <Select value={node} onChange={(e) => setNode(e.target.value)}>
           {instances.map((instance) => (
             <option key={instance.id} value={instance.node_fqdn}>
               {instance.node_fqdn} — {instance.state}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
 
       <div className="field-grid">
@@ -110,7 +111,7 @@ export function RoleConfiguration({
               hint={argument.help || (argument.optional ? "Optional" : undefined)}
             >
               {argument.kind === "choice" ? (
-                <select
+                <Select
                   value={values[argument.name] ?? ""}
                   onChange={(e) => setValues({ ...values, [argument.name]: e.target.value })}
                 >
@@ -120,7 +121,7 @@ export function RoleConfiguration({
                       {choice}
                     </option>
                   ))}
-                </select>
+                </Select>
               ) : (
                 <input
                   value={values[argument.name] ?? ""}

@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"strconv"
 	"time"
 
 	"github.com/jcmturner/gokrb5/v8/client"
@@ -218,8 +219,19 @@ func localAddresses() []string {
 // Tasks claims whatever work the control plane has queued for this machine.
 // An empty list is the normal case and is not an error.
 func (c *Client) Tasks(ctx context.Context) ([]tasks.Task, error) {
+	return c.tasks(ctx, 0)
+}
+
+// WaitForTasks asks for this machine's work and lets the control plane hold
+// the request open until there is some, so an action an operator just clicked
+// runs now rather than at the next poll.
+func (c *Client) WaitForTasks(ctx context.Context, wait time.Duration) ([]tasks.Task, error) {
+	return c.tasks(ctx, wait)
+}
+
+func (c *Client) tasks(ctx context.Context, wait time.Duration) ([]tasks.Task, error) {
 	request, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, c.base+"/api/v1/agent/tasks", nil,
+		ctx, http.MethodGet, c.base+"/api/v1/agent/tasks"+waitQuery(wait), nil,
 	)
 	if err != nil {
 		return nil, err
@@ -320,4 +332,12 @@ func (c *Client) Certificate(
 		return nil, fmt.Errorf("decode certificate: %w", err)
 	}
 	return issued, nil
+}
+
+// waitQuery is empty for a plain read; the control plane caps what it accepts.
+func waitQuery(wait time.Duration) string {
+	if wait <= 0 {
+		return ""
+	}
+	return "?wait=" + strconv.Itoa(int(wait.Seconds()))
 }

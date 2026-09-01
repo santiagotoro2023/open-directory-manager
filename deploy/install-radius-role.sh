@@ -53,8 +53,7 @@ if ! grep -q 'odm/clients.conf' "$CONF/clients.conf"; then
 fi
 
 echo "==> Starting FreeRADIUS"
-systemctl enable --now freeradius
-systemctl reload-or-restart freeradius
+odm_enable freeradius
 
 cat <<SUMMARY
 

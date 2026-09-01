@@ -132,10 +132,19 @@ journalctl -u odm-agent -n 50`}</Code>
             so a fleet does not check in at the same instant.
           </p>
           <Note>
-            Queued work &mdash; a role to install, a restart, a share to render &mdash; is collected
-            every 30 seconds in between, so an action taken in the console does not wait for the
-            next policy refresh. Policy itself is still only re-applied when it has changed.
+            Queued work &mdash; a role to install, a restart, a share to render &mdash; does not
+            wait for the next policy refresh. Between refreshes the agent asks for work and the
+            control plane holds that request open until there is some, so an action taken in the
+            console starts within a second. Policy itself is still only re-applied when it has
+            changed.
           </Note>
+          <p>
+            Packages are installed outside the agent&rsquo;s own systemd sandbox, as a transient
+            unit started by <C>systemd-run</C>. A service&rsquo;s restrictions are inherited by
+            everything it starts, and a Debian package&rsquo;s post-installation script is ordinary
+            root code written against an ordinary machine: run under the agent&rsquo;s
+            restrictions, some of them fail in ways that look like a broken package.
+          </p>
         </Section>
 
         <Section title="Files the agent owns">

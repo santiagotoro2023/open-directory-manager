@@ -81,7 +81,11 @@ async def list_roles(
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    rows = await pool.fetch("SELECT * FROM server_role ORDER BY role_name, node_fqdn")
+    async with pool.acquire() as conn:
+        # A machine that stopped reporting mid-install would otherwise leave
+        # its role saying "installing" for ever, with nothing to retry from.
+        await tasks.reap(conn)
+        rows = await conn.fetch("SELECT * FROM server_role ORDER BY role_name, node_fqdn")
     return {
         "available": [_descriptor(role) for role in roles.REGISTRY.values()],
         "installed": [_instance(row) for row in rows],

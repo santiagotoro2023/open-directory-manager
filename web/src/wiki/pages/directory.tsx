@@ -79,8 +79,18 @@ export function Content() {
         </Example>
         <Example title="Update a machine now">
           Open the computer → <strong>Machine</strong> → <strong>Check for updates</strong> or{" "}
-          <strong>Install updates</strong>. The request is queued and runs at the machine&rsquo;s
-          next check-in, or immediately with <C>odm-agent apply --force</C> on it.
+          <strong>Install updates</strong>. The machine&rsquo;s agent holds a request open with the
+          control plane, so the work starts within a second unless the machine is off — in which
+          case it starts when the machine comes back, or immediately with{" "}
+          <C>odm-agent apply --force</C> on it.
+        </Example>
+        <Example title="Add or remove a local account on one machine">
+          Open the computer → <strong>Local users</strong> → <strong>New local account</strong>.
+          This account exists on that machine alone; for one that works across the domain, create a
+          user in the directory instead. Leaving the password empty creates it with password login
+          locked, which is what a service account wants. Adding it to <C>sudo</C> makes it an
+          administrator there. The bin icon removes an account and its home directory; system
+          accounts (uid below 1000) cannot be removed from here.
         </Example>
 
         <Example title="Show the containers the directory keeps for itself">

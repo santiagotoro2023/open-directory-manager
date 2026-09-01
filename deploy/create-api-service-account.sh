@@ -82,6 +82,16 @@ fi
 BASE_DN="$(printf 'DC=%s' "${REALM//./,DC=}")"
 samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(A;CI;CCDCLCRPWP;;;${SID})"
 
+echo "==> Delegating password resets"
+# Writing unicodePwd is not a property write, whatever the attribute looks
+# like: AD gates it behind the Reset Password control-access right, and
+# without it creating a user succeeds and then fails with
+# "insufficientAccessRights ... during LDB_MODIFY (50)", leaving a disabled
+# account behind. CI so it reaches the user objects under the domain, not
+# just the domain object itself.
+samba-tool dsacl set --objectdn="$BASE_DN" \
+    --sddl="(OA;CI;CR;00299570-246d-11d0-a768-00aa006e0529;;${SID})"
+
 echo "==> Delegating replication monitoring"
 # Reading replication state and forcing a run are separate control-access
 # rights, and neither comes with the object rights above. Without them the

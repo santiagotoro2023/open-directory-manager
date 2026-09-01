@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ApiError, api, type AuditEntry } from "../api";
+import Select from "../components/Select"
 
 const OUTCOMES = ["", "success", "denied", "failure"];
 
@@ -49,7 +50,7 @@ export function Audit() {
           value={filters.object_dn}
           onChange={(e) => setFilters({ ...filters, object_dn: e.target.value })}
         />
-        <select
+        <Select
           aria-label="Filter by action"
           value={filters.action}
           onChange={(e) => setFilters({ ...filters, action: e.target.value })}
@@ -60,8 +61,8 @@ export function Audit() {
               {action}
             </option>
           ))}
-        </select>
-        <select
+        </Select>
+        <Select
           aria-label="Filter by outcome"
           value={filters.outcome}
           onChange={(e) => setFilters({ ...filters, outcome: e.target.value })}
@@ -71,7 +72,7 @@ export function Audit() {
               {outcome === "" ? "All outcomes" : outcome}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {error && (

@@ -17,6 +17,7 @@ import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
 import { isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
 import { useNavigate } from "react-router-dom";
+import Select from "../components/Select"
 
 const ICONS = {
   user: User,
@@ -242,7 +243,7 @@ export function Directory() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <select
+          <Select
             aria-label="Filter by object type"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value as ObjectType | "")}
@@ -252,9 +253,9 @@ export function Directory() {
             <option value="group">Groups</option>
             <option value="computer">Computers</option>
             <option value="ou">Organizational units</option>
-          </select>
+          </Select>
           <span className="spacer" />
-          <select
+          <Select
             aria-label="Create an object"
             value=""
             onChange={(e) => e.target.value && setCreating(e.target.value as ObjectType)}
@@ -264,7 +265,7 @@ export function Directory() {
             <option value="group">Group</option>
             <option value="computer">Computer</option>
             <option value="ou">Organizational unit</option>
-          </select>
+          </Select>
           <button type="button" className="ghost" onClick={() => setImporting(true)}>
             <Upload size={15} aria-hidden="true" />
             Import CSV

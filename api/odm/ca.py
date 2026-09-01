@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import ipaddress
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,27 @@ HOST_RE = re.compile(
 )
 
 PROFILES = ("server", "client", "console")
+
+# What a certificate may be used for. The names are ODM's; the OIDs are the
+# ones the standard defines, taken from the library rather than written out.
+PURPOSES: dict[str, Any] = {
+    "server": ExtendedKeyUsageOID.SERVER_AUTH,
+    "client": ExtendedKeyUsageOID.CLIENT_AUTH,
+    "email": ExtendedKeyUsageOID.EMAIL_PROTECTION,
+    "code-signing": ExtendedKeyUsageOID.CODE_SIGNING,
+    "timestamping": ExtendedKeyUsageOID.TIME_STAMPING,
+    "ocsp-signing": ExtendedKeyUsageOID.OCSP_SIGNING,
+    "smartcard-logon": x509.ObjectIdentifier("1.3.6.1.4.1.311.20.2.2"),
+    "kerberos-pkinit": x509.ObjectIdentifier("1.3.6.1.5.2.3.5"),
+}
+
+# What the two built-in profiles mean, so a custom profile and a built-in one
+# go through exactly the same code below.
+BUILT_IN_PURPOSES: dict[str, tuple[str, ...]] = {
+    "server": ("server",),
+    "console": ("server",),
+    "client": ("client",),
+}
 
 
 class CaError(Exception):
@@ -198,10 +220,24 @@ def issue(
     sans: list[str] | None = None,
     profile: str = "server",
     validity_days: int = DEFAULT_VALIDITY_DAYS,
+    purposes: Sequence[str] | None = None,
+    key_size: int = LEAF_KEY_SIZE,
 ) -> Issued:
-    """Issue a leaf certificate with a freshly generated key."""
-    if profile not in PROFILES:
-        raise CaError(f"unknown certificate profile {profile!r}")
+    """Issue a leaf certificate with a freshly generated key.
+
+    purposes overrides what the profile name would have meant, which is how a
+    profile an operator defined is issued from: the name is still recorded, so
+    the issued list says which profile a certificate came from.
+    """
+    if purposes is None:
+        if profile not in PROFILES:
+            raise CaError(f"unknown certificate profile {profile!r}")
+        purposes = BUILT_IN_PURPOSES[profile]
+    unknown = [name for name in purposes if name not in PURPOSES]
+    if unknown or not purposes:
+        raise CaError(f"unknown certificate purpose {unknown[0]!r}" if unknown else "no purpose")
+    if key_size not in (2048, 3072, 4096):
+        raise CaError(f"unsupported key size {key_size}")
     if not 1 <= validity_days <= MAX_VALIDITY_DAYS:
         raise CaError(f"validity must be between 1 and {MAX_VALIDITY_DAYS} days")
 
@@ -209,14 +245,10 @@ def issue(
     all_names = [common_name, *[n for n in (sans or []) if n]]
 
     ca_key, ca_cert = _load(settings)
-    key = rsa.generate_private_key(public_exponent=65537, key_size=LEAF_KEY_SIZE)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
     now = dt.datetime.now(dt.UTC)
 
-    usage = (
-        [ExtendedKeyUsageOID.CLIENT_AUTH]
-        if profile == "client"
-        else [ExtendedKeyUsageOID.SERVER_AUTH]
-    )
+    usage = [PURPOSES[name] for name in purposes]
     builder = (
         x509.CertificateBuilder()
         .subject_name(

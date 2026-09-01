@@ -213,3 +213,36 @@ def test_kea_url_must_be_https_off_the_loopback(monkeypatch):
             database_url="postgresql://odm@localhost/odm",
             kea_url=url,
         ).kea_url == url
+
+
+# ------------------------------------------------------- samba-tool errors --
+
+
+def test_a_traceback_reports_the_exception_not_the_marker_under_it():
+    """samba-tool fails by letting a traceback out.
+
+    Taking its last line — the obvious thing — gives the ~~~^^^ marker Python
+    draws under the failing expression, which is what the console showed in
+    place of the error.
+    """
+    from odm.dns import message
+
+    traceback = (
+        "Traceback (most recent call last):\n"
+        '  File "/usr/bin/samba-tool", line 39, in <module>\n'
+        '    cmd._run("samba-tool", *args)\n'
+        "    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^\n"
+        "ldb.LdbError: (50, 'insufficient access rights during LDB_MODIFY')\n"
+        "        ~~~~~~~~^^^^^^^^^^^^^^^^^^\n"
+    )
+    assert message(traceback, "", "fallback") == (
+        "ldb.LdbError: (50, 'insufficient access rights during LDB_MODIFY')"
+    )
+
+
+def test_an_error_line_survives_and_silence_falls_back():
+    from odm.dns import message
+
+    assert message("ERROR(runtime): no such zone\n", "", "fb") == "ERROR(runtime): no such zone"
+    assert message("", "", "fb") == "fb"
+    assert message("", "  indented only\n", "fb") == "fb"

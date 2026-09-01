@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from . import audit, directory, objects, password_policy, rsop
 from .config import Settings, get_settings
-from .dns import SAMBA_TOOL, DnsUnavailable, available, connection_flags
+from .dns import SAMBA_TOOL, DnsUnavailable, available, connection_flags, message
 from .routes_directory import _bound, _read, _write
 from .security import client_ip, get_pool, require_admin, requires, requires_domain_admin
 from .sessions import Session
@@ -78,8 +78,9 @@ def _run(settings, *args: str) -> str:
         check=False,
     )
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise objects.ObjectError(detail[-1] if detail else "samba-tool refused the change")
+        raise objects.ObjectError(
+            message(completed.stderr, completed.stdout, "samba-tool refused the change")
+        )
     return completed.stdout
 
 

@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Server as ServerIcon } from "lucide-react";
 import { ApiError, api, type ControllerOverview, type DomainController, type Site } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
+import Select from "../components/Select"
 
 function since(value: string | null): string {
   if (!value) return "never";
@@ -223,13 +224,13 @@ function AddControllerDialog({ onClose }: { onClose: () => void }) {
             />
           </Field>
           <Field label="Site" hint="Which site the controller serves">
-            <select value={site} onChange={(e) => setSite(e.target.value)}>
+            <Select value={site} onChange={(e) => setSite(e.target.value)}>
               {(sites.length ? sites : ["Default-First-Site-Name"]).map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <label className="checkbox">
             <input

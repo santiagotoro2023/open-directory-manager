@@ -82,13 +82,13 @@ GSS_HOOK="$HOOKS_DIR/libddns_gss_tsig.so"
 if [[ -f "$GSS_HOOK" ]]; then
     echo "==> GSS-TSIG hook found; dynamic updates will be authenticated"
 else
-    echo "==> NOTE: $GSS_HOOK is not present." >&2
-    echo "    Debian does not package the GSS-TSIG hook, so authenticated" >&2
-    echo "    dynamic DNS updates are unavailable from the archive alone." >&2
-    echo "    kea-dhcp-ddns is configured without it; Samba's AD zones reject" >&2
-    echo "    unauthenticated updates, so DHCP leases will not appear in DNS." >&2
-    echo "    Either build the hook from ISC's sources and re-run this script," >&2
-    echo "    or register hosts in DNS another way." >&2
+    echo "==> NOTE: $GSS_HOOK is not present."
+    echo "    Debian does not package the GSS-TSIG hook, so authenticated"
+    echo "    dynamic DNS updates are unavailable from the archive alone."
+    echo "    kea-dhcp-ddns is configured without it; Samba's AD zones reject"
+    echo "    unauthenticated updates, so DHCP leases will not appear in DNS."
+    echo "    Either build the hook from ISC's sources and re-run this script,"
+    echo "    or register hosts in DNS another way."
 fi
 
 echo "==> Generating the Control Agent credential"
@@ -287,9 +287,7 @@ chmod 0640 /etc/kea/kea-*.conf
 chgrp _kea /etc/kea/kea-*.conf 2>/dev/null || true
 
 echo "==> Starting services"
-systemctl enable --now kea-dhcp4-server kea-dhcp-ddns-server kea-ctrl-agent
-sleep 2
-systemctl is-active --quiet kea-ctrl-agent || { echo "kea-ctrl-agent did not start" >&2; exit 1; }
+odm_enable kea-dhcp4-server kea-dhcp-ddns-server kea-ctrl-agent
 
 cat <<SUMMARY
 

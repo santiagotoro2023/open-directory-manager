@@ -4,6 +4,7 @@ import { ApiError, api, type FileShare, type ShareAccess, type ShareEntry } from
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
+import Select from "../components/Select"
 
 const ACCESS: { value: ShareAccess; label: string }[] = [
   { value: "read", label: "Read" },
@@ -320,17 +321,17 @@ function ShareDialog({
                 />
               </td>
               <td>
-                <select
+                <Select
                   aria-label="Type"
                   value={entry.kind}
                   onChange={(e) => update(index, { kind: e.target.value as "user" | "group" })}
                 >
                   <option value="group">Group</option>
                   <option value="user">User</option>
-                </select>
+                </Select>
               </td>
               <td>
-                <select
+                <Select
                   aria-label="Access"
                   value={entry.access}
                   onChange={(e) => update(index, { access: e.target.value as ShareAccess })}
@@ -340,7 +341,7 @@ function ShareDialog({
                       {level.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </td>
               <td>
                 <input

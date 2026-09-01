@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type RbacAssignment, type RbacRole } from "../api";
 import { Field, Modal } from "../components/Modal";
+import Select from "../components/Select"
 
 type Tab = "assignments" | "roles";
 
@@ -300,13 +301,13 @@ function AssignDialog({
       }}
     >
       <Field label="Role">
-        <select value={roleName} onChange={(e) => setRoleName(e.target.value)}>
+        <Select value={roleName} onChange={(e) => setRoleName(e.target.value)}>
           {roles.map((role) => (
             <option key={role.name} value={role.name}>
               {role.name} — {role.description}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
 
       <Field label="User or group" hint="Search the directory by name">
@@ -334,13 +335,13 @@ function AssignDialog({
       )}
 
       <Field label="Scope" hint="The role applies here and everywhere beneath">
-        <select value={scope} onChange={(e) => setScope(e.target.value)}>
+        <Select value={scope} onChange={(e) => setScope(e.target.value)}>
           {containers.map((dn) => (
             <option key={dn} value={dn}>
               {dn}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
       <Field label="Note">
         <input value={description} onChange={(e) => setDescription(e.target.value)} />

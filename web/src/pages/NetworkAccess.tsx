@@ -3,6 +3,7 @@ import { Plus, Router, Trash2 } from "lucide-react";
 import { ApiError, api, type RadiusClient, type RadiusPolicy } from "../api";
 import { Field, Modal } from "../components/Modal";
 import { PickerDialog, PickerField } from "../components/Picker";
+import Select from "../components/Select"
 
 type Tab = "rules" | "devices" | "preview";
 
@@ -439,20 +440,20 @@ function PolicyDialog({
 
       <div className="inline-fields">
         <Field label="Applies to" hint="A machine authenticates as itself, not as a person">
-          <select
+          <Select
             value={kind}
             onChange={(e) => setKind(e.target.value as "user" | "computer" | "any")}
           >
             <option value="user">People signing in</option>
             <option value="computer">Machines</option>
             <option value="any">Either</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Access">
-          <select value={access} onChange={(e) => setAccess(e.target.value as "allow" | "deny")}>
+          <Select value={access} onChange={(e) => setAccess(e.target.value as "allow" | "deny")}>
             <option value="allow">Allow</option>
             <option value="deny">Deny</option>
-          </select>
+          </Select>
         </Field>
       </div>
 

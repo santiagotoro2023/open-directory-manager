@@ -278,6 +278,15 @@ export interface ManagedServer {
   pending_tasks: number;
 }
 
+export interface CertificateProfile {
+  name: string;
+  description: string;
+  purposes: string[];
+  validity_days: number;
+  key_size: number;
+  built_in: boolean;
+}
+
 export interface TrustAnchor {
   id: string;
   name: string;
@@ -514,9 +523,19 @@ export type ComputerAction =
   | "update-install"
   | "package-install"
   | "package-remove"
+  | "local-user-add"
+  | "local-user-remove"
   | "policy-refresh"
   | "restart"
   | "shutdown";
+
+export interface NewLocalUser {
+  name: string;
+  full_name?: string;
+  shell?: string;
+  groups?: string[];
+  password?: string;
+}
 
 export interface ComputerDetail {
   known: boolean;
@@ -1248,10 +1267,10 @@ export const api = {
         skipped: { dn: string; reason: string }[];
       }>("/servers/computers/action", json({ dns, action, package: pkg })),
 
-    action: (dn: string, action: ComputerAction, pkg?: string) =>
+    action: (dn: string, action: ComputerAction, pkg?: string, localUser?: NewLocalUser) =>
       request<{ task: string; node: string }>(
         "/servers/computer/action",
-        json({ dn, action, package: pkg }),
+        json({ dn, action, package: pkg, local_user: localUser }),
       ),
   },
 
@@ -1291,8 +1310,17 @@ export const api = {
   ca: {
     status: () => request<CaStatus>("/ca/status"),
 
-    initialise: (common_name?: string) =>
-      request<CaStatus>("/ca/initialise", json({ common_name })),
+    initialise: (common_name?: string, publish_root = true) =>
+      request<CaStatus>("/ca/initialise", json({ common_name, publish_root })),
+
+    profiles: () =>
+      request<{ purposes: string[]; profiles: CertificateProfile[] }>("/ca/profiles"),
+
+    saveProfile: (body: Omit<CertificateProfile, "built_in">) =>
+      request<CertificateProfile>("/ca/profiles", json(body)),
+
+    deleteProfile: (name: string) =>
+      request<void>(`/ca/profiles${qs({ name })}`, { method: "DELETE" }),
 
     certificates: (include_revoked = false) =>
       request<{ certificates: IssuedCertificate[] }>(

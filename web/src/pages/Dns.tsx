@@ -4,6 +4,7 @@ import { ApiError, api, type DnsRecord, type DnsZone } from "../api";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { Split } from "../components/Split";
+import Select from "../components/Select"
 
 const RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SRV", "TXT"];
 
@@ -265,10 +266,10 @@ function ZoneDialog({
       }}
     >
       <Field label="Zone type">
-        <select value={kind} onChange={(e) => setKind(e.target.value as "forward" | "reverse")}>
+        <Select value={kind} onChange={(e) => setKind(e.target.value as "forward" | "reverse")}>
           <option value="forward">Forward lookup — names to addresses</option>
           <option value="reverse">Reverse lookup — addresses to names</option>
-        </select>
+        </Select>
       </Field>
 
       {kind === "forward" ? (
@@ -349,13 +350,13 @@ function RecordDialog({
         <input value={name} required onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Type">
-        <select value={type} onChange={(e) => setType(e.target.value)}>
+        <Select value={type} onChange={(e) => setType(e.target.value)}>
           {RECORD_TYPES.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
       <Field label="Data">
         <input

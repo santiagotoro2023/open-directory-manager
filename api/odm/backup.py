@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import Settings
-from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available
+from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available, message
 
 TIMEOUT_SECONDS = 3600
 ARCHIVE_RE = re.compile(r"^samba-backup-.*\.tar\.bz2$")
@@ -64,8 +64,9 @@ def take(settings: Settings, server: str | None = None) -> dict[str, Any]:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise BackupError(f"backup did not complete: {exc}") from exc
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
-        raise BackupError(detail[-1] if detail else "samba-tool domain backup failed")
+        raise BackupError(
+            message(completed.stderr, completed.stdout, "samba-tool domain backup failed")
+        )
 
     created = sorted(set(target_dir.glob("samba-backup-*.tar.bz2")) - before)
     if not created:

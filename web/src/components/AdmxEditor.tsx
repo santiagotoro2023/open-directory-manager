@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type AdmxElement, type AdmxPolicy, type AdmxSelection } from "../api";
 import { Field, Modal } from "./Modal";
+import Select from "./Select"
 
 /**
  * Administrative templates (CLAUDE.md §3.6): the controls below are rendered
@@ -65,7 +66,7 @@ export function AdmxEditor({
                 <strong>{policy?.display_name ?? selection.policy_id}</strong>
                 <p className="mono muted">{selection.policy_id}</p>
               </div>
-              <select
+              <Select
                 aria-label={`State of ${policy?.display_name ?? selection.policy_id}`}
                 value={selection.state}
                 onChange={(e) =>
@@ -74,7 +75,7 @@ export function AdmxEditor({
               >
                 <option value="enabled">Enabled</option>
                 <option value="disabled">Disabled</option>
-              </select>
+              </Select>
               <button
                 type="button"
                 className="icon"
@@ -147,7 +148,7 @@ function ElementControl({
   if (element.type === "enum") {
     return (
       <Field label={label}>
-        <select
+        <Select
           value={String(value ?? "")}
           onChange={(e) => {
             const item = element.items.find((option) => String(option.value) === e.target.value);
@@ -160,7 +161,7 @@ function ElementControl({
               {item.label}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
     );
   }
@@ -285,7 +286,7 @@ function PolicyPicker({
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <select
+        <Select
           aria-label="Filter by category"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
@@ -296,7 +297,7 @@ function PolicyPicker({
               {item.display_name}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
       <label className="checkbox">
         <input

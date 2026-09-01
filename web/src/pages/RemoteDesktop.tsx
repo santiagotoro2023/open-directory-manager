@@ -4,6 +4,7 @@ import { ApiError, api, type RdCollection, type RdSession } from "../api";
 import { ChoiceList } from "../components/ChoiceList";
 import { Field, Modal } from "../components/Modal";
 import { PickerDialog, PickerField } from "../components/Picker";
+import Select from "../components/Select"
 
 type Tab = "broker" | "hosts" | "sessions";
 
@@ -396,10 +397,10 @@ function CollectionDialog({
 
       <h3 className="section-title">What people get</h3>
       <Field label="Session">
-        <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+        <Select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
           <option value="desktop">A full desktop</option>
           <option value="remoteapp">One published application</option>
-        </select>
+        </Select>
       </Field>
       {kind === "remoteapp" && (
         <div className="field-grid">
@@ -429,7 +430,7 @@ function CollectionDialog({
       </p>
       <div className="field-grid">
         <Field label="Profile share" hint="A share you made under File Shares">
-          <select value={share} onChange={(e) => setShare(e.target.value)}>
+          <Select value={share} onChange={(e) => setShare(e.target.value)}>
             <option value="">Choose a share…</option>
             {shares.map((unc) => (
               <option key={unc} value={unc}>
@@ -437,7 +438,7 @@ function CollectionDialog({
               </option>
             ))}
             {share && !shares.includes(share) && <option value={share}>{share}</option>}
-          </select>
+          </Select>
         </Field>
         <Field label="Each disk may grow to (GB)">
           <input
@@ -480,14 +481,14 @@ function CollectionDialog({
           label="Send a new session to"
           hint="Someone reconnecting always returns to the host they were on"
         >
-          <select
+          <Select
             value={balance}
             onChange={(e) => setBalance(e.target.value as RdCollection["balance_method"])}
           >
             <option value="leastconn">The host with the fewest sessions</option>
             <option value="roundrobin">Each host in turn</option>
             <option value="first">The first host with room, then the next</option>
-          </select>
+          </Select>
         </Field>
       </div>
       <p className="muted">

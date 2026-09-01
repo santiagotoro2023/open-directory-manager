@@ -61,8 +61,7 @@ cat > /etc/cups/cupsd.conf.d/odm-access.conf <<'ACCESS'
 ACCESS
 
 echo "==> Starting CUPS"
-systemctl enable --now cups
-systemctl reload-or-restart cups
+odm_enable cups
 
 cat <<SUMMARY
 

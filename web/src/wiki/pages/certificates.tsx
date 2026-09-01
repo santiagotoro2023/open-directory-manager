@@ -42,10 +42,12 @@ export function Content() {
               Add the printed <C>ODM_CA_DIR</C> to the secrets file and restart the control plane.
             </li>
             <li>
-              <strong>Certificates</strong> → <strong>Create the certificate authority</strong>.
+              <strong>Certificates</strong> → <strong>Create the certificate authority</strong>,
+              leaving <strong>Publish the root certificate to every domain computer</strong>{" "}
+              ticked. Members install the root from Group Policy on their next refresh.
             </li>
             <li>
-              <strong>Publish to domain</strong> so members install the root into their trust store.
+              <strong>Publish to domain</strong> again later, whenever the trusted list changes.
             </li>
           </Steps>
         </Example>
@@ -114,7 +116,7 @@ export function Content() {
             rows={[
               [
                 "Trust a certificate",
-                "The PEM is parsed before it is stored, so the subject, expiry and whether it is an authority come from the certificate itself.",
+                "Paste the PEM or pick a .pem/.crt file, which is read into the same box. It is parsed before it is stored, so the subject, expiry and whether it is an authority come from the certificate itself.",
               ],
               [
                 "Publish to domain",
@@ -146,6 +148,31 @@ export function Content() {
         </Section>
 
         <Section title="Profiles">
+          <p>
+            A profile is what AD CS calls a certificate template: what a certificate may be used
+            for, how long it lasts and how big its key is. Two are built in and cannot be changed.
+            Add your own under <strong>Certificates</strong> → <strong>Profiles</strong> →{" "}
+            <strong>New profile</strong>; they appear in the Issue dialog alongside the built-in
+            pair, and the validity you set becomes that dialog&rsquo;s default.
+          </p>
+          <p>
+            A profile decides only the shape of a certificate. The key is generated and the
+            signature made by the domain authority either way, and certificates already issued keep
+            the profile name they were issued under even if the profile is deleted.
+          </p>
+          <Reference
+            headers={["Purpose", "Extended key usage"]}
+            rows={[
+              ["server", "TLS server authentication"],
+              ["client", "TLS client authentication"],
+              ["email", "S/MIME e-mail protection"],
+              ["code-signing", "Code signing"],
+              ["timestamping", "Time stamping"],
+              ["ocsp-signing", "OCSP response signing"],
+              ["smartcard-logon", "Smart-card logon"],
+              ["kerberos-pkinit", "Kerberos PKINIT client authentication"],
+            ]}
+          />
           <Reference
             headers={["Profile", "Extended key usage", "Use"]}
             rows={[

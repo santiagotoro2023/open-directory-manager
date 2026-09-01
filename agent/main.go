@@ -27,7 +27,7 @@ import (
 	"odm.example.org/agent/internal/tasks"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -102,25 +102,23 @@ func runDaemon(args []string) int {
 	}
 }
 
-// waitAndPoll sleeps until the next policy refresh, checking for queued work
-// every taskPoll along the way. Returns false when the agent should stop.
+// waitAndPoll waits until the next policy refresh, collecting queued work as
+// it is queued. Returns false when the agent should stop.
 //
 // Policy is compared against a serial and applied only when it changes; a task
 // is somebody in the console waiting for an answer. Making them share a
 // fifteen-minute interval meant clicking Install and watching "installing" for
-// a quarter of an hour with no way to tell it apart from a failure. Asking for
-// the queue is one small authenticated GET that returns nothing almost every
-// time.
+// a quarter of an hour with no way to tell it apart from a failure.
 //
-// ponytail: a fixed poll. If a large estate makes this traffic matter, the
-// control plane would have to push instead, which is a connection per machine
-// to hold open — a much bigger change than shortening an interval.
-const taskPoll = 30 * time.Second
+// The control plane holds the request open until there is work or taskWait
+// passes, so an action runs within a second of being clicked rather than at
+// the next poll. Idle traffic is the same one request per machine either way.
+const taskWait = 25 * time.Second
 
 func waitAndPoll(ctx context.Context, configPath, root string, remaining time.Duration) bool {
 	// One Kerberos client for the whole window rather than one per poll: a
-	// ticket is good for hours, and asking the KDC for a new one every thirty
-	// seconds on every machine in the domain is real load for nothing.
+	// ticket is good for hours, and asking the KDC for a new one every half
+	// minute on every machine in the domain is real load for nothing.
 	var api *client.Client
 	defer func() {
 		if api != nil {
@@ -129,33 +127,48 @@ func waitAndPoll(ctx context.Context, configPath, root string, remaining time.Du
 	}()
 
 	for remaining > 0 {
-		step := taskPoll
+		if ctx.Err() != nil {
+			return false
+		}
+		if api == nil {
+			cfg, err := config.Load(configPath)
+			if err == nil {
+				// A failure here is not worth a log line every half minute;
+				// the next policy refresh reports it properly.
+				if api, err = client.New(cfg, version); err != nil {
+					api = nil
+				}
+			}
+		}
+
+		step := taskWait
 		if remaining < step {
 			step = remaining
 		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(step):
-		}
-		remaining -= step
-		if remaining <= 0 {
-			break
-		}
-
+		started := time.Now()
 		if api == nil {
-			cfg, err := config.Load(configPath)
-			if err != nil {
-				continue
+			// Nothing to ask. Wait out the step rather than spinning.
+			select {
+			case <-ctx.Done():
+				return false
+			case <-time.After(step):
 			}
-			// A failure here is not worth a log line every thirty seconds;
-			// the next policy refresh reports it properly.
-			if api, err = client.New(cfg, version); err != nil {
+		} else {
+			queued, err := api.WaitForTasks(ctx, step)
+			if err != nil {
 				api = nil
-				continue
+				// An error comes back immediately, so without this the loop
+				// would spin against an unreachable control plane.
+				select {
+				case <-ctx.Done():
+					return false
+				case <-time.After(step):
+				}
+			} else if len(queued) > 0 {
+				runQueued(ctx, api, apply.NewEnv(root), queued)
 			}
 		}
-		runTasks(ctx, api, apply.NewEnv(root))
+		remaining -= time.Since(started)
 	}
 	return true
 }
@@ -249,6 +262,10 @@ func runTasks(ctx context.Context, api *client.Client, env apply.Env) {
 		fmt.Fprintln(os.Stderr, "odm-agent: fetching tasks:", err)
 		return
 	}
+	runQueued(ctx, api, env, queued)
+}
+
+func runQueued(ctx context.Context, api *client.Client, env apply.Env, queued []tasks.Task) {
 	for _, task := range queued {
 		fmt.Printf("  task %-16s running\n", task.Kind)
 		result := tasks.Run(ctx, task, env)

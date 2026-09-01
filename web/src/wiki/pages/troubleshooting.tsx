@@ -104,8 +104,22 @@ export function Content() {
                   The target machine has no agent, so nothing collected the work. Check{" "}
                   <C key="a">systemctl status odm-agent</C> on it. Installs are run by the agent on
                   the machine the role goes on &mdash; the control plane runs sandboxed and installs
-                  nothing itself, on any host.
+                  nothing itself, on any host. After 45 minutes the role is marked failed on its
+                  own, with the reason on the row, and can be installed again.
                 </>,
+              ],
+              [
+                "Unmet dependencies for a package the archive plainly has",
+                <>
+                  An earlier failure left <C key="d">dpkg</C> half-configured, and from then on
+                  every install fails for a reason that has nothing to do with the role being
+                  installed. The installers repair this before they begin; if one still reports it,
+                  run <C key="e">dpkg --configure -a</C> on the machine and read what it says.
+                </>,
+              ],
+              [
+                "A service the role installed refuses to start",
+                "Server Roles → the role → the failed server. The unit's own journal is under the row, not just its name.",
               ],
               [
                 '"is not installed on this machine"',
@@ -125,6 +139,31 @@ export function Content() {
               [
                 "The installer's own error",
                 "Server Roles → the role → the failed server. The last of its output is under the row.",
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="Directory writes">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                '"this account may not reset passwords in the directory"',
+                <>
+                  Writing a password is a control-access right of its own, not a property write.
+                  Re-run <C key="p">deploy/create-api-service-account.sh</C> on a domain controller
+                  &mdash; it is safe to run again &mdash; and restart the control plane. Domains
+                  provisioned before this was granted are the ones that hit it.
+                </>,
+              ],
+              [
+                "A row of tildes and carets where an error should be",
+                <>
+                  Fixed: <C key="q">samba-tool</C> reports a failure as a Python traceback, and the
+                  console used to show its last line, which is the marker under the expression that
+                  raised rather than the message. Upgrade the control plane.
+                </>,
               ],
             ]}
           />

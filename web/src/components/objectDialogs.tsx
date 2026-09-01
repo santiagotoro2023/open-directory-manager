@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, api, type DirectoryObject } from "../api";
 import { Field, Modal } from "./Modal";
+import Select from "./Select"
 
 const UF_ACCOUNTDISABLE = 0x0002;
 
@@ -135,13 +136,13 @@ export function MoveDialog({
       onSubmit={() => void run(async () => onMoved(await api.directory.move(dn, target)))}
     >
       <Field label="Destination">
-        <select value={target} onChange={(e) => setTarget(e.target.value)}>
+        <Select value={target} onChange={(e) => setTarget(e.target.value)}>
           {containers.map((c) => (
             <option key={c.distinguishedName} value={c.distinguishedName}>
               {c.distinguishedName}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
     </Modal>
   );

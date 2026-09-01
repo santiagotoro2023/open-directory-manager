@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
-import { ApiError, api, type CaStatus, type IssuedCertificate, type TrustAnchor } from "../api";
+import { Download, Plus, ShieldCheck, Trash2, Upload } from "lucide-react";
+import {
+  ApiError,
+  api,
+  type CaStatus,
+  type CertificateProfile,
+  type IssuedCertificate,
+  type TrustAnchor,
+} from "../api";
 import { Field, Modal } from "../components/Modal";
+import Select from "../components/Select"
 
 export function Certificates() {
   const [status, setStatus] = useState<CaStatus | null>(null);
   const [certificates, setCertificates] = useState<IssuedCertificate[]>([]);
   const [includeRevoked, setIncludeRevoked] = useState(false);
-  const [tab, setTab] = useState<"issued" | "trusted">("issued");
+  const [tab, setTab] = useState<"issued" | "trusted" | "profiles">("issued");
   const [dialog, setDialog] = useState<"issue" | "console" | null>(null);
   const [issued, setIssued] = useState<IssuedCertificate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [publishRoot, setPublishRoot] = useState(true);
 
   const load = useCallback(async () => {
     setError(null);
@@ -56,10 +65,29 @@ export function Certificates() {
             {error}
           </p>
         )}
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={publishRoot}
+            onChange={(e) => setPublishRoot(e.target.checked)}
+          />
+          Publish the root certificate to every domain computer
+        </label>
+        <p className="muted">
+          Machines install it from Group Policy on their next refresh, so they trust anything this
+          authority issues without being touched.
+        </p>
         <button
           type="button"
           className="primary"
-          onClick={() => void run(() => api.ca.initialise(), "Certificate authority created.")}
+          onClick={() =>
+            void run(
+              () => api.ca.initialise(undefined, publishRoot),
+              publishRoot
+                ? "Certificate authority created and its root published to the domain."
+                : "Certificate authority created.",
+            )
+          }
         >
           <ShieldCheck size={15} aria-hidden="true" />
           Create the certificate authority
@@ -139,7 +167,7 @@ export function Certificates() {
       {notice && <p className="muted">{notice}</p>}
 
       <nav className="tabs" aria-label="Certificate views">
-        {(["issued", "trusted"] as const).map((current) => (
+        {(["issued", "trusted", "profiles"] as const).map((current) => (
           <button
             key={current}
             type="button"
@@ -147,12 +175,18 @@ export function Certificates() {
             aria-current={tab === current ? "true" : undefined}
             onClick={() => setTab(current)}
           >
-            {current === "issued" ? "Issued by this domain" : "Trusted"}
+            {current === "issued"
+              ? "Issued by this domain"
+              : current === "trusted"
+                ? "Trusted"
+                : "Profiles"}
           </button>
         ))}
       </nav>
 
       {tab === "trusted" && <TrustedTab onChanged={() => void load()} />}
+
+      {tab === "profiles" && <ProfilesTab />}
 
       {tab === "issued" && (
         <>
@@ -257,7 +291,15 @@ function IssueDialog({
   const [commonName, setCommonName] = useState("");
   const [sans, setSans] = useState("");
   const [profile, setProfile] = useState("server");
+  const [profiles, setProfiles] = useState<CertificateProfile[]>([]);
   const [days, setDays] = useState(397);
+
+  useEffect(() => {
+    void api.ca
+      .profiles()
+      .then((result) => setProfiles(result.profiles))
+      .catch(() => setProfiles([]));
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -297,10 +339,20 @@ function IssueDialog({
         <input value={sans} onChange={(e) => setSans(e.target.value)} />
       </Field>
       <Field label="Profile">
-        <select value={profile} onChange={(e) => setProfile(e.target.value)}>
-          <option value="server">Server — TLS service</option>
-          <option value="client">Client — authentication</option>
-        </select>
+        <Select
+          value={profile}
+          onChange={(e) => {
+            setProfile(e.target.value);
+            const chosen = profiles.find((one) => one.name === e.target.value);
+            if (chosen) setDays(chosen.validity_days);
+          }}
+        >
+          {profiles.map((one) => (
+            <option key={one.name} value={one.name}>
+              {one.description || one.name}
+            </option>
+          ))}
+        </Select>
       </Field>
       <Field label="Validity in days">
         <input
@@ -554,10 +606,228 @@ function TrustDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () =>
           onChange={(e) => setPem(e.target.value)}
         />
       </Field>
+      <label className="button-link ghost" style={{ alignSelf: "flex-start" }}>
+        <Upload size={15} aria-hidden="true" />
+        Choose a file
+        <input
+          type="file"
+          accept=".pem,.crt,.cer,.txt,application/x-pem-file"
+          hidden
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            // A PEM is text, so it goes straight into the box the operator
+            // would otherwise have pasted into, and stays reviewable.
+            if (file) setPem((await file.text()).trim());
+            e.target.value = "";
+          }}
+        />
+      </label>
       <p className="muted">
         It is read before it is stored, so the subject and expiry shown afterwards come from the
         certificate itself.
       </p>
+    </Modal>
+  );
+}
+
+/** Profiles decide what a certificate is for; AD CS calls these templates. */
+function ProfilesTab() {
+  const [profiles, setProfiles] = useState<CertificateProfile[]>([]);
+  const [purposes, setPurposes] = useState<string[]>([]);
+  const [editing, setEditing] = useState<CertificateProfile | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const result = await api.ca.profiles();
+      setProfiles(result.profiles);
+      setPurposes(result.purposes);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <>
+      <p className="muted">
+        A profile decides what a certificate may be used for, how long it lasts and how big its key
+        is. The two built-in ones cannot be changed.
+      </p>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      <button type="button" className="primary" onClick={() => setAdding(true)}>
+        <Plus size={15} aria-hidden="true" />
+        New profile
+      </button>
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Used for</th>
+            <th scope="col">Purposes</th>
+            <th scope="col">Validity</th>
+            <th scope="col">Key</th>
+            <th scope="col" className="actions" />
+          </tr>
+        </thead>
+        <tbody>
+          {profiles.map((one) => (
+            <tr key={one.name}>
+              <td className="mono">{one.name}</td>
+              <td>{one.description}</td>
+              <td>{one.purposes.join(", ")}</td>
+              <td>{one.validity_days} days</td>
+              <td>{one.key_size}-bit</td>
+              <td className="actions">
+                {one.built_in ? (
+                  <span className="badge">built in</span>
+                ) : (
+                  <>
+                    <button type="button" className="ghost" onClick={() => setEditing(one)}>
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      aria-label={`Delete ${one.name}`}
+                      onClick={async () => {
+                        await api.ca.deleteProfile(one.name);
+                        await load();
+                      }}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {(adding || editing) && (
+        <ProfileDialog
+          purposes={purposes}
+          existing={editing}
+          onClose={() => {
+            setAdding(false);
+            setEditing(null);
+          }}
+          onSaved={() => {
+            setAdding(false);
+            setEditing(null);
+            void load();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function ProfileDialog({
+  purposes,
+  existing,
+  onClose,
+  onSaved,
+}: {
+  purposes: string[];
+  existing: CertificateProfile | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(existing?.name ?? "");
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [chosen, setChosen] = useState<string[]>(existing?.purposes ?? ["server"]);
+  const [days, setDays] = useState(existing?.validity_days ?? 397);
+  const [keySize, setKeySize] = useState(String(existing?.key_size ?? 2048));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title={existing ? `Edit ${existing.name}` : "New certificate profile"}
+      submitLabel="Save"
+      busy={busy}
+      error={error}
+      onClose={onClose}
+      onSubmit={async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          await api.ca.saveProfile({
+            name,
+            description,
+            purposes: chosen,
+            validity_days: days,
+            key_size: Number(keySize),
+          });
+          onSaved();
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Field label="Name" hint="Lower case, letters, digits and hyphens">
+        <input
+          value={name}
+          required
+          disabled={Boolean(existing)}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+      <Field label="Used for">
+        <input
+          value={description}
+          placeholder="Mail gateway — TLS and S/MIME"
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </Field>
+      <Field label="Purposes">
+        <div className="permission-grid">
+          {purposes.map((purpose) => (
+            <label className="checkbox" key={purpose}>
+              <input
+                type="checkbox"
+                checked={chosen.includes(purpose)}
+                onChange={(e) =>
+                  setChosen((was) =>
+                    e.target.checked ? [...was, purpose] : was.filter((one) => one !== purpose),
+                  )
+                }
+              />
+              {purpose}
+            </label>
+          ))}
+        </div>
+      </Field>
+      <Field label="Validity in days">
+        <input
+          type="number"
+          min={1}
+          max={1825}
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value))}
+        />
+      </Field>
+      <Field label="Key size">
+        <Select value={keySize} onChange={(e) => setKeySize(e.target.value)}>
+          <option value="2048">2048-bit RSA</option>
+          <option value="3072">3072-bit RSA</option>
+          <option value="4096">4096-bit RSA</option>
+        </Select>
+      </Field>
     </Modal>
   );
 }
