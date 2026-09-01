@@ -118,6 +118,11 @@ func absolute(path string) (string, error) {
 // check-in but still bounded.
 func discoverPrinters(ctx context.Context, env apply.Env) (string, error) {
 	found := inventory.PrintDevices(ctx, env, 20)
+	if found == nil {
+		// json renders a nil slice as null, and "None found" is a list of
+		// none, not the absence of one.
+		found = []inventory.PrintDevice{}
+	}
 	body, err := json.Marshal(map[string]any{"devices": found})
 	if err != nil {
 		return "", err

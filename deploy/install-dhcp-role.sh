@@ -383,7 +383,13 @@ if [[ -f "$SECRETS" ]]; then
     set_secret ODM_KEA_URL "http://127.0.0.1:$CA_PORT/"
     set_secret ODM_KEA_USER "$CA_USER"
     set_secret ODM_KEA_PASSWORD "$(cat "$CA_PASSWORD_FILE")"
-    systemctl try-restart odm-api >/dev/null 2>&1 || true
+    # Delayed and detached. The control plane is what asked for this install
+    # and is waiting for the agent to report how it went; restarting it here
+    # takes the answer with it, and the role says "installing" for ever on a
+    # machine where DHCP is running perfectly.
+    systemd-run --on-active=30 --unit=odm-api-pickup-kea --collect \
+        systemctl try-restart odm-api >/dev/null 2>&1 ||
+        echo "    (restart the control plane to pick up the credential)"
 fi
 
 # If network boot is already on this machine, Kea is what advertises it.

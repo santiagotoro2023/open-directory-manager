@@ -95,7 +95,7 @@ func PrintDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice
 
 func printDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice {
 	if _, err := os.Stat(env.Path("/usr/sbin/cupsd")); err != nil {
-		return nil
+		return []PrintDevice{}
 	}
 	// -l lists local and network devices; the timeout keeps a slow network
 	// discovery from holding up the whole check-in.
@@ -104,7 +104,7 @@ func printDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice
 	}
 	out, err := env.Run.Run(ctx, "lpinfo", "--timeout", strconv.Itoa(seconds), "-l", "-v")
 	if err != nil {
-		return nil
+		return []PrintDevice{}
 	}
 	var devices []PrintDevice
 	var current PrintDevice
@@ -125,10 +125,14 @@ func printDevices(ctx context.Context, env apply.Env, seconds int) []PrintDevice
 	if current.URI != "" {
 		devices = append(devices, current)
 	}
-	// A driverless network printer is the useful case; the "file" and "cups"
-	// pseudo-devices are not something to hand somebody as a choice.
-	kept := devices[:0]
+	// A real printer has an address. lpinfo also lists the backends
+	// themselves — "ipp", "lpd", "beh" — which are not things to hand
+	// somebody as a choice, and neither is printing to a file.
+	kept := []PrintDevice{}
 	for _, device := range devices {
+		if !strings.Contains(device.URI, "://") {
+			continue
+		}
 		if strings.HasPrefix(device.URI, "file:") || device.URI == "cups-brf:/" {
 			continue
 		}
