@@ -121,6 +121,23 @@ func ReleaseProfile(ctx context.Context, user string, env Env) {
 // there. Run before a profile is attached and after: a home the agent made as
 // root and left is a session that cannot start.
 func ensureHome(who account) error {
+	// The directories above it are made traversable, and the home itself is
+	// not. MkdirAll gives every level the mode asked for, so a home under
+	// /home/EXAMPLE/somebody left /home/EXAMPLE at 0700 root and nobody could
+	// reach their own home through it — an X server that cannot enter a home
+	// does not start, and says only "X server could not be started".
+	if parent := filepath.Dir(who.home); parent != "/" && parent != "." {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return fmt.Errorf("creating %s: %w", parent, err)
+		}
+		for path := parent; path != "/" && path != "."; path = filepath.Dir(path) {
+			info, err := os.Stat(path)
+			if err != nil || info.Mode().Perm()&0o005 == 0o005 {
+				break
+			}
+			_ = os.Chmod(path, info.Mode().Perm()|0o005)
+		}
+	}
 	if err := os.MkdirAll(who.home, 0o700); err != nil {
 		return fmt.Errorf("creating %s: %w", who.home, err)
 	}
