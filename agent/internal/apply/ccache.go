@@ -24,11 +24,18 @@ import (
 // So the agent repairs it, in the two files that decide it, and only when it
 // wrote them in the first place.
 const (
-	krb5ConfPath  = "/etc/krb5.conf"
-	sssdConfPath  = "/etc/sssd/sssd.conf"
-	ccacheKrb5    = "default_ccache_name = FILE:/tmp/krb5cc_%{uid}"
-	ccacheSssd    = "krb5_ccname_template = FILE:/tmp/krb5cc_%U"
-	ccacheSetting = "kerberos:ccache"
+	krb5ConfPath = "/etc/krb5.conf"
+	sssdConfPath = "/etc/sssd/sssd.conf"
+	// pam_winbind is on a domain-joined Debian whether or not anything asked
+	// for it, and it authenticates a domain account perfectly well without
+	// ever asking for a Kerberos ticket. A session that came up that way has
+	// no ticket at all, and every krb5 mount in it fails with "Required key
+	// not available" — the same symptom as a ticket in the wrong place, from
+	// a completely different cause.
+	winbindPamPath = "/etc/security/pam_winbind.conf"
+	ccacheKrb5     = "default_ccache_name = FILE:/tmp/krb5cc_%{uid}"
+	ccacheSssd     = "krb5_ccname_template = FILE:/tmp/krb5cc_%U"
+	ccacheSetting  = "kerberos:ccache"
 )
 
 func applyCcache(ctx context.Context, _ policy.Settings, env Env) []policy.Result {
@@ -54,6 +61,15 @@ func applyCcache(ctx context.Context, _ policy.Settings, env Env) []policy.Resul
 			return []policy.Result{policy.Fail(ccacheSetting, err)}
 		}
 		changed = changed || added
+	}
+
+	// And whichever module ends up authenticating, it has to leave a ticket.
+	if err := env.WriteFile(winbindPamPath, Header+`[global]
+krb5_auth = yes
+krb5_ccache_type = FILE
+cached_login = yes
+`, 0o644, "root", "root"); err != nil {
+		return []policy.Result{policy.Fail(ccacheSetting, err)}
 	}
 
 	if !changed {

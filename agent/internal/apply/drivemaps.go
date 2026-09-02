@@ -104,6 +104,13 @@ func MountDriveMaps(
 	memberships := groupsOf(user)
 	var problems []error
 	attached := []string{}
+
+	// A krb5 mount is made with this person's ticket, and a session can come
+	// up without one: whichever PAM module authenticated them did not ask for
+	// a ticket, or the machine was offline and they were let in from the
+	// cache. The kernel then says "Required key not available", which reads
+	// as a broken share rather than as an empty credential cache.
+	ticket := hasTicket(env, who)
 	for _, drive := range drives {
 		if !appliesTo(drive.ForPrincipal, user, memberships) {
 			continue
@@ -118,6 +125,14 @@ func MountDriveMaps(
 		}
 		if err := os.MkdirAll(point, 0o755); err != nil {
 			problems = append(problems, err)
+			continue
+		}
+		if !ticket {
+			problems = append(problems, fmt.Errorf(
+				"%s: %s has no Kerberos ticket in this session, so nothing can be mounted "+
+					"with sec=krb5. klist is empty: whatever authenticated them did not ask "+
+					"the domain for one. Check that pam_sss or pam_winbind runs at sign-in "+
+					"and that the machine was not offline", drive.Name, user))
 			continue
 		}
 		unc := strings.ReplaceAll(drive.UNC, "\\", "/")
@@ -178,6 +193,28 @@ func explain(out string) string {
 		return " — the file server could not be reached from this machine."
 	}
 	return ""
+}
+
+// hasTicket reports whether this person's session holds a Kerberos ticket.
+//
+// Only answered where the machine keeps tickets in files, which is what the
+// agent configures and what a cifs mount needs. On a machine still using the
+// keyring or KCM there is nothing to stat, and a mount that is going to fail
+// should fail with the kernel's own words rather than with a guess.
+func hasTicket(env Env, who account) bool {
+	krb5, err := os.ReadFile(env.Path(krb5ConfPath))
+	if err != nil || !strings.Contains(string(krb5), "default_ccache_name = FILE:") {
+		return true
+	}
+	for _, path := range []string{
+		fmt.Sprintf("/tmp/krb5cc_%d", who.uid),
+		fmt.Sprintf("/run/user/%d/krb5cc", who.uid),
+	} {
+		if info, statErr := os.Stat(env.Path(path)); statErr == nil && info.Size() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // unbookmark takes a drive map back out of the file manager's sidebar.

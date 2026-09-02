@@ -22,7 +22,7 @@ import (
 	"odm.example.org/client-join/join"
 )
 
-const version = "0.7.9"
+const version = "0.7.10"
 
 // Branding is installed by the package; the repository keeps one copy of
 // each asset and the application reads it from disk.

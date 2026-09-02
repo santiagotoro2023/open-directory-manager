@@ -1479,3 +1479,32 @@ func TestASessionPassDoesNotTouchKerberos(t *testing.T) {
 		t.Errorf("commands ran: %v", runner.commands)
 	}
 }
+
+// A session can come up with no Kerberos ticket at all — whichever module
+// authenticated the person did not ask the domain for one. The kernel then
+// says "Required key not available", which reads as a broken share rather
+// than as an empty credential cache, so the drive says which it is.
+func TestAMountSaysWhenThereIsNoTicketAtAll(t *testing.T) {
+	env, _ := testEnv(t)
+	who := account{home: env.Path("/home/ada"), uid: 1000, gid: 1000}
+
+	// Where tickets are files and this person has none.
+	write(t, env, "/etc/krb5.conf", Header+
+		"[libdefaults]\n    default_ccache_name = FILE:/tmp/krb5cc_%{uid}\n")
+	if hasTicket(env, who) {
+		t.Error("an empty credential cache reads as a ticket")
+	}
+
+	// One there, and it is a ticket.
+	write(t, env, "/tmp/krb5cc_1000", "not empty")
+	if !hasTicket(env, who) {
+		t.Error("a ticket that is there was not found")
+	}
+
+	// A machine that keeps tickets somewhere that is not a file is not
+	// second-guessed: the mount fails with the kernel's own words.
+	write(t, env, "/etc/krb5.conf", Header+"[libdefaults]\n    default_realm = X\n")
+	if !hasTicket(env, account{uid: 4242}) {
+		t.Error("a keyring ccache must not be reported as missing")
+	}
+}

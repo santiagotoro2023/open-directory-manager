@@ -363,6 +363,18 @@ export function Content() {
                 </>,
               ],
               [
+                '"has no Kerberos ticket in this session"',
+                <>
+                  <C key="kl">klist</C> in that session is empty: whichever PAM module
+                  authenticated them did not ask the domain for a ticket, or the machine was
+                  offline and they were let in from the cache. Check that{" "}
+                  <C key="pa">/etc/pam.d/common-auth</C> runs <C key="ps">pam_sss</C>, and{" "}
+                  <C key="ds">sssctl domain-status &lt;domain&gt;</C> for whether SSSD is online.
+                  The agent configures pam_winbind to ask for one as well, since on a joined
+                  Debian it is often the module that answers first.
+                </>,
+              ],
+              [
                 '"Permission denied" or "Bad address"',
                 "The share's own permissions, or the machine has no ticket for it. klist in the session says whether there is one.",
               ],
