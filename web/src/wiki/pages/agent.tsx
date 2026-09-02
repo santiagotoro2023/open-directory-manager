@@ -107,6 +107,15 @@ journalctl -u odm-agent -n 50`}</Code>
             headers={["What check says", "Fix"]}
             rows={[
               [
+                "the console's certificate: ... no domain controller found",
+                <>
+                  The machine could not find a controller to read the anchor from. It asks DNS for{" "}
+                  <C key="srv">_ldap._tcp.dc._msdcs.&lt;domain&gt;</C> and falls back to the
+                  console&rsquo;s own host, so this means the resolver is not the domain&rsquo;s.
+                  Check <C key="rc">/etc/resolv.conf</C>.
+                </>,
+              ],
+              [
                 "reaching the control plane: x509: certificate signed by unknown authority",
                 <>
                   The machine has no copy of the console&rsquo;s certificate, or the copy is out of

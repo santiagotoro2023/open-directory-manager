@@ -44,12 +44,19 @@ func FetchTrustAnchor(ctx context.Context, options Options, controller string, e
 			"cannot be fetched from the domain")
 	}
 
+	// A controller by name, never the domain name: Kerberos authenticates to
+	// a host, and there is no cifs/<domain> principal to ask for.
 	server := controller
 	if options.Server != "" {
 		server = options.Server
 	}
 	if server == "" {
-		server = options.Domain
+		if found, err := DiscoverControllers(ctx, options.Domain); err == nil && len(found) > 0 {
+			server = found[0].Host
+		}
+	}
+	if server == "" {
+		return "", fmt.Errorf("no domain controller to read the console certificate from")
 	}
 
 	// Inside the share the domain has a directory of its own, named after
