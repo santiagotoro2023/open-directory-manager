@@ -11,6 +11,7 @@ objects a domain cannot function without are refused outright.
 from __future__ import annotations
 
 import base64
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -32,6 +33,8 @@ from ldap3.utils.dn import escape_rdn, parse_dn, safe_dn
 
 from .config import Settings
 from .directory import DirectoryError, read_sid, validate_username
+
+_log = logging.getLogger(__name__)
 
 UF_ACCOUNTDISABLE = 0x0002
 UF_NORMAL_ACCOUNT = 0x0200
@@ -710,10 +713,16 @@ def restore(
     if not object_classes:
         raise ObjectError("snapshot has no objectClass; cannot restore")
 
-    if _reanimate(conn, snapshot.get("object_guid"), dn):
-        _reapply(conn, dn, attributes, object_classes)
-        _rejoin_groups(conn, settings, dn, snapshot)
-        return dn
+    # Reanimation keeps the SID; recreating does not. A directory that will
+    # not reanimate is a reason to say so and carry on, not to fail the
+    # restore — but it is never silent.
+    try:
+        if _reanimate(conn, snapshot.get("object_guid"), dn):
+            _reapply(conn, dn, attributes, object_classes)
+            _rejoin_groups(conn, settings, dn, snapshot)
+            return dn
+    except ObjectError as exc:
+        _log.warning("%s: %s; restoring as a new object instead", dn, exc)
 
     payload = {
         key: value
@@ -791,9 +800,17 @@ def _reanimate(conn: Connection, object_guid: Any, dn: str) -> bool:
             },
             controls=[(SHOW_DELETED, True, None)],
         )
-        return conn.result["result"] == 0
-    except LDAPException:
-        return False
+        if conn.result["result"] == 0:
+            return True
+        # Said out loud rather than degraded into silence: falling back to
+        # creating a new object is a restore that loses the SID, and an
+        # operator has to be able to find out why.
+        raise ObjectError(
+            "the directory refused to reanimate the tombstone: "
+            f"{conn.result.get('description')} {conn.result.get('message') or ''}".strip()
+        )
+    except LDAPException as exc:
+        raise ObjectError(f"the tombstone could not be reanimated: {exc}") from exc
 
 
 def _reapply(conn: Connection, dn: str, attributes: dict, object_classes: list) -> None:

@@ -95,6 +95,10 @@ func ReleaseProfile(ctx context.Context, user string, env Env) {
 	if err != nil || account.uid < 1000 {
 		return
 	}
+	// Flushed before it is detached. A profile disk holds the settings the
+	// desktop wrote during the session, and a page still in memory when the
+	// loop device goes is a setting somebody chose and did not keep.
+	_, _ = env.Run.Run(ctx, "sync", "-f", account.home)
 	_, _ = env.Run.Run(ctx, "umount", account.home)
 	// The share itself only when nobody else is on it. Another session on this
 	// machine still needs it.

@@ -135,9 +135,21 @@ for RIGHT in f98340fb-7c5b-4cdb-a00b-2ebdfa115a96 \
              1131f6ab-9c07-11d1-f79f-00c04fc2dcd2 \
              1131f6aa-9c07-11d1-f79f-00c04fc2dcd2 \
              1131f6ac-9c07-11d1-f79f-00c04fc2dcd2 \
-             1131f6ad-9c07-11d1-f79f-00c04fc2dcd2; do
+             1131f6ad-9c07-11d1-f79f-00c04fc2dcd2 \
+             45ec5156-db7e-47bb-b53f-dbeb2d03c40f; do
     samba-tool dsacl set --objectdn="$BASE_DN" --sddl="(OA;;CR;${RIGHT};;${SID})"
 done
+
+# Restoring an object means reanimating the directory's own tombstone, which
+# is the only way it keeps the SID it had. That needs the Reanimate Tombstones
+# right above, and read and write on the container tombstones live in — which
+# by default only administrators can even see. Without both, a restore quietly
+# fell back to creating a new object with a new SID: every file the account
+# owned, and every rule that named it, then pointed at nobody.
+DELETED_DN="CN=Deleted Objects,$BASE_DN"
+samba-tool dsacl set --objectdn="$DELETED_DN" \
+    --sddl="(A;;CCDCLCRPWPRC;;;${SID})" 2>/dev/null ||
+    echo "    (could not grant access to $DELETED_DN; restores will not keep SIDs)" >&2
 
 echo "==> Exporting keytab to $KEYTAB"
 install -d -m 0750 "$(dirname "$KEYTAB")"
