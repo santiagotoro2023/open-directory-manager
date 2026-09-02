@@ -128,8 +128,8 @@ func MountDriveMaps(
 		if out, err := env.Run.Run(
 			ctx, "mount", "-t", "cifs", unc, point, "-o", options,
 		); err != nil {
-			problems = append(problems, fmt.Errorf(
-				"%s: %w: %s", drive.Name, err, strings.TrimSpace(lastLine(out))))
+			problems = append(problems, fmt.Errorf("%s: %w: %s%s", drive.Name, err,
+				strings.TrimSpace(lastLine(out)), explain(out)))
 			continue
 		}
 		if err := bookmark(who, drive); err != nil {
@@ -153,6 +153,31 @@ func MountDriveMaps(
 	state.DriveMaps = attached
 	saveCreated(env, state)
 	return problems
+}
+
+// explain turns the mount's own words into the cause, for the two failures
+// that account for nearly all of them and say nothing about themselves.
+//
+// A person reading "mount error(126)" in the console learns only that it
+// failed. The RSoP line is where they look, so the line has to carry what to
+// do about it.
+func explain(out string) string {
+	switch {
+	case strings.Contains(out, "Required key not available"):
+		return " — the mount could not read this person's Kerberos ticket. " +
+			"It has to be a file the kernel can find by uid: " +
+			"krb5_ccname_template = FILE:/tmp/krb5cc_%U in sssd.conf, and a matching " +
+			"default_ccache_name in krb5.conf. Re-running the domain join writes both."
+	case strings.Contains(out, "Permission denied"):
+		return " — the ticket was read and the server refused it. " +
+			"Check the share's own permissions for this person."
+	case strings.Contains(out, "No such device") || strings.Contains(out, "Unable to find suitable"):
+		return " — cifs support is missing on this machine (cifs-utils and keyutils)."
+	case strings.Contains(out, "Connection refused") || strings.Contains(out, "No route to host"),
+		strings.Contains(out, "Name or service not known"):
+		return " — the file server could not be reached from this machine."
+	}
+	return ""
 }
 
 // unbookmark takes a drive map back out of the file manager's sidebar.

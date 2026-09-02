@@ -1226,3 +1226,19 @@ func TestOneSessionDoesNotForgetAnothersFiles(t *testing.T) {
 		t.Errorf("state = %v", kept)
 	}
 }
+
+// "mount error(126)" tells a reader only that it failed. The line in the
+// console is where somebody looks, so it carries the cause.
+func TestAMountFailureExplainsItself(t *testing.T) {
+	for _, test := range []struct{ out, want string }{
+		{"mount error(126): Required key not available", "krb5_ccname_template"},
+		{"mount error(13): Permission denied", "share's own permissions"},
+		{"mount: /mnt/x: No such device", "cifs-utils"},
+		{"mount error: Name or service not known", "could not be reached"},
+		{"mount error(112): Host is down", ""},
+	} {
+		if got := explain(test.out); !strings.Contains(got, test.want) {
+			t.Errorf("explain(%q) = %q, want it to mention %q", test.out, got, test.want)
+		}
+	}
+}
