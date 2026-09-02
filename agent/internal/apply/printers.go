@@ -170,9 +170,18 @@ func quietBrowsing(ctx context.Context, env Env) policy.Result {
 	// Except on a print server, which is the machine that goes looking: its
 	// scan for printers on the network is an avahi browse, and taking avahi
 	// away there would mean no printer could ever be found to hand out.
+	//
+	// Masked rather than disabled: avahi is started on demand, by its socket
+	// and by D-Bus, so a disabled one is back within minutes of anything
+	// asking — and the printer nobody asked for is back with it.
 	if _, err := os.Stat(env.Path(printServerMarker)); err != nil {
-		_, _ = env.Run.Run(ctx, "systemctl", "disable", "--now",
+		_, _ = env.Run.Run(ctx, "systemctl", "mask", "--now",
 			"avahi-daemon.service", "avahi-daemon.socket")
+	} else {
+		// This machine went from managed desktop to print server.
+		_, _ = env.Run.Run(ctx, "systemctl", "unmask",
+			"avahi-daemon.service", "avahi-daemon.socket")
+		_, _ = env.Run.Run(ctx, "systemctl", "start", "avahi-daemon.socket")
 	}
 
 	if _, err := os.Stat(env.Path(browsedConf)); err != nil {
