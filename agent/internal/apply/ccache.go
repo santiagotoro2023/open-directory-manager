@@ -118,13 +118,21 @@ func removeWinbindAuth(ctx context.Context, env Env) *policy.Result {
 	if winbind < 0 || sss < 0 || winbind > sss {
 		return nil
 	}
-	out, err := env.Run.Run(ctx, "apt-get", "remove", "-y", "libpam-winbind")
+	// Outside the agent's own restrictions: removing it runs pam-auth-update,
+	// which rewrites the stack, and a maintainer script under our sandbox
+	// fails in ways that read as a broken package.
+	out, err := Unsandboxed(ctx, env, "apt-get", "remove", "-y", "libpam-winbind")
 	if err != nil {
-		return &policy.Result{
-			Setting: ccacheSetting,
-			Status:  "failed",
-			Reason: fmt.Sprintf("pam_winbind answers before pam_sss, so no session gets a "+
-				"Kerberos ticket, and removing it failed: %v: %s", err, lastLine(out)),
+		// Second best, and enough on its own: take the profile out of the
+		// stack and leave the package where it is.
+		if _, second := Unsandboxed(ctx, env, "pam-auth-update", "--package",
+			"--remove", "winbind"); second != nil {
+			return &policy.Result{
+				Setting: ccacheSetting,
+				Status:  "failed",
+				Reason: fmt.Sprintf("pam_winbind answers before pam_sss, so no session gets "+
+					"a Kerberos ticket, and taking it out failed: %v: %s", err, lastLine(out)),
+			}
 		}
 	}
 	return &policy.Result{

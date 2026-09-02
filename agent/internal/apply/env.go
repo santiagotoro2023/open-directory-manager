@@ -56,6 +56,26 @@ type Env struct {
 	State *State
 }
 
+// Unsandboxed runs a command the way PID 1 would, outside this service's own
+// restrictions.
+//
+// A package's maintainer script is not policy: it is ordinary root code
+// written against an ordinary machine, and under the agent's restrictions it
+// fails in ways that read as a broken package — a half-configured dpkg, and
+// from then on every install failing with dependencies that are in fact
+// perfectly installable. Where there is no systemd — a container, a test —
+// run it directly.
+func Unsandboxed(ctx context.Context, env Env, name string, args ...string) (string, error) {
+	if env.Root != "" || env.Run == nil {
+		return env.Run.Run(ctx, name, args...)
+	}
+	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		return env.Run.Run(ctx, name, args...)
+	}
+	run := append([]string{"--pipe", "--wait", "--collect", "--quiet", "--", name}, args...)
+	return env.Run.Run(ctx, "systemd-run", run...)
+}
+
 func NewEnv(root string) Env {
 	return Env{Root: root, Run: execRunner{}, State: NewState()}
 }
