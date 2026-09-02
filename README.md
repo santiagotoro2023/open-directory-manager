@@ -110,6 +110,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Machine management | Installed software, local accounts to add and remove, sign-in history, recent logs, updates, restart — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, and re-issues the console's own certificate |
 | Passwords | Domain policy, per-group and per-OU policies, helpdesk resets, and self-service change gated by policy |
+| Pictures | A person's picture set on their account and shown by every machine they sign in to, at the login screen and in the desktop |
 | Sign-in | A second factor for the console, enrolled with a QR code, with single-use recovery codes |
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit |

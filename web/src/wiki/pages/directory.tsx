@@ -214,6 +214,20 @@ export function Content() {
           </Steps>
         </Section>
 
+        <Section title="Pictures">
+          <p>
+            A person&rsquo;s picture is set on their account and shown by every machine they sign
+            in to &mdash; at the login screen and in the desktop. Set it once here rather than on
+            each desktop, where it would stay on the desktop it was set on.
+          </p>
+          <p>
+            It is stored in <C>thumbnailPhoto</C>, which is where Active Directory keeps it, and
+            written to the machine at each logon. Keep it small: a picture, not a portrait
+            session.
+          </p>
+          <Where>Directory &rarr; a user &rarr; Actions &rarr; Picture.</Where>
+        </Section>
+
         <Section title="Searching">
           <p>
             The search box searches the whole domain, not the selected container, and matches common
