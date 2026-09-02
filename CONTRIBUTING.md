@@ -21,6 +21,11 @@ where it is convenient.
   `package.json`; CI runs dependency scanning.
 - **Audit every write.** Any API call that changes state records actor,
   timestamp and a before/after diff.
+- **A new role installer ships with its uninstall.** Every
+  `deploy/install-<role>-role.sh` needs a matching `teardown_<role>` function
+  in `deploy/uninstall.sh`, added in the same commit — see the header comment
+  there. `deploy/uninstall.sh` warns at runtime about any role installer that
+  has no matching teardown, but that warning should never fire on `main`.
 
 ## Layout
 

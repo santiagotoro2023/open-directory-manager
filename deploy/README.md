@@ -24,6 +24,7 @@ framework, from **Server Roles** in the console.
 | `install-radius-role.sh` | Any joined server | FreeRADIUS, against the directory |
 | `install-pxe-role.sh` | A boot server | Unattended installation that joins on first boot |
 | `install-agent.sh` | An already-joined machine | The policy agent alone |
+| `uninstall.sh` | Any of the above | Removes everything the scripts above put on this machine |
 
 ## Guided setup
 
@@ -40,6 +41,23 @@ unattended. It can be run again; completed steps are skipped.
 
 The rest of this document covers the same steps individually, for
 deployments that are not a single server.
+
+## Starting over
+
+```
+sudo ./setup.sh --uninstall
+```
+
+Removes everything `setup.sh` and every `install-*-role.sh` put on this
+machine — the control plane, the console, the agent, every role it finds
+installed, the ODM database, and, if this machine is a domain controller,
+the domain itself — so `setup.sh` can be run again as if the machine were
+new. It asks for confirmation first, and `--dry-run` prints what it would
+remove without removing it. See `./uninstall.sh --help` for the flags,
+including `--purge-packages` to also remove the packages each role
+installed. It does not touch any other machine: a domain controller removed
+here still exists to every client that joined it until they are reinstalled
+or leave the domain another way.
 
 ## Order of operations
 

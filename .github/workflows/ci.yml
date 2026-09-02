@@ -201,6 +201,25 @@ jobs:
         working-directory: client-join
         run: go build -tags gui -o /dev/null ./cmd/odm-join-gui
 
+  deploy:
+    name: deploy scripts (syntax + uninstall coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check every script
+        run: |
+          shopt -s nullglob
+          for f in deploy/*.sh; do
+            echo "-- $f"
+            bash -n "$f"
+          done
+      # deploy/uninstall.sh must be able to remove whatever a role installer
+      # puts on a machine. This fails the build the moment a new
+      # install-*-role.sh ships without a matching teardown, rather than
+      # leaving that for whoever next has to hand-uninstall a stale lab box.
+      - name: Every role installer has a matching uninstall
+        run: deploy/uninstall.sh --check-roles
+
   dependency-scan:
     name: dependency scan
     runs-on: ubuntu-latest

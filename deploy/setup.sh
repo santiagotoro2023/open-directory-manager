@@ -12,6 +12,18 @@ set -Eeuo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 
+# The reverse of everything below lives in its own script, not here: tearing
+# down is a different shape of problem (best-effort, keep going past a
+# failure) from setting up (stop at the first one). --uninstall just hands
+# off to it with whatever else was on the command line.
+for ARG in "$@"; do
+    if [[ "$ARG" == "--uninstall" ]]; then
+        REMAINING=()
+        for ARG in "$@"; do [[ "$ARG" == "--uninstall" ]] || REMAINING+=("$ARG"); done
+        exec "$HERE/uninstall.sh" "${REMAINING[@]}"
+    fi
+done
+
 REALM=""
 NETBIOS=""
 FORWARDER=""
@@ -48,6 +60,9 @@ the command line is asked for.
   --skip-console           do not build the console here
   --service-user <name>    account the control plane runs as (default: odm)
   --yes                    accept the summary without pausing
+  --uninstall              remove everything a previous run of this script
+                           (and any role installed afterwards) put on this
+                           machine; see deploy/uninstall.sh --help
 USAGE
     exit 2
 }
