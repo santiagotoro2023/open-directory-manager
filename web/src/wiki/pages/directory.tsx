@@ -56,7 +56,9 @@ export function Content() {
           and each row reports its own result.
         </Example>
         <Example title="Move an object">
-          Open it → <strong>Move</strong> → choose the destination container.
+          Open it → <strong>Move</strong> → choose the destination container. The tree there shows
+          the containers an operator made; tick <strong>Show system containers</strong> for the
+          rest.
         </Example>
         <Example title="See what a machine is doing">
           Open a computer → <strong>Machine</strong> for its operating system, uptime and pending
@@ -100,8 +102,9 @@ export function Content() {
 
         <Where>
           Directory. The tree on the left selects a container; the table lists its contents.
-          Clicking an object opens its own page. The root is the domain&rsquo;s short name, and the
-          border between the tree and the table can be dragged.
+          Clicking an object opens its own page, and coming back returns to the container it was
+          opened from. The root is the domain&rsquo;s short name, and the border between the tree
+          and the table can be dragged.
         </Where>
       </Quickstart>
 

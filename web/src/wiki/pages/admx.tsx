@@ -107,7 +107,9 @@ export function Content() {
         <Section title="What applies on Debian">
           <p>
             Administrative templates describe Windows registry keys. Settings under the keys below
-            are translated into the managed-policy documents the browsers read.
+            are translated into the managed-policy documents the browsers read. This is how browser
+            policy is configured: import the template Chrome or Firefox publishes, and every setting
+            arrives with its name, type and description.
           </p>
           <Reference
             headers={["Registry key", "Applied as"]}

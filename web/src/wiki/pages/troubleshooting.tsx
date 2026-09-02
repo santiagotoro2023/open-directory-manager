@@ -595,6 +595,49 @@ export function Content() {
                 "The peer shows as unreachable",
                 "Check the peer node's service and that both URLs are correct on both nodes.",
               ],
+              [
+                "A scope is listed as handing out no DNS server",
+                <>
+                  It has no <C key="dns">domain-name-servers</C> option. Clients on it get an
+                  address and resolve nothing. Edit the scope and set the domain controllers.
+                </>,
+              ],
+              [
+                "The Leases tab is empty while a scope reports addresses in use",
+                "Fixed in 0.6.0: the lease query asked for the leases in zero subnets. Upgrade the control plane.",
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="File shares">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                <>
+                  &ldquo;Failed to mount Windows share: Invalid argument&rdquo;, or an immediate
+                  failure with no password prompt
+                </>,
+                <>
+                  The server&rsquo;s name did not resolve; libsmbclient reports a failed lookup as{" "}
+                  <C key="e">EINVAL</C>. On the client:{" "}
+                  <C key="f">getent hosts fs01.corp.example.internal</C>. Put the machine on the
+                  domain&rsquo;s DHCP, or point its resolver at a controller.
+                </>,
+              ],
+              [
+                "The password is refused from a machine that is not joined",
+                "Use the domain account's logon name. The domain field can be left as the client suggests.",
+              ],
+              [
+                "The share opens but a folder inside it will not",
+                "The access list. Add the group under the share's permissions with Read & write.",
+              ],
+              [
+                "A share stays in applying",
+                "The server's agent has not checked in, or the machine does not carry the file-server role.",
+              ],
             ]}
           />
         </Section>

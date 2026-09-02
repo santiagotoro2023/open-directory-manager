@@ -47,13 +47,21 @@ export function Content() {
         </Example>
 
         <Example title="Create a scope">
-          <strong>DHCP</strong> → <strong>New scope</strong> → subnet <C>10.10.0.0/24</C>, pool{" "}
-          <C>10.10.0.100 - 10.10.0.200</C>, routers <C>10.10.0.1</C>, DNS servers <C>10.10.0.10</C>.
+          <strong>DHCP</strong> → <strong>New scope</strong> → subnet <C>10.10.0.0/24</C>. The
+          gateway, the pool and the domain&rsquo;s DNS servers arrive filled in; addresses are typed
+          as the part that differs, so the pool is <C>100</C> to <C>254</C>. Every field stays
+          editable, and <strong>Show every setting</strong> lays them all out at once.
+        </Example>
+
+        <Example title="Change a scope">
+          On the scope row → <strong>Edit</strong>. Reservations in it are left as they are. The
+          subnet itself cannot change: that is a different scope.
         </Example>
 
         <Example title="Reserve an address">
-          On the scope row → <strong>Reserve</strong> → hardware address <C>00:11:22:33:44:55</C>,
-          address <C>10.10.0.50</C>, host name.
+          On the scope row → <strong>Reserve</strong> → pick the machine under{" "}
+          <strong>From a lease</strong> to fill in its hardware address, address and host name, or
+          type them.
         </Example>
 
         <Where>DHCP for scopes and leases; Server Roles to install the role.</Where>
@@ -174,7 +182,12 @@ export function Content() {
           <p>
             A reservation ties a hardware address to a fixed IP address inside a scope. The address
             must be inside the scope it belongs to, and one hardware address can hold one
-            reservation per scope.
+            reservation per scope. Put reserved addresses outside the pool, so the same address is
+            not offered to something else before the reserved machine asks for it.
+          </p>
+          <p>
+            <strong>From a lease</strong> fills the three fields from a machine currently holding an
+            address on that scope.
           </p>
         </Section>
 

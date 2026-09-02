@@ -3,6 +3,7 @@ import {
   Details,
   Example,
   Note,
+  PageLink,
   Quickstart,
   Reference,
   Section,
@@ -46,8 +47,8 @@ export function Content() {
             </li>
             <li>
               <strong>Settings</strong> → pick a category from the list, under{" "}
-              <strong>Computer</strong> or <strong>User</strong> → <strong>Add</strong>. A category
-              carrying settings shows how many.
+              <strong>Computer</strong> or <strong>User</strong> → <strong>Add</strong>, which opens
+              the entry with every field it has. A category carrying settings shows how many.
             </li>
             <li>
               <strong>Links</strong> → pick a container → <strong>Link here</strong>.
@@ -117,6 +118,21 @@ export function Content() {
             them, nesting included. A machine that is not in the filter is skipped, and the reason
             is reported.
           </p>
+        </Section>
+
+        <Section title="Editing settings">
+          <p>
+            Each category lists its entries: the name on the left, what the entry sets beside it,
+            and — for the categories that support it — who it applies to.{" "}
+            <strong>Edit</strong> opens the whole entry, targeting included;{" "}
+            <strong>Add</strong> opens the same dialog empty, and nothing is added to the policy
+            object until it is saved. A category configured once rather than as a list shows its
+            settings directly, with <strong>Remove</strong> to take it out of the object.
+          </p>
+          <Note>
+            Every category carries a line saying what it does and a link to the section of{" "}
+            <PageLink page="policy-settings">Policy settings</PageLink> covering it.
+          </Note>
         </Section>
 
         <Section title="Item-level targeting">

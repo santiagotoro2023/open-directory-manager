@@ -44,6 +44,15 @@ export function Content() {
           applied last wins for that entry.
         </p>
 
+        <p>
+          A category lists its entries by name with what each one sets beside it.{" "}
+          <strong>Add</strong> and <strong>Edit</strong> open the same dialog, carrying every field
+          of that entry and, where the category supports it, who it applies to. Categories
+          configured once rather than as a list — the login screen, the local administrator — show
+          their settings directly, with <strong>Remove</strong> to take the setting out of the
+          policy object altogether.
+        </p>
+
         <Example title="Deploy a file to every machine">
           <strong>File deployment</strong> → <strong>Add</strong> → path <C>/etc/motd</C>, content,
           mode <C>0644</C>.
@@ -230,9 +239,9 @@ user      root`}</Code>
           <p>
             A drive map for laptops and another for desks is one policy object in Active Directory,
             not two. Entries in File deployment, Scripts, systemd units, Scheduled tasks, Drive
-            maps, Printers and Software deployment each carry an <strong>Applies to</strong> column:{" "}
-            <C>Everyone</C> means whoever the policy object reaches, and anything set there narrows
-            it further.
+            maps, Printers and Software deployment carry their own targeting, set under{" "}
+            <strong>Applies to</strong> at the bottom of the entry. The list shows{" "}
+            <C>Everyone</C> where nothing is set, and <C>Some machines</C> where something is.
           </p>
           <Note>
             The fields are the policy object&rsquo;s own — operating system, host name pattern,

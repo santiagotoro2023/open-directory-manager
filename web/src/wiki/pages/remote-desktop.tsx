@@ -55,8 +55,9 @@ export function Content() {
             on it.
           </li>
           <li>
-            <strong>Remote Desktop</strong> &rarr; <strong>New collection</strong>: name it, choose
-            the broker, choose that share, and add the people or groups who may connect.
+            <strong>Remote Desktop</strong> &rarr; <strong>New collection</strong>: name it and
+            choose the broker, then what people get, the profile share, the session limits and who
+            may connect. <strong>Show every setting</strong> puts them on one page.
           </li>
           <li>
             <strong>Session hosts</strong> tab &rarr; add hosts to the collection.
