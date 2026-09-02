@@ -2572,6 +2572,20 @@ table.data td > button.icon {
   width: 18px;
 }
 
+/* A field with an action under it: a certificate box with "use this
+   domain's authority" beneath, rather than beside, where the box is tall. */
+.stacked-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 /* The last column of a data table, where a row's own action sits. */
 td.row-actions {
   width: 1%;

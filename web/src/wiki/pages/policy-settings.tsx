@@ -403,6 +403,31 @@ user      root`}</Code>
           />
         </Section>
 
+        <Section title="Choosing rather than typing">
+          <p>
+            Anything a policy names that the console already knows about is chosen from what is
+            really there, so an entry cannot name a queue, a share or a collection that does not
+            exist. The field stays typeable for the machine ODM does not manage.
+          </p>
+          <Reference
+            headers={["Setting", "What Select… offers", "What it fills in"]}
+            rows={[
+              ["Drive maps", "Every share across the file servers", "The share, the name and the mount point"],
+              ["Roaming profile", "The same shares", "The share, with %username% after it"],
+              ["Desktop background, Login screen", "The same shares", "The share as a URI; the file name is typed after it"],
+              ["Printers", "Every queue across the print servers", "The queue and the server it is on"],
+              [
+                "Remote desktop files",
+                "Every collection",
+                "The name, the broker and the published application — from any of the three fields",
+              ],
+              ["Trusted certificates", "This domain's own authority", "The certificate itself"],
+              ["Certificates", "The profiles this domain's authority has", "The profile"],
+              ["Sudo rules, scheduled tasks, scripts", "The commands, schedules and interpreters asked for most", "The value, or one more command on a rule"],
+            ]}
+          />
+        </Section>
+
         <Section title="Drive maps">
           <p>
             Shares are mounted with <C>cifs</C> and <C>sec=krb5</C>. No credential is stored on a

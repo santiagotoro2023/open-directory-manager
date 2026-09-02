@@ -1,6 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from "../api";
+import {
+  ApiError,
+  api,
+  type AdmxSelection,
+  type ItemTargeting,
+  type PolicySettings,
+} from "../api";
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
 import { CollectionPicker, PrinterPicker, SharePicker } from "./ResourcePicker";
@@ -19,6 +25,10 @@ interface FieldSpec {
   label: string;
   kind?: FieldKind;
   options?: string[];
+  /** Choices the console fetches rather than ones written here. */
+  optionsFrom?: "certificate-profiles";
+  /** A value the console can produce, offered beside the field. */
+  fill?: "root-certificate";
   placeholder?: string;
   /** What the field wants, where the label alone reads two ways. Shown in the
       entry dialog only: a table column has no room for it. */
@@ -37,6 +47,9 @@ interface FieldSpec {
   // Ready-made values offered beside the field. The field stays typeable:
   // these are the ones asked for most often, not the only ones allowed.
   suggestions?: { value: string; label: string }[];
+  /** Whether choosing one adds to what is there. A rule is a list of
+      commands; an interpreter and a schedule are one value. */
+  suggestionsAppend?: boolean;
 }
 
 // What a helpdesk or a developer is usually given, so the common rule is a
@@ -174,7 +187,16 @@ export const CATEGORIES: CategorySpec[] = [
         width: "130px",
       },
       { key: "name", label: "Name", width: "160px" },
-      { key: "interpreter", label: "Interpreter", width: "140px" },
+      {
+        key: "interpreter",
+        label: "Interpreter",
+        width: "140px",
+        suggestions: [
+          { value: "/bin/sh", label: "Shell — /bin/sh" },
+          { value: "/bin/bash", label: "Bash — /bin/bash" },
+          { value: "/usr/bin/python3", label: "Python 3" },
+        ],
+      },
       { key: "content", label: "Script", kind: "textarea" },
     ],
     blank: { trigger: "startup", name: "", interpreter: "/bin/sh", content: "" },
@@ -198,7 +220,16 @@ export const CATEGORIES: CategorySpec[] = [
         width: "130px",
       },
       { key: "name", label: "Name", width: "160px" },
-      { key: "interpreter", label: "Interpreter", width: "140px" },
+      {
+        key: "interpreter",
+        label: "Interpreter",
+        width: "140px",
+        suggestions: [
+          { value: "/bin/sh", label: "Shell — /bin/sh" },
+          { value: "/bin/bash", label: "Bash — /bin/bash" },
+          { value: "/usr/bin/python3", label: "Python 3" },
+        ],
+      },
       { key: "content", label: "Script", kind: "textarea" },
     ],
     blank: { trigger: "logon", name: "", interpreter: "/bin/sh", content: "" },
@@ -235,7 +266,20 @@ export const CATEGORIES: CategorySpec[] = [
     doc: "scheduled-tasks",
     fields: [
       { key: "name", label: "Name", width: "160px" },
-      { key: "schedule", label: "Schedule", placeholder: "0 3 * * 0", width: "150px" },
+      {
+        key: "schedule",
+        label: "Schedule",
+        placeholder: "0 3 * * 0",
+        width: "150px",
+        suggestions: [
+          { value: "@daily", label: "Every day at midnight — @daily" },
+          { value: "@hourly", label: "Every hour — @hourly" },
+          { value: "@weekly", label: "Every week — @weekly" },
+          { value: "@reboot", label: "At every boot — @reboot" },
+          { value: "0 3 * * *", label: "Every day at 03:00" },
+          { value: "*/15 * * * *", label: "Every quarter of an hour" },
+        ],
+      },
       { key: "command", label: "Command" },
       { key: "user", label: "Run as", width: "150px", picker: "user" },
     ],
@@ -302,6 +346,7 @@ export const CATEGORIES: CategorySpec[] = [
         label: "Commands",
         placeholder: "/usr/bin/systemctl",
         suggestions: COMMON_SUDO_COMMANDS,
+        suggestionsAppend: true,
       },
       { key: "run_as", label: "Run as", width: "140px", picker: "user" },
       { key: "nopasswd", label: "NOPASSWD", kind: "checkbox", width: "110px" },
@@ -376,7 +421,13 @@ export const CATEGORIES: CategorySpec[] = [
     note: "Certificates → Publish to domain writes this one; editing it here is unusual.",
     fields: [
       { key: "name", label: "Name", placeholder: "internal-root-ca" },
-      { key: "certificate_pem", label: "PEM", kind: "textarea" },
+      {
+        key: "certificate_pem",
+        label: "PEM",
+        kind: "textarea",
+        hint: "Paste an authority to trust, or fill in this domain's own",
+        fill: "root-certificate",
+      },
     ],
     blank: { name: "", certificate_pem: "" },
   },
@@ -394,6 +445,9 @@ export const CATEGORIES: CategorySpec[] = [
         label: "Kind",
         kind: "select",
         options: ["server", "client"],
+        // The two built-in ones are the fallback; a domain with its own
+        // profiles offers those instead of a list written here.
+        optionsFrom: "certificate-profiles",
         width: "130px",
       },
       { key: "path", label: "Written to", placeholder: "/etc/ssl/odm" },
@@ -2012,19 +2066,10 @@ function Cell({
     );
   }
   if (field.kind === "select") {
-    return (
-      <Select
-        aria-label={field.label}
-        value={toInput(value)}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {(field.options ?? []).map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </Select>
-    );
+    return <SelectField field={field} value={toInput(value)} onChange={onChange} />;
+  }
+  if (field.kind === "textarea" && field.fill === "root-certificate") {
+    return <CertificateField field={field} value={toInput(value)} onChange={onChange} />;
   }
   if (field.kind === "textarea") {
     return (
@@ -2059,13 +2104,18 @@ function Cell({
           value={toInput(value)}
           onChange={(e) => onChange(fromInput(field, e.target.value))}
         />
-        {/* Appends rather than replaces: a rule is usually a handful of
-            commands, and nobody should have to remember the path to visudo. */}
+        {/* A rule is a list — a handful of commands, and nobody should have
+            to remember the path to visudo — so those append. A schedule or an
+            interpreter is one value, and choosing one replaces it. */}
         <Select
           aria-label={`Common ${field.label.toLowerCase()}`}
           value=""
           onChange={(e) => {
             if (!e.target.value) return;
+            if (!field.suggestionsAppend) {
+              onChange(fromInput(field, e.target.value));
+              return;
+            }
             const current = toInput(value)
               .split(",")
               .map((part) => part.trim())
@@ -2092,6 +2142,101 @@ function Cell({
       value={toInput(value)}
       onChange={(e) => onChange(fromInput(field, e.target.value))}
     />
+  );
+}
+
+/** A choice from a fixed list, or from what the domain really has.
+ *
+ * Certificate profiles are the case: the two built-in ones are what a domain
+ * starts with, and one that has defined its own should be choosing from those
+ * rather than from a list written into the console. */
+function SelectField({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldSpec;
+  value: string;
+  onChange: (value: unknown) => void;
+}) {
+  const [fetched, setFetched] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (field.optionsFrom !== "certificate-profiles") return;
+    let live = true;
+    api.ca
+      .profiles()
+      .then((result) => live && setFetched(result.profiles.map((profile) => profile.name)))
+      .catch(() => live && setFetched(null));
+    return () => {
+      live = false;
+    };
+  }, [field.optionsFrom]);
+
+  const options = fetched && fetched.length > 0 ? fetched : (field.options ?? []);
+  return (
+    <Select aria-label={field.label} value={value} onChange={(e) => onChange(e.target.value)}>
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+      {/* What is configured stays selectable even if it is no longer offered:
+          a profile deleted after the fact must not silently become another. */}
+      {value && !options.includes(value) && <option value={value}>{value} — not offered</option>}
+    </Select>
+  );
+}
+
+/** A certificate to trust, typed, pasted, or taken from this domain's own
+ * authority — which is the one people actually want and the one that is
+ * tedious to fetch by hand. */
+function CertificateField({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldSpec;
+  value: string;
+  onChange: (value: unknown) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="stacked-field">
+      <textarea
+        aria-label={field.label}
+        rows={3}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <div className="inline-actions">
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              onChange((await api.ca.root()).trim() + "\n");
+            } catch (err) {
+              setError(
+                err instanceof ApiError && err.status === 404
+                  ? "This domain has no certificate authority yet."
+                  : String(err),
+              );
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Use this domain&rsquo;s authority
+        </button>
+        {error && <span className="muted">{error}</span>}
+      </div>
+    </div>
   );
 }
 

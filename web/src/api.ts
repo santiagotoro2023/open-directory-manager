@@ -1552,6 +1552,13 @@ export const api = {
       ),
 
     rootUrl: "/api/v1/ca/root",
+
+    /** The root certificate itself, for a field that wants the PEM. */
+    root: async () => {
+      const response = await fetch("/api/v1/ca/root", { credentials: "same-origin" });
+      if (!response.ok) throw new ApiError(response.status, response.statusText);
+      return response.text();
+    },
   },
 
   operations: {
