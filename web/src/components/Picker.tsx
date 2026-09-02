@@ -219,12 +219,20 @@ export function ContainerPicker({
   title,
   submitLabel,
   onlyOrganizationalUnits,
+  exclude,
+  busy,
+  error: externalError,
   onClose,
   onPick,
 }: {
   title: string;
   submitLabel: string;
   onlyOrganizationalUnits?: boolean;
+  /** Leave this container, and anything inside it, off the tree — for a move,
+      a place can't be its own destination or one of its own children. */
+  exclude?: string;
+  busy?: boolean;
+  error?: string | null;
   onClose: () => void;
   onPick: (dn: string) => void;
 }) {
@@ -232,7 +240,7 @@ export function ContainerPicker({
   const [root, setRoot] = useState("");
   const [rootLabel, setRootLabel] = useState("");
   const [selected, setSelected] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     api.directory
@@ -240,32 +248,39 @@ export function ContainerPicker({
       .then((tree) => {
         setRoot(tree.base_dn);
         setRootLabel(tree.netbios_name || tree.domain || tree.base_dn);
-        // Policy links only mean anything on organizational units and the
-        // domain head; the rest of the tree is the directory's own bookkeeping.
+        const excludeLower = exclude?.toLowerCase();
         setNodes(
-          onlyOrganizationalUnits
-            ? tree.nodes.filter(
-                (node) => node.objectType === "ou" || node.distinguishedName === tree.base_dn,
-              )
-            : tree.nodes,
+          tree.nodes.filter((node) => {
+            // Policy links only mean anything on organizational units and the
+            // domain head; the rest of the tree is the directory's own bookkeeping.
+            if (
+              onlyOrganizationalUnits &&
+              node.objectType !== "ou" &&
+              node.distinguishedName !== tree.base_dn
+            ) {
+              return false;
+            }
+            if (excludeLower) {
+              const dn = node.distinguishedName.toLowerCase();
+              if (dn === excludeLower || dn.endsWith("," + excludeLower)) return false;
+            }
+            return true;
+          }),
         );
         setSelected(tree.base_dn);
       })
-      .catch((err) => setError(String(err)));
-  }, [onlyOrganizationalUnits]);
+      .catch((err) => setLoadError(String(err)));
+  }, [onlyOrganizationalUnits, exclude]);
 
   return (
     <Modal
       title={title}
       submitLabel={submitLabel}
+      busy={busy}
+      error={externalError ?? loadError}
       onClose={onClose}
       onSubmit={() => selected && onPick(selected)}
     >
-      {error && (
-        <p className="alert" role="alert">
-          {error}
-        </p>
-      )}
       <div className="picker-tree">
         <Branch
           nodes={nodes}

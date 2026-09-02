@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, api, type DirectoryObject } from "../api";
 import { FileInput } from "./FileInput";
 import { Field, Modal } from "./Modal";
-import Select from "./Select"
+import { ContainerPicker } from "./Picker";
 
 const UF_ACCOUNTDISABLE = 0x0002;
 
@@ -185,39 +185,26 @@ export function PasswordDialog({ dn, onClose }: { dn: string; onClose: () => voi
 
 export function MoveDialog({
   object,
-  containers,
   onClose,
   onMoved,
 }: {
   object: DirectoryObject;
-  containers: DirectoryObject[];
   onClose: () => void;
   onMoved: (moved: DirectoryObject) => void;
 }) {
   const dn = object.distinguishedName;
-  const parent = dn.slice(dn.indexOf(",") + 1);
-  const [target, setTarget] = useState(parent);
   const { busy, error, run } = useAction();
 
   return (
-    <Modal
-      title="Move object"
-      submitLabel="Move"
+    <ContainerPicker
+      title={`Move ${String(object.ou ?? object.cn ?? object.name ?? "")}`}
+      submitLabel="Move here"
+      exclude={dn}
       busy={busy}
       error={error}
       onClose={onClose}
-      onSubmit={() => void run(async () => onMoved(await api.directory.move(dn, target)))}
-    >
-      <Field label="Destination">
-        <Select value={target} onChange={(e) => setTarget(e.target.value)}>
-          {containers.map((c) => (
-            <option key={c.distinguishedName} value={c.distinguishedName}>
-              {c.distinguishedName}
-            </option>
-          ))}
-        </Select>
-      </Field>
-    </Modal>
+      onPick={(target) => void run(async () => onMoved(await api.directory.move(dn, target)))}
+    />
   );
 }
 

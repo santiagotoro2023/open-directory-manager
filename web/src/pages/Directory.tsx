@@ -57,11 +57,21 @@ const PLUMBING = new Set([
 // always there, as opposed to the structure an operator built.
 const BUILTIN_OUS = new Set(["domain controllers"]);
 
-function isBuiltin(node: DirectoryObject, name: string): boolean {
+// The MIME type an object's DN travels under while it's being dragged, so a
+// drop target only reacts to a directory object and not, say, a file dragged
+// in from the desktop.
+const DN_MEDIA_TYPE = "application/x-odm-dn";
+
+// A name match alone isn't identity: an operator can create their own
+// "Domain Controllers" OU elsewhere in the tree, and it must not borrow the
+// built-in one's look. Only the OU actually sitting where the directory put
+// it — directly under the domain head — is the real one.
+function isBuiltin(node: DirectoryObject, baseDn: string): boolean {
+  if (node.objectType === "container" || node.objectType === "domain") return true;
+  if (node.objectType !== "ou") return false;
   return (
-    node.objectType === "container" ||
-    node.objectType === "domain" ||
-    BUILTIN_OUS.has(name.toLowerCase())
+    parentOf(node.distinguishedName).toLowerCase() === baseDn.toLowerCase() &&
+    BUILTIN_OUS.has(label(node).toLowerCase())
   );
 }
 
@@ -150,6 +160,25 @@ export function Directory() {
     await loadObjects();
   }, [loadTree, loadObjects]);
 
+  const moveTo = useCallback(
+    async (sourceDn: string, targetDn: string) => {
+      if (
+        sourceDn.toLowerCase() === targetDn.toLowerCase() ||
+        parentOf(sourceDn).toLowerCase() === targetDn.toLowerCase()
+      ) {
+        return;
+      }
+      setError(null);
+      try {
+        await api.directory.move(sourceDn, targetDn);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : String(err));
+      }
+    },
+    [refresh],
+  );
+
   const visible = useMemo(
     () => (showPlumbing ? nodes : nodes.filter((node) => !isPlumbing(node))),
     [nodes, showPlumbing],
@@ -207,6 +236,7 @@ export function Directory() {
         <TreeNode
           nodes={visible}
           dn={baseDn}
+          baseDn={baseDn}
           rootLabel={domainLabel}
           selected={container}
           menuFor={containerMenu}
@@ -215,6 +245,7 @@ export function Directory() {
             setSearch("");
             setContainer(dn);
           }}
+          onMove={moveTo}
         />
       </nav>
       <div className="pane-footer">
@@ -298,6 +329,11 @@ export function Directory() {
               return (
                 <tr
                   key={object.distinguishedName}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData(DN_MEDIA_TYPE, object.distinguishedName);
+                  }}
                   onClick={() => open(object)}
                   onDoubleClick={() =>
                     object.objectType === "ou" && setContainer(object.distinguishedName)
@@ -399,21 +435,26 @@ export function Directory() {
 function TreeNode({
   nodes,
   dn,
+  baseDn,
   rootLabel,
   selected,
   menuFor,
   bind,
   onSelect,
+  onMove,
 }: {
   nodes: DirectoryObject[];
   dn: string;
+  baseDn: string;
   rootLabel?: string;
   selected: string;
   menuFor: (node: DirectoryObject) => MenuItem[];
   bind: (items: MenuItem[]) => { onContextMenu: (event: React.MouseEvent) => void };
   onSelect: (dn: string) => void;
+  onMove: (sourceDn: string, targetDn: string) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [dragOver, setDragOver] = useState(false);
   const self = nodes.find((n) => n.distinguishedName === dn);
   // ponytail: O(n) scan per node. Directory trees are tens to hundreds of
   // containers; build a parent index here if that stops being true.
@@ -422,10 +463,35 @@ function TreeNode({
   );
   if (!self) return null;
   const name = rootLabel ?? label(self);
+  const builtin = isBuiltin(self, baseDn);
+
+  const rowClass = [selected === dn ? "tree-row active" : "tree-row", dragOver && "drag-over"]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="tree-node">
-      <div className={selected === dn ? "tree-row active" : "tree-row"} {...bind(menuFor(self))}>
+      <div
+        className={rowClass}
+        {...bind(menuFor(self))}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes(DN_MEDIA_TYPE)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDragEnter={(event) => {
+          if (!event.dataTransfer.types.includes(DN_MEDIA_TYPE)) return;
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(event) => {
+          setDragOver(false);
+          const sourceDn = event.dataTransfer.getData(DN_MEDIA_TYPE);
+          if (!sourceDn) return;
+          event.preventDefault();
+          onMove(sourceDn, dn);
+        }}
+      >
         <button
           type="button"
           className="icon"
@@ -439,15 +505,24 @@ function TreeNode({
             <ChevronRight size={14} aria-hidden="true" />
           )}
         </button>
-        <button type="button" className="tree-label" onClick={() => onSelect(dn)}>
+        <button
+          type="button"
+          className="tree-label"
+          draggable={self.objectType === "ou" && !builtin}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData(DN_MEDIA_TYPE, dn);
+          }}
+          onClick={() => onSelect(dn)}
+        >
           {/* Filled for what the directory brought with it, outline for what
               somebody here made. Which is which matters when deciding what is
               safe to move or rename. */}
           <Folder
             size={14}
             aria-hidden="true"
-            className={isBuiltin(self, name) ? "folder-builtin" : "folder-custom"}
-            fill={isBuiltin(self, name) ? "currentColor" : "none"}
+            className={builtin ? "folder-builtin" : "folder-custom"}
+            fill={builtin ? "currentColor" : "none"}
           />
           <span className="truncate">{name}</span>
         </button>
@@ -459,10 +534,12 @@ function TreeNode({
               key={child.distinguishedName}
               nodes={nodes}
               dn={child.distinguishedName}
+              baseDn={baseDn}
               selected={selected}
               menuFor={menuFor}
               bind={bind}
               onSelect={onSelect}
+              onMove={onMove}
             />
           ))}
         </div>

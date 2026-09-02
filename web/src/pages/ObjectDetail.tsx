@@ -78,7 +78,6 @@ export function ObjectDetail() {
   const dn = params.get("dn") ?? "";
 
   const [object, setObject] = useState<DirectoryObject | null>(null);
-  const [containers, setContainers] = useState<DirectoryObject[]>([]);
   const [tab, setTab] = useState<Tab>("general");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<
@@ -104,10 +103,6 @@ export function ObjectDetail() {
 
   useEffect(() => {
     void load();
-    api.directory
-      .tree()
-      .then((tree) => setContainers(tree.nodes))
-      .catch(() => setContainers([]));
   }, [load]);
 
   if (!object) {
@@ -337,7 +332,6 @@ export function ObjectDetail() {
       {dialog === "move" && (
         <MoveDialog
           object={object}
-          containers={containers}
           onClose={() => setDialog(null)}
           onMoved={(moved) => {
             setDialog(null);
