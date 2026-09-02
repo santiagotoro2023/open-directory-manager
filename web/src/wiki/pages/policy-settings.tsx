@@ -505,6 +505,19 @@ for           %Engineers      (optional)`}</Code>
           />
         </Section>
 
+        <Section title="Naming an account that is not in the directory">
+          <p>
+            Sudo rules and HBAC rules match names, and a name does not have to be a domain
+            one: <strong>Local…</strong> beside those fields lists the accounts a chosen machine
+            reported and puts the name in. What narrows the rule to that machine is the
+            entry&rsquo;s own targeting — a host name, or a pattern such as <C>ws-*</C>.
+          </p>
+          <Note>
+            The account is matched by name wherever the policy object reaches, so a rule for a
+            local account is usually paired with targeting that names the machine it is on.
+          </Note>
+        </Section>
+
         <Section title="HBAC rules">
           <p>
             Host-based access control decides who may open a session on a machine and through which
@@ -607,6 +620,54 @@ for           %Engineers      (optional)`}</Code>
               ["Microphone", "Off", "On only where a session is used for calls."],
             ]}
           />
+        </Section>
+
+        <Section title="Local password policy">
+          <p>
+            Rules for accounts that live on the machine: what a new local password must be, and how
+            long one lasts. Domain accounts are not covered — their rules are the domain&rsquo;s
+            own, under Group Policy &rarr; Domain password policy.
+          </p>
+          <Reference
+            headers={["Setting", "Recommended", "Written as"]}
+            rows={[
+              [
+                "Minimum length",
+                "12",
+                <>
+                  <C key="a">minlen</C> in <C key="b">/etc/security/pwquality.conf.d/50-odm.conf</C>
+                </>,
+              ],
+              [
+                "Must contain",
+                "A digit, at least",
+                <>
+                  The matching credit — <C key="c">dcredit = -1</C> requires one digit, and a class
+                  left unticked is neither required nor rewarded.
+                </>,
+              ],
+              [
+                "Expires after",
+                "0 on desks, 90 on shared machines",
+                <>
+                  <C key="d">PASS_MAX_DAYS</C> in <C key="e">/etc/login.defs</C> for accounts made
+                  afterwards, and <C key="f">chage</C> for the ones that already exist.
+                </>,
+              ],
+              ["Warn before it expires", "7 days", <C key="g">PASS_WARN_AGE</C>],
+            ]}
+          />
+          <p>
+            The rules are enforced by <C>pam_pwquality</C>, which the agent installs where it is
+            missing. Leaving the accounts list empty ages every account on the machine somebody can
+            sign in to — uid 1000 and above, with a real shell. Naming accounts narrows it to those:{" "}
+            <strong>Add an account…</strong> lists the accounts a chosen machine reported, and the
+            name applies wherever the policy object reaches.
+          </p>
+          <Note>
+            Removing the setting takes the rules file and the <C>login.defs</C> block back. An
+            expiry already written onto an account with <C>chage</C> stays on that account.
+          </Note>
         </Section>
 
         <Section title="Self-service password">

@@ -207,6 +207,47 @@ export function Content() {
           </p>
         </Section>
 
+        <Section title="Domain password policy">
+          <p>
+            The domain&rsquo;s password rules — length, complexity, history, minimum and maximum
+            age, and lockout — are held on the domain object and enforced by the directory on every
+            password change, wherever it is made. They are on this page under{" "}
+            <strong>Domain password policy</strong>.
+          </p>
+          <p>
+            They are not a policy-object setting and cannot be linked to an organizational unit.
+            Active Directory keeps them on the domain, one set for every domain account; a policy
+            object linked below the domain has no effect on them. Where a group needs different
+            rules, that is a fine-grained policy, which applies to users and groups rather than to
+            a container.
+          </p>
+          <Reference
+            headers={["Rules for", "Set under", "Applies to"]}
+            rows={[
+              [
+                "Domain accounts",
+                "Group Policy → Domain password policy",
+                "Every account in the domain, plus fine-grained policies for named groups.",
+              ],
+              [
+                "Accounts on a machine",
+                <>
+                  Group Policy → a policy object →{" "}
+                  <PageLink key="lpp" page="policy-settings" anchor="local-password-policy">
+                    Local password policy
+                  </PageLink>
+                </>,
+                "The local accounts on the machines that object reaches.",
+              ],
+              [
+                "Changing your own password",
+                "Group Policy → a policy object → Self-service password",
+                "Whether the console offers it, and what it checks before asking the directory.",
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Default policies">
           <p>
             Two policy objects are created for a new domain and behave like any other afterwards.

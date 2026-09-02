@@ -63,6 +63,7 @@ type Settings struct {
 	Printers             []Printer              `json:"printers,omitempty"`
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
+	LocalPasswordPolicy  *LocalPasswordPolicy   `json:"local_password_policy,omitempty"`
 	RemoteDesktopSession *RemoteDesktopSession  `json:"remote_desktop_session,omitempty"`
 	Agent                *AgentConfig           `json:"agent,omitempty"`
 }
@@ -208,6 +209,21 @@ type RemoteDesktopSession struct {
 	AllowAudio      bool `json:"allow_audio"`
 	AllowMicrophone bool `json:"allow_microphone"`
 	MaxColourDepth  int  `json:"max_colour_depth"`
+}
+
+// LocalPasswordPolicy is what a password on this machine has to be, and how
+// long it lasts. Domain accounts are not covered: those rules live on the
+// domain object and the directory enforces them.
+type LocalPasswordPolicy struct {
+	MinimumLength    int      `json:"minimum_length"`
+	RequireUppercase bool     `json:"require_uppercase"`
+	RequireLowercase bool     `json:"require_lowercase"`
+	RequireDigit     bool     `json:"require_digit"`
+	RequireSymbol    bool     `json:"require_symbol"`
+	MaximumAgeDays   int      `json:"maximum_age_days"`
+	MinimumAgeDays   int      `json:"minimum_age_days"`
+	WarnDays         int      `json:"warn_days"`
+	Accounts         []string `json:"accounts,omitempty"`
 }
 
 // LocalAdministrator is a local account whose password this machine chooses

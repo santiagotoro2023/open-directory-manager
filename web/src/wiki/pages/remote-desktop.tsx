@@ -71,6 +71,34 @@ export function Content() {
         <Where>Remote Desktop, once a broker exists.</Where>
       </Quickstart>
 
+        <Section title="What a session host needs">
+          <p>
+            A server with no graphical environment on it. Installing the role puts one there: xrdp,
+            xorgxrdp and Xfce, which is the desktop each session starts. GNOME is not required and
+            is not installed.
+          </p>
+          <Reference
+            headers={["Part", "Comes from"]}
+            rows={[
+              ["The desktop", "xfce4, installed by the role."],
+              ["The X server", "xorgxrdp, one per session, started by xrdp-sesman."],
+              [
+                "Sessions without a seat",
+                <>
+                  Debian&rsquo;s Xorg wrapper only lets somebody at the machine start an X server;
+                  the role sets <C key="w">allowed_users=anybody</C>, because a session host&rsquo;s
+                  whole job is starting them for people who are not at it.
+                </>,
+              ],
+              ["Certificates", "A self-signed pair, replaced by the CA role's issued one."],
+            ]}
+          />
+          <Note>
+            A machine that already runs a desktop can carry the role as well; xrdp starts its own
+            session rather than attaching to the one on the console.
+          </Note>
+        </Section>
+
       <Details>
         <Section title="Why everything is on the collection">
           <p>

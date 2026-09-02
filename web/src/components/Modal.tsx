@@ -61,7 +61,11 @@ export function Modal({
             <X size={16} aria-hidden="true" />
           </button>
         </header>
-        <form onSubmit={submit} onInput={() => setStale(true)}>
+        <form
+          onSubmit={submit}
+          onInput={() => setStale(true)}
+          onKeyDown={(event) => searching(event) && event.preventDefault()}
+        >
           <div className="modal-body">{children}</div>
           {error && !stale && (
             <p className="alert" role="alert">
@@ -99,4 +103,16 @@ export function Field({
       {hint && <small>{hint}</small>}
     </label>
   );
+}
+
+/** Enter in a search box searches; it does not submit the dialog.
+ *
+ * Typing a name and pressing return is reflex, and inside a form that reflex
+ * activated the submit button — closing the picker on whatever happened to be
+ * selected at the time. */
+function searching(event: React.KeyboardEvent): boolean {
+  if (event.key !== "Enter") return false;
+  const target = event.target as HTMLInputElement | null;
+  if (!target) return false;
+  return target.type === "search" || Boolean(target.closest?.(".search"));
 }

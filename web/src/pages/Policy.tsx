@@ -12,6 +12,7 @@ import {
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
+import { PasswordPolicy } from "../components/PasswordPolicy";
 import { Field, Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
 import { ChoiceList, SUPPORTED_RELEASES } from "../components/ChoiceList";
@@ -23,11 +24,14 @@ import Select from "../components/Select"
 
 type Tab = "settings" | "links" | "scope";
 
+type PageTab = "objects" | "passwords";
+
 export function Policy() {
   const [gpos, setGpos] = useState<Gpo[]>([]);
   const [selected, setSelected] = useState<Gpo | null>(null);
   const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [pageTab, setPageTab] = useState<PageTab>("objects");
   const [templates, setTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,25 +90,50 @@ export function Policy() {
   return (
     <main className="content">
       <div className="page-header">
-        <h1>Group Policy Objects</h1>
+        <h1>Group Policy</h1>
         <span className="spacer" />
-        <button type="button" className="ghost" onClick={() => setTemplates(true)}>
-          Administrative templates
-        </button>
-        <button type="button" className="ghost" onClick={() => void exportAll()}>
-          <Download size={15} aria-hidden="true" />
-          Export all
-        </button>
-        <button type="button" className="ghost" onClick={() => setImporting(true)}>
-          <Upload size={15} aria-hidden="true" />
-          Import
-        </button>
-        <button type="button" className="primary" onClick={() => setCreating(true)}>
-          <Plus size={15} aria-hidden="true" />
-          New GPO
-        </button>
+        {pageTab === "objects" && (
+          <>
+            <button type="button" className="ghost" onClick={() => setTemplates(true)}>
+              Administrative templates
+            </button>
+            <button type="button" className="ghost" onClick={() => void exportAll()}>
+              <Download size={15} aria-hidden="true" />
+              Export all
+            </button>
+            <button type="button" className="ghost" onClick={() => setImporting(true)}>
+              <Upload size={15} aria-hidden="true" />
+              Import
+            </button>
+            <button type="button" className="primary" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              New GPO
+            </button>
+          </>
+        )}
       </div>
 
+      {/* The domain's own password rules are not a policy object and cannot be
+          linked, but they are policy, and this is where an operator looks for
+          them. */}
+      <nav className="tabs" aria-label="Group policy views">
+        {(["objects", "passwords"] as PageTab[]).map((current) => (
+          <button
+            key={current}
+            type="button"
+            className={pageTab === current ? "tab active" : "tab"}
+            aria-current={pageTab === current ? "true" : undefined}
+            onClick={() => setPageTab(current)}
+          >
+            {current === "objects" ? "Policy objects" : "Domain password policy"}
+          </button>
+        ))}
+      </nav>
+
+      {pageTab === "passwords" ? (
+        <PasswordPolicy />
+      ) : (
+        <>
       <InfoPanel page="group-policy">
         A policy object carries settings; a link decides where they apply. A machine or user gets
         every object linked at or above its organizational unit, applied in precedence order.
@@ -169,6 +198,8 @@ export function Policy() {
           )}
         </tbody>
       </table>
+        </>
+      )}
 
       {menu}
 

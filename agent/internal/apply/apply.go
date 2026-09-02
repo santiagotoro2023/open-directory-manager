@@ -44,6 +44,7 @@ var appliers = []applier{
 	{"printers", applyPrinters},
 	{"always_on_vpn", applyAlwaysOnVpn},
 	{"local_administrator", applyLocalAdministrator},
+	{"local_password_policy", applyLocalPasswordPolicy},
 	{"remote_desktop_session", applyRemoteDesktopSession},
 	{"firewall", applyFirewall},
 	{"sudo_rules", applySudo},

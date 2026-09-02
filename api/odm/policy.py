@@ -55,6 +55,7 @@ DICT_CATEGORIES = (
     "roaming_profile",
     "always_on_vpn",
     "password_self_service",
+    "local_password_policy",
 )
 
 CATEGORIES = (*LIST_KEYS, *DICT_CATEGORIES)

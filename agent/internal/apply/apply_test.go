@@ -949,3 +949,92 @@ func TestAUserHalfSettingIsPrunedWhenItsPolicyGoes(t *testing.T) {
 		t.Fatalf("the background outlived the policy that set it: %v", err)
 	}
 }
+
+func TestLocalPasswordPolicyWritesRulesAndAges(t *testing.T) {
+	env, runner := testEnv(t)
+	runner.output["dpkg-query"] = "installed"
+	if err := os.MkdirAll(env.Path("/etc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.Path("/etc/passwd"), []byte(
+		"root:x:0:0::/root:/bin/bash\n"+
+			"daemon:x:1:1::/usr/sbin:/usr/sbin/nologin\n"+
+			"alice:x:1000:1000::/home/alice:/bin/bash\n"+
+			"nobody:x:65534:65534::/nonexistent:/usr/sbin/nologin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := Apply(context.Background(), policy.Settings{
+		LocalPasswordPolicy: &policy.LocalPasswordPolicy{
+			MinimumLength: 14, RequireDigit: true, MaximumAgeDays: 90, WarnDays: 7,
+		},
+	}, env)
+
+	var result *policy.Result
+	for i := range results {
+		if results[i].Setting == "local_password_policy" {
+			result = &results[i]
+		}
+	}
+	if result == nil || result.Status != "applied" {
+		t.Fatalf("not applied: %+v", results)
+	}
+
+	rules := read(t, env, "/etc/security/pwquality.conf.d/50-odm.conf")
+	if !strings.Contains(rules, "minlen = 14") || !strings.Contains(rules, "dcredit = -1") {
+		t.Errorf("rules not written:\n%s", rules)
+	}
+	// A class nobody asked for is neither required nor rewarded.
+	if !strings.Contains(rules, "ucredit = 0") {
+		t.Errorf("unasked class not neutral:\n%s", rules)
+	}
+
+	defs := read(t, env, "/etc/login.defs")
+	if !strings.Contains(defs, "PASS_MAX_DAYS\t90") {
+		t.Errorf("ages not written:\n%s", defs)
+	}
+
+	// The accounts that already exist do not read login.defs, so they are
+	// aged directly — and only the ones somebody could sign in to.
+	var aged []string
+	for _, command := range runner.commands {
+		if command[0] == "chage" {
+			aged = append(aged, command[len(command)-1])
+		}
+	}
+	if len(aged) != 1 || aged[0] != "alice" {
+		t.Errorf("wrong accounts aged: %v", aged)
+	}
+}
+
+func TestLocalPasswordPolicyLeavesLoginDefsWhenItStops(t *testing.T) {
+	env, runner := testEnv(t)
+	runner.output["dpkg-query"] = "installed"
+	if err := os.MkdirAll(env.Path("/etc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.Path("/etc/login.defs"), []byte("UMASK\t022\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	Apply(context.Background(), policy.Settings{
+		LocalPasswordPolicy: &policy.LocalPasswordPolicy{MinimumLength: 12, MaximumAgeDays: 30},
+	}, env)
+	previous := env.State
+
+	// The next run carries no such setting; what the last one wrote goes.
+	next := Env{Root: env.Root, Run: runner, State: NewState()}
+	Apply(context.Background(), policy.Settings{}, next)
+	next.Prune(previous)
+
+	defs := read(t, next, "/etc/login.defs")
+	if strings.Contains(defs, "PASS_MAX_DAYS") {
+		t.Errorf("the block outlived its policy:\n%s", defs)
+	}
+	if !strings.Contains(defs, "UMASK") {
+		t.Errorf("the machine's own settings went with it:\n%s", defs)
+	}
+	if _, err := os.Stat(next.Path("/etc/security/pwquality.conf.d/50-odm.conf")); !os.IsNotExist(err) {
+		t.Errorf("the rules file outlived its policy: %v", err)
+	}
+}

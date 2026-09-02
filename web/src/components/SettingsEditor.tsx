@@ -4,6 +4,7 @@ import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
 import { InfoPanel } from "./DocsLink";
+import { LocalAccountList } from "./LocalAccountPicker";
 import { FileInput } from "./FileInput";
 import { Field, Modal } from "./Modal";
 import { PickerField, type PickerKind, type PickerValue } from "./Picker";
@@ -23,6 +24,8 @@ interface FieldSpec {
   picker?: PickerKind;
   pickerValue?: PickerValue;
   pickerMultiple?: boolean;
+  /** Offer an account on a machine as well as one in the directory. */
+  pickerLocal?: boolean;
   // Ready-made values offered beside the field. The field stays typeable:
   // these are the ones asked for most often, not the only ones allowed.
   suggestions?: { value: string; label: string }[];
@@ -269,6 +272,7 @@ export const CATEGORIES: CategorySpec[] = [
         picker: "principal",
         pickerValue: "principal",
         pickerMultiple: true,
+        pickerLocal: true,
       },
       {
         key: "commands",
@@ -298,6 +302,7 @@ export const CATEGORIES: CategorySpec[] = [
         placeholder: "%Engineers",
         picker: "principal",
         pickerValue: "principal",
+        pickerLocal: true,
       },
       {
         key: "service",
@@ -527,6 +532,15 @@ const SPECIAL: SpecialSpec[] = [
     doc: "remote-desktop-session",
   },
   {
+    key: "local_password_policy",
+    title: "Local password policy",
+    half: "Computer",
+    help:
+      "What a password on the machine itself has to be, and how long it lasts. " +
+      "Accounts in the domain keep the domain's own rules.",
+    doc: "local-password-policy",
+  },
+  {
     key: "password_self_service",
     title: "Self-service password",
     half: "User",
@@ -578,6 +592,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
   if (key === "remote_desktop_session") return settings.remote_desktop_session ? 1 : 0;
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
+  if (key === "local_password_policy") return settings.local_password_policy ? 1 : 0;
   if (key === "roaming_profile") return settings.roaming_profile ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri || settings.wallpaper?.image ? 1 : 0;
   if (key === "browser") {
@@ -684,6 +699,9 @@ export function SettingsEditor({
           )}
           {selected === "password_self_service" && (
             <SelfServiceEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "local_password_policy" && (
+            <LocalPasswordEditor settings={settings} onChange={onChange} />
           )}
           {selected === "roaming_profile" && (
             <RoamingProfileEditor settings={settings} onChange={onChange} />
@@ -1492,6 +1510,129 @@ function RemoteDesktopSessionEditor({
   );
 }
 
+function LocalPasswordEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.local_password_policy;
+
+  function set(changes: Partial<NonNullable<PolicySettings["local_password_policy"]>>) {
+    onChange({
+      ...settings,
+      local_password_policy: {
+        minimum_length: 12,
+        require_uppercase: false,
+        require_lowercase: false,
+        require_digit: false,
+        require_symbol: false,
+        maximum_age_days: 0,
+        minimum_age_days: 0,
+        warn_days: 7,
+        accounts: [],
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("local_password_policy")}
+        actions={
+          current && (
+            <RemoveSetting
+              onRemove={() => onChange({ ...settings, local_password_policy: undefined })}
+            />
+          )
+        }
+      />
+      <p className="muted">
+        Applies to accounts that live on the machine — a local administrator, an engineer&rsquo;s
+        own account on a server. Domain accounts are governed by the domain&rsquo;s password policy
+        under Delegation.
+      </p>
+
+      {!current ? (
+        <EmptySetting
+          message="Not configured, so each machine keeps its own rules."
+          onAdd={() => set({})}
+        />
+      ) : (
+        <>
+          <div className="field-grid">
+            <Field label="Minimum length">
+              <input
+                type="number"
+                min={6}
+                max={128}
+                value={current.minimum_length}
+                onChange={(e) => set({ minimum_length: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Expires after (days)" hint="0 leaves the machine's own value alone">
+              <input
+                type="number"
+                min={0}
+                value={current.maximum_age_days}
+                onChange={(e) => set({ maximum_age_days: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Cannot be changed again for (days)" hint="0 for no wait">
+              <input
+                type="number"
+                min={0}
+                value={current.minimum_age_days}
+                onChange={(e) => set({ minimum_age_days: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Warn before it expires (days)">
+              <input
+                type="number"
+                min={0}
+                value={current.warn_days}
+                onChange={(e) => set({ warn_days: Number(e.target.value) })}
+              />
+            </Field>
+          </div>
+
+          <h3 className="section-title">A new password must contain</h3>
+          <div className="option-row">
+            {(
+              [
+                ["require_uppercase", "An upper-case letter"],
+                ["require_lowercase", "A lower-case letter"],
+                ["require_digit", "A digit"],
+                ["require_symbol", "A symbol"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={Boolean(current[key])}
+                  onChange={(e) => set({ [key]: e.target.checked })}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+
+          <h3 className="section-title">Accounts the expiry applies to</h3>
+          <LocalAccountList
+            values={current.accounts ?? []}
+            onChange={(accounts) => set({ accounts })}
+            addLabel="Add an account…"
+            emptyLabel="Every account on the machine somebody can sign in to."
+          />
+        </>
+      )}
+    </>
+  );
+}
+
 function SelfServiceEditor({
   settings,
   onChange,
@@ -1794,6 +1935,7 @@ function Cell({
         ariaLabel={field.label}
         placeholder={field.placeholder}
         multiple={field.pickerMultiple}
+        local={field.pickerLocal}
         value={toInput(value)}
         onChange={(next) => onChange(fromInput(field, next))}
       />

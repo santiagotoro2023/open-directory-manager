@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Folder, Monitor, Search, User, Users } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
+import { LocalAccountDialog } from "./LocalAccountPicker";
 import { Modal } from "./Modal";
 import Select from "./Select"
 import { isSystemContainer } from "./directoryTree";
@@ -64,6 +65,7 @@ export function PickerField({
   required,
   multiple,
   ariaLabel,
+  local,
 }: {
   kind: PickerKind;
   as?: PickerValue;
@@ -74,8 +76,24 @@ export function PickerField({
   /** Append to a comma-separated list rather than replacing the value. */
   multiple?: boolean;
   ariaLabel?: string;
+  /** Also offer an account that exists on a machine rather than in the
+      directory — sudo and session rules match those by name too. */
+  local?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+
+  function take(picked: string) {
+    if (!multiple) onChange(picked);
+    else {
+      const existing = value
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (!existing.includes(picked)) existing.push(picked);
+      onChange(existing.join(", "));
+    }
+  }
 
   return (
     <div className="picker-field">
@@ -89,22 +107,27 @@ export function PickerField({
       <button type="button" className="ghost" onClick={() => setOpen(true)}>
         Select…
       </button>
+      {local && (
+        <button type="button" className="ghost" onClick={() => setLocalOpen(true)}>
+          Local…
+        </button>
+      )}
       {open && (
         <PickerDialog
           kind={kind}
           onClose={() => setOpen(false)}
           onPick={(object) => {
-            const picked = render(object, as);
-            if (!multiple) onChange(picked);
-            else {
-              const existing = value
-                .split(",")
-                .map((part) => part.trim())
-                .filter(Boolean);
-              if (!existing.includes(picked)) existing.push(picked);
-              onChange(existing.join(", "));
-            }
+            take(render(object, as));
             setOpen(false);
+          }}
+        />
+      )}
+      {localOpen && (
+        <LocalAccountDialog
+          onClose={() => setLocalOpen(false)}
+          onPick={(account) => {
+            take(account);
+            setLocalOpen(false);
           }}
         />
       )}

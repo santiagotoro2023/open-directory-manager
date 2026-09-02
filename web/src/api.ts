@@ -121,6 +121,17 @@ export interface PolicySettings {
     require_digit?: boolean;
     require_symbol?: boolean;
   };
+  local_password_policy?: {
+    minimum_length: number;
+    require_uppercase?: boolean;
+    require_lowercase?: boolean;
+    require_digit?: boolean;
+    require_symbol?: boolean;
+    maximum_age_days?: number;
+    minimum_age_days?: number;
+    warn_days?: number;
+    accounts?: string[];
+  };
   printers?: Record<string, unknown>[];
   always_on_vpn?: { tunnel: string; block_until_connected: boolean };
   agent?: { refresh_minutes: number };

@@ -83,7 +83,11 @@ export function Wizard({
           </button>
         </header>
 
-        <form onSubmit={submit} onInput={() => setStale(true)}>
+        <form
+          onSubmit={submit}
+          onInput={() => setStale(true)}
+          onKeyDown={(event) => searching(event) && event.preventDefault()}
+        >
           <div className="wizard-body">
             {!flat && (
               <ol className="wizard-rail" aria-label="Steps">
@@ -161,4 +165,16 @@ export function Wizard({
     </div>,
     document.body,
   );
+}
+
+/** Enter in a search box searches; it does not submit the dialog.
+ *
+ * Typing a name and pressing return is reflex, and inside a form that reflex
+ * activated the submit button — closing the picker on whatever happened to be
+ * selected at the time. */
+function searching(event: React.KeyboardEvent): boolean {
+  if (event.key !== "Enter") return false;
+  const target = event.target as HTMLInputElement | null;
+  if (!target) return false;
+  return target.type === "search" || Boolean(target.closest?.(".search"));
 }

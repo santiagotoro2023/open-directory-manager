@@ -572,6 +572,30 @@ class LocalAdministrator(Strict):
         return value
 
 
+class LocalPasswordPolicy(Strict):
+    """Password rules for accounts that live on the machine itself.
+
+    Domain accounts are not covered by this and cannot be: their rules are
+    held on the domain object and enforced by the directory on every change,
+    wherever it is made. This is pam_pwquality and login.defs — what a local
+    password may be, and how long it lasts.
+    """
+
+    minimum_length: Annotated[int, Field(ge=6, le=128)] = 12
+    require_uppercase: bool = False
+    require_lowercase: bool = False
+    require_digit: bool = False
+    require_symbol: bool = False
+    # 0 leaves the machine's own value alone rather than setting "never":
+    # a policy that stops applying must not leave an age behind it.
+    maximum_age_days: Annotated[int, Field(ge=0, le=3650)] = 0
+    minimum_age_days: Annotated[int, Field(ge=0, le=365)] = 0
+    warn_days: Annotated[int, Field(ge=0, le=365)] = 7
+    # Which accounts the ages are applied to. Empty means every local account
+    # outside the system range; naming accounts narrows it to those.
+    accounts: Annotated[list[Name], Field(default_factory=list, max_length=64)]
+
+
 class AgentSettings(Strict):
     refresh_minutes: Annotated[int, Field(ge=1, le=1440)] = 15
 
@@ -599,6 +623,7 @@ class PolicySettings(Strict):
         list[CertificateEnrolment], Field(default_factory=list, max_length=8)
     ]
     password_self_service: PasswordSelfService | None = None
+    local_password_policy: LocalPasswordPolicy | None = None
     printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
     always_on_vpn: AlwaysOnVpn | None = None
     local_administrator: LocalAdministrator | None = None
