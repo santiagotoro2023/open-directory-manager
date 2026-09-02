@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, db, directory, objects
+from . import audit, db, directory, objects, policy_schema
 from .config import Settings, get_settings
 from .security import Authz, authorization, client_ip, get_pool, require_admin
 from .sessions import Session
@@ -466,6 +466,34 @@ class PasswordRequest(BaseModel):
     dn: Dn
     password: Annotated[str, Field(min_length=1, max_length=256)]
     must_change: bool = False
+
+
+class PhotoRequest(BaseModel):
+    dn: Dn
+    # Base64, or empty to clear it. Active Directory keeps thumbnailPhoto
+    # small — a picture, not a portrait session.
+    photo: Annotated[str, Field(max_length=200_000)] = ""
+
+
+@router.post("/user/photo", status_code=204)
+async def set_photo(
+    body: PhotoRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Set the picture every machine shows for this person."""
+    authz.require("user.write", body.dn)
+    photo = policy_schema.validate_image(body.photo) if body.photo else ""
+    async with _audit_context(
+        request, session, pool, "user.photo", object_type="user", object_dn=body.dn
+    ) as entry:
+        async with _bound(settings, write=True) as conn:
+            await run_in_threadpool(objects.set_photo, conn, settings, body.dn, photo)
+        # The picture itself is not written to the audit log; that it changed is.
+        entry.after = {"photo": "set" if photo else "cleared"}
 
 
 @router.post("/user/password", status_code=204)

@@ -400,6 +400,37 @@ def find_user(conn: Connection, settings: Settings, sam_account_name: str) -> di
     return _entry(found[0])
 
 
+def photo_of(conn: Connection, settings: Settings, dn: str) -> str | None:
+    """One account's picture, base64, or nothing.
+
+    thumbnailPhoto is where Active Directory keeps it, so it is one picture per
+    person for the whole domain rather than one per machine they have used.
+    """
+    found = _search(conn, normalize_dn(settings, dn), "(objectClass=*)",
+                    ["thumbnailPhoto"], scope=BASE)
+    if not found:
+        return None
+    raw = found[0]["attributes"].get("thumbnailPhoto")
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        raw = raw.encode("latin-1", "ignore")
+    return base64.b64encode(raw).decode()
+
+
+def set_photo(conn: Connection, settings: Settings, dn: str, photo: str | None) -> None:
+    """Set or clear an account's picture."""
+    canonical = normalize_dn(settings, dn)
+    if photo:
+        raw = base64.b64decode(photo, validate=True)
+        conn.modify(canonical, {"thumbnailPhoto": [(MODIFY_REPLACE, [raw])]})
+    else:
+        conn.modify(canonical, {"thumbnailPhoto": [(MODIFY_REPLACE, [])]})
+    _check(conn, "set the picture")
+
+
 def containers(conn: Connection, settings: Settings) -> list[dict[str, Any]]:
     """Every OU and built-in container, for the navigation tree."""
     raw = _search(

@@ -124,7 +124,14 @@ async def agent_user_policy(
     async with _bound(settings, write=False) as conn:
         account = await run_in_threadpool(objects.find_user, conn, settings, user)
         document = await rsop.build(pool, settings, conn, account["distinguishedName"])
+        photo = await run_in_threadpool(
+            objects.photo_of, conn, settings, account["distinguishedName"]
+        )
     document["target"]["machine"] = machine.dn
+    # The picture belongs to the account, not to a policy object: it is the
+    # same person on every machine they sign in to, which is the whole point of
+    # keeping it in the directory rather than on one desktop.
+    document["user"] = {"photo": photo or ""}
     return document
 
 

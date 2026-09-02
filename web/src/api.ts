@@ -894,6 +894,9 @@ export const api = {
     setPassword: (dn: string, password: string, must_change: boolean) =>
       request<void>("/directory/user/password", json({ dn, password, must_change })),
 
+    setPhoto: (dn: string, photo: string) =>
+      request<void>("/directory/user/photo", json({ dn, photo })),
+
     editMembers: (dn: string, add: string[], remove: string[]) =>
       request<DirectoryObject>("/directory/group/members", json({ dn, add, remove })),
 

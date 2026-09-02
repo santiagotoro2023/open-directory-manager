@@ -151,6 +151,9 @@ func runProfile(args []string) int {
 	for _, problem := range problems {
 		fmt.Fprintln(os.Stderr, "odm-agent: drive map:", problem)
 	}
+	if err := apply.ApplyPhoto(document.User.Photo, *username, env); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: picture:", err)
+	}
 	// Said either way, so a login that produced no drive says so rather than
 	// saying nothing at all.
 	fmt.Printf("%d drive map(s) for %s, %d problem(s)\n",

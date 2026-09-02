@@ -14,6 +14,16 @@ type Document struct {
 	Settings       Settings   `json:"settings"`
 	Serial         string     `json:"serial"`
 	RefreshMinutes int        `json:"refresh_minutes"`
+	// What the account itself carries, as opposed to what a policy object
+	// says about it. Only present on a document resolved for one person.
+	User UserDetails `json:"user"`
+}
+
+// UserDetails is what the directory holds about the person signing in.
+type UserDetails struct {
+	// Their picture, base64. From the directory, so it is the same picture on
+	// every machine rather than one per desktop they have used.
+	Photo string `json:"photo"`
 }
 
 type Target struct {

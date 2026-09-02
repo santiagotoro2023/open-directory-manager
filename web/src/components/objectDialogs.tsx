@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ApiError, api, type DirectoryObject } from "../api";
+import { FileInput } from "./FileInput";
 import { Field, Modal } from "./Modal";
 import Select from "./Select"
 
@@ -68,6 +69,78 @@ export function useAction() {
     }
   };
   return { busy, error, run };
+}
+
+/** The picture every machine shows for this person.
+ *
+ * It lives on the account in the directory, so it is the same picture wherever
+ * they sign in — a picture set in a desktop's own settings stays on that
+ * desktop. */
+export function PhotoDialog({
+  dn,
+  onClose,
+  onSaved,
+}: {
+  dn: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const { busy, error, run } = useAction();
+
+  return (
+    <Modal
+      title="Picture"
+      submitLabel={photo === "" ? "Remove" : "Save"}
+      busy={busy}
+      error={error}
+      onClose={onClose}
+      onSubmit={() =>
+        void run(async () => {
+          await api.directory.setPhoto(dn, photo ?? "");
+          onSaved();
+          onClose();
+        })
+      }
+    >
+      <Field
+        label="Picture"
+        hint="Shown at the login screen and in the desktop, on every machine they sign in to"
+      >
+        <FileInput
+          accept="image/jpeg,image/png"
+          placeholder={name || "No picture chosen"}
+          onChoose={async (file) => {
+            const buffer = new Uint8Array(await file.arrayBuffer());
+            let binary = "";
+            for (const byte of buffer) binary += String.fromCharCode(byte);
+            setPhoto(btoa(binary));
+            setName(file.name);
+          }}
+        />
+      </Field>
+      {photo && (
+        <img
+          src={`data:image/jpeg;base64,${photo}`}
+          alt=""
+          style={{ maxWidth: "120px", borderRadius: "8px", marginTop: "4px" }}
+        />
+      )}
+      <div className="actions-row">
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            setPhoto("");
+            setName("Removing the picture");
+          }}
+        >
+          Remove the picture
+        </button>
+      </div>
+    </Modal>
+  );
 }
 
 export function PasswordDialog({ dn, onClose }: { dn: string; onClose: () => void }) {

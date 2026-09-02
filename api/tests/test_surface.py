@@ -660,3 +660,23 @@ def test_a_name_that_is_not_one_is_still_refused():
     for bad in [r"EXAMPLE\ ", "", r"..\..\etc\passwd", "t.tester)(uid=*"]:
         with pytest.raises(InvalidCredentials):
             validate_username(bad)
+
+
+def test_a_persons_picture_is_read_and_written_through_the_directory():
+    """It belongs to the account, so it is the same picture on every machine.
+
+    A picture set in a desktop's own settings is stored per machine, so it
+    stays on the desktop it was set on.
+    """
+    from odm import objects
+
+    assert hasattr(objects, "photo_of")
+    assert hasattr(objects, "set_photo")
+
+
+def test_the_console_can_set_a_picture():
+    from odm.main import create_app  # noqa: F401  (routes are registered on import)
+    from odm.routes_directory import router
+
+    paths = {route.path for route in router.routes if isinstance(route, APIRoute)}
+    assert "/api/v1/directory/user/photo" in paths

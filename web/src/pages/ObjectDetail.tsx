@@ -34,6 +34,7 @@ import {
   MembersDialog,
   MoveDialog,
   PasswordDialog,
+  PhotoDialog,
   isDisabled,
   text,
 } from "../components/objectDialogs";
@@ -80,7 +81,9 @@ export function ObjectDetail() {
   const [containers, setContainers] = useState<DirectoryObject[]>([]);
   const [tab, setTab] = useState<Tab>("general");
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [dialog, setDialog] = useState<"password" | "move" | "members" | "delete" | "rsop" | null>(
+  const [dialog, setDialog] = useState<
+    "password" | "photo" | "move" | "members" | "delete" | "rsop" | null
+  >(
     null,
   );
   const [busy, setBusy] = useState(false);
@@ -284,6 +287,11 @@ export function ObjectDetail() {
                 Reset password
               </button>
             )}
+            {object.objectType === "user" && (
+              <button type="button" className="ghost" onClick={() => setDialog("photo")}>
+                Picture
+              </button>
+            )}
             {isAccount && (
               <button
                 type="button"
@@ -323,6 +331,9 @@ export function ObjectDetail() {
       {isComputer && tab === "logs" && <LogsTab dn={dn} />}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
+      {dialog === "photo" && (
+        <PhotoDialog dn={dn} onClose={() => setDialog(null)} onSaved={() => void load()} />
+      )}
       {dialog === "move" && (
         <MoveDialog
           object={object}
