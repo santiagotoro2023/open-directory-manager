@@ -271,7 +271,7 @@ export function Content() {
               ["Name", "What the icon says, and the file's name. Starts as the collection's name."],
               [
                 "Broker",
-                "Where the file connects to. Filled in by choosing a collection, so it is never a host by mistake.",
+                "Where the file connects to. Select… on any of these three fields opens the collection picker and fills all of them, so it is never a session host by mistake.",
               ],
               [
                 "Published application",

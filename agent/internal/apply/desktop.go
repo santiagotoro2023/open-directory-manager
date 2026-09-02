@@ -21,12 +21,14 @@ var chromiumPolicyPaths = []string{
 const firefoxPolicyPath = "/etc/firefox/policies/policies.json"
 
 func applyBrowser(_ context.Context, s policy.Settings, env Env) []policy.Result {
-	if s.Browser == nil {
+	// Not only when there is browser policy: a machine that trusts the
+	// domain's certificate authority still has to tell Firefox about it.
+	if s.Browser == nil && len(s.TrustedCerts) == 0 {
 		return nil
 	}
 	var results []policy.Result
 
-	if len(s.Browser.Chromium) > 0 {
+	if s.Browser != nil && len(s.Browser.Chromium) > 0 {
 		body, err := json.MarshalIndent(s.Browser.Chromium, "", "  ")
 		if err != nil {
 			results = append(results, policy.Fail("browser:chromium", err))
@@ -43,10 +45,11 @@ func applyBrowser(_ context.Context, s policy.Settings, env Env) []policy.Result
 		}
 	}
 
-	if len(s.Browser.Firefox) > 0 {
+	firefox := firefoxPolicy(s)
+	if len(firefox) > 0 {
 		// Firefox expects its settings nested under a "policies" key.
 		body, err := json.MarshalIndent(
-			map[string]any{"policies": s.Browser.Firefox}, "", "  ",
+			map[string]any{"policies": firefox}, "", "  ",
 		)
 		if err != nil {
 			results = append(results, policy.Fail("browser:firefox", err))
@@ -59,6 +62,37 @@ func applyBrowser(_ context.Context, s policy.Settings, env Env) []policy.Result
 		}
 	}
 	return results
+}
+
+// firefoxPolicy is the browser policy plus what the machine's trust anchors
+// imply.
+//
+// Firefox keeps its own trust store and does not read the system one, so a
+// domain certificate authority installed into /usr/local/share/ca-certificates
+// is trusted by everything on the machine except the browser somebody uses to
+// reach the console — which then warns about the domain's own certificate.
+// ImportEnterpriseRoots is Mozilla's documented switch for exactly this.
+func firefoxPolicy(s policy.Settings) map[string]any {
+	settings := map[string]any{}
+	if s.Browser != nil {
+		for key, value := range s.Browser.Firefox {
+			settings[key] = value
+		}
+	}
+	if len(s.TrustedCerts) == 0 {
+		return settings
+	}
+	// Merged rather than replaced: a policy object may set other certificate
+	// keys, and this adds one to them.
+	certificates := map[string]any{}
+	if existing, ok := settings["Certificates"].(map[string]any); ok {
+		for key, value := range existing {
+			certificates[key] = value
+		}
+	}
+	certificates["ImportEnterpriseRoots"] = true
+	settings["Certificates"] = certificates
+	return settings
 }
 
 const (

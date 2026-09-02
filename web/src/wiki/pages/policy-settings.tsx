@@ -425,7 +425,9 @@ user      root`}</Code>
           </p>
           <p>
             <strong>Select…</strong> beside <strong>Share</strong> lists the shares across every
-            file server the console knows and fills in the name and mount point with the choice.
+            file server the console knows. A roaming profile&rsquo;s path takes the same picker,
+            which appends <C>%username%</C> to what it fills in. For a drive map it fills in the
+            name and mount point with the choice.
             Typing one is still fine, for a share on a machine ODM does not manage. Three spellings
             are accepted and all become one: <C>//fs01/shared</C>,{" "}
             <C>smb://fs01/shared</C> as a file manager shows it, and{" "}

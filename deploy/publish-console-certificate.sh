@@ -22,6 +22,7 @@ set -euo pipefail
 
 CERT="${1:-/etc/odm/tls/api.crt}"
 SYSVOL="${ODM_SYSVOL_ROOT:-/var/lib/samba/sysvol}"
+CA_CERT="${ODM_CA_DIR:-/var/lib/odm/ca}/ca-cert.pem"
 
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
 [[ -f "$CERT" ]] || { echo "no certificate at $CERT" >&2; exit 1; }
@@ -36,6 +37,17 @@ grep -q "PRIVATE KEY" "$CERT" && {
     echo "$CERT contains a private key; refusing to publish it" >&2
     exit 1
 }
+
+# The authority that signed it, where there is one, rather than the console's
+# own certificate: a certificate gets replaced — renewed, reissued, moved to a
+# real name — and an anchor that is the certificate itself stops matching the
+# moment it does, which takes every agent in the domain with it. The authority
+# outlives all of that. Published only when it really signed what the console
+# is presenting, so a domain whose console is still self-signed keeps working.
+if [[ -f "$CA_CERT" ]] && openssl verify -CAfile "$CA_CERT" "$CERT" >/dev/null 2>&1; then
+    echo "the console's certificate is issued by this domain's authority"
+    CERT="$CA_CERT"
+fi
 
 # The domain's own directory under SYSVOL, whatever the realm is called. One
 # match is the answer; none means this machine is not a controller.

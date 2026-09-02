@@ -1242,3 +1242,158 @@ func TestAMountFailureExplainsItself(t *testing.T) {
 		}
 	}
 }
+
+// Printers and drive maps are user settings: they arrive in a person's
+// document and not in the machine's. With one record of what had been created
+// between the two passes, the machine's next pass read the queue the login had
+// just made, saw no printer in its own policy, and removed it — so a printer
+// and a drive worked at login and were gone a quarter of an hour later.
+func TestTheMachinePassDoesNotUndoTheSession(t *testing.T) {
+	root := t.TempDir()
+	runner := newRunner()
+	session := Env{Session: true, Root: root, Run: runner, State: NewState()}
+	machine := Env{Root: root, Run: runner, State: NewState()}
+	write(t, machine, "/usr/sbin/cupsd", "")
+
+	// What a login created.
+	saveCreated(session, created{Printers: []string{"odm-prt-01"},
+		DriveMaps: []string{"/mnt/firmendaten"}})
+
+	// The machine's pass carries neither — they are not machine settings —
+	// and must not see the session's record as its own.
+	if state := loadCreated(machine); len(state.Printers) != 0 || len(state.DriveMaps) != 0 {
+		t.Fatalf("the machine pass sees the session's work as its own: %+v", state)
+	}
+	// With CUPS present, so this is the real path and not an early skip.
+	results := applyPrinters(context.Background(), policy.Settings{}, machine)
+	if runner.ran("lpadmin", "-x") {
+		t.Errorf("the machine pass removed the session's printer: %v", runner.commands)
+	}
+	if statuses(results)["printers:odm-prt-01"] != "" {
+		t.Errorf("the machine pass acted on the session's printer: %+v", results)
+	}
+
+	// The session still holds its own record, and its own pass is what
+	// removes what its policy stops naming.
+	if state := loadCreated(session); len(state.Printers) != 1 {
+		t.Errorf("the session lost its record: %+v", state)
+	}
+}
+
+// The single record earlier versions kept is retired rather than acted on: a
+// first pass after an upgrade must not remove what it cannot attribute.
+func TestALegacyRecordIsNotActedOn(t *testing.T) {
+	root := t.TempDir()
+	env := Env{Root: root, Run: newRunner(), State: NewState()}
+	if err := os.MkdirAll(filepath.Dir(env.Path(CreatedPath)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No scope: written by a version that had one record for both passes.
+	if err := os.WriteFile(env.Path(CreatedPath),
+		[]byte(`{"printers":["odm-prt-01"],"drive_maps":["/mnt/firmendaten"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if state := loadCreated(env); len(state.Printers) != 0 || len(state.DriveMaps) != 0 {
+		t.Fatalf("a record with no scope was taken as this pass's: %+v", state)
+	}
+}
+
+// Firefox keeps its own trust store and does not read the system one, so the
+// domain's authority was trusted by everything on the machine except the
+// browser somebody reaches the console with — which then warned about the
+// domain's own certificate.
+func TestFirefoxIsToldToTrustTheDomainsAuthority(t *testing.T) {
+	env, _ := testEnv(t)
+	settings := policy.Settings{
+		TrustedCerts: []policy.TrustedCert{
+			{Name: "odm-root-ca", CertificatePEM: "-----BEGIN CERTIFICATE-----\nx\n"},
+		},
+	}
+
+	results := applyBrowser(context.Background(), settings, env)
+	if statuses(results)["browser:firefox"] != "success" {
+		t.Fatalf("results = %+v", results)
+	}
+	body := read(t, env, firefoxPolicyPath)
+	if !strings.Contains(body, `"ImportEnterpriseRoots": true`) {
+		t.Errorf("Firefox was not told about the system trust store:\n%s", body)
+	}
+
+	// Beside browser policy rather than instead of it, and other certificate
+	// keys a policy sets are kept.
+	settings.Browser = &policy.Browser{Firefox: map[string]any{
+		"HomepageLocation": "https://intranet.example.org",
+		"Certificates":     map[string]any{"Install": []any{"/etc/ssl/extra.pem"}},
+	}}
+	results = applyBrowser(context.Background(), settings, env)
+	if statuses(results)["browser:firefox"] != "success" {
+		t.Fatalf("results = %+v", results)
+	}
+	body = read(t, env, firefoxPolicyPath)
+	for _, want := range []string{
+		`"ImportEnterpriseRoots": true`, "intranet.example.org", "extra.pem",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("policies.json is missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// The other half of the same rule: what a person's own policy stops naming,
+// their own pass still removes. Splitting the record must not turn removal
+// off, only move it to the pass that owns it.
+func TestASessionStillRemovesWhatItsPolicyStopsNaming(t *testing.T) {
+	root := t.TempDir()
+	runner := newRunner()
+	session := Env{Session: true, Root: root, Run: runner, State: NewState()}
+	// The applier asks for CUPS before it asks for anything else, which on a
+	// desktop is the honest answer to "why is there no queue".
+	write(t, session, "/usr/sbin/cupsd", "")
+
+	// A login created the queue.
+	applyPrinters(context.Background(), policy.Settings{
+		Printers: []policy.Printer{{Name: "odm-prt-01", Server: "fs01.corp.example.internal"}},
+	}, session)
+	if !runner.ran("lpadmin", "-p odm-prt-01") {
+		t.Fatalf("the queue was not created: %v", runner.commands)
+	}
+	if got := loadCreated(session).Printers; len(got) != 1 {
+		t.Fatalf("the session did not record it: %v", got)
+	}
+
+	// The policy stops naming it, and their next session takes it away.
+	applyPrinters(context.Background(), policy.Settings{}, session)
+	if !runner.ran("lpadmin", "-x odm-prt-01") {
+		t.Errorf("the session did not remove it: %v", runner.commands)
+	}
+	if got := loadCreated(session).Printers; len(got) != 0 {
+		t.Errorf("the record still holds it: %v", got)
+	}
+}
+
+// And a drive the login mounted is not unmounted by the machine's next pass,
+// which is what made a mapped drive disappear a quarter of an hour after
+// somebody signed in.
+func TestTheMachinePassDoesNotUnmountASessionsDrive(t *testing.T) {
+	root := t.TempDir()
+	runner := newRunner()
+	session := Env{Session: true, Root: root, Run: runner, State: NewState()}
+	machine := Env{Root: root, Run: runner, State: NewState()}
+
+	saveCreated(session, created{DriveMaps: []string{"/mnt/firmendaten"}})
+	was := isMounted
+	isMounted = func(string) bool { return true }
+	defer func() { isMounted = was }()
+
+	applyDriveMaps(context.Background(), policy.Settings{}, machine)
+	if runner.ran("umount", "") {
+		t.Errorf("the machine pass unmounted the session's drive: %v", runner.commands)
+	}
+
+	// The session's own pass, with the drive gone from their policy, does.
+	applyDriveMaps(context.Background(), policy.Settings{}, session)
+	if !runner.ran("umount", "/mnt/firmendaten") {
+		t.Errorf("the session did not detach it: %v", runner.commands)
+	}
+}

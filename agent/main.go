@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.7.5"
+const version = "0.7.6"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -138,7 +138,9 @@ func runProfile(args []string) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	env := apply.NewEnv(*root)
+	// A session's own pass: what it mounts and writes is recorded apart from
+	// the machine's, so the machine's next pass leaves it alone.
+	env := apply.NewSessionEnv(*root)
 
 	if *release {
 		apply.ReleaseProfile(ctx, *username, env)

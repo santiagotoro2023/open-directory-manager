@@ -379,6 +379,61 @@ async def test_a_task_nobody_collects_stops_a_role_saying_installing(fresh):
 
 
 
+async def test_a_session_report_is_stored_and_read_back_for_that_person(fresh):
+    """What happens when somebody's policy is applied — their drive maps,
+    their connection files — was reported nowhere, so a drive that did not
+    mount existed only in the machine's journal. The session reports it under
+    the person, and their page asks for it by account name."""
+    from odm import db, routes_policy
+
+    dn = "CN=WS-01,CN=Computers,DC=corp,DC=example,DC=internal"
+    async with fresh.acquire() as conn:
+        # The machine's own report, and one from a session on it.
+        for username, results in (
+            (None, [{"setting": "files:/etc/issue.net", "status": "success", "reason": ""}]),
+            (
+                "terry.tester",
+                [
+                    {
+                        "setting": "drive_maps:firmendaten",
+                        "status": "failed",
+                        "reason": "mount error(126): Required key not available",
+                    },
+                    {"setting": "remote_desktop_files:Terminal Server", "status": "success",
+                     "reason": ""},
+                ],
+            ),
+        ):
+            await conn.execute(
+                """
+                INSERT INTO agent_report (computer_dn, hostname, agent_version, policy_serial,
+                                          applied_gpos, results, failures, username)
+                VALUES ($1, 'ws-01.corp.example.internal', '0.7.6', 'abc',
+                        '[]'::jsonb, $2::jsonb, $3, $4)
+                """,
+                dn,
+                db.dumps(results),
+                sum(1 for result in results if result["status"] == "failed"),
+                username,
+            )
+
+    # The person's page asks by account name and gets their session, with the
+    # reason a mount failed rather than a bare status.
+    sessions = await routes_policy.reports(pool=fresh, username="TERRY.TESTER")
+    assert len(sessions["reports"]) == 1, sessions
+    report = sessions["reports"][0]
+    assert report["username"] == "terry.tester"
+    assert report["failures"] == 1
+    reasons = {row["setting"]: row["reason"] for row in report["results"]}
+    assert "Required key not available" in reasons["drive_maps:firmendaten"]
+
+    # The machine's page asks for the machine's own and does not get the
+    # session's: "did this machine apply its policy" is a different question.
+    machine = await routes_policy.reports(pool=fresh, computer_dn=dn)
+    assert len(machine["reports"]) == 1, machine
+    assert machine["reports"][0]["results"][0]["setting"] == "files:/etc/issue.net"
+
+
 async def test_replication_comes_from_the_controllers_that_reported_it(fresh):
     """Samba refuses the call behind `samba-tool drs showrepl` to anything
     below domain-controller level, so the control plane's own account can never

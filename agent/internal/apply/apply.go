@@ -74,6 +74,9 @@ func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) 
 	if userOnly {
 		statePath = UserStatePath
 	}
+	// Which pass this is, so what it creates is recorded as its own and the
+	// other pass does not undo it.
+	env.Session = userOnly
 	previous := loadState(env, statePath)
 	results := []policy.Result{}
 

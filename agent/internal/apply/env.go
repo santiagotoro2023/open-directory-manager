@@ -42,6 +42,11 @@ func (execRunner) Run(ctx context.Context, name string, args ...string) (string,
 
 // Env is the machine an applier writes to.
 type Env struct {
+	// Session marks a pass applied for one person signing in rather than for
+	// the machine. What each pass created is recorded separately: with one
+	// record between them, the machine's next pass removed the printer and
+	// unmounted the drive the login had just set up.
+	Session bool
 	// Root is prefixed to every absolute path. "" on a real host, a
 	// temporary directory in tests.
 	Root string
@@ -53,6 +58,14 @@ type Env struct {
 
 func NewEnv(root string) Env {
 	return Env{Root: root, Run: execRunner{}, State: NewState()}
+}
+
+// NewSessionEnv is the same machine, for work done on behalf of one person
+// signing in: their drive maps, their connection files, their profile.
+func NewSessionEnv(root string) Env {
+	env := NewEnv(root)
+	env.Session = true
+	return env
 }
 
 func (e Env) Path(path string) string {

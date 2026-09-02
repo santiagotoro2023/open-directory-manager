@@ -425,12 +425,15 @@ export const CATEGORIES: CategorySpec[] = [
         key: "address",
         label: "Broker",
         placeholder: "rd.corp.example.internal",
-        hint: "Filled in by choosing a collection above",
+        hint: "The collection's broker. Clients connect here, never to a host.",
+        pick: "collection",
       },
       {
         key: "application",
         label: "Published application",
         placeholder: "Empty for a whole desktop",
+        hint: "From the collection: empty unless it publishes an application",
+        pick: "collection",
       },
       {
         key: "for_principal",
@@ -1272,10 +1275,10 @@ function LoginScreenEditor({
           <div className="inline-fields">
             <label className="field">
               <span>Or a location the picture is already at</span>
-              <input
+              <PictureLocation
                 value={current.background_uri}
                 placeholder="file:///usr/share/backgrounds/login.png"
-                onChange={(e) => set({ background_uri: e.target.value })}
+                onChange={(background_uri) => set({ background_uri })}
               />
             </label>
             <label className="field">
@@ -1859,17 +1862,17 @@ function WallpaperEditor({
       <div className="inline-fields">
         <label className="field">
           <span>Or a location the picture is already at</span>
-          <input
+          <PictureLocation
             value={settings.wallpaper?.uri ?? ""}
             placeholder="file:///usr/share/backgrounds/corp.png"
-            onChange={(e) =>
+            onChange={(uri) =>
               onChange({
                 ...settings,
                 wallpaper:
-                  e.target.value || settings.wallpaper?.image
+                  uri || settings.wallpaper?.image
                     ? {
                         ...settings.wallpaper,
-                        uri: e.target.value,
+                        uri,
                         picture_options: settings.wallpaper?.picture_options ?? "zoom",
                       }
                     : undefined,
@@ -2092,6 +2095,87 @@ function Cell({
   );
 }
 
+/** Where a picture already is: a share chosen from the ones that exist, with
+ * the file name typed after it.
+ *
+ * A picture on a share is the usual way one wallpaper reaches every machine
+ * without travelling in the policy document. The location is a URI, so the
+ * share is filled in as one — and the machines it applies to have to be able
+ * to reach it, exactly as they do for a drive map. */
+function PictureLocation({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  return (
+    <div className="picker-field">
+      <input
+        aria-label="Picture location"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <button type="button" className="ghost" onClick={() => setPicking(true)}>
+        Select…
+      </button>
+      {picking && (
+        <SharePicker
+          onClose={() => setPicking(false)}
+          onPick={(share) => {
+            setPicking(false);
+            // The share as a URI, ending in a slash: the file name is what is
+            // left to type.
+            onChange(`smb:${share.unc}/`);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A path inside a share: the share is chosen, the rest is typed.
+ *
+ * Picking one appends %username%, which is what a profile path almost always
+ * is — a directory per person under one share — and is still editable. */
+function SharePath({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  return (
+    <div className="picker-field">
+      <input
+        aria-label="Profile path"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <button type="button" className="ghost" onClick={() => setPicking(true)}>
+        Select…
+      </button>
+      {picking && (
+        <SharePicker
+          onClose={() => setPicking(false)}
+          onPick={(share) => {
+            setPicking(false);
+            onChange(`${share.unc}/%username%`);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /** A resource a server publishes, chosen rather than remembered.
  *
  * Typeable as well: a share on a machine the console does not manage, or a
@@ -2141,8 +2225,11 @@ function BrowseField({
             // The broker and whether it publishes an application come from
             // the collection; the name is what the icon says, which starts as
             // the collection's own name and can be anything.
+            // Keyed by the fields the entry has rather than by the field
+            // this was opened from: all three come from the collection, so
+            // choosing one from Broker fills the name too.
             onPatch({
-              [field.key]: entry.name ? String(entry.name) : collection.name,
+              name: entry.name ? String(entry.name) : collection.name,
               collection: collection.name,
               address: collection.address,
               application: collection.application,
@@ -2315,10 +2402,14 @@ function RoamingProfileEditor({
             label="Profile path"
             hint="%username% becomes the person's own name, so one policy serves everybody"
           >
-            <input
+            {/* Chosen from the shares that exist, like a drive map: a profile
+                path is a share with a directory per person under it, and one
+                typed from memory is the commonest way to a session that
+                silently keeps a local home. */}
+            <SharePath
               value={current.path}
               placeholder="//fs01/profiles/%username%"
-              onChange={(e) => set({ path: e.target.value })}
+              onChange={(path) => set({ path })}
             />
           </Field>
           <div className="inline-fields">
