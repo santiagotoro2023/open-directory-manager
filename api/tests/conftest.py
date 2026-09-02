@@ -194,6 +194,21 @@ class FakeLdap:
             for token in tokens
             if token.lower().startswith(("objectclass=", "objectcategory="))
         }
+        # Membership, both ways. Without these a membership search matched
+        # every object in scope, and a test could not tell the right answer
+        # from no filtering at all.
+        for token in tokens:
+            lowered = token.lower()
+            if lowered.startswith("memberof="):
+                wanted_dn = token.split("=", 1)[1].lower()
+                held = [str(dn).lower() for dn in entry.get("memberOf", [])]
+                if wanted_dn not in held:
+                    return False
+            if lowered.startswith("member:1.2.840.113556.1.4.1941:="):
+                subject = token.split(":=", 1)[1].lower()
+                if not self._holds_transitively(entry, subject):
+                    return False
+
         wanted.discard("*")
         if not wanted:
             return True
@@ -217,6 +232,17 @@ class FakeLdap:
             str(entry.get(_ATTRIBUTE_CASE[attribute.lower()], "")).lower() == value.lower()
             for attribute, value in named
         )
+
+    def _holds_transitively(self, group: dict, subject: str) -> bool:
+        """Whether this group holds that object, at any depth."""
+        for member in group.get("member", []):
+            if str(member).lower() == subject:
+                return True
+            nested = self.entries.get(str(member))
+            if nested and "group" in {c.lower() for c in nested.get("objectClass", [])}:
+                if self._holds_transitively(nested, subject):
+                    return True
+        return False
 
     # -- ldap3 surface --
     def search(self, search_base, search_filter, search_scope, attributes, paged_size=None):
@@ -300,6 +326,7 @@ def sample_directory() -> dict[str, dict]:
             "sAMAccountName": "ada",
             "displayName": "Ada Admin",
             "userAccountControl": 512,
+            "memberOf": [f"CN=Helpdesk,OU=Example Corp,{BASE_DN}"],
         },
         f"CN=Helpdesk,OU=Example Corp,{BASE_DN}": {
             "objectClass": ["top", "group"],
@@ -307,6 +334,10 @@ def sample_directory() -> dict[str, dict]:
             "sAMAccountName": "Helpdesk",
             "objectSid": "S-1-5-21-1-2-3-1601",
             "groupType": -2147483646,
+            "member": [f"CN=ada,OU=Example Corp,{BASE_DN}"],
+            # Nested: what Helpdesk itself belongs to, which is the half the
+            # console could not show.
+            "memberOf": [f"CN=Domain Admins,CN=Users,{BASE_DN}"],
         },
         f"CN=Domain Admins,CN=Users,{BASE_DN}": {
             "objectClass": ["top", "group"],
@@ -314,6 +345,7 @@ def sample_directory() -> dict[str, dict]:
             "sAMAccountName": "Domain Admins",
             "objectSid": "S-1-5-21-1-2-3-512",
             "groupType": -2147483646,
+            "member": [f"CN=Helpdesk,OU=Example Corp,{BASE_DN}"],
         },
     }
 

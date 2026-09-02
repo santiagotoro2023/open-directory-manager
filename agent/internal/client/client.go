@@ -111,6 +111,33 @@ func tlsTransport(caCert string) (*http.Transport, error) {
 	}, nil
 }
 
+// Reachable answers whether the control plane is there and its certificate is
+// one this machine trusts, with no Kerberos involved. Split out because it is
+// the first thing to fail on a fresh join — a name that does not resolve, a
+// port nothing listens on, a certificate the machine was not given — and each
+// of those reaches the operator as "the agent does not report" otherwise.
+func Reachable(cfg agentconfig.Config) error {
+	transport, err := tlsTransport(cfg.CACert)
+	if err != nil {
+		return err
+	}
+	httpClient := &http.Client{Timeout: 15 * time.Second, Transport: transport}
+	url := strings.TrimSuffix(cfg.APIURL, "/") + "/api/v1/healthz"
+	response, err := httpClient.Get(url)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s answered %s", url, response.Status)
+	}
+	return nil
+}
+
+// MachinePrincipal is the account this machine authenticates as: the name a
+// domain join created, which is what has to be in the keytab.
+func MachinePrincipal() (string, error) { return machinePrincipal() }
+
 // Policy fetches the machine's effective policy. Facts the directory cannot
 // know — the running OS and the current addresses — are sent along so the
 // API can evaluate item-level targeting against them.

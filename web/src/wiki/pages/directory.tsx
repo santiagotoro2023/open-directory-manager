@@ -163,6 +163,45 @@ export function Content() {
           </p>
         </Section>
 
+        <Section title="Membership, both ways">
+          <p>
+            Every object has a <strong>Member of</strong> tab, groups included: what it belongs to,
+            not only what belongs to it. A group is a member of groups exactly as a user is, and
+            that is what decides whether a rule written against one group reaches an account nobody
+            put in it.
+          </p>
+          <Reference
+            headers={["Tab", "Shows", "On"]}
+            rows={[
+              ["Members", "What is in this group, directly.", "Groups"],
+              [
+                "Member of",
+                "Every group this belongs to: the ones it was put in, and the ones reached through those, marked nested.",
+                "Users, groups, computers",
+              ],
+            ]}
+          />
+          <p>
+            The nested rows come from the directory itself, walked the same way the domain walks
+            membership when it decides access. A chevron on any group row goes one level further —
+            up the nesting on <strong>Member of</strong>, down into members on{" "}
+            <strong>Members</strong> — so a chain is followed in place rather than by opening five
+            pages.
+          </p>
+          <Example title="Why the nested rows matter">
+            A sudo rule names <C>%it-staff</C>. <C>helpdesk</C> is a member of <C>it-staff</C>, and{" "}
+            <C>ada</C> is in <C>helpdesk</C>. Ada&rsquo;s <strong>Member of</strong> lists{" "}
+            <C>helpdesk</C> as direct and <C>it-staff</C> as nested &mdash; she has the sudo rule,
+            and nothing on her account says so.
+          </Example>
+          <Note>
+            A group whose members list is empty is not always an empty group: an account&rsquo;s
+            primary group &mdash; Domain Users for a person, Domain Computers for a machine &mdash;
+            is held on the account rather than in the group, which is how Active Directory has
+            always stored it.
+          </Note>
+        </Section>
+
         <Section title="Group scope">
           <p>Scope controls where in the forest a group can be used.</p>
           <Reference

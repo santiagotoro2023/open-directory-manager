@@ -253,6 +253,20 @@ def test_settings_accept_a_realistic_policy():
     assert stored["drive_maps"][0]["unc"] == "//fs01/shared"
 
 
+def test_a_share_written_the_way_a_file_manager_shows_it_is_accepted():
+    """smb://server/share is what a file manager displays and what gets pasted
+    into the field; the mount takes //server/share. Refusing it made a correct
+    entry read as a wrong one."""
+    from odm.policy_schema import PolicySettings
+
+    for written in ("smb://fs01/shared", "SMB://fs01/shared", "cifs://fs01/shared",
+                    "\\\\fs01\\shared"):
+        settings = PolicySettings(
+            drive_maps=[{"name": "shared", "unc": written, "mount_point": "/mnt/shared"}]
+        )
+        assert settings.drive_maps[0].unc == "//fs01/shared", written
+
+
 def test_a_target_in_a_group_can_be_filtered_on(monkeypatch):
     """nested_groups describes each group — DN, account name, SID — and Target
     wants the distinguished names. Handing it the whole description made every

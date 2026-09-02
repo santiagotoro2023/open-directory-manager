@@ -441,3 +441,27 @@ func TestJoinExplainsWhenTheDomainDoesNotResolve(t *testing.T) {
 		}
 	}
 }
+
+// A join that was not given the console's certificate finished claiming
+// success, and the machine then reported nothing: the agent verified against
+// the system trust store and the console's certificate is self-signed until
+// the domain has an authority of its own. The join has to say so.
+func TestAJoinSaysWhenTheAgentCannotVerifyTheConsole(t *testing.T) {
+	env, _ := testEnv(t)
+	options := Options{
+		Domain: "corp.example.internal",
+		APIURL: "https://odm.corp.example.internal:8443",
+	}
+
+	// Nothing listening and no anchor: not trusted.
+	if ConsoleTrusted(context.Background(), options, env) {
+		t.Error("an unreachable console must not read as trusted")
+	}
+
+	// A dry run makes no requests at all.
+	dry := options
+	dry.DryRun = true
+	if !ConsoleTrusted(context.Background(), dry, env) {
+		t.Error("a dry run must not be reported as untrusted")
+	}
+}

@@ -154,6 +154,13 @@ class DriveMap(Strict):
     @classmethod
     def _unc(cls, value: str) -> str:
         normalized = value.replace("\\", "/")
+        # The three ways the same share is written down. A file manager shows
+        # smb://server/share and that is what gets pasted in; the mount takes
+        # //server/share, so it is turned into one rather than refused.
+        for prefix in ("smb://", "cifs://"):
+            if normalized.lower().startswith(prefix):
+                normalized = "//" + normalized[len(prefix) :]
+                break
         if not UNC_RE.match(normalized):
             raise ValueError("share must look like //server/share")
         return normalized

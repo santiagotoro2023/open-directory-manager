@@ -177,6 +177,30 @@ async def read_object(
     return (await _with_kinds(pool, [entry]))[0]
 
 
+@router.get("/membership")
+async def read_membership(
+    dn: str = Query(max_length=1024),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """What this object is a member of, and what is a member of it.
+
+    Both directions for every kind of object. A group belongs to groups the
+    same way a user does, and it is nesting that makes a rule about one group
+    reach an account nobody put in it — so the groups reached through another
+    group are listed next to the direct ones rather than left to be worked out
+    from five separate pages.
+    """
+    authz.require("directory.read", dn)
+    found = await _read(settings, objects.membership, dn)
+    # A group's kind decides its icon and label everywhere else in the console;
+    # a membership table is no different.
+    for key in ("member_of", "members"):
+        found[key] = await _with_kinds(pool, found[key])
+    return found
+
+
 # ----------------------------------------------------------------- creates ---
 
 

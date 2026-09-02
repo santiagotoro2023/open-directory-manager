@@ -243,6 +243,73 @@ async def update_printer(
     return _json(row)
 
 
+@router.post("/test", dependencies=[Depends(requires("printer.write"))])
+async def test_printer(
+    request: Request,
+    id: Annotated[str, Query(min_length=36, max_length=36)],
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Put CUPS's own test page on the queue.
+
+    Queued for the print server, because that is where the queue is: a page
+    that comes out proves the half of the path the console cannot see — server
+    to device. The task's output is what the queue said, and it appears against
+    the printer like any other queued work.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM printer WHERE id = $1::uuid", id)
+        if row is None:
+            raise objects.NotFound("no such printer")
+        task_id = await tasks.enqueue(
+            conn,
+            node_fqdn=row["node_fqdn"],
+            kind="printer-test",
+            payload={"name": row["name"]},
+            subject=str(row["id"]),
+            requested_by=session.principal,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="printer.test",
+            outcome="success",
+            object_type="printer",
+            object_dn=f"{row['name']}@{row['node_fqdn']}",
+        )
+    return {"task_id": str(task_id), "node_fqdn": row["node_fqdn"], "name": row["name"]}
+
+
+@router.get("/test", dependencies=[Depends(requires("printer.read"))])
+async def read_test(
+    task_id: Annotated[str, Query(min_length=36, max_length=36)],
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """What the print server did with the test page.
+
+    A page that was queued and a page that came out are different answers, and
+    without this the console could only say it had asked.
+    """
+    row = await pool.fetchrow(
+        """
+        SELECT state, output, created_at, finished_at
+        FROM node_task WHERE id = $1::uuid AND kind = 'printer-test'
+        """,
+        task_id,
+    )
+    if row is None:
+        raise objects.NotFound("no such test page")
+    return {
+        "state": row["state"],
+        "output": row["output"] or "",
+        "created_at": row["created_at"],
+        "finished_at": row["finished_at"],
+    }
+
+
 @router.delete("", status_code=204, dependencies=[Depends(requires("printer.write"))])
 async def delete_printer(
     request: Request,

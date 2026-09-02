@@ -103,6 +103,42 @@ export function Content() {
           />
         </Section>
 
+        <Section title="A test page">
+          <p>
+            <strong>Test page</strong> on a printer&rsquo;s row queues CUPS&rsquo;s own test page
+            for the print server. It runs there, not here: the server holds the queue, so a page
+            that comes out proves the half of the path the console cannot see — server to device.
+          </p>
+          <Reference
+            headers={["Answer", "Means"]}
+            rows={[
+              ["Sent", "The queue accepted the job. A page should come out of the device."],
+              [
+                "Could not print it",
+                "The queue refused the job — not accepting jobs, or the device is unreachable. What the queue said is shown underneath.",
+              ],
+              [
+                "Waiting for the server to pick it up",
+                "The task is queued and the server has not collected it yet. With push on it is seconds; otherwise the polling interval.",
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="Handing a printer out in a policy">
+          <p>
+            The <strong>Printer</strong> field of a policy entry is the <em>queue</em> on the print
+            server — <C>odm-prt-01</C> — not the printer&rsquo;s own address. The agent points CUPS
+            at <C>ipp://&lt;print server&gt;/printers/&lt;queue&gt;</C>, and the server holds the
+            driver and the device address. <strong>Select…</strong> lists the queues that exist
+            across every print server and fills in the server with the choice.
+          </p>
+          <Note>
+            A device address in that field is refused: the queue name is part of the printer&rsquo;s
+            address on the client, so it has to be a name, not a URL.
+          </Note>
+        </Section>
+
         <Section title="On the client">
           <p>
             The agent points CUPS at the print server and adds each printer the policy names, so a

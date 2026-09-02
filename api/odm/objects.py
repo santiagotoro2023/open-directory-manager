@@ -52,6 +52,8 @@ GROUP_SCOPES = {
     "universal": -2147483640,
 }
 
+GROUP_SCOPE_NAMES = {value: name for name, value in GROUP_SCOPES.items()}
+
 # Objects whose removal breaks the domain. Deleting their *contents* is fine.
 _PROTECTED_RDNS = (
     "cn=builtin",
@@ -350,6 +352,98 @@ def search(
     )
     truncated = len(raw) > limit
     return [_entry(e) for e in raw[:limit]], truncated
+
+
+# LDAP_MATCHING_RULE_IN_CHAIN. The directory walks nested membership itself
+# and answers in one search, which is both faster and more correct than
+# following memberOf from the console: a group three levels up is found the
+# same way the domain finds it when it decides access.
+IN_CHAIN = "1.2.840.113556.1.4.1941"
+
+# A group can hold thousands of accounts, and a membership panel is a panel.
+MEMBER_LIMIT = 500
+
+
+def membership(conn: Connection, settings: Settings, dn: str) -> dict[str, Any]:
+    """What this object belongs to, and what belongs to it.
+
+    Both directions, for every kind of object: a group is a member of groups
+    as much as a user is, and nesting is what makes a rule about one group
+    reach an account nobody put in it.
+    """
+    canonical = normalize_dn(settings, dn)
+    entry = get(conn, settings, canonical)
+    base = safe_dn(settings.base_dn)
+    needle = escape_filter_chars(canonical)
+
+    direct = {group.lower() for group in entry.get("memberOf") or []}
+    # Every group at any depth, the domain's own answer rather than ours.
+    groups = _search(
+        conn,
+        base,
+        f"(&(objectClass=group)(member:{IN_CHAIN}:={needle}))",
+        ["cn", "description", "groupType", "objectClass", "objectSid"],
+    )
+    member_of = [{**_summary(raw), "direct": raw["dn"].lower() in direct} for raw in groups]
+    # A group the directory did not return but memberOf names: kept rather
+    # than dropped, so a panel never quietly shows less than the object says.
+    for group in entry.get("memberOf") or []:
+        if not any(row["dn"].lower() == group.lower() for row in member_of):
+            member_of.append(
+                {"dn": group, "name": rdn_value(group), "objectType": "group",
+                 "scope": "", "description": "", "direct": True}
+            )
+
+    members: list[dict[str, Any]] = []
+    truncated = False
+    if entry["objectType"] == "group":
+        # The back-link rather than the member attribute: one search returns
+        # every member with the name and type a table needs, instead of one
+        # read per member.
+        found = _search(
+            conn,
+            base,
+            f"(memberOf={needle})",
+            ["cn", "ou", "description", "groupType", "objectClass", "objectSid"],
+            limit=MEMBER_LIMIT + 1,
+        )
+        truncated = len(found) > MEMBER_LIMIT
+        members = [_summary(raw) for raw in found[:MEMBER_LIMIT]]
+
+    return {
+        "dn": canonical,
+        "object_type": entry["objectType"],
+        "name": rdn_value(canonical),
+        # Direct first, then by name: the ones somebody chose above the ones
+        # they were given.
+        "member_of": sorted(member_of, key=lambda row: (not row["direct"], row["name"].lower())),
+        "members": sorted(members, key=lambda row: row["name"].lower()),
+        "members_truncated": truncated,
+    }
+
+
+def _summary(raw: dict) -> dict[str, Any]:
+    """One row of a membership table.
+
+    The same shape the rest of the directory API returns, so a row is a
+    directory object to everything that renders one: same icon, same label,
+    same link.
+    """
+    attributes = raw["attributes"]
+    object_type = _classify(attributes.get("objectClass") or [])
+    scope = ""
+    if object_type == "group":
+        scope = GROUP_SCOPE_NAMES.get(int(attributes.get("groupType") or 0), "")
+    row = {
+        "dn": raw["dn"],
+        "name": str(attributes.get("cn") or attributes.get("ou") or rdn_value(raw["dn"])),
+        "objectType": object_type,
+        "scope": scope,
+        "description": str(attributes.get("description") or ""),
+    }
+    if attributes.get("objectSid") is not None:
+        row["objectSid"] = read_sid(attributes["objectSid"])
+    return row
 
 
 def find_computer(

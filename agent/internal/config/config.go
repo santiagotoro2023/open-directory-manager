@@ -59,3 +59,32 @@ func (c Config) Validate() error {
 	}
 	return nil
 }
+
+// SetCACert points the agent at a certificate it should verify the control
+// plane with, leaving the rest of the file alone.
+//
+// A join that was not given the console's certificate wrote no ca_cert, and
+// the machine then failed every request against the system trust store —
+// silently, from the operator's side. This is how that is corrected without
+// re-joining the domain.
+func SetCACert(path, caCert string) error {
+	if path == "" {
+		path = DefaultPath
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	fields["ca_cert"] = caCert
+	body, err := json.MarshalIndent(fields, "", "  ")
+	if err != nil {
+		return err
+	}
+	// Same permissions the join writes: the file names a keytab and a realm,
+	// and is read by a service running as root.
+	return os.WriteFile(path, append(body, '\n'), 0o640)
+}

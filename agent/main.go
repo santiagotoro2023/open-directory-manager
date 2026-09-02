@@ -29,7 +29,7 @@ import (
 	"odm.example.org/agent/internal/tasks"
 )
 
-const version = "0.7.2"
+const version = "0.7.3"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -64,6 +64,10 @@ func main() {
 		os.Exit(runDaemon(os.Args[2:]))
 	case "profile":
 		os.Exit(runProfile(os.Args[2:]))
+	case "check":
+		os.Exit(runCheck(os.Args[2:]))
+	case "trust":
+		os.Exit(runTrust(os.Args[2:]))
 	case "--version", "-v", "version":
 		fmt.Println("odm-agent", version)
 	default:
@@ -75,6 +79,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage: odm-agent <command> [flags]
 
   apply [--force] [--user NAME]   fetch and apply policy now
+  check [config path]             say why this machine is not reporting
+  trust <certificate>             trust the console's certificate and check
   daemon                          apply on the policy's refresh interval
   profile --user NAME [--release] attach that person's roaming profile
   --version                       print the version

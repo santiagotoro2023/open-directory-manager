@@ -87,6 +87,47 @@ async def test_reading_outside_the_domain_is_404(admin_client, ldap):
     assert r.status_code == 404
 
 
+async def test_membership_reads_both_directions_and_through_nesting(admin_client, ldap):
+    """A group's members were shown and what the group itself belongs to was
+    not, so a rule written against a group two levels up was invisible from
+    every page an operator would look at.
+
+    ada is in Helpdesk, and Helpdesk is in Domain Admins: ada's groups are
+    both, with the one she was actually put in marked as the direct one."""
+    ada = f"CN=ada,OU=Example Corp,{BASE_DN}"
+    helpdesk = f"CN=Helpdesk,OU=Example Corp,{BASE_DN}"
+    admins = f"CN=Domain Admins,CN=Users,{BASE_DN}"
+
+    r = await admin_client.get("/api/v1/directory/membership", params={"dn": ada})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    groups = {row["dn"]: row for row in body["member_of"]}
+    assert set(groups) == {helpdesk, admins}
+    assert groups[helpdesk]["direct"] is True
+    assert groups[admins]["direct"] is False
+    # A row is a directory object: name, type and scope, not a bare string.
+    assert groups[helpdesk]["name"] == "Helpdesk"
+    assert groups[helpdesk]["objectType"] == "group"
+    assert groups[helpdesk]["scope"] == "global"
+    # A user has no members of its own.
+    assert body["members"] == []
+
+    # The group, both ways: who is in it, and what it is in.
+    r = await admin_client.get("/api/v1/directory/membership", params={"dn": helpdesk})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert [row["dn"] for row in body["members"]] == [ada]
+    assert [row["dn"] for row in body["member_of"]] == [admins]
+    assert body["members_truncated"] is False
+
+
+async def test_membership_outside_the_domain_is_404(admin_client, ldap):
+    r = await admin_client.get(
+        "/api/v1/directory/membership", params={"dn": "CN=ada,DC=evil,DC=example"}
+    )
+    assert r.status_code == 404
+
+
 # ----------------------------------------------------------------- creates ---
 
 

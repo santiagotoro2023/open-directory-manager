@@ -38,11 +38,15 @@ export function Content() {
         </p>
 
         <Example title="Join from the command line">
-          <Code>{`sudo odm-client-install \\
+          <Code>{`scp lern-st-odm-01:/etc/odm/tls/api.crt /tmp/odm-console.crt
+sudo odm-client-install \\
   --domain corp.example.internal \\
-  --admin-user Administrator`}</Code>
+  --admin-user Administrator \\
+  --ca-cert /tmp/odm-console.crt`}</Code>
           Prompts for anything not given. Add <C>--unattended</C> with <C>--otp</C> for scripted
-          provisioning.
+          provisioning. <C>--ca-cert</C> is the console&rsquo;s certificate: without it the agent
+          has nothing to verify the console with and will not report — the join says so, and{" "}
+          <C>sudo odm-agent trust /tmp/odm-console.crt</C> fixes it afterwards.
         </Example>
 
         <Example title="Join from the desktop">
@@ -51,9 +55,10 @@ export function Content() {
         </Example>
 
         <Example title="Confirm it worked">
-          <Code>{`klist -k /etc/krb5.keytab
-id someone@corp.example.internal
-systemctl status odm-agent`}</Code>
+          <Code>{`sudo odm-agent check
+id someone@corp.example.internal`}</Code>
+          <C>check</C> walks every step from configuration to check-in and names the first that
+          fails, which is the answer to a machine that has joined and reports nothing.
         </Example>
 
         <Example title="Join without a terminal">
@@ -130,6 +135,10 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
               [
                 <C key="7">--api-url</C>,
                 "The control plane. Discovered from the domain when omitted.",
+              ],
+              [
+                <C key="13">--ca-cert</C>,
+                "The console's certificate, which the agent verifies it with. Needed until the domain has a certificate authority of its own.",
               ],
               [<C key="8">--no-agent</C>, "Join without installing the policy agent."],
               [<C key="9">--unattended</C>, "Never prompt. Fails rather than asking."],

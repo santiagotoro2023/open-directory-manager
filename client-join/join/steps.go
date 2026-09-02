@@ -175,3 +175,41 @@ func osRelease() string {
 	}
 	return fields["ID"] + "-" + fields["VERSION_ID"]
 }
+
+// ConsoleTrusted reports whether this machine can verify the control plane's
+// certificate with what it now holds.
+//
+// Until the domain has a certificate authority of its own the console's
+// certificate is self-signed, so a machine that was not given it verifies
+// against the system trust store and fails — every policy fetch, every
+// check-in. The join used to finish without noticing, and the machine then sat
+// in the console as one that had never reported.
+func ConsoleTrusted(ctx context.Context, options Options, env Env) bool {
+	if options.DryRun {
+		return true
+	}
+	anchor := options.CACert
+	if anchor == "" {
+		// What the join writes when it is given one, and what
+		// "odm-agent trust" writes afterwards.
+		if _, err := os.Stat(env.Path(CACertPath)); err == nil {
+			anchor = env.Path(CACertPath)
+		}
+	}
+	client, err := httpClient(anchor)
+	if err != nil {
+		return false
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, options.APIURL+"/api/v1/healthz", nil,
+	)
+	if err != nil {
+		return false
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	return response.StatusCode == http.StatusOK
+}

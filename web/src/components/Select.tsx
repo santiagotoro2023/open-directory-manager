@@ -193,7 +193,12 @@ export default function Select({
           className="select-menu"
           style={{
             left: box.left,
-            width: box.width,
+            // The trigger's width is the floor, not the ceiling: a discovered
+            // printer's description is longer than the box that opens it, and
+            // pinning the list to that width truncated every option to
+            // "Brother DCP-…" with nothing to tell them apart.
+            minWidth: box.width,
+            maxWidth: `calc(100vw - ${box.left + 12}px)`,
             ...(box.flip
               ? { bottom: window.innerHeight - box.top + 4 }
               : { top: box.top }),

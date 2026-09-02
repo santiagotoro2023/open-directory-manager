@@ -22,7 +22,7 @@ import (
 	"odm.example.org/client-join/join"
 )
 
-const version = "0.7.2"
+const version = "0.7.3"
 
 // Branding is installed by the package; the repository keeps one copy of
 // each asset and the application reads it from disk.
@@ -167,6 +167,13 @@ func buildForm(window fyne.Window) fyne.CanvasObject {
 			)
 			if result.Renamed {
 				message += "\nThis machine was renamed. Reboot to finish."
+			}
+			if result.UntrustedConsole {
+				// Joined, but the agent will fail every request until it
+				// holds the console's certificate.
+				message += "\nThe agent cannot verify the console's certificate and will not " +
+					"report. Copy /etc/odm/tls/api.crt from the console and run: " +
+					"sudo odm-agent trust <file>"
 			}
 			setStatus(status, message)
 		}()

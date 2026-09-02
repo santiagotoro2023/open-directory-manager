@@ -300,6 +300,28 @@ export interface ManagedServer {
   pending_tasks: number;
 }
 
+/** One row of a membership table: a directory object, plus how it got there. */
+export interface MembershipEntry {
+  dn: string;
+  name: string;
+  objectType: string;
+  scope: string;
+  description: string;
+  objectSid?: string;
+  groupKind?: string;
+  /** Only on "member of": false for a group reached through another group. */
+  direct?: boolean;
+}
+
+export interface Membership {
+  dn: string;
+  name: string;
+  object_type: string;
+  member_of: MembershipEntry[];
+  members: MembershipEntry[];
+  members_truncated: boolean;
+}
+
 export interface CertificateProfile {
   name: string;
   description: string;
@@ -945,6 +967,9 @@ export const api = {
 
     get: (dn: string) => request<DirectoryObject>(`/directory/object${qs({ dn })}`),
 
+    /** Both directions: what this object belongs to, and what belongs to it. */
+    membership: (dn: string) => request<Membership>(`/directory/membership${qs({ dn })}`),
+
     createUser: (body: NewUser) => request<DirectoryObject>("/directory/users", json(body)),
 
     bulkUsers: (users: NewUser[]) =>
@@ -1345,6 +1370,18 @@ export const api = {
       request<Printer>("/printers", { method: "PATCH", body: JSON.stringify(body) }),
 
     remove: (id: string) => request<void>(`/printers${qs({ id })}`, { method: "DELETE" }),
+
+    /** Put CUPS's own test page on the queue, from the print server. */
+    test: (id: string) =>
+      request<{ task_id: string; node_fqdn: string; name: string }>(
+        `/printers/test${qs({ id })}`,
+        { method: "POST" },
+      ),
+
+    testResult: (task_id: string) =>
+      request<{ state: string; output: string; created_at: string; finished_at: string | null }>(
+        `/printers/test${qs({ task_id })}`,
+      ),
   },
 
   vpn: {

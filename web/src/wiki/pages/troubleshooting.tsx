@@ -345,6 +345,17 @@ export function Content() {
                 </>,
               ],
               [
+                "A joined machine never reports, even after a reboot",
+                <>
+                  <C key="jn">sudo odm-agent check</C> on that machine names the step that fails.
+                  The commonest answer on a fresh join is the console&rsquo;s certificate: without{" "}
+                  <C key="jn2">--ca-cert</C> the agent has nothing to verify it with, so every
+                  request fails. Copy <C key="jn3">/etc/odm/tls/api.crt</C> from the console and run{" "}
+                  <C key="jn4">sudo odm-agent trust /path/to/api.crt</C>. A join now warns about
+                  this instead of finishing quietly.
+                </>,
+              ],
+              [
                 '"has never been heard from, so it is probably not running the agent"',
                 <>
                   Correct if nothing at all has arrived from it. It used to appear over machines

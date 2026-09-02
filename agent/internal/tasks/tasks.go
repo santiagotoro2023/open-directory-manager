@@ -119,6 +119,8 @@ func RunWithProgress(
 		output, err = applyPrinter(ctx, task.Payload, env)
 	case "printer-remove":
 		output, err = removePrinter(ctx, task.Payload, env)
+	case "printer-test":
+		output, err = testPrinter(ctx, task.Payload, env)
 	case "vpn-apply":
 		output, err = applyTunnel(ctx, task.Payload, env)
 	case "radius-apply":
@@ -418,6 +420,55 @@ func applyPrinter(ctx context.Context, payload map[string]any, env apply.Env) (s
 	_, _ = env.Run.Run(ctx, "cupsenable", name)
 	_, _ = env.Run.Run(ctx, "cupsaccept", name)
 	return fmt.Sprintf("%s is published at ipp://%s/printers/%s", name, hostname(), name), nil
+}
+
+// Somewhere on every Debian with CUPS: the page CUPS ships to prove a queue
+// works, rather than one ODM would have to compose and get wrong on every
+// printer that renders it differently.
+var testPages = []string{
+	"/usr/share/cups/data/testprint",
+	"/usr/share/cups/data/testprint.ps",
+}
+
+// testPrinter puts CUPS's own test page on the queue and says what the queue
+// did with it. Run on the print server: that is where the queue is, so a page
+// that comes out proves the server-to-device half — the half nobody can check
+// from the console.
+func testPrinter(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	name := str(payload["name"])
+	if !safeName.MatchString(name) {
+		return "", fmt.Errorf("invalid printer name %q", name)
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+
+	page := ""
+	for _, candidate := range testPages {
+		if _, err := os.Stat(env.Path(candidate)); err == nil {
+			page = env.Path(candidate)
+			break
+		}
+	}
+	if page == "" {
+		return "", fmt.Errorf("no test page on this machine (is cups installed?)")
+	}
+
+	// The queue has to be taking work, or the job sits and the operator is
+	// told the page was sent.
+	if out, err := env.Run.Run(ctx, "lpstat", "-p", name); err != nil {
+		return out, fmt.Errorf("lpstat: %w", err)
+	} else if strings.Contains(out, "disabled") {
+		return out, fmt.Errorf("%s is not accepting jobs", name)
+	}
+
+	out, err := env.Run.Run(ctx, "lp", "-d", name, "-t", "ODM test page", page)
+	if err != nil {
+		return out, fmt.Errorf("lp: %w", err)
+	}
+	// What the queue holds now, so "queued" and "printed" are told apart.
+	state, _ := env.Run.Run(ctx, "lpstat", "-o", name)
+	return strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(state)), nil
 }
 
 func removePrinter(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {

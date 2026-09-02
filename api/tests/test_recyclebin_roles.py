@@ -72,7 +72,9 @@ def test_restored_account_comes_back_disabled(ldap_only):
 def test_restore_rejoins_the_groups_it_belonged_to(ldap_only):
     dn = f"CN=grace,{PARENT}"
     objects.restore(ldap_only, get_settings(), snapshot_of(dn))
-    assert ldap_only.entries[GROUP]["member"] == [dn]
+    # In the group, next to whoever else is in it: a restore adds the object
+    # back, it does not replace the membership.
+    assert dn in ldap_only.entries[GROUP]["member"]
 
 
 def test_restoring_a_group_puts_its_members_back(ldap_only):

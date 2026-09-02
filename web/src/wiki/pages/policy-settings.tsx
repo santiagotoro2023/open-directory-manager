@@ -423,6 +423,14 @@ user      root`}</Code>
             drive map&rsquo;s own name is used. Changing it renames the entry rather than adding a
             second one.
           </p>
+          <p>
+            <strong>Select…</strong> beside <strong>Share</strong> lists the shares across every
+            file server the console knows and fills in the name and mount point with the choice.
+            Typing one is still fine, for a share on a machine ODM does not manage. Three spellings
+            are accepted and all become one: <C>//fs01/shared</C>,{" "}
+            <C>smb://fs01/shared</C> as a file manager shows it, and{" "}
+            <C>\\fs01\shared</C>.
+          </p>
           <Reference
             headers={["For", "Who gets it"]}
             rows={[

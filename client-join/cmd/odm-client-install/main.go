@@ -21,7 +21,7 @@ import (
 	"odm.example.org/client-join/join"
 )
 
-const version = "0.7.2"
+const version = "0.7.3"
 
 func main() {
 	flags := flag.NewFlagSet("odm-client-install", flag.ContinueOnError)
@@ -105,8 +105,32 @@ Joined %s.
 Verify with:
   klist -k /etc/krb5.keytab
   id someone@%s
-%s`, result.Domain, result.Hostname, result.Realm, result.Controller, result.Method,
-		agentState(result.AgentSetUp), result.Domain, rebootNote(result))
+  sudo odm-agent check
+%s%s`, result.Domain, result.Hostname, result.Realm, result.Controller, result.Method,
+		agentState(result.AgentSetUp), result.Domain, trustNote(result), rebootNote(result))
+}
+
+// trustNote is printed when the agent cannot verify the console.
+//
+// The join is finished and the machine is in the domain, but the agent will
+// fail every request until it holds the console's certificate — so this says
+// so here, with the two commands that fix it, rather than leaving a machine
+// that looks joined and reports nothing.
+func trustNote(result *join.Result) string {
+	if !result.UntrustedConsole {
+		return ""
+	}
+	return `
+WARNING: the agent cannot verify the console's certificate, so it will not
+report and no policy will be applied. Until the domain has its own certificate
+authority the console's certificate is self-signed, and this machine has to be
+given it:
+
+  scp <console>:/etc/odm/tls/api.crt /tmp/odm-console.crt
+  sudo odm-agent trust /tmp/odm-console.crt
+
+Joining with --ca-cert /tmp/odm-console.crt does the same thing at join time.
+`
 }
 
 // leaveDomain is the reverse of a join. Removing the computer account needs a

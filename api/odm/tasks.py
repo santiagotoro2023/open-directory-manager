@@ -38,6 +38,7 @@ KINDS = (
     "shutdown",
     "printer-apply",
     "printer-remove",
+    "printer-test",
     "vpn-apply",
     "radius-apply",
     "rd-host-apply",

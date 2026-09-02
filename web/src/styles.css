@@ -2535,6 +2535,50 @@ tr.detail-row td {
   background: var(--surface-recessed);
 }
 
+/* What a command said, where saying it is not a failure: a test page's own
+   output, a queue's state. Same shape as the failure output, without the
+   colour that means something went wrong. */
+.command-output {
+  margin: 0;
+  max-height: 220px;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text);
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* A membership row: the object's name, its distinguished name under it, and
+   the chevron that walks one level further up or down the nesting. */
+table.data td > .dn {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+table.data td > button.icon {
+  margin-right: 2px;
+  vertical-align: middle;
+}
+
+/* Keeps a row without a chevron aligned with the ones that have one. */
+.chevron-space {
+  display: inline-block;
+  width: 18px;
+}
+
+/* The last column of a data table, where a row's own action sits. */
+td.row-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
 .failure-output {
   margin: 0;
   max-height: 220px;

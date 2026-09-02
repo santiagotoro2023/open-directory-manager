@@ -42,6 +42,7 @@ import {
   isDisabled,
   text,
 } from "../components/objectDialogs";
+import { MembershipTable } from "../components/Membership";
 import Select from "../components/Select";
 
 const ICONS = {
@@ -64,7 +65,8 @@ const TYPE_LABELS: Record<string, string> = {
 
 type Tab =
   | "general"
-  | "membership"
+  | "members"
+  | "memberof"
   | "policy"
   | "machine"
   | "software"
@@ -136,11 +138,13 @@ export function ObjectDetail() {
   const isComputer = object.objectType === "computer";
   const Icon = ICONS[object.objectType as keyof typeof ICONS] ?? Folder;
 
+  // Both directions, for every kind of object. A group is a member of groups
+  // exactly as a user is, and that half decided what a rule written against
+  // one group actually reaches — with nowhere in the console to see it.
   const tabs: { id: Tab; label: string }[] = [
     { id: "general", label: "General" },
-    ...(object.objectType === "group"
-      ? [{ id: "membership" as Tab, label: "Members" }]
-      : [{ id: "membership" as Tab, label: "Member of" }]),
+    ...(object.objectType === "group" ? [{ id: "members" as Tab, label: "Members" }] : []),
+    ...(object.objectType === "ou" ? [] : [{ id: "memberof" as Tab, label: "Member of" }]),
     { id: "policy", label: "Policy" },
     ...(isComputer
       ? [
@@ -325,7 +329,9 @@ export function ObjectDetail() {
         </>
       )}
 
-      {tab === "membership" && <MembershipTab object={object} onChanged={() => void load()} />}
+      {tab === "members" && <MembersTab object={object} onChanged={() => void load()} />}
+
+      {tab === "memberof" && <MembershipTable dn={dn} direction="up" />}
 
       {tab === "policy" && (
         <RsopDialog dn={dn} isComputer={isComputer} onClose={() => setTab("general")} inline />
@@ -442,41 +448,25 @@ function LocalAdministratorPanel({ dn }: { dn: string }) {
   );
 }
 
-function MembershipTab({ object, onChanged }: { object: DirectoryObject; onChanged: () => void }) {
+function MembersTab({ object, onChanged }: { object: DirectoryObject; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
-  const isGroup = object.objectType === "group";
-  const entries = isGroup
-    ? ((object.member as string[] | undefined) ?? [])
-    : ((object.memberOf as string[] | undefined) ?? []);
+  // Remounts the table after an edit, so the list is what the directory holds
+  // rather than what it held when the tab opened.
+  const [revision, setRevision] = useState(0);
 
   return (
     <>
       <div className="actions-row">
-        {isGroup && (
-          <button type="button" className="primary" onClick={() => setEditing(true)}>
-            Edit members
-          </button>
-        )}
+        <button type="button" className="primary" onClick={() => setEditing(true)}>
+          Edit members
+        </button>
       </div>
-      <table className="data">
-        <thead>
-          <tr>
-            <th scope="col">{isGroup ? "Member" : "Group"}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr key={entry}>
-              <td className="mono">{entry}</td>
-            </tr>
-          ))}
-          {entries.length === 0 && (
-            <tr>
-              <td className="empty">{isGroup ? "No members." : "In no groups."}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+
+      <MembershipTable
+        key={revision}
+        dn={String(object.distinguishedName)}
+        direction="down"
+      />
 
       {editing && (
         <MembersDialog
@@ -484,6 +474,7 @@ function MembershipTab({ object, onChanged }: { object: DirectoryObject; onChang
           onClose={() => setEditing(false)}
           onChanged={() => {
             setEditing(false);
+            setRevision((was) => was + 1);
             onChanged();
           }}
         />

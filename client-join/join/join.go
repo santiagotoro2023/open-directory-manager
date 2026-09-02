@@ -45,6 +45,11 @@ type Result struct {
 	Method     string // "credential" or "token"
 	AgentSetUp bool
 	Renamed    bool // this machine's own name was changed to join
+	// Set when the agent has no way to verify the console's certificate, so
+	// it will fail every request until it is given one. A join that was not
+	// passed --ca-cert used to finish claiming success and leave a machine
+	// that reported nothing, with the reason visible nowhere.
+	UntrustedConsole bool
 }
 
 var ErrMissing = errors.New("missing required option")
@@ -211,6 +216,10 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 			return nil, err
 		}
 		result.AgentSetUp = true
+		// Checked here rather than left to the agent: it runs every fifteen
+		// minutes and its failure reaches nobody, whereas this is on screen
+		// while the operator is still at the machine.
+		result.UntrustedConsole = !ConsoleTrusted(ctx, options, env)
 	}
 
 	progress("Done", result.Hostname)

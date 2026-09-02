@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Printer as PrinterIcon, Search } from "lucide-react";
 import { ApiError, api, type Printer } from "../api";
-import { LoadingRow } from "../components/Loading";
+import { Loading, LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
@@ -21,6 +21,7 @@ export function Printers() {
   const [open, setOpen] = useState<Printer | null>(null);
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Printer | null>(null);
+  const [testing, setTesting] = useState<Printer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { bind, menu } = useContextMenu();
@@ -76,6 +77,7 @@ export function Printers() {
             <th scope="col">Where</th>
             <th scope="col">Driver</th>
             <th scope="col">State</th>
+            <th scope="col" />
           </tr>
         </thead>
         <tbody>
@@ -86,6 +88,7 @@ export function Printers() {
               {...bind([
                 { label: printer.name, heading: true },
                 { label: "Settings…", onSelect: () => setOpen(printer) },
+                { label: "Print a test page", onSelect: () => setTesting(printer) },
                 { separator: true },
                 { label: "Remove", danger: true, onSelect: () => setRemoving(printer) },
               ])}
@@ -102,14 +105,28 @@ export function Printers() {
                 <span className={`badge ${STATE_BADGE[printer.state] ?? ""}`}>{printer.state}</span>
                 {printer.last_error && <p className="muted">{printer.last_error}</p>}
               </td>
+              <td className="row-actions">
+                {/* The one check the console cannot make for itself: whether a
+                    page actually comes out of the device. */}
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setTesting(printer);
+                  }}
+                >
+                  Test page
+                </button>
+              </td>
             </tr>
           ))}
           {loading ? (
-            <LoadingRow colSpan={5} />
+            <LoadingRow colSpan={6} />
           ) : (
             printers.length === 0 && (
             <tr>
-              <td colSpan={5} className="empty">
+              <td colSpan={6} className="empty">
                 No printers yet. A server needs the print-server role before it can carry one.
               </td>
             </tr>
@@ -159,7 +176,90 @@ export function Printers() {
           </p>
         </Modal>
       )}
+
+      {testing && <TestPageDialog printer={testing} onClose={() => setTesting(null)} />}
     </main>
+  );
+}
+
+/**
+ * A test page, and what the queue did with it.
+ *
+ * Queued for the print server, because that is where the queue lives. Asking
+ * is not the same as printing, so the answer is waited for: a queue that is
+ * not accepting jobs, or a device that is not there, says so here rather than
+ * leaving somebody standing at a printer.
+ */
+function TestPageDialog({ printer, onClose }: { printer: Printer; onClose: () => void }) {
+  const [state, setState] = useState<"asking" | "waiting" | "done" | "failed">("asking");
+  const [detail, setDetail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    let timer: number | undefined;
+
+    async function follow(taskId: string) {
+      try {
+        const result = await api.printers.testResult(taskId);
+        if (!live) return;
+        setDetail(result.output);
+        if (result.state === "done" || result.state === "failed") {
+          setState(result.state === "done" ? "done" : "failed");
+          return;
+        }
+        timer = window.setTimeout(() => void follow(taskId), 2000);
+      } catch (err) {
+        if (live) setError(err instanceof ApiError ? err.message : String(err));
+      }
+    }
+
+    api.printers
+      .test(printer.id)
+      .then((queued) => {
+        if (!live) return;
+        setState("waiting");
+        void follow(queued.task_id);
+      })
+      .catch((err) => live && setError(err instanceof ApiError ? err.message : String(err)));
+
+    return () => {
+      live = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [printer.id]);
+
+  return (
+    <Modal
+      title={`Test page on ${printer.name}`}
+      submitLabel="Close"
+      error={error}
+      onClose={onClose}
+      onSubmit={onClose}
+    >
+      {(state === "asking" || state === "waiting") && (
+        <Loading
+          label={
+            state === "asking"
+              ? "Queueing the page…"
+              : `Waiting for ${printer.node_fqdn} to pick it up…`
+          }
+        />
+      )}
+      {state === "done" && <p>Sent to {printer.name}. A page should come out of the device.</p>}
+      {state === "failed" && (
+        <p className="alert" role="alert">
+          {printer.node_fqdn} could not print it.
+        </p>
+      )}
+      {detail && <pre className="command-output">{detail}</pre>}
+      {state === "waiting" && (
+        <p className="muted">
+          The server prints it at its next check-in — within seconds where the domain pushes
+          changes, otherwise at its polling interval.
+        </p>
+      )}
+    </Modal>
   );
 }
 

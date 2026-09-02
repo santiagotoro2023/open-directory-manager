@@ -80,6 +80,14 @@ journalctl -u odm-agent -n 50`}</Code>
                 <C key="4">odm-agent daemon</C>,
                 "Applies on the refresh interval. This is what the service runs.",
               ],
+              [
+                <C key="6">odm-agent check</C>,
+                "Says why this machine is not reporting: every step from configuration to check-in, in order, with the real error.",
+              ],
+              [
+                <C key="7">odm-agent trust FILE</C>,
+                "Trusts the console's certificate and re-checks. For a join that was not given one.",
+              ],
               [<C key="5">odm-agent --version</C>, "Prints the version."],
             ]}
           />
@@ -87,6 +95,60 @@ journalctl -u odm-agent -n 50`}</Code>
             <C>--root DIR</C> writes beneath a directory instead of <C>/</C>, for inspecting what a
             policy would produce without changing the machine.
           </p>
+        </Section>
+
+        <Section title="A machine that has joined and reports nothing">
+          <p>
+            Run <C>sudo odm-agent check</C> on it. Each step between joined and reporting is
+            checked in order — configuration, the machine account in the keytab, reaching the
+            console, Kerberos, fetching policy, checking in — and the first failure is the answer.
+          </p>
+          <Reference
+            headers={["What check says", "Fix"]}
+            rows={[
+              [
+                "reaching the control plane: x509: certificate signed by unknown authority",
+                <>
+                  The commonest one. Until the domain has a certificate authority the
+                  console&rsquo;s certificate is self-signed, and a join without{" "}
+                  <C key="t1">--ca-cert</C> left the agent nothing to verify it with. Copy{" "}
+                  <C key="t2">/etc/odm/tls/api.crt</C> from the console and run{" "}
+                  <C key="t3">sudo odm-agent trust /path/to/api.crt</C>.
+                </>,
+              ],
+              [
+                "keytab holds no entry for HOSTNAME$",
+                <>
+                  The keytab is another machine&rsquo;s, or the join did not write one. Re-join, or
+                  on a controller: <C key="t4">samba-tool domain exportkeytab /etc/krb5.keytab
+                  --principal=HOSTNAME$</C>.
+                </>,
+              ],
+              [
+                "Kerberos: KRB_AP_ERR_SKEW, or a ticket refused",
+                "The clock. A ticket outside five minutes is refused; install chrony and let it settle.",
+              ],
+              [
+                "fetching policy: 401",
+                "The service principal in the configuration is not the one the console answers to, or the console's own keytab is wrong.",
+              ],
+              [
+                "fetching policy: 404",
+                "The directory has no computer account for this machine — it was deleted, or the machine was renamed after joining.",
+              ],
+              [
+                "reaching the control plane: no such host",
+                <>
+                  The name in <C key="t5">api_url</C> does not resolve. The domain&rsquo;s DNS is
+                  the controller; check <C key="t6">/etc/resolv.conf</C>.
+                </>,
+              ],
+            ]}
+          />
+          <Note>
+            The service keeps trying on its interval, so nothing has to be restarted after a fix —
+            but <C>odm-agent apply --force</C> makes it immediate.
+          </Note>
         </Section>
 
         <Section title="Configuration">

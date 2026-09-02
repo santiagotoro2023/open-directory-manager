@@ -3,6 +3,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
+import { PrinterPicker, SharePicker } from "./ResourcePicker";
 import { InfoPanel } from "./DocsLink";
 import { LocalAccountList } from "./LocalAccountPicker";
 import { FileInput } from "./FileInput";
@@ -19,7 +20,14 @@ interface FieldSpec {
   kind?: FieldKind;
   options?: string[];
   placeholder?: string;
+  /** What the field wants, where the label alone reads two ways. Shown in the
+      entry dialog only: a table column has no room for it. */
+  hint?: string;
   width?: string;
+  /** Browse for something that is not a directory object. Picking one can
+      fill in more than its own field — a printer names the server it is on,
+      a share names what to call the drive and where to mount it. */
+  pick?: "printer" | "share";
   // A value the directory already knows is chosen, not typed.
   picker?: PickerKind;
   pickerValue?: PickerValue;
@@ -240,7 +248,13 @@ export const CATEGORIES: CategorySpec[] = [
     doc: "drive-maps",
     fields: [
       { key: "name", label: "Name", width: "140px" },
-      { key: "unc", label: "Share", placeholder: "//fs01/shared" },
+      {
+        key: "unc",
+        label: "Share",
+        placeholder: "//fs01/shared",
+        hint: "The share as the file server publishes it",
+        pick: "share",
+      },
       { key: "mount_point", label: "Mount point", placeholder: "/mnt/shared" },
       {
         key: "display_name",
@@ -395,8 +409,25 @@ export const CATEGORIES: CategorySpec[] = [
       "print-server role.",
     doc: "printers",
     fields: [
-      { key: "name", label: "Printer", width: "180px" },
-      { key: "server", label: "Print server", picker: "computer", pickerValue: "host" },
+      {
+        key: "name",
+        label: "Printer",
+        width: "180px",
+        placeholder: "odm-prt-01",
+        // The queue, not the device: the agent points CUPS at
+        // ipp://<server>/printers/<queue> and the server holds the driver.
+        // "Printer" reads just as easily as the printer's own address, so the
+        // field says which it wants and offers the ones that exist.
+        hint: "The queue on the print server, as listed under Printers — not the device address",
+        pick: "printer",
+      },
+      {
+        key: "server",
+        label: "Print server",
+        picker: "computer",
+        pickerValue: "host",
+        hint: "Filled in by choosing a printer above",
+      },
       {
         key: "for_principal",
         label: "For user or group",
@@ -1892,12 +1923,30 @@ function BrowserEditor({
 function Cell({
   field,
   value,
+  entry,
   onChange,
+  onPatch,
 }: {
   field: FieldSpec;
   value: unknown;
+  /** The whole entry being edited, for a pick that fills in more than one
+      field of it. Absent in a table row, where an entry is edited in the
+      dialog rather than in place. */
+  entry?: Record<string, unknown>;
   onChange: (value: unknown) => void;
+  onPatch?: (patch: Record<string, unknown>) => void;
 }) {
+  if (field.pick && onPatch) {
+    return (
+      <BrowseField
+        field={field}
+        value={toInput(value)}
+        entry={entry ?? {}}
+        onChange={(next) => onChange(next)}
+        onPatch={onPatch}
+      />
+    );
+  }
   if (field.kind === "checkbox") {
     return (
       <input
@@ -1992,6 +2041,67 @@ function Cell({
   );
 }
 
+/** A resource a server publishes, chosen rather than remembered.
+ *
+ * Typeable as well: a share on a machine the console does not manage, or a
+ * queue on a server that has not reported yet, is still a valid entry. */
+function BrowseField({
+  field,
+  value,
+  entry,
+  onChange,
+  onPatch,
+}: {
+  field: FieldSpec;
+  value: string;
+  entry: Record<string, unknown>;
+  onChange: (value: string) => void;
+  onPatch: (patch: Record<string, unknown>) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  return (
+    <div className="picker-field">
+      <input
+        aria-label={field.label}
+        placeholder={field.placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <button type="button" className="ghost" onClick={() => setPicking(true)}>
+        Select…
+      </button>
+      {picking && field.pick === "printer" && (
+        <PrinterPicker
+          onClose={() => setPicking(false)}
+          onPick={(printer) => {
+            setPicking(false);
+            // The server as well: a queue only means anything on the machine
+            // that holds it, and typing the pair by hand is how they end up
+            // disagreeing.
+            onPatch({ [field.key]: printer.name, server: printer.server });
+          }}
+        />
+      )}
+      {picking && field.pick === "share" && (
+        <SharePicker
+          onClose={() => setPicking(false)}
+          onPick={(share) => {
+            setPicking(false);
+            // The name and the mount point follow from the share, but only
+            // where they are still empty: an entry being corrected must not
+            // lose the name somebody chose for it.
+            onPatch({
+              [field.key]: share.unc,
+              ...(entry.name ? {} : { name: share.name }),
+              ...(entry.mount_point ? {} : { mount_point: `/mnt/${share.name}` }),
+            });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function JsonField({
   label,
   value,
@@ -2061,11 +2171,13 @@ function EntryDialog({
     >
       {category.note && <p className="muted">{category.note}</p>}
       {category.fields.map((field) => (
-        <Field key={field.key} label={field.label}>
+        <Field key={field.key} label={field.label} hint={field.hint}>
           <Cell
             field={field}
             value={draft[field.key]}
+            entry={draft}
             onChange={(value) => setDraft((was) => ({ ...was, [field.key]: value }))}
+            onPatch={(patch) => setDraft((was) => ({ ...was, ...patch }))}
           />
         </Field>
       ))}
