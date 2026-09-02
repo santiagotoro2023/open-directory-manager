@@ -200,7 +200,83 @@ export function Content() {
                 "A printer handed out by policy never appeared",
                 <>
                   The machine needs CUPS; without it the report says so rather than failing. It is
-                  socket-activated on a desktop, and the agent starts it before adding a queue.
+                  socket-activated on a desktop, and the agent starts it before adding a queue. A
+                  printer is a user setting, so the queue appears when somebody signs in, not
+                  before.
+                </>,
+              ],
+              [
+                "One printer is listed two or three times",
+                <>
+                  Fixed: a managed machine no longer answers DNS-SD and no longer lets
+                  cups-browsed make queues of its own, and the print server no longer advertises
+                  the queues it hands out. Both were copies of the printer the policy gave you,
+                  under names nobody chose.
+                </>,
+              ],
+              [
+                "A mapped drive is nowhere in the file manager",
+                <>
+                  Fixed: drive maps are attached when somebody signs in, with their own ticket,
+                  and added to the file manager&rsquo;s sidebar. Started by the machine they could
+                  not authenticate at all &mdash; <C key="c">No such device</C> on every access.
+                </>,
+              ],
+              [
+                "A setting stayed after its policy object was unlinked",
+                <>
+                  Fixed. A file is pruned; so now are the things that are not files &mdash; a
+                  printer queue, a mapped drive and its bookmark, a roaming profile, a login
+                  banner in the greeter&rsquo;s compiled database.
+                </>,
+              ],
+              [
+                "Applications take minutes to open and settings do not save",
+                <>
+                  A roaming profile stored as a directory on SMB: dconf cannot rename its
+                  database into place there, so everything that saves a setting fails and the
+                  file manager never starts. Store the profile as a disk image, which is the
+                  default.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="Remote desktop">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                <>
+                  <C key="d">X server could not be started</C>
+                </>,
+                <>
+                  Fixed, in three places: Debian only lets a console user start an X server and a
+                  remote session has no console seat; a home directory made for somebody as root
+                  is one their X server cannot write to; and a home under{" "}
+                  <C key="e">/home/DOMAIN/name</C> was unreachable because the directory above it
+                  was root&rsquo;s alone.
+                </>,
+              ],
+              [
+                <>
+                  <C key="f">Can&rsquo;t create session for user</C>
+                </>,
+                <>
+                  A profile disk that could not be attached used to fail the whole PAM session,
+                  which stops everybody signing in rather than one person&rsquo;s profile
+                  roaming. It falls back to a local home and says why in the journal. Check that
+                  the collection&rsquo;s profile share exists and that the people using it may
+                  write to it.
+                </>,
+              ],
+              [
+                "Nobody is balanced between hosts",
+                <>
+                  The broker owns 3389. A session host on the same machine moves to 3390; if both
+                  wanted 3389, xrdp won and haproxy exited with{" "}
+                  <C key="g">cannot bind socket</C>.
                 </>,
               ],
             ]}
@@ -337,6 +413,16 @@ export function Content() {
                 </>,
               ],
               [
+                "A restored object came back with a new SID",
+                <>
+                  Restoring reanimates the directory&rsquo;s own tombstone, which needs the
+                  Reanimate Tombstones right and access to the container tombstones live in.
+                  Re-run <C key="r">deploy/create-api-service-account.sh</C> on a domain
+                  controller and restart the control plane; a domain provisioned before this was
+                  granted is the one that hits it.
+                </>,
+              ],
+              [
                 "A row of tildes and carets where an error should be",
                 <>
                   Fixed: <C key="q">samba-tool</C> reports a failure as a Python traceback, and the
@@ -363,6 +449,24 @@ export function Content() {
               [
                 "Only one domain controller is listed",
                 "Controllers are read from their computer accounts. A second one appears once it has joined and replicated.",
+              ],
+              [
+                "A client stops finding the domain after a reboot",
+                <>
+                  Fixed: the join pins the domain&rsquo;s DNS to the connection profile.
+                  NetworkManager rewrites resolv.conf from DHCP on every boot, and resolvectl&rsquo;s
+                  per-link settings are runtime state, so a machine configured either of those
+                  ways left the domain at its first restart.
+                </>,
+              ],
+              [
+                <>
+                  Setup stops at <C key="s">Could not get lock /var/lib/dpkg/lock-frontend</C>
+                </>,
+                <>
+                  Fixed: a machine that booted a minute ago is usually still running its own
+                  apt. Setup waits for the lock now instead of failing.
+                </>,
               ],
             ]}
           />

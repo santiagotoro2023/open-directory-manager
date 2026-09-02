@@ -144,11 +144,17 @@ export function Content() {
 
         <Section title="Profile disks">
           <p>
-            Each person gets one disk image on the profile share, named for them and their security
-            identifier, mounted over their home directory when they sign in. It follows them to
-            whichever host answers.
+            Each person gets one disk image on the profile share, named for their account and
+            mounted over their home directory when they sign in. It follows them to whichever host
+            answers.
           </p>
-          <Code>{`//fs01/Profiles/UPD-jdoe-S-1-5-21-…-1104.img`}</Code>
+          <Code>{`//fs01/Profiles/UPD-jdoe.img`}</Code>
+          <p>
+            It is named for the account and nothing else, so it is the same disk a roaming-profile
+            policy attaches on an ordinary desktop. Point a collection and a policy at the same
+            share and somebody has one profile everywhere &mdash; a uid does not travel between
+            machines, and naming the disk after one meant a different profile on every host.
+          </p>
           <Reference
             headers={["Property", "Means"]}
             rows={[
@@ -161,15 +167,16 @@ export function Content() {
                 "A disk is mounted by one host at a time, which is what stops two sessions writing one profile.",
               ],
               [
-                "No local option",
-                "A profile that stays on whichever host answered is a different profile on every other host. There is deliberately no setting for it.",
+                "Optional",
+                "Leave the profile share empty and sessions use whatever home directory the host already gives somebody. Right for a single session host; wrong for a farm, where a profile that stays on one host is a different profile on every other one.",
               ],
             ]}
           />
           <Note>
-            A logon whose profile cannot be mounted is refused rather than given a local home
-            directory. That is the point: a local home would look like it worked and lose the
-            person&rsquo;s files the next time a different host answered.
+            A profile that cannot be attached leaves that session with a local home and says why
+            in the journal. It used to fail the whole PAM session instead, which to the session
+            manager is &ldquo;Can&rsquo;t create session for user&rdquo; &mdash; one unreachable
+            share and nobody on the farm could sign in at all.
           </Note>
         </Section>
 
