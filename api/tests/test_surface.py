@@ -732,3 +732,52 @@ def test_every_documentation_link_lands_on_a_page_that_exists() -> None:
         assert page in pages, f"{where} links to the wiki page {page!r}, which does not exist"
         if anchor:
             assert anchor in pages[page], f"{where} links to {page}#{anchor}, which does not exist"
+
+
+def test_a_release_can_be_published_without_pushing_a_tag() -> None:
+    """Two ways in, one release job.
+
+    A tag push is not always available — a credential scoped to branches
+    cannot create one — so the workflow also takes a version and makes the tag
+    itself. The guard rails matter more than the path: the release job has to
+    run for both, and it has to refuse a version the tree does not carry, or a
+    package would ship saying one version while its release says another.
+    """
+    import pathlib
+    import re
+
+    workflow = (pathlib.Path("..") / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert "workflow_dispatch:" in workflow, "the workflow cannot be run by hand"
+    release = workflow[workflow.index("  release:") :]
+    condition = re.search(r"^\s*if: (.+)$", release, re.M)
+    assert condition, "the release job lost its condition and now runs on every push"
+    assert "github.ref_type == 'tag'" in condition.group(1), "a tag no longer publishes"
+    assert "workflow_dispatch" in condition.group(1), "a run by hand no longer publishes"
+    assert "tag_name:" in release, "a run by hand would publish with no tag"
+    assert "bump the version first" in release, "nothing checks the version being released"
+
+
+def test_the_version_is_the_same_everywhere_it_is_written() -> None:
+    """Six files carry it, and the release refuses to publish unless they
+    agree. Finding that out from a release run is finding it out late."""
+    import pathlib
+    import re
+
+    root = pathlib.Path("..")
+    # The suite runs from api/, where this file is.
+    version = re.search(r'^version = "([^"]+)"', pathlib.Path("pyproject.toml").read_text(), re.M)
+    assert version, "api/pyproject.toml has no version"
+    expected = version.group(1)
+
+    for path in (
+        "agent/main.go",
+        "web/package.json",
+        "client-join/cmd/odm-client-install/main.go",
+        "client-join/cmd/odm-join-gui/main.go",
+        "README.md",
+    ):
+        text = (root / path).read_text()
+        assert f'"{expected}"' in text or f"_{expected}_" in text, (
+            f"{path} does not carry version {expected}"
+        )

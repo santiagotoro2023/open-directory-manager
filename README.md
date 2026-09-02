@@ -199,7 +199,9 @@ That builds both front ends in a container, so nothing but Docker is needed on
 the machine doing it — the desktop half wants an X11 and a Wayland toolchain.
 `packaging/deb/build.sh` builds directly if you already have those.
 
-Pushing a `v*` tag attaches the package to a GitHub release.
+Pushing a `v*` tag attaches the package to a GitHub release, as does running
+the CI workflow from the Actions tab with a version — that path creates the
+tag itself, and refuses to publish a version the tree does not already carry.
 
 ## Repository
 

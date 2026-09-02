@@ -7,6 +7,16 @@ on:
     # job below could never run.
     tags: ["v*"]
   pull_request:
+  # The other way to publish one: run the workflow and name the version. The
+  # release job creates the tag from the commit it ran on, so a release can be
+  # cut from anywhere the Actions tab is reachable rather than only from a
+  # shell holding a push credential for tags.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 0.6.0. Empty runs the checks only."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -271,12 +281,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
       - name: Build the package
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          # The version comes from the tag when there is one, so a release is
-          # not a separate thing anyone has to remember to bump.
+          # The version comes from the tag when there is one, or from the
+          # version the run was given, so a release is not a separate thing
+          # anyone has to remember to bump.
           VERSION="0.1.$(git rev-list --count HEAD)"
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
             VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${RELEASE_VERSION:-}" ]; then
+            VERSION="${RELEASE_VERSION#v}"
           fi
           echo "ODM_CLIENT_VERSION=$VERSION" >> "$GITHUB_ENV"
           WITH_GUI=yes bash packaging/deb/build.sh "$VERSION"
@@ -327,11 +342,32 @@ jobs:
   release:
     name: publish odm-client.deb
     needs: [api, installed, web, go, client-package]
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      # A release names a version; the tree has to be that version already.
+      # Publishing 0.7.0 from a tree that says 0.6.0 gives every client a
+      # package whose --version disagrees with the release it came from.
+      - name: The version released is the version in the tree
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
+            VERSION="${RELEASE_VERSION#v}"
+          fi
+          for file in api/pyproject.toml agent/main.go web/package.json \
+                      client-join/cmd/odm-client-install/main.go \
+                      client-join/cmd/odm-join-gui/main.go; do
+            grep -q "\"$VERSION\"" "$file" || {
+              echo "$file does not say $VERSION; bump the version first" >&2
+              exit 1
+            }
+          done
       - uses: actions/download-artifact@v4
         with:
           name: odm-client-deb
@@ -339,6 +375,10 @@ jobs:
       - name: Attach it to the release
         uses: softprops/action-gh-release@v2
         with:
+          # On a tag, the tag that was pushed. On a run given a version, the
+          # tag is created here from the commit the run checked out.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          target_commitish: ${{ github.sha }}
           files: dist/*.deb
           fail_on_unmatched_files: true
           # Whoever downloads this is standing at a machine they want joined,

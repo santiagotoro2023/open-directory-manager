@@ -54,6 +54,19 @@ CI (`.github/workflows/ci.yml`) runs all of the above plus `pip-audit`,
 - Keep the phase ordering in CLAUDE.md §7 — do not open a pull request for a
   later phase while an earlier one is incomplete.
 
+## Releasing
+
+The version lives in six places: `api/pyproject.toml`, `agent/main.go`,
+`web/package.json`, both `client-join/cmd/*/main.go`, and `README.md`. Bump
+them together in a `chore: <version>` commit, then publish either way:
+
+- push a `v<version>` tag, or
+- run the CI workflow from the Actions tab and give it the version.
+
+Both build `odm-client.deb` and attach it to a release; the second creates the
+tag from the commit it ran on. Either way the release job refuses to publish a
+version the tree does not already say, so the bump comes first.
+
 ## License
 
 Contributions are made under AGPL-3.0-or-later.
