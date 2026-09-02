@@ -138,6 +138,12 @@ func profileScript() string {
 # log on at all. A local home for this session is a far smaller problem than
 # a session host nobody can reach, so that is what a failure falls back to,
 # with the reason in the journal.
+# PAM runs this with almost no environment. An unset PATH means mkdir, chown
+# and mount are all "not found", and the home directory this was supposed to
+# make somebody's own stays root's — which stops their X server starting.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
 set -u
 
 warn() {
@@ -182,7 +188,8 @@ mkdir -p "$STORE" "$HOME_DIR" 2>/dev/null || warn "cannot create $HOME_DIR"
 # Theirs from the moment it exists. Made by root and left that way, nothing in
 # their session can write to it — including the X server, which then does not
 # start at all.
-chown "$USER_NAME" "$HOME_DIR" 2>/dev/null || true
+chown "$USER_ID:$(id -g "$USER_NAME")" "$HOME_DIR" 2>/dev/null ||
+    logger -t odm-rd-profile "could not give $HOME_DIR to $USER_NAME"
 chmod 0700 "$HOME_DIR" 2>/dev/null || true
 
 # The share is reached with the machine's own credentials: the user's ticket
@@ -205,7 +212,7 @@ fi
 
 mount -o loop,noatime "$STORE/$IMAGE" "$HOME_DIR" 2>/dev/null \
     || warn "could not attach $USER_NAME's profile disk"
-chown "$USER_NAME" "$HOME_DIR"
+chown "$USER_ID:$(id -g "$USER_NAME")" "$HOME_DIR"
 chmod 0700 "$HOME_DIR"
 `
 }
