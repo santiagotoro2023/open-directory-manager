@@ -161,9 +161,24 @@ const browsedConf = "/etc/cups/cups-browsed.conf"
 const printServerMarker = "/etc/odm/print-server"
 
 func quietBrowsing(ctx context.Context, env Env) policy.Result {
+	// CUPS' own discovery first, and on its own: libcups enumerates DNS-SD
+	// directly, not through cups-browsed, so a printer advertising itself on
+	// the network is listed by the desktop's printer panel beside the ones the
+	// domain gave somebody and looks exactly like them. avahi is what answers
+	// that enumeration.
+	//
+	// Except on a print server, which is the machine that goes looking: its
+	// scan for printers on the network is an avahi browse, and taking avahi
+	// away there would mean no printer could ever be found to hand out.
+	if _, err := os.Stat(env.Path(printServerMarker)); err != nil {
+		_, _ = env.Run.Run(ctx, "systemctl", "disable", "--now",
+			"avahi-daemon.service", "avahi-daemon.socket")
+	}
+
 	if _, err := os.Stat(env.Path(browsedConf)); err != nil {
 		return policy.Result{
-			Setting: "printers:browsing", Status: "skipped", Reason: "cups-browsed is not installed",
+			Setting: "printers:browsing", Status: "success",
+			Reason: "discovery is off; cups-browsed is not installed",
 		}
 	}
 	// Nothing is discovered on a machine whose printers come from policy. Left
@@ -182,20 +197,5 @@ func quietBrowsing(ctx context.Context, env Env) policy.Result {
 	// removes what it made when it stops, and nothing else knows they are its.
 	_, _ = env.Run.Run(ctx, "systemctl", "stop", "cups-browsed")
 	_, _ = env.Run.Run(ctx, "systemctl", "start", "cups-browsed")
-
-	// And CUPS' own discovery, which is not cups-browsed: libcups enumerates
-	// DNS-SD directly, so a printer advertising itself on the network is
-	// listed by the desktop's printer panel beside the ones the domain gave
-	// somebody, looking exactly like them. avahi is what answers that
-	// enumeration; on a machine whose printers come from the domain, nothing
-	// else here needs it.
-	//
-	// Except on a print server, which is the machine that goes looking: its
-	// scan for printers on the network is an avahi browse, and taking avahi
-	// away there would mean no printer could ever be found to hand out.
-	if _, err := os.Stat(env.Path(printServerMarker)); err != nil {
-		_, _ = env.Run.Run(ctx, "systemctl", "disable", "--now",
-			"avahi-daemon.service", "avahi-daemon.socket")
-	}
 	return policy.Ok("printers:browsing")
 }
