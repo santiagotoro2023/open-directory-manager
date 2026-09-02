@@ -54,6 +54,24 @@ exec startxfce4
 WM
 chmod 0755 /etc/xrdp/startwm.sh
 
+# Debian's Xorg wrapper only lets somebody sitting at the machine start an X
+# server. A remote desktop session has no console seat, so every connection
+# authenticated, asked for a session and got
+#
+#   [ERROR] waitforx: Unable to open display :11
+#   [ERROR] X server failed to start
+#
+# which the client shows as "Can't create session for user - X server could
+# not be started". A session host is a machine whose whole job is starting X
+# servers for people who are not at it.
+install -d -m 0755 /etc/X11
+cat > /etc/X11/Xwrapper.config <<'XWRAPPER'
+# Managed by Open Directory Manager. Local edits are overwritten.
+allowed_users=anybody
+needs_root_rights=yes
+XWRAPPER
+chmod 0644 /etc/X11/Xwrapper.config
+
 # Colour depth and a session per user rather than per connection: reconnecting
 # has to find the session that was left, which is the whole point of a broker
 # sending somebody back to the same host.
