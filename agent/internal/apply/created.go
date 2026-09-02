@@ -20,6 +20,9 @@ const CreatedPath = "/var/lib/odm/created.json"
 type created struct {
 	Printers  []string `json:"printers,omitempty"`
 	DriveMaps []string `json:"drive_maps,omitempty"`
+	// Connection files written onto people's desktops, by full path: one
+	// person's session must not forget another's.
+	RemoteDesktopFiles []string `json:"remote_desktop_files,omitempty"`
 }
 
 func loadCreated(env Env) created {
@@ -35,6 +38,7 @@ func loadCreated(env Env) created {
 func saveCreated(env Env, state created) {
 	sort.Strings(state.Printers)
 	sort.Strings(state.DriveMaps)
+	sort.Strings(state.RemoteDesktopFiles)
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return

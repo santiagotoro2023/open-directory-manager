@@ -334,7 +334,13 @@ export function ObjectDetail() {
       {tab === "memberof" && <MembershipTable dn={dn} direction="up" />}
 
       {tab === "policy" && (
-        <RsopDialog dn={dn} isComputer={isComputer} onClose={() => setTab("general")} inline />
+        <RsopDialog
+          dn={dn}
+          isComputer={isComputer}
+          account={object.objectType === "user" ? text(object.sAMAccountName) : undefined}
+          onClose={() => setTab("general")}
+          inline
+        />
       )}
 
       {isComputer &&

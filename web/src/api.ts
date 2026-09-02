@@ -85,6 +85,7 @@ export interface PolicySettings {
   hbac_rules?: Record<string, unknown>[];
   packages?: Record<string, unknown>[];
   trusted_certificates?: Record<string, unknown>[];
+  remote_desktop_files?: Record<string, unknown>[];
   admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
   wallpaper?: {
@@ -187,6 +188,8 @@ export interface AgentReport {
   applied_gpos: { guid: string; name: string }[];
   results: { setting: string; status: string; reason?: string }[];
   failures: number;
+  /** Set when the report is one person's session rather than the machine. */
+  username?: string | null;
 }
 
 export interface AdmxElement {
@@ -1078,6 +1081,12 @@ export const api = {
 
     reports: (computer_dn?: string) =>
       request<{ reports: AgentReport[] }>(`/policy/reports${qs({ computer_dn })}`),
+
+    /** What one person's sessions reported, one per machine they signed in to.
+        Their drive maps and connection files are applied at sign-in, so this
+        is where a drive that did not mount says why. */
+    sessionReports: (username: string) =>
+      request<{ reports: AgentReport[] }>(`/policy/reports${qs({ username })}`),
   },
 
   admx: {

@@ -447,6 +447,13 @@ mount point   /mnt/shared
 shown as      Daten           (optional)
 for           %Engineers      (optional)`}</Code>
           <Note>
+            What happened at somebody&rsquo;s last sign-in is on their page:{" "}
+            <strong>Directory</strong> &rarr; the person &rarr; <strong>Policy</strong> &rarr;{" "}
+            <strong>Last applied in a session</strong>, with the reason for anything that failed.
+            A mount that fails names the error the kernel gave, which is the difference between a
+            share that is down, a group somebody is not in, and a ticket the mount could not read.
+          </Note>
+          <Note>
             Unlinking the policy object, or removing the drive map from it, removes the drive. The
             mount is taken down at the machine&rsquo;s next refresh, including for people already
             signed in, and it is not mounted again at the next sign-in. The sidebar entry goes at

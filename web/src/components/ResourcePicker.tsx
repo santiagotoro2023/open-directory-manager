@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { FolderOpen, Printer as PrinterIcon, Search } from "lucide-react";
-import { ApiError, api, type FileShare, type Printer } from "../api";
+import { FolderOpen, MonitorSmartphone, Printer as PrinterIcon, Search } from "lucide-react";
+import { ApiError, api, type FileShare, type Printer, type RdCollection } from "../api";
 import { Loading } from "./Loading";
 import { Modal } from "./Modal";
 
@@ -192,6 +192,74 @@ export function SharePicker({
               {share.node_fqdn}
               {share.read_only ? " · read-only" : ""}
               {share.state !== "active" ? ` · ${share.state}` : ""}
+            </span>
+          </button>
+        </li>
+      ))}
+    </PickerModal>
+  );
+}
+
+export function CollectionPicker({
+  onClose,
+  onPick,
+}: {
+  onClose: () => void;
+  onPick: (collection: { name: string; address: string; application: string }) => void;
+}) {
+  const [collections, setCollections] = useState<RdCollection[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.rd
+      .list()
+      .then((result) => setCollections(result.collections))
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : String(err));
+        setCollections([]);
+      });
+  }, []);
+
+  const matches = useMemo(() => {
+    const ok = matcher(search);
+    return (collections ?? []).filter((collection) =>
+      ok([collection.name, collection.broker_fqdn, collection.description, collection.app_name]),
+    );
+  }, [collections, search]);
+
+  return (
+    <PickerModal
+      title="Choose a collection"
+      searchLabel="Search collections"
+      placeholder="Name, broker or application"
+      loading={collections === null}
+      error={error}
+      count={matches.length}
+      empty="No collection yet. Add one under Remote Desktop first."
+      search={search}
+      onSearch={setSearch}
+      onClose={onClose}
+    >
+      {matches.map((collection) => (
+        <li key={collection.id}>
+          <button
+            type="button"
+            onClick={() =>
+              onPick({
+                name: collection.name,
+                address: collection.broker_fqdn,
+                // A published application rather than a whole desktop: the
+                // file has to say which, and the collection knows.
+                application: collection.kind === "remoteapp" ? collection.app_name : "",
+              })
+            }
+          >
+            <MonitorSmartphone size={15} aria-hidden="true" />
+            {collection.name}
+            <span className="secondary">
+              {collection.broker_fqdn || "no broker yet"}
+              {collection.kind === "remoteapp" ? " · application" : " · desktop"}
             </span>
           </button>
         </li>

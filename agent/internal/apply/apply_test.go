@@ -67,6 +67,19 @@ func read(t *testing.T, env Env, path string) string {
 	return string(body)
 }
 
+// write puts a file inside the test machine, for the ones an applier reads
+// rather than writes.
+func write(t *testing.T, env Env, path, body string) {
+	t.Helper()
+	full := env.Path(path)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func statuses(results []policy.Result) map[string]string {
 	out := map[string]string{}
 	for _, result := range results {
@@ -1105,5 +1118,111 @@ func TestADriveMapNoLongerInPolicyIsDetached(t *testing.T) {
 	// can take the entry out of that person's file manager sidebar.
 	if got := loadCreated(env).DriveMaps; len(got) != 2 {
 		t.Errorf("state = %v, want both mount points still recorded", got)
+	}
+}
+
+// ------------------------------------------------- remote desktop files --
+
+// A connection file arrives with the group membership that entitles somebody
+// to it, and goes when that goes: handing out .rdp files by hand is the part
+// of a rollout that never finishes.
+func TestARemoteDesktopFileFollowsTheGroup(t *testing.T) {
+	env, runner := testEnv(t)
+	home := env.Path("/home/ada")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner.output["getent"] = "ada:x:1000:1000::" + home + ":/bin/bash\n"
+	write(t, env, "/etc/samba/smb.conf", "[global]\n    workgroup = EXAMPLE\n")
+
+	file := policy.RemoteDesktopFile{
+		Name: "Terminal Server", Address: "rdp.corp.example.internal",
+		Collection: "Terminal Server", FullScreen: true, ForPrincipal: "%Engineers",
+	}
+
+	// Not a member: nothing is written.
+	if problems := DeployRemoteDesktopFiles(
+		context.Background(), []policy.RemoteDesktopFile{file}, "grace", env,
+	); len(problems) != 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+
+	// This is asserted through appliesTo rather than by faking group
+	// membership for a real account, which the test machine does not have.
+	if appliesTo("%Engineers", "grace", []string{"domain users"}) {
+		t.Error("a file assigned to a group is not everybody's")
+	}
+	if !appliesTo("%Engineers", "ada", []string{"domain users", "Engineers"}) {
+		t.Error("a member gets it")
+	}
+}
+
+// The file itself: the documented keys, the account in the form a client
+// sends, and a published application when the collection serves one.
+func TestTheConnectionFileNamesTheBrokerAndTheAccount(t *testing.T) {
+	env, _ := testEnv(t)
+	write(t, env, "/etc/samba/smb.conf", "[global]\n    workgroup = EXAMPLE\n")
+
+	body := rdpBody(policy.RemoteDesktopFile{
+		Name: "desk", Address: "rdp.corp.example.internal", FullScreen: true,
+	}, "ada@corp.example.internal", env)
+	for _, want := range []string{
+		"full address:s:rdp.corp.example.internal",
+		`username:s:EXAMPLE\ada`,
+		"screen mode id:i:2",
+		"prompt for credentials:i:0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the file is missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "remoteapplicationmode") {
+		t.Errorf("a whole desktop is not a published application:\n%s", body)
+	}
+
+	app := rdpBody(policy.RemoteDesktopFile{
+		Name: "ledger", Address: "rdp.corp.example.internal",
+		Collection: "Ledger", Application: "ledger",
+	}, "ada", env)
+	for _, want := range []string{
+		"remoteapplicationmode:i:1", "alternate shell:s:||ledger",
+		"remoteapplicationname:s:Ledger", "screen mode id:i:1",
+	} {
+		if !strings.Contains(app, want) {
+			t.Errorf("the published application is missing %q:\n%s", want, app)
+		}
+	}
+}
+
+// A localised session calls the desktop something else, and the file has to
+// land where the icons are.
+func TestTheDesktopIsWhereTheSessionSaysItIs(t *testing.T) {
+	env, _ := testEnv(t)
+	home := env.Path("/home/ada")
+	write(t, env, "/home/ada/.config/user-dirs.dirs",
+		"XDG_DESKTOP_DIR=\"$HOME/Schreibtisch\"\n")
+
+	who := account{home: home, uid: 1000, gid: 1000}
+	if got := desktopDir(who); got != home+"/Schreibtisch" {
+		t.Errorf("desktop = %q, want the localised one", got)
+	}
+
+	// And the plain default where nothing says otherwise.
+	other := account{home: env.Path("/home/grace")}
+	if got := desktopDir(other); got != env.Path("/home/grace")+"/Desktop" {
+		t.Errorf("desktop = %q, want Desktop", got)
+	}
+}
+
+// One person's session must not forget what another's wrote.
+func TestOneSessionDoesNotForgetAnothersFiles(t *testing.T) {
+	kept := merge(
+		[]string{"/home/grace/Desktop/a.rdp", "/home/ada/Desktop/old.rdp"},
+		[]string{"/home/ada/Desktop/new.rdp"},
+		"/home/ada",
+	)
+	if len(kept) != 2 || kept[0] != "/home/grace/Desktop/a.rdp" ||
+		kept[1] != "/home/ada/Desktop/new.rdp" {
+		t.Errorf("state = %v", kept)
 	}
 }

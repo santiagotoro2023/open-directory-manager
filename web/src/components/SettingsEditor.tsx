@@ -3,7 +3,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
-import { PrinterPicker, SharePicker } from "./ResourcePicker";
+import { CollectionPicker, PrinterPicker, SharePicker } from "./ResourcePicker";
 import { InfoPanel } from "./DocsLink";
 import { LocalAccountList } from "./LocalAccountPicker";
 import { FileInput } from "./FileInput";
@@ -27,7 +27,7 @@ interface FieldSpec {
   /** Browse for something that is not a directory object. Picking one can
       fill in more than its own field — a printer names the server it is on,
       a share names what to call the drive and where to mount it. */
-  pick?: "printer" | "share";
+  pick?: "printer" | "share" | "collection";
   // A value the directory already knows is chosen, not typed.
   picker?: PickerKind;
   pickerValue?: PickerValue;
@@ -91,7 +91,8 @@ const TARGETABLE = new Set([
 export function halvesConfigured(settings: PolicySettings): Half[] {
   const halves = new Set<Half>();
   for (const entry of [...CATEGORIES, ...SPECIAL]) {
-    if (countOf(settings, "id" in entry && entry.id ? entry.id : String(entry.key)) > 0) {
+    const id = "id" in entry && typeof entry.id === "string" ? entry.id : String(entry.key);
+    if (countOf(settings, id) > 0) {
       halves.add(entry.half);
     }
   }
@@ -125,6 +126,8 @@ interface CategorySpec {
   // The section of the policy-settings page this links to. Section headings
   // carry an anchor made from their title.
   doc: string;
+  /** The wiki page the link lands on. Defaults to the policy-settings page. */
+  docPage?: string;
   note?: string;
   fields: FieldSpec[];
   blank: Record<string, unknown>;
@@ -398,6 +401,54 @@ export const CATEGORIES: CategorySpec[] = [
       { key: "renew_before_days", label: "Renew with (days) left", kind: "number", width: "180px" },
     ],
     blank: { profile: "server", path: "/etc/ssl/odm", validity_days: 365, renew_before_days: 30 },
+  },
+  {
+    key: "remote_desktop_files",
+    title: "Remote desktop files",
+    half: "User",
+    identity: "name",
+    help:
+      "A connection file on the desktop of everybody in a group, for one " +
+      "remote desktop collection. It goes when the membership or the link does.",
+    doc: "remote-desktop-files",
+    docPage: "remote-desktop",
+    fields: [
+      {
+        key: "name",
+        label: "Name",
+        width: "180px",
+        placeholder: "Terminal Server",
+        hint: "What the icon is called on the desktop",
+        pick: "collection",
+      },
+      {
+        key: "address",
+        label: "Broker",
+        placeholder: "rd.corp.example.internal",
+        hint: "Filled in by choosing a collection above",
+      },
+      {
+        key: "application",
+        label: "Published application",
+        placeholder: "Empty for a whole desktop",
+      },
+      {
+        key: "for_principal",
+        label: "For user or group",
+        placeholder: "%Finance",
+        picker: "principal",
+        pickerValue: "principal",
+      },
+      { key: "full_screen", label: "Full screen", kind: "checkbox", width: "110px" },
+    ],
+    blank: {
+      name: "",
+      address: "",
+      collection: "",
+      application: "",
+      for_principal: "",
+      full_screen: true,
+    },
   },
   {
     key: "printers",
@@ -2079,6 +2130,23 @@ function BrowseField({
             // that holds it, and typing the pair by hand is how they end up
             // disagreeing.
             onPatch({ [field.key]: printer.name, server: printer.server });
+          }}
+        />
+      )}
+      {picking && field.pick === "collection" && (
+        <CollectionPicker
+          onClose={() => setPicking(false)}
+          onPick={(collection) => {
+            setPicking(false);
+            // The broker and whether it publishes an application come from
+            // the collection; the name is what the icon says, which starts as
+            // the collection's own name and can be anything.
+            onPatch({
+              [field.key]: entry.name ? String(entry.name) : collection.name,
+              collection: collection.name,
+              address: collection.address,
+              application: collection.application,
+            });
           }}
         />
       )}

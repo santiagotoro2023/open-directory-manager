@@ -256,6 +256,43 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="Remote desktop files">
+          <p>
+            Handing out <C>.rdp</C> files is the part of a rollout that never finishes: whoever
+            joins next has no icon, whoever leaves keeps theirs. So it is a policy setting &mdash;{" "}
+            <strong>Group Policy</strong> &rarr; <strong>User</strong> &rarr;{" "}
+            <strong>Remote desktop files</strong> &mdash; naming a collection and a group. The file
+            appears on the desktop of everybody in that group when they sign in, and goes when the
+            membership goes or the policy object is unlinked.
+          </p>
+          <Reference
+            headers={["Field", "What it is"]}
+            rows={[
+              ["Name", "What the icon says, and the file's name. Starts as the collection's name."],
+              [
+                "Broker",
+                "Where the file connects to. Filled in by choosing a collection, so it is never a host by mistake.",
+              ],
+              [
+                "Published application",
+                "Set from the collection: empty for a whole desktop, the application's alias for a RemoteApp collection.",
+              ],
+              ["For user or group", "Who gets it. Empty means everybody the policy object reaches."],
+              ["Full screen", "Whether the session opens full screen or in a window."],
+            ]}
+          />
+          <Example title="One collection, one group, no manual work">
+            A collection <C>Terminal Server</C> and a group <C>rd-terminal-server</C>. The entry
+            names both; adding somebody to the group gives them the icon at their next sign-in, and
+            removing them takes it away at theirs.
+          </Example>
+          <Note>
+            The file carries the broker, the account in <C>DOMAIN\user</C> form and the session
+            settings; it carries no password. It is written into the desktop directory the
+            session actually uses, which a localised desktop calls something else.
+          </Note>
+        </Section>
+
         <Section title="Sessions and timeouts">
           <Reference
             headers={["Setting", "Means"]}

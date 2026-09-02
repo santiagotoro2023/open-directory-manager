@@ -784,16 +784,48 @@ async def reports(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
     computer_dn: Annotated[str | None, Query(max_length=1024)] = None,
+    username: Annotated[str | None, Query(max_length=104)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> dict[str, Any]:
-    """What agents actually reported after applying, newest first."""
+    """What agents actually reported after applying, newest first.
+
+    A machine's own reports by default. Asked about a person, the reports from
+    their sessions instead — one per machine they have signed in to, which is
+    where a drive map that did not mount says why.
+    """
+    if username:
+        rows = await pool.fetch(
+            """
+            SELECT DISTINCT ON (computer_dn)
+                   id, computer_dn, hostname, reported_at, agent_version, policy_serial,
+                   applied_gpos, results, failures, username
+            FROM agent_report
+            WHERE lower(username) = lower($1)
+            ORDER BY computer_dn, reported_at DESC
+            LIMIT $2
+            """,
+            username,
+            limit,
+        )
+        return {
+            "reports": [
+                {
+                    **dict(row),
+                    "id": str(row["id"]),
+                    "applied_gpos": json.loads(row["applied_gpos"]),
+                    "results": json.loads(row["results"]),
+                }
+                for row in rows
+            ]
+        }
+
     rows = await pool.fetch(
         """
         SELECT DISTINCT ON (computer_dn)
                id, computer_dn, hostname, reported_at, agent_version, policy_serial,
                applied_gpos, results, failures
         FROM agent_report
-        WHERE $1::text IS NULL OR computer_dn = $1
+        WHERE (($1::text IS NULL OR computer_dn = $1) AND username IS NULL)
         ORDER BY computer_dn, reported_at DESC
         LIMIT $2
         """,

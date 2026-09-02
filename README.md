@@ -67,7 +67,7 @@ open it, and use **Join a Domain** from the applications menu. Or from a
 terminal:
 
 ```bash
-sudo apt install ./odm-client_0.7.4_amd64.deb
+sudo apt install ./odm-client_0.7.5_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -210,7 +210,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.7.4   # -> dist/odm-client_0.7.4_amd64.deb
+bash packaging/deb/build-in-container.sh 0.7.5   # -> dist/odm-client_0.7.5_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

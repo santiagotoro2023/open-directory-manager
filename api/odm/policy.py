@@ -41,6 +41,7 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "trusted_certificates": ("name",),
     "packages": ("name",),
     "printers": ("name", "for_principal"),
+    "remote_desktop_files": ("name", "for_principal"),
     "certificate_enrolment": ("profile", "path"),
     "admx": ("policy_id",),
 }

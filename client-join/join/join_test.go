@@ -180,10 +180,40 @@ func TestKrb5ConfNamesTheRealm(t *testing.T) {
 		"default_realm = CORP.EXAMPLE.INTERNAL",
 		"dns_lookup_kdc = true",
 		".corp.example.internal = CORP.EXAMPLE.INTERNAL",
+		// The kernel completes a cifs mount with sec=krb5 through
+		// cifs.upcall, which looks for the ticket by uid rather than by
+		// anything in the session's environment. A ticket in the keyring or
+		// in KCM cannot be found there, and the mount fails with "Required
+		// key not available" while every other part of the session works.
+		"default_ccache_name = FILE:/tmp/krb5cc_%{uid}",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("krb5.conf missing %q:\n%s", want, body)
 		}
+	}
+}
+
+// SSSD decides where the ticket goes for the sessions it opens, and ignores
+// krb5.conf: the two files have to name the same place or a drive map cannot
+// be mounted.
+func TestTheTicketGoesWhereTheKernelWillLookForIt(t *testing.T) {
+	env, _ := testEnv(t)
+	o := options()
+	_ = o.Validate()
+	if err := WriteSssdConf(o, env); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteKrb5Conf(o, env); err != nil {
+		t.Fatal(err)
+	}
+
+	sssd := read(t, env, SssdConfPath)
+	if !strings.Contains(sssd, "krb5_ccname_template = FILE:/tmp/krb5cc_%U") {
+		t.Errorf("sssd would put the ticket somewhere the kernel cannot read:\n%s", sssd)
+	}
+	krb5 := read(t, env, Krb5ConfPath)
+	if !strings.Contains(krb5, "default_ccache_name = FILE:/tmp/krb5cc_%{uid}") {
+		t.Errorf("krb5.conf names a different ccache than sssd writes:\n%s", krb5)
 	}
 }
 

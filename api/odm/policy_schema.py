@@ -25,6 +25,7 @@ CRON_RE = re.compile(
     r"^(@(reboot|yearly|annually|monthly|weekly|daily|hourly)|[-0-9*/,\s]{9,100})$"
 )
 UNC_RE = re.compile(r"^//[A-Za-z0-9._-]{1,253}/[A-Za-z0-9._$ -]{1,80}$")
+HOSTNAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
 
 Name = Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -457,6 +458,37 @@ class PasswordSelfService(Strict):
     require_symbol: bool = False
 
 
+class RemoteDesktopFile(Strict):
+    """A connection file on somebody's desktop.
+
+    Distributing .rdp files by hand is the part of a remote-desktop rollout
+    that never finishes: whoever joins the team next has no icon, and whoever
+    leaves keeps theirs. Named here against a collection and a group, the file
+    arrives with the membership and goes when it goes.
+    """
+
+    # What the file is called, and what the icon says.
+    name: Name
+    # The broker to connect to. Filled in from the collection in the console.
+    address: Annotated[str, Field(max_length=253)]
+    # Which collection it is, for the label and for a published application.
+    collection: Annotated[str, Field(max_length=64)] = ""
+    # A published application's alias, when the collection serves one rather
+    # than a whole desktop.
+    application: Annotated[str, Field(max_length=128)] = ""
+    full_screen: bool = True
+    for_principal: Annotated[str, Field(max_length=128)] = ""
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
+
+    @field_validator("address")
+    @classmethod
+    def _address(cls, value: str) -> str:
+        if not HOSTNAME_RE.match(value):
+            raise ValueError("the address must be a host name")
+        return value
+
+
 class Printer(Strict):
     """A printer handed to a user or group."""
 
@@ -642,6 +674,9 @@ class PolicySettings(Strict):
     password_self_service: PasswordSelfService | None = None
     local_password_policy: LocalPasswordPolicy | None = None
     printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
+    remote_desktop_files: Annotated[
+        list[RemoteDesktopFile], Field(default_factory=list, max_length=50)
+    ]
     always_on_vpn: AlwaysOnVpn | None = None
     local_administrator: LocalAdministrator | None = None
     remote_desktop_session: RemoteDesktopSession | None = None

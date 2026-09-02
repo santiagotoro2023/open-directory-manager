@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.7.4"
+const version = "0.7.5"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -162,9 +162,18 @@ func runProfile(args []string) int {
 		fmt.Fprintln(os.Stderr, "odm-agent: roaming profile:", err)
 		return 0
 	}
+	// Every result this session produced, reported at the end: what happened
+	// when somebody's policy was applied used to exist only in this machine's
+	// journal, so a drive that did not mount was invisible from the console
+	// and the only answer to "why has he no drive" was to go and read logs.
+	var results []policy.Result
+
 	if err := apply.MountProfile(ctx, document.Settings.RoamingProfile, *username, env); err != nil {
 		fmt.Fprintf(os.Stderr,
 			"odm-agent: %s keeps a local home this session: %v\n", *username, err)
+		results = append(results, policy.Fail("roaming_profile", err))
+	} else if document.Settings.RoamingProfile != nil {
+		results = append(results, policy.Ok("roaming_profile"))
 	}
 	// Drive maps come with the profile, and for the same reason: they are
 	// mounted with this person's ticket, which only exists inside their
@@ -173,14 +182,103 @@ func runProfile(args []string) int {
 	for _, problem := range problems {
 		fmt.Fprintln(os.Stderr, "odm-agent: drive map:", problem)
 	}
+	results = append(results, sessionResults("drive_maps", mountedNames(
+		document.Settings.DriveMaps, *username), problems)...)
+	// Connection files land in the same place for the same reason: a home
+	// directory, decided by who is signing in.
+	rdp := apply.DeployRemoteDesktopFiles(
+		ctx, document.Settings.RemoteDesktopFiles, *username, env)
+	for _, problem := range rdp {
+		fmt.Fprintln(os.Stderr, "odm-agent: remote desktop file:", problem)
+	}
+	results = append(results, sessionResults("remote_desktop_files",
+		fileNames(document.Settings.RemoteDesktopFiles, *username), rdp)...)
+	problems = append(problems, rdp...)
+
 	if err := apply.ApplyPhoto(document.User.Photo, *username, env); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent: picture:", err)
 	}
+
 	// Said either way, so a login that produced no drive says so rather than
 	// saying nothing at all.
 	fmt.Printf("%d drive map(s) for %s, %d problem(s)\n",
 		len(document.Settings.DriveMaps), *username, len(problems))
+
+	if err := api.Report(ctx, policy.Report{
+		PolicySerial: document.Serial,
+		Username:     *username,
+		AppliedGPOs:  document.AppliedGPOs,
+		Results:      results,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: reporting the session:", err)
+	}
 	return 0
+}
+
+// sessionResults turns what a session applied into Resultant Set of Policy:
+// one line per thing that was meant to happen, and the reason where it did
+// not. The problems are matched to their setting by name, and anything that
+// cannot be matched is still reported rather than dropped.
+func sessionResults(category string, wanted []string, problems []error) []policy.Result {
+	failed := map[string]string{}
+	var unmatched []error
+	for _, problem := range problems {
+		text := problem.Error()
+		name, _, found := strings.Cut(text, ":")
+		if found && contains(wanted, name) {
+			failed[name] = text
+			continue
+		}
+		unmatched = append(unmatched, problem)
+	}
+
+	results := make([]policy.Result, 0, len(wanted)+len(unmatched))
+	for _, name := range wanted {
+		setting := category + ":" + name
+		if reason, bad := failed[name]; bad {
+			results = append(results, policy.Result{
+				Setting: setting, Status: "failed", Reason: reason,
+			})
+			continue
+		}
+		results = append(results, policy.Ok(setting))
+	}
+	for _, problem := range unmatched {
+		results = append(results, policy.Fail(category, problem))
+	}
+	return results
+}
+
+// mountedNames and fileNames are what this person was meant to get, which is
+// not the whole policy: an entry assigned to a group somebody is not in was
+// never theirs and is not reported as missing.
+func mountedNames(drives []policy.DriveMap, user string) []string {
+	var names []string
+	for _, drive := range drives {
+		if apply.AppliesTo(drive.ForPrincipal, user) {
+			names = append(names, drive.Name)
+		}
+	}
+	return names
+}
+
+func fileNames(files []policy.RemoteDesktopFile, user string) []string {
+	var names []string
+	for _, file := range files {
+		if apply.AppliesTo(file.ForPrincipal, user) {
+			names = append(names, file.Name)
+		}
+	}
+	return names
+}
+
+func contains(names []string, name string) bool {
+	for _, candidate := range names {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
 }
 
 func runDaemon(args []string) int {

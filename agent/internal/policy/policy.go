@@ -61,6 +61,7 @@ type Settings struct {
 	LoginScreen          *LoginScreen           `json:"login_screen,omitempty"`
 	CertificateEnrolment []CertificateEnrolment `json:"certificate_enrolment,omitempty"`
 	Printers             []Printer              `json:"printers,omitempty"`
+	RemoteDesktopFiles   []RemoteDesktopFile    `json:"remote_desktop_files,omitempty"`
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
 	LocalPasswordPolicy  *LocalPasswordPolicy   `json:"local_password_policy,omitempty"`
@@ -130,6 +131,16 @@ func (d DriveMap) Label() string {
 		return d.DisplayName
 	}
 	return d.Name
+}
+
+// RemoteDesktopFile is a connection file to put on somebody's desktop.
+type RemoteDesktopFile struct {
+	Name         string `json:"name"`
+	Address      string `json:"address"`
+	Collection   string `json:"collection"`
+	Application  string `json:"application"`
+	FullScreen   bool   `json:"full_screen"`
+	ForPrincipal string `json:"for_principal"`
 }
 
 type SudoRule struct {
@@ -284,10 +295,14 @@ type Result struct {
 
 // Report is what the agent posts after an apply run.
 type Report struct {
-	PolicySerial string   `json:"policy_serial"`
-	AgentVersion string   `json:"agent_version"`
-	AppliedGPOs  []GPORef `json:"applied_gpos"`
-	Results      []Result `json:"results"`
+	PolicySerial string `json:"policy_serial"`
+	AgentVersion string `json:"agent_version"`
+	// Set when the run was one person's session rather than the machine's own
+	// pass: their drive maps and connection files are applied at sign-in, and
+	// what happened to them belongs on their page in the console.
+	Username    string   `json:"username,omitempty"`
+	AppliedGPOs []GPORef `json:"applied_gpos"`
+	Results     []Result `json:"results"`
 	// Present only on the run that rotated it. The control plane stores it so
 	// an administrator can read it off the computer object when the domain is
 	// unreachable from that machine.

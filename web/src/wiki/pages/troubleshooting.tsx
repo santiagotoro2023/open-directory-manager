@@ -330,6 +330,54 @@ export function Content() {
           />
         </Section>
 
+        <Section title="A drive map that does not appear">
+          <Reference
+            headers={["Check", "How"]}
+            rows={[
+              [
+                "What the session reported",
+                <>
+                  <strong>Directory</strong> &rarr; the person &rarr; <strong>Policy</strong>{" "}
+                  &rarr; <strong>Last applied in a session</strong>. Every drive they were meant to
+                  get is listed with what happened to it.
+                </>,
+              ],
+              [
+                "Are they in the group the entry names?",
+                <>
+                  The entry&rsquo;s <strong>For user or group</strong> is matched on the client
+                  against the groups the machine resolves. <strong>Member of</strong> on their
+                  account shows the nested ones too.
+                </>,
+              ],
+              [
+                '"Required key not available"',
+                <>
+                  The mount could not read their Kerberos ticket. The ticket has to be a file the
+                  kernel can find by uid, which is what{" "}
+                  <C key="cc">krb5_ccname_template = FILE:/tmp/krb5cc_%U</C> in{" "}
+                  <C key="cc2">sssd.conf</C> and the matching{" "}
+                  <C key="cc3">default_ccache_name</C> in <C key="cc4">krb5.conf</C> are for. A
+                  client joined before this was written keeps its old configuration: re-join, or
+                  add both lines and restart sssd.
+                </>,
+              ],
+              [
+                '"Permission denied" or "Bad address"',
+                "The share's own permissions, or the machine has no ticket for it. klist in the session says whether there is one.",
+              ],
+              [
+                "Nothing at all was reported",
+                <>
+                  The session hook did not run. <C key="ph">grep odm /etc/pam.d/common-session</C>{" "}
+                  on the machine, and <C key="ph2">journalctl -t odm-profile -b</C> for what it
+                  said.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Roles that will not settle">
           <Reference
             headers={["Symptom", "Check"]}

@@ -159,6 +159,10 @@ class LocalAdministratorCredential(BaseModel):
 
 class Report(BaseModel):
     policy_serial: Annotated[str, Field(max_length=64)]
+    # Set when the report is about one person's session rather than the
+    # machine: their drive maps, connection files and background are applied
+    # when they sign in, and what happened has to be visible somewhere.
+    username: Annotated[str, Field(default="", max_length=104)] = ""
     agent_version: Annotated[str, Field(default="", max_length=32)] = ""
     applied_gpos: Annotated[list[dict[str, str]], Field(default_factory=list, max_length=200)]
     results: Annotated[list[SettingResult], Field(default_factory=list, max_length=1000)]
@@ -176,8 +180,8 @@ async def agent_report(
     await pool.execute(
         """
         INSERT INTO agent_report (computer_dn, hostname, agent_version, policy_serial,
-                                  applied_gpos, results, failures)
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
+                                  applied_gpos, results, failures, username)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, nullif($8, ''))
         """,
         machine.dn,
         machine.hostname,
@@ -186,6 +190,7 @@ async def agent_report(
         json.dumps(body.applied_gpos),
         json.dumps(results),
         sum(1 for result in results if result["status"] == "failed"),
+        body.username,
     )
 
     # Only on the run that rotated it. Replaced rather than appended: the

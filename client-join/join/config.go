@@ -95,6 +95,14 @@ func WriteKrb5Conf(options Options, env Env) error {
     ticket_lifetime = 24h
     renew_lifetime = 7d
     forwardable = true
+    # A file, at a name derived only from the uid, because the kernel is one
+    # of the things that has to find this ticket: a cifs mount with sec=krb5
+    # is completed by cifs.upcall, which runs outside the session and looks
+    # for the ccache by uid. SSSD is told to write the same name below.
+    # Left to the defaults, the ticket lands in the kernel keyring or in KCM
+    # and the mount fails with "Required key not available" while everything
+    # else about the session works.
+    default_ccache_name = FILE:/tmp/krb5cc_%%{uid}
 
 [realms]
     %s = {
@@ -131,6 +139,11 @@ ad_domain = %s
 krb5_realm = %s
 krb5_store_password_if_offline = true
 cache_credentials = true
+
+# Where the ticket goes, matching default_ccache_name in krb5.conf. SSSD
+# decides this for the sessions it opens and ignores krb5.conf, so the two
+# have to be written together or a drive map cannot be mounted.
+krb5_ccname_template = FILE:/tmp/krb5cc_%%U
 
 # Names as the domain knows them, without the realm suffix.
 use_fully_qualified_names = false

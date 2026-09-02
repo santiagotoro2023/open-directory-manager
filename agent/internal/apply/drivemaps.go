@@ -230,6 +230,13 @@ func makeUnder(who account, dir string) error {
 	return nil
 }
 
+// AppliesTo answers whether an entry assigned to a user or %group is this
+// person's, asking the system for their groups. Exported for the session
+// paths, which report what somebody was meant to get.
+func AppliesTo(principal, user string) bool {
+	return appliesTo(principal, user, groupsOf(user))
+}
+
 // appliesTo answers whether a map assigned to a user or %group is this
 // person's. An unassigned map is everybody's.
 func appliesTo(principal, user string, memberships []string) bool {
