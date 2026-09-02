@@ -255,6 +255,28 @@ journalctl -u odm-agent -n 50`}</Code>
           </Note>
         </Section>
 
+        <Section title="Where a Kerberos ticket goes">
+          <p>
+            A drive map is a <C>cifs</C> mount with <C>sec=krb5</C>, and the kernel finishes it
+            through <C>cifs.upcall</C> — a process outside the session, which finds the ticket by
+            uid rather than through the environment. Left to the defaults SSSD puts the ticket in
+            the kernel keyring or in KCM, where that lookup cannot reach it: every mount fails with{" "}
+            <C>Required key not available</C> while everything else about the session works.
+          </p>
+          <p>
+            The agent keeps both halves of that in agreement —{" "}
+            <C>krb5_ccname_template = FILE:/tmp/krb5cc_%U</C> in <C>sssd.conf</C> and{" "}
+            <C>default_ccache_name = FILE:/tmp/krb5cc_%&#123;uid&#125;</C> in <C>krb5.conf</C> —
+            and restarts sssd when it has to change one. A machine joined before this was written
+            is repaired on its next pass rather than needing to be re-joined.
+          </p>
+          <Note>
+            Only in files the domain join wrote: a hand-written <C>krb5.conf</C> is left alone. And
+            it takes one more sign-in, because the ticket for a session already open is still where
+            it was put.
+          </Note>
+        </Section>
+
         <Section title="Files the agent owns">
           <Reference
             headers={["Path", "Holds"]}

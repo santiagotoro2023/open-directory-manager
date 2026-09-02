@@ -353,13 +353,13 @@ export function Content() {
               [
                 '"Required key not available"',
                 <>
-                  The mount could not read their Kerberos ticket. The ticket has to be a file the
-                  kernel can find by uid, which is what{" "}
+                  The mount could not read their Kerberos ticket, because it is in the kernel
+                  keyring or in KCM and the kernel&rsquo;s own helper looks for a file named by
+                  uid. The agent repairs this itself now &mdash;{" "}
                   <C key="cc">krb5_ccname_template = FILE:/tmp/krb5cc_%U</C> in{" "}
-                  <C key="cc2">sssd.conf</C> and the matching{" "}
-                  <C key="cc3">default_ccache_name</C> in <C key="cc4">krb5.conf</C> are for. A
-                  client joined before this was written keeps its old configuration: re-join, or
-                  add both lines and restart sssd.
+                  <C key="cc2">sssd.conf</C> and <C key="cc3">default_ccache_name</C> in{" "}
+                  <C key="cc4">krb5.conf</C>, then sssd is restarted &mdash; so it takes one more
+                  sign-in: the ticket for a session already open is still in the old place.
                 </>,
               ],
               [

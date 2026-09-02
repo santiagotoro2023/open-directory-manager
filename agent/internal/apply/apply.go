@@ -34,6 +34,9 @@ var appliers = []applier{
 	{"scripts", applyScripts},
 	{"systemd_units", applySystemdUnits},
 	{"cron", applyCron},
+	// Before the drive maps: where the ticket lands decides whether one can
+	// be mounted at all.
+	{"kerberos", applyCcache},
 	{"drive_maps", applyDriveMaps},
 	{"packages", applyPackages},
 	{"updates", applyUpdates},

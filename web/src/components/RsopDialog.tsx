@@ -103,8 +103,8 @@ export function RsopDialog({
                   <tbody>
                     {session.results.map((result, index) => (
                       <tr key={`${result.setting}-${index}`}>
-                        <td className="mono">{result.setting}</td>
                         <td>
+                          <span className="mono">{result.setting}</span>
                           <span
                             className={`badge ${
                               result.status === "failed" ? "failure" : "success"
@@ -112,13 +112,16 @@ export function RsopDialog({
                           >
                             {result.status}
                           </span>
+                          {/* Under the name rather than beside it: the reason
+                              a mount failed is a sentence, and in a column it
+                              was off the edge of the table. */}
+                          {result.reason && <p className="stat-note">{result.reason}</p>}
                         </td>
-                        <td className="muted">{result.reason ?? ""}</td>
                       </tr>
                     ))}
                     {session.results.length === 0 && (
                       <tr>
-                        <td colSpan={3} className="muted">
+                        <td className="muted">
                           This person&rsquo;s policy carries nothing a session applies.
                         </td>
                       </tr>

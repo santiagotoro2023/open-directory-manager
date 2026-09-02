@@ -1397,3 +1397,85 @@ func TestTheMachinePassDoesNotUnmountASessionsDrive(t *testing.T) {
 		t.Errorf("the session did not detach it: %v", runner.commands)
 	}
 }
+
+// ------------------------------------------------------- kerberos ccache --
+
+// A cifs mount with sec=krb5 is finished by cifs.upcall, which finds the
+// ticket by uid. SSSD's default puts it in the keyring or in KCM, where that
+// lookup cannot reach it — so the mount fails with "Required key not
+// available" while everything else about the session works. A machine joined
+// before this was written keeps its old configuration, and re-joining a
+// working machine to fix a mount is not something anybody should have to do.
+func TestTheTicketIsPutWhereAMountCanReadIt(t *testing.T) {
+	env, runner := testEnv(t)
+	write(t, env, "/etc/krb5.conf", Header+`[libdefaults]
+    default_realm = CORP.EXAMPLE.INTERNAL
+    dns_lookup_kdc = true
+`)
+	write(t, env, "/etc/sssd/sssd.conf", Header+`[sssd]
+domains = corp.example.internal
+
+[domain/corp.example.internal]
+id_provider = ad
+`)
+
+	results := applyCcache(context.Background(), policy.Settings{}, env)
+	if statuses(results)["kerberos:ccache"] == "" {
+		t.Fatalf("nothing was reported: %+v", results)
+	}
+
+	krb5 := read(t, env, "/etc/krb5.conf")
+	if !strings.Contains(krb5, "default_ccache_name = FILE:/tmp/krb5cc_%{uid}") {
+		t.Errorf("krb5.conf still names no ccache:\n%s", krb5)
+	}
+	// In the section it belongs to, not appended to the end of the file.
+	if !strings.Contains(krb5, "[libdefaults]\n    default_ccache_name") {
+		t.Errorf("the setting is not under [libdefaults]:\n%s", krb5)
+	}
+	sssd := read(t, env, "/etc/sssd/sssd.conf")
+	if !strings.Contains(sssd, "[domain/corp.example.internal]\nkrb5_ccname_template") {
+		t.Errorf("sssd.conf does not put the ticket in a file:\n%s", sssd)
+	}
+	if !runner.ran("systemctl", "restart sssd") {
+		t.Errorf("sssd was not told to read it: %v", runner.commands)
+	}
+
+	// Idempotent: a second pass changes nothing and restarts nothing.
+	runner.commands = nil
+	if results := applyCcache(context.Background(), policy.Settings{}, env); len(results) != 0 {
+		t.Errorf("a second pass acted again: %+v", results)
+	}
+	if len(runner.commands) != 0 {
+		t.Errorf("a second pass ran commands: %v", runner.commands)
+	}
+}
+
+// A machine configured by hand is configured on purpose.
+func TestAKrb5ConfNobodyManagedIsLeftAlone(t *testing.T) {
+	env, runner := testEnv(t)
+	write(t, env, "/etc/krb5.conf", "[libdefaults]\n    default_realm = CORP.EXAMPLE.INTERNAL\n")
+
+	if results := applyCcache(context.Background(), policy.Settings{}, env); len(results) != 0 {
+		t.Errorf("a hand-written file was edited: %+v", results)
+	}
+	if body := read(t, env, "/etc/krb5.conf"); strings.Contains(body, "default_ccache_name") {
+		t.Errorf("it was edited:\n%s", body)
+	}
+	if len(runner.commands) != 0 {
+		t.Errorf("commands ran: %v", runner.commands)
+	}
+}
+
+// And the session's own pass never restarts the service its session runs on.
+func TestASessionPassDoesNotTouchKerberos(t *testing.T) {
+	env, runner := testEnv(t)
+	env.Session = true
+	write(t, env, "/etc/krb5.conf", Header+"[libdefaults]\n    default_realm = X\n")
+
+	if results := applyCcache(context.Background(), policy.Settings{}, env); results != nil {
+		t.Errorf("the session pass acted: %+v", results)
+	}
+	if len(runner.commands) != 0 {
+		t.Errorf("commands ran: %v", runner.commands)
+	}
+}
