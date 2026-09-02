@@ -18,6 +18,7 @@ import { isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select"
+import { InfoPanel } from "../components/DocsLink";
 import { isSystemContainer, label, parentOf } from "../components/directoryTree";
 
 const ICONS = {
@@ -318,6 +319,11 @@ export function Directory() {
             Enrolment tokens
           </button>
         </div>
+
+        <InfoPanel page="directory">
+          Users, groups, computers and organizational units, in the tree they live in. An
+          organizational unit is what policy links to and what delegation is scoped by.
+        </InfoPanel>
 
         <p className="mono muted breadcrumb">{search ? `Search: ${search}` : container}</p>
 

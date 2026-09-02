@@ -13,7 +13,7 @@ from typing import Any
 from ldap3 import Connection
 
 from . import objects
-from .config import Settings
+from .config import Settings, get_settings
 from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available
 from .dns import message as samba_message
 
@@ -49,10 +49,14 @@ def _run(*args: str) -> str:
     if completed.returncode != 0:
         message = samba_message(completed.stderr, completed.stdout, "samba-tool drs failed")
         if "ACCESS_DENIED" in message:
+            # The rights are granted at setup. A domain provisioned before
+            # they were is the case that reaches here, and the fix is the same
+            # script run again — so it is quoted rather than named.
             raise ReplicationError(
-                "the control plane's account may not read replication state. "
-                "Re-run deploy/create-api-service-account.sh on a domain "
-                "controller to grant it."
+                "the control plane's account does not hold the replication "
+                "rights. On a domain controller, run: sudo "
+                "deploy/create-api-service-account.sh --realm "
+                f"{get_settings().realm}"
             )
         raise ReplicationError(message)
     return completed.stdout

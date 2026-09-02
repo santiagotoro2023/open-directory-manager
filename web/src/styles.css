@@ -702,6 +702,13 @@ button.icon {
   padding: 18px 20px;
 }
 
+/* The message sits between the body and the footer, and lines up with the
+   fields it is about rather than running edge to edge. */
+.modal > form > .alert,
+.wizard > form > .alert {
+  margin: 0 20px 14px;
+}
+
 .modal footer {
   display: flex;
   justify-content: flex-end;
@@ -805,9 +812,27 @@ table.data tbody tr.selected {
   background: #eef2ff;
 }
 
-table.data td svg {
+/* The icon beside a value in a cell — a folder before a share name, a monitor
+   before a machine. The gap belongs between that icon and its text, so it is
+   set on the icon's own siblings rather than on every svg in the cell: on a
+   button holding nothing but an icon, a right margin pushed the glyph off
+   centre and made the button wider on one side than the other. */
+/* Two controls in one cell are two controls. Without this they touch, and
+   Restore and the bin beside it read as one wide button. */
+table.data td > button + button,
+table.data td > button + a,
+table.data td > a + button {
+  margin-left: 8px;
+}
+
+table.data td > svg {
   vertical-align: -2px;
   margin-right: 7px;
+  color: var(--text-muted);
+}
+
+table.data td svg {
+  vertical-align: -2px;
   color: var(--text-muted);
 }
 
@@ -1667,22 +1692,33 @@ ul.plain {
 }
 
 .category-group {
-  margin: 10px 8px 4px;
+  margin: 6px 8px 8px;
+  padding-bottom: 8px;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The second half starts a long way down a scrolled list; the space above it
+   is what says a new one has started. */
+.category-list > li + li .category-group {
+  margin-top: 22px;
 }
 
 /* Which objects the half reaches. Whether a setting is applied per machine or
    per person decides which OU the policy has to be linked to, and that is not
    something the setting's own name can say. */
+/* Which objects the half reaches, under its name rather than beside it: at
+   the width of the list it wrapped into the heading and read as part of it. */
 .category-group span {
   display: block;
-  margin-top: 2px;
+  margin-top: 4px;
   font-weight: 400;
   font-size: 11px;
+  line-height: 1.45;
   text-transform: none;
   letter-spacing: 0;
   color: var(--text-muted);
@@ -1901,6 +1937,96 @@ ul.plain {
   color: var(--danger);
 }
 
+/* ------------------------------------------------------------- loading -- */
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Somebody who has asked not to be moved is not asking to be left guessing:
+   the ring stops turning and the label carries the meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------- picture -- */
+
+/* The picture an account is shown by. Every greeter and desktop that reads it
+   draws it as a circle, so it is framed as one here and what the circle shows
+   is what is stored. */
+.photo-cropper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.photo-frame {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface-recessed);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.photo-frame:active {
+  cursor: grabbing;
+}
+
+.photo-frame img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* Everything outside the circle, dimmed: the ring is drawn by a shadow large
+   enough to cover the frame rather than by a second element over the image. */
+.photo-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgb(255 255 255 / 0.72);
+  outline: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.photo-cropper .field {
+  width: 220px;
+}
+
+.photo-cropper input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 /* --------------------------------------------------------- info panels -- */
 
 /* What a setting does, and the way to the page that covers it properly. A
@@ -1911,10 +2037,20 @@ ul.plain {
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 10px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--surface-recessed);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+/* On a page it is a band of its own, not the top edge of the table under it.
+   Inside the settings editor the column's own gap already spaces it. */
+.content > .info-panel {
+  margin-bottom: 18px;
+}
+
+.modal-body > .info-panel {
+  margin-top: 12px;
 }
 
 .info-panel p {

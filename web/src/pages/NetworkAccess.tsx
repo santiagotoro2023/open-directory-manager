@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Router, Trash2 } from "lucide-react";
 import { ApiError, api, type RadiusClient, type RadiusPolicy } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerDialog, PickerField } from "../components/Picker";
@@ -32,6 +33,7 @@ export function NetworkAccess() {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setError(null);
@@ -41,6 +43,8 @@ export function NetworkAccess() {
       setPolicies(result.policies);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -209,12 +213,16 @@ export function NetworkAccess() {
                   </td>
                 </tr>
               ))}
-              {clients.length === 0 && (
+              {loading ? (
+                <LoadingRow colSpan={5} />
+              ) : (
+                clients.length === 0 && (
                 <tr>
                   <td colSpan={5} className="empty">
                     No devices. Nothing can ask until one is added.
                   </td>
                 </tr>
+              )
               )}
             </tbody>
           </table>

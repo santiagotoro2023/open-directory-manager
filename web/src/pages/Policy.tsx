@@ -10,6 +10,7 @@ import {
   Upload,
 } from "lucide-react";
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
@@ -29,6 +30,7 @@ export function Policy() {
   const [creating, setCreating] = useState(false);
   const [templates, setTemplates] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const { bind, menu } = useContextMenu();
 
   const load = useCallback(async () => {
@@ -37,6 +39,8 @@ export function Policy() {
       setGpos((await api.policy.list()).gpos);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -152,12 +156,16 @@ export function Policy() {
               <td>{gpo.description}</td>
             </tr>
           ))}
-          {gpos.length === 0 && (
+          {loading ? (
+            <LoadingRow colSpan={5} />
+          ) : (
+            gpos.length === 0 && (
             <tr>
               <td colSpan={5} className="empty">
                 No group policy objects yet.
               </td>
             </tr>
+          )
           )}
         </tbody>
       </table>

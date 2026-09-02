@@ -62,9 +62,10 @@ export function Content() {
           <C>//server/share</C>.
         </Example>
 
-        <Example title="Stop sharing a directory">
-          Right-click the share → <strong>Stop sharing</strong>. The directory and its contents stay
-          on the server.
+        <Example title="Stop sharing a directory, or delete it">
+          Right-click the share. <strong>Stop sharing</strong> withdraws it and leaves the directory
+          on the server; <strong>Delete the directory…</strong> withdraws it and deletes the
+          directory and everything in it. Deleted files are not in Deleted Objects.
         </Example>
 
         <Example title="Choose where the share lives">

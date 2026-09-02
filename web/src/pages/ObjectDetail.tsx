@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
+  FileText,
   Folder,
   KeyRound,
   Monitor,
@@ -20,10 +22,12 @@ import {
   api,
   type ComputerAction,
   type ComputerDetail,
+  type DirectoryListing,
   type DirectoryObject,
   type LogGroup,
   type NewLocalUser,
 } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { Field, Modal } from "../components/Modal";
 import { RsopDialog } from "../components/RsopDialog";
 import {
@@ -59,7 +63,15 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 type Tab =
-  "general" | "membership" | "policy" | "machine" | "software" | "users" | "activity" | "logs";
+  | "general"
+  | "membership"
+  | "policy"
+  | "machine"
+  | "software"
+  | "users"
+  | "files"
+  | "activity"
+  | "logs";
 
 function when(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleString() : "—";
@@ -135,6 +147,7 @@ export function ObjectDetail() {
           { id: "machine" as Tab, label: "Machine" },
           { id: "software" as Tab, label: "Software" },
           { id: "users" as Tab, label: "Local users" },
+          { id: "files" as Tab, label: "Files" },
           { id: "activity" as Tab, label: "Activity" },
           { id: "logs" as Tab, label: "Logs" },
         ]
@@ -322,6 +335,12 @@ export function ObjectDetail() {
         (tab === "machine" || tab === "software" || tab === "users" || tab === "activity") && (
           <ComputerTabs dn={dn} tab={tab} />
         )}
+
+      {isComputer && tab === "files" && (
+        <FilesTab
+          hostname={String(object.dNSHostName ?? object.cn ?? object.name ?? "")}
+        />
+      )}
 
       {isComputer && tab === "logs" && <LogsTab dn={dn} />}
 
@@ -1106,4 +1125,116 @@ function LocalUserDialog({
       </Field>
     </Modal>
   );
+}
+
+/** What is on the machine's own disk, read through its agent.
+ *
+ * Names, sizes and times; the console never asks for a file's contents. The
+ * same listing the share dialog browses with, with the files shown. */
+function FilesTab({ hostname }: { hostname: string }) {
+  const [listing, setListing] = useState<DirectoryListing | null>(null);
+  const [path, setPath] = useState("/");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let current = true;
+    setLoading(true);
+    setError(null);
+    api.servers
+      .browse(hostname, path, false, true)
+      .then((result) => current && setListing(result))
+      .catch((err) => current && setError(err instanceof ApiError ? err.message : String(err)))
+      .finally(() => current && setLoading(false));
+    return () => {
+      current = false;
+    };
+  }, [hostname, path]);
+
+  return (
+    <>
+      <div className="page-header">
+        <h3 className="section-title">Files on {hostname}</h3>
+        <span className="spacer" />
+        {listing?.parent !== undefined && listing?.parent !== null && path !== "/" && (
+          <button type="button" className="ghost" onClick={() => setPath(listing.parent as string)}>
+            <ChevronUp size={15} aria-hidden="true" />
+            Up
+          </button>
+        )}
+        <button type="button" className="ghost" onClick={() => setPath("/")}>
+          Top
+        </button>
+      </div>
+
+      <p className="mono muted">{path}</p>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col" style={{ width: "140px" }}>
+              Size
+            </th>
+            <th scope="col" style={{ width: "200px" }}>
+              Changed
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {(listing?.entries ?? []).map((entry) => (
+            <tr
+              key={entry.path}
+              onClick={() => entry.directory && setPath(entry.path)}
+              style={entry.directory ? { cursor: "pointer" } : undefined}
+            >
+              <td>
+                {entry.directory ? (
+                  <Folder size={15} aria-hidden="true" />
+                ) : (
+                  <FileText size={15} aria-hidden="true" />
+                )}
+                {entry.name}
+              </td>
+              <td className="mono">{entry.directory ? "—" : size(entry.size ?? 0)}</td>
+              <td>{entry.modified ? new Date(entry.modified).toLocaleString() : "—"}</td>
+            </tr>
+          ))}
+          {loading ? (
+            <LoadingRow colSpan={3} />
+          ) : (
+            (listing?.entries ?? []).length === 0 && (
+              <tr>
+                <td colSpan={3} className="empty">
+                  Nothing in this directory.
+                </td>
+              </tr>
+            )
+          )}
+        </tbody>
+      </table>
+
+      {listing?.truncated && (
+        <p className="muted">Only the first 500 entries are listed.</p>
+      )}
+    </>
+  );
+}
+
+/** A file size somebody reads rather than counts. */
+function size(bytes: number): string {
+  const units = ["B", "kB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
 }

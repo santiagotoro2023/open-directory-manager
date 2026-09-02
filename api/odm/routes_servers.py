@@ -303,18 +303,17 @@ async def browse_computer(
     node: Annotated[str, Query(min_length=1, max_length=253)],
     path: Annotated[str, Query(max_length=1024, pattern=r"^(/[^\x00]*)?$")] = "/",
     make: Annotated[bool, Query()] = False,
+    files: Annotated[bool, Query()] = False,
     authz: Authz = Depends(authorization),
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict[str, Any]:
-    """List the directories under a path on one machine.
+    """List what is under a path on one machine.
 
-    Choosing where a share lives meant typing a path and finding out whether
-    it existed when the share failed to come up. The agent answers this in
-    about a second, so the console can browse the server instead.
-
-    Only directory names cross the wire, never file contents, and the caller
-    needs the same right as any other change to that machine.
+    Directories only by default, which is what choosing a location needs; with
+    files, which is what reading a machine's disk needs. Names, sizes and
+    times cross the wire, never contents, and the caller needs the same right
+    as any other change to that machine.
     """
     # Named by host name here, because that is what the share dialog has. The
     # right is still checked against the machine's own object.
@@ -331,7 +330,7 @@ async def browse_computer(
             pool,
             node_fqdn=row["hostname"],
             kind="make-directory" if make else "browse",
-            payload={"path": path or "/"},
+            payload={"path": path or "/", "files": files},
             requested_by=session.principal,
         )
     except tasks.TaskFailed as exc:

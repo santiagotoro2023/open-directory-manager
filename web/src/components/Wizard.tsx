@@ -44,7 +44,13 @@ export function Wizard({
 }) {
   const [index, setIndex] = useState(0);
   const [flat, setFlat] = useState(false);
+  const [stale, setStale] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
+
+  // A message about a value stops being true the moment somebody changes one.
+  // Leaving it up while the field it names is being corrected reads as a
+  // second, different failure; it comes back if the next attempt fails too.
+  useEffect(() => setStale(false), [error]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
@@ -77,7 +83,7 @@ export function Wizard({
           </button>
         </header>
 
-        <form onSubmit={submit}>
+        <form onSubmit={submit} onInput={() => setStale(true)}>
           <div className="wizard-body">
             {!flat && (
               <ol className="wizard-rail" aria-label="Steps">
@@ -118,7 +124,7 @@ export function Wizard({
             </div>
           </div>
 
-          {error && (
+          {error && !stale && (
             <p className="alert" role="alert">
               {error}
             </p>

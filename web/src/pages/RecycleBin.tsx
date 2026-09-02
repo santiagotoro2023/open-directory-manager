@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type DeletedObject } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
@@ -15,6 +16,7 @@ export function RecycleBin() {
   );
   const [container, setContainer] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -25,6 +27,8 @@ export function RecycleBin() {
       setRetention(result.retention_days);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, [query, includeRestored]);
 
@@ -147,12 +151,16 @@ export function RecycleBin() {
               </td>
             </tr>
           ))}
-          {items.length === 0 && (
+          {loading ? (
+            <LoadingRow colSpan={6} />
+          ) : (
+            items.length === 0 && (
             <tr>
               <td colSpan={6} className="muted">
                 Nothing in the recycle bin.
               </td>
             </tr>
+          )
           )}
         </tbody>
       </table>

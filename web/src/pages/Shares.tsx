@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type FileShare, type ShareAccess, type ShareEntry } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { useContextMenu } from "../components/ContextMenu";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -25,8 +26,11 @@ export function Shares() {
   const [shares, setShares] = useState<FileShare[]>([]);
   const [open, setOpen] = useState<FileShare | null>(null);
   const [creating, setCreating] = useState(false);
-  const [removing, setRemoving] = useState<FileShare | null>(null);
+  const [removing, setRemoving] = useState<{ share: FileShare; contents: boolean } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const { bind, menu } = useContextMenu();
 
   const load = useCallback(async () => {
@@ -35,6 +39,8 @@ export function Shares() {
       setShares((await api.shares.list()).shares);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -95,7 +101,12 @@ export function Shares() {
                 {
                   label: "Stop sharing",
                   danger: true,
-                  onSelect: () => setRemoving(share),
+                  onSelect: () => setRemoving({ share, contents: false }),
+                },
+                {
+                  label: "Delete the directory…",
+                  danger: true,
+                  onSelect: () => setRemoving({ share, contents: true }),
                 },
               ])}
             >
@@ -115,12 +126,16 @@ export function Shares() {
               </td>
             </tr>
           ))}
-          {shares.length === 0 && (
+          {loading ? (
+            <LoadingRow colSpan={5} />
+          ) : (
+            shares.length === 0 && (
             <tr>
               <td colSpan={5} className="empty">
                 No shares yet. A server needs the file-server role before it can carry one.
               </td>
             </tr>
+          )
           )}
         </tbody>
       </table>
@@ -150,19 +165,34 @@ export function Shares() {
 
       {removing && (
         <Modal
-          title={`Stop sharing ${removing.name}?`}
-          submitLabel="Stop sharing"
+          title={
+            removing.contents
+              ? `Delete ${removing.share.name} and its directory?`
+              : `Stop sharing ${removing.share.name}?`
+          }
+          submitLabel={removing.contents ? "Delete everything" : "Stop sharing"}
           onClose={() => setRemoving(null)}
           onSubmit={async () => {
-            await api.shares.remove(removing.id).catch(() => undefined);
+            await api.shares.remove(removing.share.id, removing.contents).catch(() => undefined);
             setRemoving(null);
             void load();
           }}
         >
-          <p>
-            {removing.unc} stops being reachable. The directory {removing.path} and everything in it
-            stays on {removing.node_fqdn}.
-          </p>
+          {removing.contents ? (
+            <>
+              <p>
+                {removing.share.unc} stops being reachable, and{" "}
+                <strong>{removing.share.path}</strong> and everything in it is deleted from{" "}
+                {removing.share.node_fqdn}.
+              </p>
+              <p className="muted">Files deleted this way are not in Deleted Objects.</p>
+            </>
+          ) : (
+            <p>
+              {removing.share.unc} stops being reachable. The directory {removing.share.path} and
+              everything in it stays on {removing.share.node_fqdn}.
+            </p>
+          )}
         </Modal>
       )}
     </main>

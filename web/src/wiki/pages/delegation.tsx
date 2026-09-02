@@ -70,6 +70,43 @@ export function Content() {
       </Quickstart>
 
       <Details>
+        <Section title="Password policy">
+          <p>
+            The domain&rsquo;s password rules live on this page, under{" "}
+            <strong>Password policy</strong>: length, complexity, history, minimum and maximum age,
+            and lockout. They are enforced by the directory on every password change, however it is
+            made.
+          </p>
+          <Reference
+            headers={["Setting", "Recommended", "Notes"]}
+            rows={[
+              ["Minimum length", "12", "Longer is the single most effective rule."],
+              [
+                "Complexity",
+                "On",
+                "Three of upper case, lower case, digits and symbols, and not the account name.",
+              ],
+              ["History", "10", "How many previous passwords cannot be reused."],
+              ["Minimum age", "1 day", "Stops a history being cycled through in one sitting."],
+              ["Maximum age", "0 (never) or 365", "Rotation on a schedule is no longer advised."],
+              ["Lockout threshold", "10", "Failed attempts before the account locks."],
+              ["Lockout duration", "15 minutes", "0 means it stays locked until an operator clears it."],
+            ]}
+          />
+          <p>
+            A fine-grained policy reaches particular groups, and organizational units resolved to
+            the users beneath them. Active Directory applies these to users and groups, never to a
+            container, so an OU is resolved and re-resolved as people are added. The lowest
+            precedence number wins where somebody is in more than one.
+          </p>
+          <Note>
+            Whether people may change their own password from the console is a policy-object
+            setting rather than a domain rule — Group Policy &rarr; User &rarr; Self-service
+            password.
+          </Note>
+        </Section>
+
+
         <Section title="How access is decided">
           <Steps>
             <li>A member of the domain administrators group holds every permission everywhere.</li>

@@ -19,7 +19,7 @@ from typing import Annotated, Any, Literal
 import asyncpg
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import audit, db, directory, objects, policy_schema
 from .config import Settings, get_settings
@@ -470,9 +470,21 @@ class PasswordRequest(BaseModel):
 
 class PhotoRequest(BaseModel):
     dn: Dn
-    # Base64, or empty to clear it. Active Directory keeps thumbnailPhoto
-    # small — a picture, not a portrait session.
+    # Base64, or empty to clear it. thumbnailPhoto is defined in the Active
+    # Directory schema with an upper bound of 100 kB, so a picture over it is
+    # refused by the directory itself — with a message about a constraint
+    # rather than about a picture. It is measured decoded, here, where the
+    # limit can be said in the terms somebody chose the file in.
     photo: Annotated[str, Field(max_length=200_000)] = ""
+
+    @field_validator("photo")
+    @classmethod
+    def _within_the_schema(cls, value: str) -> str:
+        if len(value) * 3 // 4 > 100_000:
+            raise ValueError(
+                "the picture must be under 100 kB; the console stores one at 256×256"
+            )
+        return value
 
 
 @router.post("/user/photo", status_code=204)

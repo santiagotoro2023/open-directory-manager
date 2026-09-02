@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type RbacAssignment, type RbacRole } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
+import { PasswordPolicy } from "../components/PasswordPolicy";
 import { Field, Modal } from "../components/Modal";
 import Select from "../components/Select"
 
-type Tab = "assignments" | "roles";
+type Tab = "assignments" | "roles" | "passwords";
 
 export function Delegation() {
   const [tab, setTab] = useState<Tab>("assignments");
@@ -15,6 +17,7 @@ export function Delegation() {
   const [dialog, setDialog] = useState<"assign" | "role" | null>(null);
   const [openRole, setOpenRole] = useState<RbacRole | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setError(null);
@@ -29,6 +32,8 @@ export function Delegation() {
       setPermissions(permissionList.permissions);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -51,9 +56,11 @@ export function Delegation() {
       <div className="page-header">
         <h1>Delegation</h1>
         <span className="spacer" />
+        {/* The password tab brings its own controls. */}
         <button
           type="button"
           className="primary"
+          hidden={tab === "passwords"}
           onClick={() => setDialog(tab === "roles" ? "role" : "assign")}
         >
           <Plus size={15} aria-hidden="true" />
@@ -62,7 +69,9 @@ export function Delegation() {
       </div>
 
       <InfoPanel page="delegation">
-        Who may do what, and where. A role is a set of permissions; an assignment gives somebody that role over one part of the tree.
+        Who may do what, and where. A role is a set of permissions; an assignment gives somebody
+        that role over one part of the tree. The domain&rsquo;s password rules are here too, under
+        Password policy.
       </InfoPanel>
       <p className="muted">
         A role holds permissions. An assignment grants a role to a user or group at an
@@ -70,7 +79,7 @@ export function Delegation() {
       </p>
 
       <nav className="tabs" aria-label="Delegation views">
-        {(["assignments", "roles"] as Tab[]).map((current) => (
+        {(["assignments", "roles", "passwords"] as Tab[]).map((current) => (
           <button
             key={current}
             type="button"
@@ -78,7 +87,11 @@ export function Delegation() {
             aria-current={tab === current ? "true" : undefined}
             onClick={() => setTab(current)}
           >
-            {current === "assignments" ? "Assignments" : "Roles"}
+            {current === "assignments"
+              ? "Assignments"
+              : current === "roles"
+                ? "Roles"
+                : "Password policy"}
           </button>
         ))}
       </nav>
@@ -124,12 +137,16 @@ export function Delegation() {
                 </td>
               </tr>
             ))}
-            {assignments.length === 0 && (
+            {loading ? (
+              <LoadingRow colSpan={5} />
+            ) : (
+              assignments.length === 0 && (
               <tr>
                 <td colSpan={5} className="empty">
                   Nothing delegated. Only members of the domain administrators group can sign in.
                 </td>
               </tr>
+            )
             )}
           </tbody>
         </table>
@@ -182,6 +199,8 @@ export function Delegation() {
           </tbody>
         </table>
       )}
+
+      {tab === "passwords" && <PasswordPolicy />}
 
       {openRole && (
         <Modal

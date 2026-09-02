@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError, api, type DirectoryObject } from "../api";
 import { FileInput } from "./FileInput";
 import { Field, Modal } from "./Modal";
+import { PhotoCropper } from "./PhotoCropper";
 import { ContainerPicker } from "./Picker";
 
 const UF_ACCOUNTDISABLE = 0x0002;
@@ -85,20 +86,21 @@ export function PhotoDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [chosen, setChosen] = useState<File | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  const [removing, setRemoving] = useState(false);
   const { busy, error, run } = useAction();
 
   return (
     <Modal
       title="Picture"
-      submitLabel={photo === "" ? "Remove" : "Save"}
+      submitLabel={removing ? "Remove" : "Save"}
       busy={busy}
       error={error}
       onClose={onClose}
       onSubmit={() =>
         void run(async () => {
-          await api.directory.setPhoto(dn, photo ?? "");
+          await api.directory.setPhoto(dn, removing ? "" : (photo ?? ""));
           onSaved();
           onClose();
         })
@@ -110,30 +112,26 @@ export function PhotoDialog({
       >
         <FileInput
           accept="image/jpeg,image/png"
-          placeholder={name || "No picture chosen"}
-          onChoose={async (file) => {
-            const buffer = new Uint8Array(await file.arrayBuffer());
-            let binary = "";
-            for (const byte of buffer) binary += String.fromCharCode(byte);
-            setPhoto(btoa(binary));
-            setName(file.name);
+          placeholder={chosen?.name ?? "No picture chosen"}
+          onChoose={(file) => {
+            setChosen(file);
+            setRemoving(false);
           }}
         />
       </Field>
-      {photo && (
-        <img
-          src={`data:image/jpeg;base64,${photo}`}
-          alt=""
-          style={{ maxWidth: "120px", borderRadius: "8px", marginTop: "4px" }}
-        />
-      )}
+
+      {chosen && !removing && <PhotoCropper file={chosen} onCropped={setPhoto} />}
+
+      {removing && <p className="muted">The picture will be removed when this is saved.</p>}
+
       <div className="actions-row">
         <button
           type="button"
           className="ghost"
           onClick={() => {
-            setPhoto("");
-            setName("Removing the picture");
+            setRemoving(true);
+            setChosen(null);
+            setPhoto(null);
           }}
         >
           Remove the picture

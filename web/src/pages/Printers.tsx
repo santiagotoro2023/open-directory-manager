@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Printer as PrinterIcon, Search } from "lucide-react";
 import { ApiError, api, type Printer } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
@@ -21,6 +22,7 @@ export function Printers() {
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<Printer | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const { bind, menu } = useContextMenu();
 
   const load = useCallback(async () => {
@@ -29,6 +31,8 @@ export function Printers() {
       setPrinters((await api.printers.list()).printers);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -100,12 +104,16 @@ export function Printers() {
               </td>
             </tr>
           ))}
-          {printers.length === 0 && (
+          {loading ? (
+            <LoadingRow colSpan={5} />
+          ) : (
+            printers.length === 0 && (
             <tr>
               <td colSpan={5} className="empty">
                 No printers yet. A server needs the print-server role before it can carry one.
               </td>
             </tr>
+          )
           )}
         </tbody>
       </table>

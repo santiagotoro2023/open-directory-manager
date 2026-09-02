@@ -1,4 +1,4 @@
-import { useEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -23,6 +23,12 @@ export function Modal({
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLDivElement>(null);
+  const [stale, setStale] = useState(false);
+
+  // A message about a value stops being true the moment somebody changes one.
+  // Leaving it up while the field it names is being corrected reads as a
+  // second, different failure; it comes back if the next attempt fails too.
+  useEffect(() => setStale(false), [error]);
 
   useEffect(() => {
     dialog.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
@@ -55,9 +61,9 @@ export function Modal({
             <X size={16} aria-hidden="true" />
           </button>
         </header>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} onInput={() => setStale(true)}>
           <div className="modal-body">{children}</div>
-          {error && (
+          {error && !stale && (
             <p className="alert" role="alert">
               {error}
             </p>

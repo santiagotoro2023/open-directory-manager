@@ -207,8 +207,13 @@ async def delete_share(
     id: Annotated[str, Query(min_length=36, max_length=36)],
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
+    contents: Annotated[bool, Query()] = False,
 ) -> None:
-    """Stop sharing the directory. Its contents are left where they are."""
+    """Stop sharing the directory, and delete it too when asked.
+
+    Two different intentions: withdrawing a share, and being rid of what it
+    held. The directory stays unless contents says otherwise.
+    """
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM file_share WHERE id = $1::uuid", id)
         if row is None:
@@ -217,7 +222,7 @@ async def delete_share(
             conn,
             node_fqdn=row["node_fqdn"],
             kind="share-remove",
-            payload={"name": row["name"]},
+            payload={"name": row["name"], "path": row["path"], "contents": contents},
             subject=str(row["id"]),
             requested_by=session.principal,
         )
@@ -232,5 +237,9 @@ async def delete_share(
             object_type="share",
             object_dn=f"//{row['node_fqdn']}/{row['name']}",
             before=_json(row),
-            detail="the directory and its contents are left in place",
+            detail=(
+                f"{row['path']} and everything in it was deleted"
+                if contents
+                else "the directory and its contents are left in place"
+            ),
         )

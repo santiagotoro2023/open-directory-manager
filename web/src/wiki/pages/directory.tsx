@@ -3,6 +3,7 @@ import {
   Details,
   Example,
   Note,
+  PageLink,
   Quickstart,
   Reference,
   Section,
@@ -178,6 +179,24 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="What a computer's page holds">
+          <Reference
+            headers={["Tab", "Shows"]}
+            rows={[
+              ["Machine", "What the agent last reported: addresses, disks, uptime, sessions."],
+              ["Software", "Installed packages, pending updates, and the actions to update them."],
+              ["Local users", "Accounts that exist on that machine only, and the shells they use."],
+              [
+                "Files",
+                "The machine's own file system, read through its agent — names, sizes and times. Contents are never read.",
+              ],
+              ["Activity", "Recent work the agent did, and the tasks queued for it."],
+              ["Logs", "Journal entries the agent collected."],
+              ["Policy", "The effective policy for that machine, and where each setting came from."],
+            ]}
+          />
+        </Section>
+
         <Section title="Editable attributes">
           <p>
             The detail panel offers exactly the attributes the control plane accepts for that object
@@ -249,6 +268,19 @@ export function Content() {
             Moving an object between organizational units changes which policy applies to it, and
             which delegated administrators can manage it.
           </Note>
+        </Section>
+
+        <Section title="Password rules">
+          <p>
+            The domain&rsquo;s own password policy — length, complexity, history, ages and lockout —
+            is under <strong>Delegation</strong> &rarr; <strong>Password policy</strong>, with the
+            fine-grained policies that reach particular groups. Whether people may change their own
+            password from the console is a policy setting, under{" "}
+            <PageLink page="policy-settings" anchor="self-service-password">
+              Self-service password
+            </PageLink>
+            .
+          </p>
         </Section>
 
         <Section title="Deleting">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { ApiError, api, type RdCollection, type RdSession } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { ChoiceList } from "../components/ChoiceList";
 import { Field, Modal } from "../components/Modal";
@@ -33,6 +34,7 @@ export function RemoteDesktop() {
   const [editing, setEditing] = useState<RdCollection | "new" | null>(null);
   const [connectFor, setConnectFor] = useState<RdCollection | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -44,6 +46,8 @@ export function RemoteDesktop() {
       if (tab === "sessions") setSessions((await api.rd.sessions()).sessions);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, [tab]);
 
@@ -142,12 +146,16 @@ export function RemoteDesktop() {
                 </td>
               </tr>
             ))}
-            {collections.length === 0 && (
+            {loading ? (
+              <LoadingRow colSpan={6} />
+            ) : (
+              collections.length === 0 && (
               <tr>
                 <td colSpan={6} className="empty">
                   No collections yet. A collection is what people connect to.
                 </td>
               </tr>
+            )
             )}
           </tbody>
         </table>

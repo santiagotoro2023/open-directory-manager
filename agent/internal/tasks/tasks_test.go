@@ -115,6 +115,56 @@ func TestRemovingAShareLeavesTheOthers(t *testing.T) {
 	}
 }
 
+func TestRemovingAShareKeepsItsDirectoryUnlessAsked(t *testing.T) {
+	env, _ := testEnv(t)
+	Run(context.Background(), Task{ID: "1", Kind: "share-apply", Payload: share("finance")}, env)
+	path := env.Path("/srv/shares/finance")
+	if err := os.WriteFile(filepath.Join(path, "ledger.txt"), []byte("kept"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Run(context.Background(), Task{
+		ID: "2", Kind: "share-remove", Payload: map[string]any{"name": "finance"},
+	}, env)
+	if !result.OK {
+		t.Fatalf("remove failed: %s", result.Output)
+	}
+	if _, err := os.Stat(filepath.Join(path, "ledger.txt")); err != nil {
+		t.Errorf("the contents went with the share: %v", err)
+	}
+}
+
+func TestRemovingAShareWithItsContentsDeletesTheDirectory(t *testing.T) {
+	env, _ := testEnv(t)
+	Run(context.Background(), Task{ID: "1", Kind: "share-apply", Payload: share("finance")}, env)
+	path := env.Path("/srv/shares/finance")
+
+	result := Run(context.Background(), Task{ID: "2", Kind: "share-remove", Payload: map[string]any{
+		"name": "finance", "path": "/srv/shares/finance", "contents": true,
+	}}, env)
+	if !result.OK {
+		t.Fatalf("remove failed: %s", result.Output)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the directory is still there: %v", err)
+	}
+}
+
+// The payload is not a reason to delete whatever it names: a task asking for
+// a system path is refused on the machine, not only in the control plane.
+func TestAShareRemoveWillNotDeleteASystemPath(t *testing.T) {
+	env, _ := testEnv(t)
+	result := Run(context.Background(), Task{ID: "1", Kind: "share-remove", Payload: map[string]any{
+		"name": "etc", "path": "/etc", "contents": true,
+	}}, env)
+	if result.OK {
+		t.Fatalf("a share-remove deleted %s", "/etc")
+	}
+	if _, err := os.Stat(env.Path("/etc")); err != nil && os.IsNotExist(err) {
+		t.Fatal("/etc was removed")
+	}
+}
+
 func TestSmbConfGainsTheIncludeExactlyOnce(t *testing.T) {
 	env, _ := testEnv(t)
 	Run(context.Background(), Task{ID: "1", Kind: "share-apply", Payload: share("a")}, env)

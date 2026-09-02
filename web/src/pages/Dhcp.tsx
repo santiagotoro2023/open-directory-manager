@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DhcpLease, type DhcpScope } from "../api";
+import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { Wizard } from "../components/Wizard";
@@ -31,6 +32,7 @@ export function Dhcp() {
   const [dialog, setDialog] = useState<"scope" | "reservation" | "edit" | null>(null);
   const [target, setTarget] = useState<DhcpScope | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setError(null);
@@ -43,6 +45,8 @@ export function Dhcp() {
       setScopes((await api.dhcp.scopes()).scopes);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -202,12 +206,16 @@ export function Dhcp() {
                 </td>
               </tr>
             ))}
-            {scopes.length === 0 && (
+            {loading ? (
+              <LoadingRow colSpan={7} />
+            ) : (
+              scopes.length === 0 && (
               <tr>
                 <td colSpan={7} className="muted">
                   No scopes configured.
                 </td>
               </tr>
+            )
             )}
           </tbody>
         </table>
@@ -240,12 +248,16 @@ export function Dhcp() {
                 <td>{new Date((lease.cltt + lease["valid-lft"]) * 1000).toLocaleString()}</td>
               </tr>
             ))}
-            {leases.length === 0 && (
+            {loading ? (
+              <LoadingRow colSpan={4} />
+            ) : (
+              leases.length === 0 && (
               <tr>
                 <td colSpan={4} className="muted">
                   No active leases.
                 </td>
               </tr>
+            )
             )}
           </tbody>
         </table>

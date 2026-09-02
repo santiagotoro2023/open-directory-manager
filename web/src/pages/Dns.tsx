@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Globe, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DnsRecord, type DnsZone } from "../api";
+import { Loading, LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
@@ -19,6 +20,8 @@ export function Dns() {
   const [available, setAvailable] = useState(true);
   const [dialog, setDialog] = useState<"zone" | "record" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingRecords, setLoadingRecords] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const { bind, menu } = useContextMenu();
 
@@ -33,17 +36,22 @@ export function Dns() {
       setSelected((current) => current || result.zones[0]?.name || "");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   const loadRecords = useCallback(async () => {
     if (!selected) return;
     setError(null);
+    setLoadingRecords(true);
     try {
       setRecords((await api.dns.zone(selected)).records);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
       setRecords([]);
+    } finally {
+      setLoadingRecords(false);
     }
   }, [selected]);
 
@@ -109,7 +117,13 @@ export function Dns() {
             </button>
           </li>
         ))}
-        {zones.length === 0 && <li className="empty">No zones.</li>}
+        {loading ? (
+          <li className="empty">
+            <Loading />
+          </li>
+        ) : (
+          zones.length === 0 && <li className="empty">No zones.</li>
+        )}
       </ul>
     </>
   );
@@ -189,12 +203,16 @@ export function Dns() {
                 </td>
               </tr>
             ))}
-            {records.length === 0 && (
+            {loadingRecords ? (
+              <LoadingRow colSpan={5} />
+            ) : (
+              records.length === 0 && (
               <tr>
                 <td colSpan={5} className="empty">
                   No records in this zone.
                 </td>
               </tr>
+            )
             )}
           </tbody>
         </table>

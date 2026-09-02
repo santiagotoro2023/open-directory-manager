@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiError, api, type NewUser, type ObjectType } from "../api";
+import { InfoPanel } from "./DocsLink";
 import { Field, Modal } from "./Modal";
 import { FileInput } from "./FileInput";
 import Select from "./Select"
@@ -157,7 +158,10 @@ export function CreateDialog({
               ))}
             </Select>
           </Field>
-          <Field label="Scope" hint="Where the group can be used across the forest">
+          <Field
+            label="Scope"
+            hint="Where the group can be used, and where its members may come from. Fixed once the group exists."
+          >
             <Select value={groupScope} onChange={(e) => setGroupScope(e.target.value)}>
               {GROUP_SCOPES.map(([value, label]) => (
                 <option key={value} value={value}>
@@ -169,6 +173,10 @@ export function CreateDialog({
           <Field label="Description">
             <input value={form.description ?? ""} onChange={set("description")} />
           </Field>
+          <InfoPanel page="directory" anchor="group-scope">
+            Global holds members from this domain and can be used anywhere in the forest; domain
+            local holds members from anywhere and is used in this domain; universal does both.
+          </InfoPanel>
         </>
       )}
 

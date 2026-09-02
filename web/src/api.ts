@@ -667,7 +667,13 @@ export interface RoleInstance {
 export interface DirectoryListing {
   path: string;
   parent: string | null;
-  entries: { name: string; path: string }[];
+  entries: {
+    name: string;
+    path: string;
+    directory?: boolean;
+    size?: number;
+    modified?: string;
+  }[];
   truncated: boolean;
 }
 
@@ -1357,9 +1363,14 @@ export const api = {
 
     /** List the folders under a path on one machine. The agent answers in
         about a second, so this is a dialog rather than a queued job. */
-    browse: (node: string, path: string, make = false) =>
+    browse: (node: string, path: string, make = false, files = false) =>
       request<DirectoryListing>(
-        `/servers/computer/browse${qs({ node, path, make: make ? "true" : undefined })}`,
+        `/servers/computer/browse${qs({
+          node,
+          path,
+          make: make ? "true" : undefined,
+          files: files ? "true" : undefined,
+        })}`,
       ),
 
     action: (dn: string, action: ComputerAction, pkg?: string, localUser?: NewLocalUser) =>
@@ -1377,7 +1388,11 @@ export const api = {
     update: (body: { id: string } & Partial<NewShare>) =>
       request<FileShare>("/shares", { method: "PATCH", body: JSON.stringify(body) }),
 
-    remove: (id: string) => request<void>(`/shares${qs({ id })}`, { method: "DELETE" }),
+    /** Stop sharing. contents deletes the directory on the server as well. */
+    remove: (id: string, contents = false) =>
+      request<void>(`/shares${qs({ id, contents: contents ? "true" : undefined })}`, {
+        method: "DELETE",
+      }),
   },
 
   rbac: {

@@ -494,7 +494,8 @@ const SPECIAL: SpecialSpec[] = [
     half: "Computer",
     help:
       "The greeter, before anybody has signed in: its message, its background, and " +
-      "whether it lists accounts.",
+      "whether it lists accounts. Separate from the desktop background, which belongs " +
+      "to whoever is signed in.",
     doc: "login-screen-and-desktop-background",
   },
   {
@@ -521,7 +522,8 @@ const SPECIAL: SpecialSpec[] = [
     half: "Computer",
     help:
       "What a remote desktop session carries between client and host: clipboard, " +
-      "printers, drives, audio, microphone.",
+      "printers, drives, audio, microphone. Set here and linked where it applies, " +
+      "rather than on a collection.",
     doc: "remote-desktop-session",
   },
   {
@@ -628,9 +630,7 @@ export function SettingsEditor({
           <p className="category-group">
             {half} Configuration
             <span>
-              {half === "Computer"
-                ? "Applies to computers in the linked OU"
-                : "Applies to users in the linked OU"}
+              {half === "Computer" ? "Computers in the linked OU" : "Users in the linked OU"}
             </span>
           </p>
           <ul>
@@ -1131,11 +1131,6 @@ function LoginScreenEditor({
           current && <RemoveSetting onRemove={() => onChange({ ...settings, login_screen: undefined })} />
         }
       />
-      <p className="muted">
-        What a machine shows before anyone signs in. Separate from the desktop background, which
-        belongs to whoever is signed in.
-      </p>
-
       {!current ? (
         <EmptySetting onAdd={() => set({})} />
       ) : (
@@ -1242,9 +1237,8 @@ function AlwaysOnVpnEditor({
         }
       />
       <p className="muted">
-        The machine holds this tunnel up from boot, before anyone signs in, and the person using it
-        cannot turn it off. Each machine needs a peer on the tunnel under Remote Access; the key is
-        delivered to that machine alone.
+        Each machine needs a peer on the tunnel under Remote Access; the key goes to that machine
+        alone.
       </p>
 
       {!current ? (
@@ -1351,10 +1345,7 @@ function LocalAdministratorEditor({
         }
       />
       <p className="muted">
-        A local account on every machine this reaches, with a password the machine chooses and
-        rotates itself. It is the way in when the domain is unreachable, and because every machine
-        picks its own, one recovered from a stolen laptop opens nothing else. Read it under a
-        computer &rarr; Machine; every read is audited.
+        Read the current password under a computer &rarr; Machine. Every read is audited.
       </p>
 
       {!current ? (
@@ -1456,11 +1447,7 @@ function RemoteDesktopSessionEditor({
           current && <RemoveSetting onRemove={() => onChange({ ...settings, remote_desktop_session: undefined })} />
         }
       />
-      <p className="muted">
-        What a session may carry between the client and the host it runs on. This is a rule about
-        machines rather than about a collection, so it is set here and linked where it should apply.
-        Machines that are not session hosts skip it.
-      </p>
+      <p className="muted">Machines that are not session hosts skip it.</p>
 
       {!current ? (
         <EmptySetting onAdd={() => set({})} />
@@ -1523,9 +1510,9 @@ function SelfServiceEditor({
         }
       />
       <p className="muted">
-        Whether these people may change their own password from the console. Not configured anywhere
-        means yes — changing your own password is ordinary, and a policy object is how it is taken
-        away. The current password is always required, whatever this says.
+        Checked before the directory is asked, in addition to the domain&rsquo;s own password
+        policy under Delegation &rarr; Password policy. Changing a password always needs the
+        current one.
       </p>
 
       {!current ? (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiError, api, type VpnPeer, type VpnTunnel } from "../api";
+import { Loading } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { Wizard } from "../components/Wizard";
@@ -20,6 +21,7 @@ export function Vpn() {
   const [selected, setSelected] = useState<string>("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setError(null);
@@ -29,6 +31,8 @@ export function Vpn() {
       setSelected((current) => current || result.tunnels[0]?.id || "");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -59,7 +63,13 @@ export function Vpn() {
             </button>
           </li>
         ))}
-        {tunnels.length === 0 && <li className="empty">No tunnels yet.</li>}
+        {loading ? (
+          <li className="empty">
+            <Loading />
+          </li>
+        ) : (
+          tunnels.length === 0 && <li className="empty">No tunnels yet.</li>
+        )}
       </ul>
     </>
   );

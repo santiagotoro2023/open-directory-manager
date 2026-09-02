@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"odm.example.org/agent/internal/apply"
 	"odm.example.org/agent/internal/inventory"
@@ -44,19 +45,45 @@ func browse(_ context.Context, payload map[string]any, env apply.Env) (string, e
 	}
 
 	type entry struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
+		Name      string `json:"name"`
+		Path      string `json:"path"`
+		Directory bool   `json:"directory"`
+		Size      int64  `json:"size,omitempty"`
+		Modified  string `json:"modified,omitempty"`
 	}
-	// Directories only. The console is choosing a folder, and a list of every
-	// file on a server is both useless here and more than it needs to know.
+	// Directories only unless the caller asks for the files as well: choosing
+	// where a share lives is a folder question, and looking at what is on a
+	// machine is not. Names, sizes and times either way — never contents.
+	withFiles := boolean(payload["files"], false)
 	entries := make([]entry, 0, len(found))
 	for _, item := range found {
-		if !item.IsDir() || strings.HasPrefix(item.Name(), ".") {
+		if strings.HasPrefix(item.Name(), ".") {
 			continue
 		}
-		entries = append(entries, entry{Name: item.Name(), Path: filepath.Join(path, item.Name())})
+		if !item.IsDir() && !withFiles {
+			continue
+		}
+		record := entry{
+			Name:      item.Name(),
+			Path:      filepath.Join(path, item.Name()),
+			Directory: item.IsDir(),
+		}
+		if info, err := item.Info(); err == nil {
+			if !item.IsDir() {
+				record.Size = info.Size()
+			}
+			record.Modified = info.ModTime().UTC().Format(time.RFC3339)
+		}
+		entries = append(entries, record)
 	}
-	sort.Slice(entries, func(a, b int) bool { return entries[a].Name < entries[b].Name })
+	// Directories first, then files, each by name: the order somebody reading
+	// a folder expects.
+	sort.Slice(entries, func(a, b int) bool {
+		if entries[a].Directory != entries[b].Directory {
+			return entries[a].Directory
+		}
+		return entries[a].Name < entries[b].Name
+	})
 	truncated := len(entries) > maxEntries
 	if truncated {
 		entries = entries[:maxEntries]

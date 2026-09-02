@@ -694,7 +694,24 @@ func removeShare(ctx context.Context, payload map[string]any, env apply.Env) (st
 	if err := writeShares(ctx, Share{Name: name}, env, true); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s is no longer shared; its contents are untouched", name), nil
+	if !boolean(payload["contents"], false) {
+		return fmt.Sprintf("%s is no longer shared; its contents are untouched", name), nil
+	}
+
+	// The directory too. Checked here as well as in the control plane: this
+	// process is root on the machine, and a path arriving over the wire does
+	// not get to be trusted because something upstream said it was fine.
+	path := str(payload["path"])
+	if !safePath.MatchString(path) || strings.Contains(path, "..") {
+		return "", fmt.Errorf("invalid share path %q", path)
+	}
+	if err := refuseSystemPath(path); err != nil {
+		return "", err
+	}
+	if err := os.RemoveAll(env.Path(path)); err != nil {
+		return "", fmt.Errorf("deleting %s: %w", path, err)
+	}
+	return fmt.Sprintf("%s is no longer shared, and %s was deleted", name, path), nil
 }
 
 // writeShares rewrites the managed include with this share added or removed,
