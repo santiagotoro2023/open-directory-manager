@@ -72,19 +72,67 @@ cached_login = yes
 		return []policy.Result{policy.Fail(ccacheSetting, err)}
 	}
 
+	results := []policy.Result{}
+	if removed := removeWinbindAuth(ctx, env); removed != nil {
+		results = append(results, *removed)
+	}
+
 	if !changed {
-		return nil
+		return results
 	}
 	// SSSD decides where it puts a ticket when it opens a session, so it has
 	// to read the change before the next one.
-	results := []policy.Result{runAll(ctx, env, ccacheSetting,
-		[]string{"systemctl", "restart", "sssd"})}
+	results = append(results, runAll(ctx, env, ccacheSetting,
+		[]string{"systemctl", "restart", "sssd"}))
 	return append(results, policy.Result{
 		Setting: ccacheSetting,
 		Status:  "applied",
 		Reason: "the ticket now goes where a cifs mount can read it; " +
 			"anybody signed in has to sign in again for their drives",
 	})
+}
+
+// removeWinbindAuth takes pam_winbind out of the authentication stack on a
+// machine where SSSD is the one doing the work.
+//
+// Debian's stack runs pam_unix, then pam_winbind, then pam_sss, and each
+// success jumps over the rest. So on a joined desktop pam_winbind answers and
+// pam_sss never runs — the account works, the session starts, and there is no
+// Kerberos ticket anywhere, because that module was never asked for one and
+// SSSD, which was configured to write one, never saw the login. Every drive
+// map then fails with "Required key not available".
+//
+// SSSD is this client's identity and authentication provider; winbind is not
+// needed on it at all, and removing the module is what takes it out of the
+// stack cleanly — its own removal script rewrites common-auth.
+func removeWinbindAuth(ctx context.Context, env Env) *policy.Result {
+	raw, err := os.ReadFile(env.Path("/etc/pam.d/common-auth"))
+	if err != nil {
+		return nil
+	}
+	stack := string(raw)
+	winbind := strings.Index(stack, "pam_winbind.so")
+	sss := strings.Index(stack, "pam_sss.so")
+	// Only where SSSD is there to take over, and only where winbind is
+	// actually in front of it.
+	if winbind < 0 || sss < 0 || winbind > sss {
+		return nil
+	}
+	out, err := env.Run.Run(ctx, "apt-get", "remove", "-y", "libpam-winbind")
+	if err != nil {
+		return &policy.Result{
+			Setting: ccacheSetting,
+			Status:  "failed",
+			Reason: fmt.Sprintf("pam_winbind answers before pam_sss, so no session gets a "+
+				"Kerberos ticket, and removing it failed: %v: %s", err, lastLine(out)),
+		}
+	}
+	return &policy.Result{
+		Setting: ccacheSetting,
+		Status:  "applied",
+		Reason: "pam_winbind answered before pam_sss and asked the domain for no ticket; " +
+			"removed, so SSSD authenticates and writes one",
+	}
 }
 
 // addSetting puts one line into a file this agent's own join wrote, under the

@@ -66,7 +66,13 @@ install -m 0755 "$REPO/deploy/odm-apply-console-certificate" "$ROOT/usr/lib/odm/
 # Kerberos ticket for the mount and every one of them fails with
 # "Send error in SessSetup = -2" — an error that names neither Kerberos nor
 # the missing package.
-DEPENDS="samba-common-bin, sssd-ad, sssd-tools, krb5-user, libnss-winbind, libpam-winbind, adcli"
+# No winbind. SSSD is the client's identity and authentication provider, and
+# Debian's PAM stack runs pam_winbind before pam_sss with each success jumping
+# over the rest: with both installed, winbind answered the login, asked the
+# domain for no Kerberos ticket, and SSSD — which was configured to write one —
+# never saw it. Every drive map then failed with "Required key not available"
+# on a machine where everything else worked.
+DEPENDS="samba-common-bin, sssd-ad, sssd-tools, krb5-user, adcli"
 DEPENDS="$DEPENDS, cifs-utils, keyutils"
 # smbclient reads the console's certificate out of SYSVOL during the join, so
 # nothing has to be carried to the machine by hand. Without it a join has no

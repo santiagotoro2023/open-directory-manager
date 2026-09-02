@@ -1508,3 +1508,41 @@ func TestAMountSaysWhenThereIsNoTicketAtAll(t *testing.T) {
 		t.Error("a keyring ccache must not be reported as missing")
 	}
 }
+
+// Debian's stack runs pam_unix, then pam_winbind, then pam_sss, and each
+// success jumps over the rest — so on a joined desktop winbind answered the
+// login, asked the domain for no ticket, and SSSD never saw it. The session
+// works and has no credentials, which is every drive map failing with
+// "Required key not available" on a machine where everything else is fine.
+func TestPamWinbindIsTakenOutOfTheWayOfSssd(t *testing.T) {
+	env, runner := testEnv(t)
+	write(t, env, "/etc/pam.d/common-auth", `auth [success=3 default=ignore] pam_unix.so nullok
+auth [success=2 default=ignore] pam_winbind.so krb5_auth krb5_ccache_type=FILE
+auth [success=1 default=ignore] pam_sss.so use_first_pass
+`)
+
+	result := removeWinbindAuth(context.Background(), env)
+	if result == nil || result.Status != "applied" {
+		t.Fatalf("result = %+v", result)
+	}
+	if !runner.ran("apt-get", "remove -y libpam-winbind") {
+		t.Errorf("it was not removed: %v", runner.commands)
+	}
+
+	// A stack where SSSD answers first is left alone, and so is one with no
+	// SSSD at all: this is about getting out of its way, not about winbind.
+	runner.commands = nil
+	write(t, env, "/etc/pam.d/common-auth", `auth [success=2 default=ignore] pam_sss.so
+auth [success=1 default=ignore] pam_winbind.so
+`)
+	if result := removeWinbindAuth(context.Background(), env); result != nil {
+		t.Errorf("a stack that already prefers sssd was changed: %+v", result)
+	}
+	write(t, env, "/etc/pam.d/common-auth", "auth required pam_winbind.so\n")
+	if result := removeWinbindAuth(context.Background(), env); result != nil {
+		t.Errorf("a machine with no sssd was changed: %+v", result)
+	}
+	if len(runner.commands) != 0 {
+		t.Errorf("commands ran: %v", runner.commands)
+	}
+}

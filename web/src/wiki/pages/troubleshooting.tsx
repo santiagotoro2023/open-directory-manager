@@ -363,6 +363,16 @@ export function Content() {
                 </>,
               ],
               [
+                "The session has no ticket at all, on a machine that is joined and online",
+                <>
+                  Debian&rsquo;s <C key="ca">common-auth</C> runs pam_unix, then pam_winbind, then
+                  pam_sss, and each success jumps over the rest &mdash; so pam_winbind answered the
+                  login, asked the domain for no ticket, and SSSD never saw it. The agent removes
+                  <C key="lpw"> libpam-winbind</C> where SSSD is behind it: this client&rsquo;s
+                  identity and authentication are SSSD&rsquo;s, and winbind is not needed on it.
+                </>,
+              ],
+              [
                 '"has no Kerberos ticket in this session"',
                 <>
                   <C key="kl">klist</C> in that session is empty: whichever PAM module
