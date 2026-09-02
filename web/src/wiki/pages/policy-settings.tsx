@@ -146,6 +146,11 @@ export function Content() {
               ["HBAC rules", "principal and service", "Session access through PAM and sshd."],
               ["Trusted certificates", "name", "A trust anchor in the system certificate store."],
               ["Desktop background", "single value", "A locked GNOME background."],
+              [
+                "Roaming profile",
+                "single value",
+                "A home directory on a share, following the person between machines.",
+              ],
               ["Browser policy", "per key", "Managed policy for Chromium, Chrome and Firefox."],
               [
                 "Administrative templates",
@@ -249,13 +254,19 @@ user      root`}</Code>
               [
                 "Login screen message",
                 <>
-                  <C key="a">banner-message-text</C> in the greeter&rsquo;s own dconf database. An
-                  empty message is written as off, so removing one takes it off the screen.
+                  <C key="a">banner-message-text</C> in the greeter&rsquo;s own dconf database, and
+                  in the database Debian&rsquo;s greeter compiles for itself. An empty message is
+                  written as off, so removing one takes it off the screen. It appears once a name
+                  has been chosen, beside the password box.
                 </>,
               ],
               [
                 "Login screen background",
-                "A stylesheet for the greeter: GNOME takes the greeter's image from its theme rather than from a dconf value.",
+                <>
+                  Written, and reported as skipped on GNOME: its greeter takes the background from
+                  its compiled shell theme and ignores the setting. The message and the account
+                  list do apply there.
+                </>,
               ],
               [
                 "Hide the list of accounts",
@@ -386,22 +397,71 @@ user      root`}</Code>
         <Section title="Drive maps">
           <p>
             Shares are mounted with <C>cifs</C> and <C>sec=krb5</C>. No credential is stored on a
-            client; access uses the Kerberos ticket the session already holds.
+            client; the mount uses the Kerberos ticket of the person signing in, which is why it
+            happens when they sign in rather than when the machine boots &mdash; a machine has no
+            ticket, and a mount it starts itself answers <C>No such device</C> on every access.
+          </p>
+          <p>
+            The mount point is shared between everybody on the machine and each of them reaches it
+            with their own credentials. A mapped drive is also added to the file manager&rsquo;s
+            sidebar, where a drive letter would be on Windows, and taken back out when the policy
+            stops naming it.
           </p>
           <Reference
-            headers={["For", "Mechanism"]}
+            headers={["For", "Who gets it"]}
             rows={[
+              ["No principal set", "Everybody who signs in to a machine the policy reaches."],
               [
-                "No principal set",
-                "A systemd .mount plus .automount, mounted on first access rather than at boot.",
+                "A user or %group",
+                "Only when that user, or a member of that group, signs in.",
               ],
-              ["A user or %group", "Mounted only when that user, or a member of that group, signs in."],
             ]}
           />
           <Code>{`name          shared
 unc           //fs01/shared
 mount point   /mnt/shared
 for           %Engineers      (optional)`}</Code>
+        </Section>
+
+        <Section title="Roaming profile">
+          <p>
+            A home directory that follows the person rather than staying on the machine they used.
+            Off unless a policy says otherwise, so a machine outside it keeps ordinary local home
+            directories.
+          </p>
+          <p>
+            It is the same mechanism a remote desktop collection uses for its user profile disks.
+            Point a collection and a policy at the same share and somebody has one profile across
+            every desktop and every session host in the domain.
+          </p>
+          <Reference
+            headers={["Field", "Notes"]}
+            rows={[
+              [
+                "Profile path",
+                <>
+                  <C key="p">//fs01/profiles/%username%</C> &mdash; the placeholder becomes the
+                  person&rsquo;s own name, so one policy serves everybody.
+                </>,
+              ],
+              [
+                "Stored as",
+                "A disk image per person, or a directory on the share.",
+              ],
+              ["Each disk may grow to", "The size the image is made; it takes only what it uses."],
+            ]}
+          />
+          <p>
+            A disk image is the default for the same reason Windows uses one: a desktop expects a
+            real filesystem under its home. On a directory mounted straight over SMB, dconf cannot
+            rename its database into place, so every application that saves a setting fails and the
+            file manager never starts at all.
+          </p>
+          <p>
+            The share has to let these people write, and the machines they sign in to reach it. A
+            profile that cannot be attached leaves that session with a local home and says why in
+            the journal &mdash; it is never the reason somebody cannot sign in.
+          </p>
         </Section>
 
         <Section title="Sudo rules">
@@ -473,9 +533,13 @@ for           %Engineers      (optional)`}</Code>
 
         <Section title="Desktop background">
           <p>
-            Written as a dconf system database with the keys locked, then <C>dconf update</C>. The
-            image must already be present on the client — deploy it with a file entry in the same
-            policy object.
+            Upload the picture and it travels with the policy: the machines the policy reaches
+            receive the file and the setting that points at it. A location can be given instead,
+            for a picture already present on every client.
+          </p>
+          <p>
+            Written as a dconf system database with the keys locked, then <C>dconf update</C>.
+            Unlinking the policy removes both, and the desktop goes back to its own default.
           </p>
         </Section>
 

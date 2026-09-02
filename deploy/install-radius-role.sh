@@ -57,18 +57,34 @@ if getent group winbindd_priv >/dev/null; then
     adduser freerad winbindd_priv >/dev/null 2>&1 || true
 fi
 
-echo "==> Giving FreeRADIUS a server certificate it can read"
-# EAP needs a key, and Debian's default configuration points at the snakeoil
-# pair. That pair is 0640 root:ssl-cert, so a freerad that is not in ssl-cert
-# gets "Failed reading private key file" and FreeRADIUS refuses to start at
-# all — which looks like the whole role failing rather than one permission.
-odm_apt_install ssl-cert
-if [[ ! -s /etc/ssl/private/ssl-cert-snakeoil.key ]]; then
-    make-ssl-cert generate-default-snakeoil --force-overwrite
+echo "==> Giving FreeRADIUS a server certificate of its own"
+# EAP needs a key, and Debian's default configuration points every service on
+# the machine at the same snakeoil pair. Sharing it does not work here: the
+# remote desktop role's xrdp takes that key for its own group, and FreeRADIUS —
+# whatever group it is in — then gets
+#
+#   tls: (TLS) Failed reading private key file "/etc/ssl/private/ssl-cert-snakeoil.key"
+#   tls: (TLS) error:8000000D:system library::Permission denied
+#
+# and refuses to start at all, which reads as the whole role failing rather
+# than as two roles wanting one file. So it gets its own pair, which nothing
+# else touches. Replace it with one from the certificate authority when the
+# supplicants on the network should verify it.
+RADIUS_TLS="$CONF/odm/tls"
+install -d -m 0750 -o freerad -g freerad "$RADIUS_TLS"
+if [[ ! -s "$RADIUS_TLS/server.key" ]]; then
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+        -keyout "$RADIUS_TLS/server.key" -out "$RADIUS_TLS/server.pem" \
+        -subj "/CN=$(hostname -f)" >/dev/null 2>&1
 fi
-if getent group ssl-cert >/dev/null; then
-    adduser freerad ssl-cert >/dev/null 2>&1 || true
-fi
+chown freerad:freerad "$RADIUS_TLS/server.key" "$RADIUS_TLS/server.pem"
+chmod 0640 "$RADIUS_TLS/server.key"
+chmod 0644 "$RADIUS_TLS/server.pem"
+backup "$CONF/mods-available/eap"
+sed -i -E \
+    -e "s#^([[:space:]]*)private_key_file[[:space:]]*=.*#\1private_key_file = $RADIUS_TLS/server.key#" \
+    -e "s#^([[:space:]]*)certificate_file[[:space:]]*=.*#\1certificate_file = $RADIUS_TLS/server.pem#" \
+    "$CONF/mods-available/eap"
 
 echo "==> Writing the ODM configuration"
 install -d -m 0750 -o freerad -g freerad "$CONF/odm"

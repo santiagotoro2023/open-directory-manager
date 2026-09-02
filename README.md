@@ -96,7 +96,8 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 |---|---|
 | Directory | Users, groups, computers and organizational units — create, edit, move, delete, bulk CSV import |
 | Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering, item-level targeting, and export/import as portable JSON |
-| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN, remote desktop session rules, and a local administrator whose password each machine rotates itself |
+| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN, remote desktop session rules, and a local administrator whose password each machine rotates itself. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
+| Roaming profiles | A home directory on a share that follows the person between desktops and session hosts, as a disk image per person or a directory. The same mechanism a remote desktop collection uses, so one profile can serve both |
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
 | DHCP | ISC Kea scopes, reservations, leases, failover pair and dynamic DNS |
@@ -114,7 +115,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Delegation | Roles and permissions scoped to an organizational unit |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them |
 | Operations | Health dashboard on Overview, replication, and domain backups taken by the controller's own agent |
-| Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one |
+| Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one, keeping the security identifier it had |
 | Audit | Every change with actor, outcome and before-and-after state |
 | Clients | One `.deb`: `odm-client-install` for scripts, **Join a Domain** for the desktop, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |
 

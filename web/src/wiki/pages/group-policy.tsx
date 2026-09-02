@@ -152,6 +152,43 @@ export function Content() {
             A policy object can be linked to any number of containers. Removing the last link stops
             it applying anywhere without deleting the settings.
           </p>
+          <p>
+            A setting applies for exactly as long as a policy object says it should. Unlink the
+            object, or take a setting out of it, and the machine takes it back at its next refresh
+            &mdash; the file it wrote, and the things that are not files: a printer queue is
+            removed, a mapped drive is detached and taken out of the file manager, a roaming
+            profile stops being attached, a background and a login banner go back to the
+            desktop&rsquo;s own.
+          </p>
+        </Section>
+
+        <Section title="Which half applies where">
+          <p>
+            Group Policy has two halves, as it does in the Group Policy Management Editor.
+            Computer Configuration applies to the computers in a linked container; User
+            Configuration applies to the users in one. Which half a setting is in decides where the
+            object has to be linked.
+          </p>
+          <Reference
+            headers={["Half", "Examples", "Link it at"]}
+            rows={[
+              [
+                "Computer Configuration",
+                "File deployment, software, startup scripts, logon rights, sudo, firewall, the login screen",
+                "A container holding computer accounts",
+              ],
+              [
+                "User Configuration",
+                "Drive maps, printers, desktop background, roaming profile, logon scripts",
+                "A container holding user accounts",
+              ],
+            ]}
+          />
+          <p>
+            An object with User Configuration settings linked where the computers are reaches
+            nobody, which looks exactly like a policy that does not work. The Links tab of each
+            policy object says which halves it configures and what a link to it will apply to.
+          </p>
         </Section>
 
         <Section title="Default policies">

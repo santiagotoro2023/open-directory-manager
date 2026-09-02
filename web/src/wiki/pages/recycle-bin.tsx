@@ -52,9 +52,16 @@ export function Content() {
         </Section>
 
         <Section title="After a restore">
+          <p>
+            An object comes back with the security identifier it had. Restoring reanimates the
+            directory&rsquo;s own tombstone, so files it owned, access rules that named it and
+            group memberships that survived all still point at the same account.
+          </p>
           <Note>
-            A restored object has a new security identifier. Access rules elsewhere that named the
-            old identifier do not follow it and need re-granting.
+            Where the directory will not reanimate &mdash; past its tombstone lifetime, or an
+            object that was purged from it &mdash; the object is recreated from the snapshot
+            instead and does get a new identifier. The audit entry for the restore says which of
+            the two happened.
           </Note>
           <p>
             Restored accounts come back disabled, because a snapshot carries no password. Set a
