@@ -5,6 +5,7 @@ import * as agent from "./pages/agent";
 import * as architecture from "./pages/architecture";
 import * as audit from "./pages/audit";
 import * as certificates from "./pages/certificates";
+import * as clientEnrolment from "./pages/client-enrolment";
 import * as controllers from "./pages/controllers";
 import * as delegation from "./pages/delegation";
 import * as dhcp from "./pages/dhcp";
@@ -46,6 +47,7 @@ const MODULES = [
   certificates,
   agent,
   domainJoin,
+  clientEnrolment,
   delegation,
   roles,
   servers,

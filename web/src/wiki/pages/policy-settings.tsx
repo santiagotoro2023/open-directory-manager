@@ -543,12 +543,90 @@ for           %Engineers      (optional)`}</Code>
           </p>
         </Section>
 
+        <Section title="Certificate enrolment">
+          <p>
+            The machine asks the domain&rsquo;s certificate authority for a certificate of its own
+            and renews it before it expires. The key is created on the machine and never leaves it;
+            what arrives is the signed certificate. The subject is the identity that asked, so a
+            policy cannot request a certificate for anything other than the machine applying it.
+          </p>
+          <Reference
+            headers={["Field", "Recommended", "Notes"]}
+            rows={[
+              ["Kind", "server", "server for something that is connected to; client for 802.1X."],
+              ["Written to", <C key="a">/etc/ssl/odm</C>, "The certificate and its key, root-owned."],
+              ["Valid for", "365 days", "Longer than a year is refused."],
+              [
+                "Renew with … left",
+                "30 days",
+                "Renewal is attempted on every refresh once inside the window, so a missed day is not an outage.",
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="Printers">
+          <p>
+            A printer handed to the person signing in, from a machine carrying the print-server
+            role. Set <strong>For user or group</strong> to a group — with a leading{" "}
+            <C>%</C> — and only its members get it; leave it empty and everyone the policy reaches
+            does. One printer per policy may be the default.
+          </p>
+          <Note>
+            The printer has to exist on the print server first. Printers → the server → the queue,
+            then name it here exactly as the queue is named.
+          </Note>
+        </Section>
+
+        <Section title="Remote desktop session">
+          <p>
+            What a remote desktop session may carry between the client and the host. It is a rule
+            about machines rather than about a collection, so the usual shape is one policy at the
+            domain and an exception linked to the organizational unit that needs it.
+          </p>
+          <Reference
+            headers={["Setting", "Recommended", "Why"]}
+            rows={[
+              ["Clipboard", "On", "Cut and paste is what people expect; it is text, not files."],
+              ["Printers", "On", "Prints to the printer in front of the person."],
+              [
+                "Drives",
+                "Off",
+                "A redirected drive is the client's own filesystem inside the session, which is the usual way data leaves a managed desktop.",
+              ],
+              ["Audio", "On", "Sound out of the session."],
+              ["Microphone", "Off", "On only where a session is used for calls."],
+            ]}
+          />
+        </Section>
+
+        <Section title="Self-service password">
+          <p>
+            Whether people may change their own password from the sign-in page, and what a new one
+            must contain. Changing it always needs the current one. The rules here are checked
+            before the directory is asked, so somebody typing a password the domain would refuse is
+            told which rule they missed rather than getting one flat rejection.
+          </p>
+          <Note>
+            These rules do not replace the domain&rsquo;s own password policy — they are checked in
+            addition to it. Set the domain policy under Directory → the domain → Password policy,
+            and keep this one no weaker.
+          </Note>
+        </Section>
+
         <Section title="Browser policy">
           <p>
             Chromium and Chrome read managed policy from <C>/etc/chromium/policies/managed</C> and{" "}
             <C>/etc/opt/chrome/policies/managed</C>; Firefox reads{" "}
-            <C>/etc/firefox/policies/policies.json</C>. Keys can be written directly, or produced by
-            importing a vendor administrative template.
+            <C>/etc/firefox/policies/policies.json</C>.
+          </p>
+          <p>
+            Configure both by importing the browser&rsquo;s own administrative template, which is
+            what Chrome and Firefox publish for the purpose: every setting arrives with a name, a
+            type and a description, and the console renders a form from it. The editor no longer
+            offers a hand-written policy document for a new policy object. One set before this is
+            still applied, and appears under Browser policy so it can be read and removed once the
+            template has replaced it.
           </p>
         </Section>
 

@@ -80,9 +80,11 @@ export function RoleConfiguration({
   }
 
   return (
-    <>
-      <h3 className="section-title">{title}</h3>
-      {description && <p className="muted">{description}</p>}
+    <section className="role-configuration">
+      <header>
+        <h3>{title}</h3>
+        {description && <p className="muted">{description}</p>}
+      </header>
 
       {error && (
         <p className="alert" role="alert">
@@ -91,7 +93,7 @@ export function RoleConfiguration({
       )}
       {notice && <p className="muted">{notice}</p>}
 
-      <Field label="Server">
+      <Field label="Server" hint="Each server holds its own copy of these settings">
         <Select value={node} onChange={(e) => setNode(e.target.value)}>
           {instances.map((instance) => (
             <option key={instance.id} value={instance.node_fqdn}>
@@ -138,8 +140,8 @@ export function RoleConfiguration({
       {argumentsFor
         .filter((argument) => argument.kind === "networks")
         .map((argument) => (
-          <div key={argument.name}>
-            <h3 className="section-title">{argument.label}</h3>
+          <div key={argument.name} className="role-configuration-networks">
+            <h4>{argument.label}</h4>
             {argument.help && <p className="muted">{argument.help}</p>}
             <ScopeSelector
               value={values[argument.name] ?? ""}
@@ -158,6 +160,6 @@ export function RoleConfiguration({
           Apply
         </button>
       </div>
-    </>
+    </section>
   );
 }

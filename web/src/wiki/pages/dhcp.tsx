@@ -60,7 +60,7 @@ export function Content() {
       </Quickstart>
 
       <Details>
-        <Section title="Failover">
+        <Section title="Pairing two nodes for failover">
           <p>
             Install the DHCP role on both nodes first — a single node is a working DHCP server on
             its own. Then pair them under <strong>DHCP</strong> → <strong>Configuration</strong>:
@@ -92,6 +92,88 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="What a scope hands out">
+          <p>
+            An address on its own gets a client onto the wire and no further. The options beside it
+            are what make it a member of the network: which gateway to use, which servers resolve
+            names, and which domain to append to a bare host name. New scopes are created with the
+            domain&rsquo;s own values already filled in; change them only where a subnet genuinely
+            differs.
+          </p>
+          <Reference
+            headers={["Option", "Recommended", "What it decides"]}
+            rows={[
+              [
+                <C key="a">routers</C>,
+                "The gateway on that subnet",
+                "Everything off the local network.",
+              ],
+              [
+                <C key="b">domain-name-servers</C>,
+                "Every domain controller, in order",
+                <>
+                  Whether anything resolves. Point clients at the controllers, not at a public
+                  resolver: <C key="c">corp.example.internal</C> only exists in the domain&rsquo;s
+                  own DNS, and a client using <C key="d">8.8.8.8</C> cannot find a controller, a
+                  share, or the service records a domain join needs.
+                </>,
+              ],
+              [
+                <C key="e">domain-name</C>,
+                "The domain, e.g. corp.example.internal",
+                "What a bare host name is completed with, so fs01 reaches fs01.corp.example.internal.",
+              ],
+            ]}
+          />
+          <Note>
+            A scope with no <C>domain-name-servers</C> is listed as{" "}
+            <strong>no DNS server</strong> in the scope list. It is the usual cause of a machine
+            that has an address and still cannot reach anything: names fail to resolve, and the
+            program reporting it rarely says so. GNOME Files, asked to open a share, says
+            &ldquo;Invalid argument&rdquo;.
+          </Note>
+          <Example title="A branch office subnet">
+            <Steps>
+              <li>
+                Subnet <C>172.16.110.0/24</C>, pool <C>172.16.110.100 - 172.16.110.254</C>.
+              </li>
+              <li>
+                Routers <C>172.16.110.1</C> — the branch router, not a controller.
+              </li>
+              <li>
+                DNS servers <C>172.16.110.10, 10.10.0.10</C> — the local controller first, one at
+                head office as a fallback.
+              </li>
+              <li>
+                Domain name <C>corp.example.internal</C>.
+              </li>
+              <li>
+                Leave <C>.1</C> to <C>.99</C> outside the pool for switches, printers and anything
+                else with a fixed address.
+              </li>
+            </Steps>
+          </Example>
+        </Section>
+
+        <Section title="Lease times">
+          <p>
+            The default lease time suits an office where machines stay put. Shorten it where
+            addresses turn over quickly, so a pool is not held by machines that have gone.
+          </p>
+          <Reference
+            headers={["Network", "Recommended lease", "Why"]}
+            rows={[
+              ["Desks and servers", "8 hours to 1 day", "Machines are the same ones every day."],
+              ["Wireless, meeting rooms", "1 to 2 hours", "Visitors come and go; the pool recycles."],
+              [
+                "Provisioning network",
+                "15 to 30 minutes",
+                "Machines are installed, joined and moved off it.",
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Reservations">
           <p>
             A reservation ties a hardware address to a fixed IP address inside a scope. The address
@@ -107,7 +189,40 @@ export function Content() {
           </p>
         </Section>
 
-        <Section title="Failover">
+        <Section title="A failover pair, worked through">
+          <p>
+            Two nodes, <C>dhcp1.corp.example.internal</C> at <C>10.10.0.11</C> and{" "}
+            <C>dhcp2.corp.example.internal</C> at <C>10.10.0.12</C>, serving the same scopes.
+          </p>
+          <Steps>
+            <li>
+              Install the DHCP role on both, from <strong>Server Roles</strong>.
+            </li>
+            <li>
+              <strong>DHCP</strong> → <strong>Configuration</strong> → choose <C>dhcp1</C>, failover
+              role <C>primary</C>, this node <C>http://10.10.0.11:8080/</C>, the other node{" "}
+              <C>http://10.10.0.12:8080/</C>, then <strong>Apply</strong>.
+            </li>
+            <li>
+              Choose <C>dhcp2</C>, failover role <C>standby</C>, and the same two addresses the
+              other way round.
+            </li>
+            <li>
+              Both nodes must be reachable on that port from each other — a firewall between them is
+              what leaves the pair in <C>waiting</C> or <C>communications-interrupted</C>.
+            </li>
+            <li>
+              Point relays and helper addresses on the network at both. Clients on the same wire as
+              the servers find them by broadcast.
+            </li>
+          </Steps>
+          <Note>
+            Scopes are configured on each node. A pair whose scopes differ hands out different
+            answers depending on which node replied, which reads as an intermittent fault.
+          </Note>
+        </Section>
+
+        <Section title="Failover states">
           <p>
             The two nodes run as a hot-standby pair. The header shows this node&rsquo;s state and
             its role, and whether the peer is reachable.

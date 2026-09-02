@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type FileShare, type ShareAccess, type ShareEntry } from "../api";
 import { useContextMenu } from "../components/ContextMenu";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 import { DirectoryField } from "../components/DirectoryPicker";
@@ -59,6 +60,13 @@ export function Shares() {
           New share
         </button>
       </div>
+
+      <InfoPanel page="file-shares">
+        A share is a directory on a server carrying the file-server role, published under a name and
+        reached by that name. Clients resolve it through the domain&rsquo;s DNS, so a machine using
+        anything else — a public resolver, a network without the domain&rsquo;s DHCP — cannot open
+        it however right its credentials are.
+      </InfoPanel>
 
       {error && (
         <p className="alert" role="alert">
@@ -232,22 +240,29 @@ function ShareDialog({
       }}
     >
       {editing ? (
-        // The address to type into a file manager. Both spellings, because
-        // Windows takes the first and GNOME Files and KDE take the second.
-        <table className="data" style={{ marginBottom: "6px" }}>
-          <tbody>
-            <tr>
-              <th scope="row">Windows</th>
-              <td className="mono selectable">{share.unc}</td>
-            </tr>
-            <tr>
-              <th scope="row">Linux and macOS</th>
-              <td className="mono selectable">
-                {"smb://" + share.unc.replace(/^\/\//, "").replace(/\\/g, "/")}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <>
+          {/* The address to type into a file manager. Both spellings, because
+              Windows takes the first and GNOME Files and KDE take the second. */}
+          <table className="data" style={{ marginBottom: "6px" }}>
+            <tbody>
+              <tr>
+                <th scope="row">Windows</th>
+                <td className="mono selectable">{share.unc}</td>
+              </tr>
+              <tr>
+                <th scope="row">Linux and macOS</th>
+                <td className="mono selectable">
+                  {"smb://" + share.unc.replace(/^\/\//, "").replace(/\\/g, "/")}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <InfoPanel page="file-shares" anchor="reaching-a-share-from-outside-the-domain">
+            The machine opening this has to resolve {share.node_fqdn}. A machine that cannot reports
+            it as something else entirely — GNOME Files says &ldquo;Invalid argument&rdquo; — so
+            check the name resolves before looking at permissions.
+          </InfoPanel>
+        </>
       ) : (
         <>
           <Field label="Server" hint="A machine carrying the file-server role">

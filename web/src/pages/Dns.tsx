@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Globe, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DnsRecord, type DnsZone } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { Split } from "../components/Split";
@@ -132,6 +133,10 @@ export function Dns() {
             New record
           </button>
         </div>
+
+      <InfoPanel page="dns">
+        Zones and records in the domain's own DNS. Domain members register themselves; addresses handed out by DHCP are written in as leases are issued.
+      </InfoPanel>
 
         {error && (
           <p className="alert" role="alert">

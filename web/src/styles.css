@@ -906,6 +906,15 @@ table.data.compact td {
   gap: 22px 28px;
 }
 
+/* The explanation sits above the three groups, not beside them as a fourth. */
+.scope-form-intro {
+  grid-column: 1 / -1;
+}
+
+.scope-form-intro h3 {
+  margin-top: 0;
+}
+
 .scope-form section {
   display: flex;
   flex-direction: column;
@@ -1316,6 +1325,21 @@ ul.plain {
 .wiki-section h3 {
   margin: 0 0 8px;
   font-size: 17px;
+  /* A section linked to from the console lands under the sticky page top
+     rather than behind it. */
+  scroll-margin-top: 16px;
+}
+
+/* The heading is its own anchor, so a section can be linked to from the
+   console or from another page. It reads as a heading, not as a link. */
+.wiki-anchor {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wiki-anchor:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--border);
 }
 
 .wiki-page p {
@@ -1751,6 +1775,132 @@ ul.plain {
   flex: 1;
 }
 
+/* ------------------------------------------------------------- wizard -- */
+
+/* A stepped setup. The rail on the left is a map, not a gate: every step is a
+   button, and "Show every setting" turns the whole thing back into the plain
+   form underneath it. */
+.wizard-body {
+  display: flex;
+  align-items: stretch;
+  min-height: 320px;
+}
+
+.wizard-rail {
+  flex: 0 0 190px;
+  margin: 0;
+  padding: 14px 10px;
+  list-style: none;
+  counter-reset: step;
+  background: var(--surface-recessed);
+  border-right: 1px solid var(--border);
+}
+
+.wizard-rail button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.wizard-rail button:hover {
+  background: #eef2ff;
+}
+
+.wizard-rail button.active {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.wizard-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  height: 20px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.wizard-step {
+  flex: 1;
+  min-width: 0;
+}
+
+.wizard-step > h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.wizard-step > section + section {
+  margin-top: 18px;
+}
+
+.wizard footer .spacer {
+  flex: 1;
+}
+
+/* What is still missing, at the point where it stops being an option. */
+.wizard-blocking {
+  margin: 0;
+  padding: 0 20px 14px;
+  text-align: right;
+  color: var(--danger);
+}
+
+/* --------------------------------------------------------- info panels -- */
+
+/* What a setting does, and the way to the page that covers it properly. A
+   recessed strip rather than another paragraph of body text: it belongs to
+   the heading above it, and an operator scanning the panel can skip it. */
+.info-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.info-panel p {
+  margin: 0;
+  max-width: 78ch;
+  color: var(--text-muted);
+}
+
+.docs-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.docs-link:hover {
+  text-decoration: underline;
+}
+
+/* The name of an entry in a settings list. It is what the row is, so it reads
+   as the row's title rather than as its first field. */
+.entry-name {
+  font-weight: 500;
+}
+
 /* ------------------------------------------------------------- role list -- */
 
 .role-row {
@@ -1996,6 +2146,66 @@ ul.plain {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px 20px;
   margin-bottom: 8px;
+}
+
+/* ------------------------------------------------- role configuration -- */
+
+/* A settings form, not a wall. Four fields stretched across a wide monitor
+   sit a hair apart with their hints running into each other, which is what
+   the DHCP failover settings looked like: a row of boxes rather than a form
+   somebody fills in. Bounded width, two columns at most, and the panel's own
+   border to say where the form ends. */
+.role-configuration {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 760px;
+  padding: 20px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.role-configuration > header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.role-configuration h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.role-configuration h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.role-configuration > header p,
+.role-configuration p.muted {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.role-configuration .field-grid {
+  gap: 20px 24px;
+  margin-bottom: 0;
+}
+
+.role-configuration .actions-row {
+  margin: 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.role-configuration-networks {
+  display: flex;
+  flex-direction: column;
 }
 
 .page-header h1 {

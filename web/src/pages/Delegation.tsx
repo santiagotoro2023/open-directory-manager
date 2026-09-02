@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type RbacAssignment, type RbacRole } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import Select from "../components/Select"
 
@@ -59,6 +60,10 @@ export function Delegation() {
           {tab === "roles" ? "New role" : "New assignment"}
         </button>
       </div>
+
+      <InfoPanel page="delegation">
+        Who may do what, and where. A role is a set of permissions; an assignment gives somebody that role over one part of the tree.
+      </InfoPanel>
       <p className="muted">
         A role holds permissions. An assignment grants a role to a user or group at an
         organizational unit, and applies to that unit and everything beneath it.

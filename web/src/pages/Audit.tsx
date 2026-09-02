@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ApiError, api, type AuditEntry } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import Select from "../components/Select"
 
 const OUTCOMES = ["", "success", "denied", "failure"];
@@ -36,6 +37,10 @@ export function Audit() {
   return (
     <div className="content">
       <h1>Audit Log</h1>
+
+      <InfoPanel page="audit">
+        Every write the control plane made: who did it, when, to what, and what changed.
+      </InfoPanel>
 
       <div className="toolbar">
         <input

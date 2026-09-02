@@ -782,13 +782,67 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      (body as { detail?: string }).detail ?? response.statusText,
-    );
+    throw new ApiError(response.status, describeError(body, response.statusText));
   }
   return body as T;
 }
+
+interface ValidationDetail {
+  loc?: (string | number)[];
+  msg?: string;
+}
+
+/**
+ * What went wrong, as a sentence.
+ *
+ * A rejected value comes back from the API as a list of objects naming the
+ * field and what was wrong with it. Handing that list to a string is how a
+ * dialog came to say "[object Object],[object Object]" instead of naming the
+ * field it was unhappy about.
+ */
+function describeError(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown }).detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((entry) => describeValidation(entry as ValidationDetail))
+      .filter(Boolean);
+    if (messages.length > 0) return messages.join(". ");
+  }
+  return fallback;
+}
+
+export function describeValidation(entry: ValidationDetail): string {
+  const message = (entry.msg ?? "").replace(/^Value error, /, "");
+  // ["body", "entries", 0, "principal"]: the field is the last name in it,
+  // and the number, where there is one, says which entry.
+  const names = (entry.loc ?? []).filter(
+    (part) => typeof part === "string" && part !== "body" && part !== "query",
+  ) as string[];
+  const field = names[names.length - 1];
+  const index = (entry.loc ?? []).find((part) => typeof part === "number");
+  if (!field) return message;
+  const where = index === undefined ? "" : ` (entry ${(index as number) + 1})`;
+  return `${fieldLabel(field)}${where}: ${message || "is not valid"}`;
+}
+
+function fieldLabel(field: string): string {
+  const spelled = FIELD_LABELS[field] ?? field.replace(/_/g, " ");
+  return spelled.charAt(0).toUpperCase() + spelled.slice(1);
+}
+
+// Where the API's field name is not what the console calls the field.
+const FIELD_LABELS: Record<string, string> = {
+  node_fqdn: "server",
+  owner_group: "owning group",
+  unc: "share",
+  sam_account_name: "logon name",
+  hw_address: "hardware address",
+  ip_address: "IP address",
+  subnet_id: "scope",
+  for_principal: "for user or group",
+  mount_point: "mount point",
+};
 
 function remember(session: SessionInfo): SessionInfo {
   csrfToken = session.csrf_token;
@@ -1040,6 +1094,10 @@ export const api = {
       }>("/dhcp/status"),
 
     scopes: () => request<{ scopes: DhcpScope[] }>("/dhcp/scopes"),
+
+    /** What a new scope should hand out: the domain, and the DCs serving it. */
+    defaults: () =>
+      request<{ domain_name: string; dns_servers: string[] }>("/dhcp/defaults"),
 
     createScope: (body: Record<string, unknown>) => request<DhcpScope>("/dhcp/scopes", json(body)),
 

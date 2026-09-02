@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 /**
  * Building blocks every wiki page is composed from.
@@ -26,13 +27,42 @@ export function Details({ children }: { children: ReactNode }) {
   );
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * A titled part of a page.
+ *
+ * The heading carries an anchor derived from its title, so the console can
+ * link straight at the section documenting a setting rather than at the top
+ * of a long page. Pass `id` where a link should keep working after a title is
+ * reworded.
+ */
+export function Section({
+  title,
+  id,
+  children,
+}: {
+  title: string;
+  id?: string;
+  children: ReactNode;
+}) {
+  const anchor = id ?? slug(title);
   return (
-    <section className="wiki-section">
-      <h3>{title}</h3>
+    <section className="wiki-section" id={anchor}>
+      <h3>
+        <a href={`#${anchor}`} className="wiki-anchor" aria-label={`Link to ${title}`}>
+          {title}
+        </a>
+      </h3>
       {children}
     </section>
   );
+}
+
+/** The anchor a section title becomes: lower case, words joined by dashes. */
+export function slug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 /** A numbered procedure. */
@@ -97,5 +127,22 @@ export function Where({ children }: { children: ReactNode }) {
     <p className="wiki-where">
       <strong>In the console:</strong> {children}
     </p>
+  );
+}
+
+/** A link to another wiki page, or to a section of one. */
+export function PageLink({
+  page,
+  anchor,
+  children,
+}: {
+  page: string;
+  anchor?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link className="wiki-page-link" to={`/wiki/${page}${anchor ? `#${anchor}` : ""}`}>
+      {children}
+    </Link>
   );
 }

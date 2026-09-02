@@ -238,7 +238,14 @@ def delete_reservation(settings: Settings, subnet_id: int, hw_address: str) -> N
 
 
 def leases(settings: Settings) -> list[dict[str, Any]]:
-    result = command(settings, "lease4-get-all", {"subnets": []})
+    """Every current lease.
+
+    Sent with no arguments, which is what asks for all of them. Passing
+    {"subnets": []} looks like the same request and is not: Kea reads it as
+    "the leases in these zero subnets" and answers with none, so the console
+    showed an empty lease list under a scope reporting an address in use.
+    """
+    result = command(settings, "lease4-get-all")
     return list(result.get("leases", []))
 
 

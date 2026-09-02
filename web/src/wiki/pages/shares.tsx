@@ -127,6 +127,66 @@ export function Content() {
           </p>
         </Section>
 
+        <Section title="Reaching a share from outside the domain">
+          <p>
+            A machine that is not joined can still open a share: it is asked for a name and password
+            and authenticates with NTLM, and the access list on the share decides the rest. What it
+            cannot do is find the server without help, because the server&rsquo;s name lives only in
+            the domain&rsquo;s DNS.
+          </p>
+          <Reference
+            headers={["Symptom", "What it means", "What to do"]}
+            rows={[
+              [
+                <>&ldquo;Invalid argument&rdquo; (GNOME Files), or an immediate failure</>,
+                <>
+                  The name did not resolve. The SMB library reports a failed lookup as{" "}
+                  <C key="a">EINVAL</C>, which the file manager prints literally — nothing in the
+                  message mentions DNS.
+                </>,
+                <>
+                  On the client: <C key="b">getent hosts fs01.corp.example.internal</C>. Nothing
+                  back means DNS, not the share.
+                </>,
+              ],
+              [
+                "A password prompt that keeps coming back",
+                "The name resolved and the credential was refused.",
+                <>
+                  Use the domain account&rsquo;s logon name, and leave the domain field at whatever
+                  the client suggests — the controller maps an unknown workgroup to its own domain.
+                </>,
+              ],
+              [
+                "It opens, but a folder inside it will not",
+                "Resolution and authentication both worked; this is the access list.",
+                <>Add the group to the share&rsquo;s permissions with <strong>Read &amp; write</strong>.</>,
+              ],
+            ]}
+          />
+          <p>Three ways to make the name resolve on a machine that is not joined:</p>
+          <Steps>
+            <li>
+              Give it the domain&rsquo;s DHCP — the scope hands out the controllers as DNS servers
+              and the domain as the search domain. This is the one to prefer: it fixes every name at
+              once, not just this share.
+            </li>
+            <li>
+              Point its resolver at a controller by hand, and add the domain as a search domain.
+            </li>
+            <li>
+              Type the server&rsquo;s address instead of its name —{" "}
+              <C>smb://10.10.0.20/share-01</C>. It works and it is a workaround: nothing else the
+              domain publishes resolves, and the address changes without warning unless it is
+              reserved.
+            </li>
+          </Steps>
+          <Note>
+            A machine that is joined has none of this to think about: it resolves through the
+            domain, mounts with its Kerberos ticket, and a drive-map policy does it at sign-in.
+          </Note>
+        </Section>
+
         <Section title="If a share stays in applying">
           <Reference
             headers={["Check", "How"]}

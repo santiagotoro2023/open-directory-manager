@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { api, type AdmxSelection, type ItemTargeting, type PolicySettings } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
+import { InfoPanel } from "./DocsLink";
 import { FileInput } from "./FileInput";
 import { Field, Modal } from "./Modal";
 import { PickerField, type PickerKind, type PickerValue } from "./Picker";
@@ -104,6 +105,15 @@ interface CategorySpec {
   // Which half of the policy the setting is enforced in, as the Group Policy
   // Management Editor splits them.
   half: Half;
+  // What the entry is called in its row. Defaults to the first field, which
+  // is the identity for every category where the first field is not it.
+  identity?: string;
+  // One sentence on what the category does, shown above the list beside the
+  // link to the section of the wiki covering it.
+  help: string;
+  // The section of the policy-settings page this links to. Section headings
+  // carry an anchor made from their title.
+  doc: string;
   note?: string;
   fields: FieldSpec[];
   blank: Record<string, unknown>;
@@ -117,6 +127,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "files",
     title: "File deployment",
     half: "Computer",
+    identity: "path",
+    help:
+      "A file written to every machine the policy reaches, with the owner and mode " +
+      "it should have. Rewritten whenever what is set here changes.",
+    doc: "file-deployment",
     fields: [
       { key: "path", label: "Path", placeholder: "/etc/motd" },
       { key: "content", label: "Content", kind: "textarea" },
@@ -132,6 +147,11 @@ export const CATEGORIES: CategorySpec[] = [
     only: { field: "trigger", values: ["startup", "shutdown"] },
     title: "Startup and shutdown scripts",
     half: "Computer",
+    identity: "name",
+    help:
+      "A script the machine runs as root when it starts or as it shuts down. " +
+      "It runs whether or not anybody signs in.",
+    doc: "scripts",
     fields: [
       {
         key: "trigger",
@@ -152,6 +172,11 @@ export const CATEGORIES: CategorySpec[] = [
     only: { field: "trigger", values: ["logon", "logoff"] },
     title: "Logon and logoff scripts",
     half: "User",
+    identity: "name",
+    help:
+      "A script that runs as the person signing in or out, in their own session " +
+      "and with their own rights.",
+    doc: "scripts",
     fields: [
       {
         key: "trigger",
@@ -170,6 +195,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "systemd_units",
     title: "systemd units",
     half: "Computer",
+    identity: "unit",
+    help:
+      "The state a service, socket or timer is held in. Masked is the strongest: " +
+      "the unit cannot be started at all, by anything.",
+    doc: "systemd-units",
     fields: [
       { key: "unit", label: "Unit", placeholder: "telnet.socket" },
       {
@@ -186,6 +216,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "cron",
     title: "Scheduled tasks",
     half: "Computer",
+    identity: "name",
+    help:
+      "A command run on a schedule, written into the machine's own cron. Five " +
+      "cron fields, or an @keyword such as @daily.",
+    doc: "scheduled-tasks",
     fields: [
       { key: "name", label: "Name", width: "160px" },
       { key: "schedule", label: "Schedule", placeholder: "0 3 * * 0", width: "150px" },
@@ -198,6 +233,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "drive_maps",
     title: "Drive maps",
     half: "User",
+    identity: "name",
+    help:
+      "A share mounted for the person signing in, with their own Kerberos ticket. " +
+      "No password is stored on the machine.",
+    doc: "drive-maps",
     fields: [
       { key: "name", label: "Name", width: "140px" },
       { key: "unc", label: "Share", placeholder: "//fs01/shared" },
@@ -218,6 +258,11 @@ export const CATEGORIES: CategorySpec[] = [
     title: "Sudo rules",
     note: "Users and commands are comma separated.",
     half: "Computer",
+    identity: "name",
+    help:
+      "Who may run which commands as another user on the machines this policy " +
+      "reaches. Stored in the directory as a sudoRole, which SSSD reads natively.",
+    doc: "sudo-rules",
     fields: [
       { key: "name", label: "Name", width: "140px" },
       {
@@ -242,9 +287,12 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "hbac_rules",
     title: "HBAC rules",
-    note:
-      "Who may open a session on a machine, and how. A group is written with a leading % — " +
-      "Select… does that for you. Deny beats allow, and root is never locked out.",
+    identity: "principal",
+    help:
+      "Who may open a session, and how: locally, over SSH, or over remote desktop. " +
+      "Deny beats allow, and root is never locked out.",
+    doc: "hbac-rules",
+    note: "A group is written with a leading % — Select… does that for you.",
     half: "Computer",
     fields: [
       {
@@ -275,7 +323,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "packages",
     title: "Software deployment",
     half: "Computer",
-    note: "Packages the machine should have, keep current, or not have.",
+    identity: "name",
+    help:
+      "Packages the machine should have, keep current, or not have. Installed with " +
+      "apt from the machine's own sources.",
+    doc: "software-deployment",
     fields: [
       { key: "name", label: "Package", placeholder: "cifs-utils" },
       {
@@ -292,9 +344,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "trusted_certificates",
     title: "Trusted certificates",
     half: "Computer",
-    note:
-      "Authorities every machine trusts. Certificates → Publish to domain writes this one; " +
-      "editing it here is unusual.",
+    identity: "name",
+    help:
+      "Authorities every machine trusts, installed into the system trust store.",
+    doc: "trusted-certificates",
+    note: "Certificates → Publish to domain writes this one; editing it here is unusual.",
     fields: [
       { key: "name", label: "Name", placeholder: "internal-root-ca" },
       { key: "certificate_pem", label: "PEM", kind: "textarea" },
@@ -305,7 +359,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "certificate_enrolment",
     title: "Certificates",
     half: "Computer",
-    note: "Certificates the machine gets by itself, and renews before they expire.",
+    identity: "profile",
+    help:
+      "Certificates the machine asks for by itself and renews before they expire. " +
+      "The subject is the machine's own identity; a policy cannot name one.",
+    doc: "certificate-enrolment",
     fields: [
       {
         key: "profile",
@@ -324,7 +382,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "printers",
     title: "Printers",
     half: "User",
-    note: "Printers the person signing in should have. They come from a print server.",
+    identity: "name",
+    help:
+      "Printers the person signing in should have. They come from a machine " +
+      "carrying the print-server role.",
+    doc: "printers",
     fields: [
       { key: "name", label: "Printer", width: "180px" },
       { key: "server", label: "Print server", picker: "computer", pickerValue: "host" },
@@ -343,6 +405,11 @@ export const CATEGORIES: CategorySpec[] = [
     key: "firewall",
     title: "Firewall rules",
     half: "Computer",
+    identity: "name",
+    help:
+      "Rules applied to the machine's own firewall. Everything not named here is " +
+      "left as the machine has it.",
+    doc: "firewall-rules",
     fields: [
       { key: "name", label: "Name", width: "140px" },
       {
@@ -400,23 +467,109 @@ function fromInput(field: FieldSpec, raw: string): unknown {
   return raw;
 }
 
-// Categories with no repeating rows; each renders its own editor.
-const SPECIAL = [
-  { key: "updates", title: "System updates", half: "Computer" as Half },
-  { key: "login_screen", title: "Login screen", half: "Computer" as Half },
-  { key: "always_on_vpn", title: "Always-on VPN", half: "Computer" as Half },
-  { key: "local_administrator", title: "Local administrator", half: "Computer" as Half },
+/** A setting configured once rather than as a list of entries.
+ *
+ * These carry the same heading, the same explanation and the same link to
+ * their documentation as the list categories; only the body below differs,
+ * because there is one of them rather than many. */
+interface SpecialSpec {
+  key: string;
+  title: string;
+  half: Half;
+  help: string;
+  doc: string;
+  /** The wiki page the link lands on. Defaults to the policy-settings page. */
+  docPage?: string;
+}
+
+const SPECIAL: SpecialSpec[] = [
+  {
+    key: "updates",
+    title: "System updates",
+    half: "Computer",
+    help:
+      "Whether the machine installs updates on its own, which ones, and whether it " +
+      "may restart itself to finish them.",
+    doc: "system-updates",
+  },
+  {
+    key: "login_screen",
+    title: "Login screen",
+    half: "Computer",
+    help:
+      "The greeter, before anybody has signed in: its message, its background, and " +
+      "whether it lists the accounts on the machine.",
+    doc: "login-screen-and-desktop-background",
+  },
+  {
+    key: "always_on_vpn",
+    title: "Always-on VPN",
+    half: "Computer",
+    help:
+      "Holds a tunnel up on the machine whatever the person using it does, and can " +
+      "refuse to route anything until it is up.",
+    doc: "always-on-vpn",
+  },
+  {
+    key: "local_administrator",
+    title: "Local administrator",
+    half: "Computer",
+    help:
+      "A local account whose password the machine rotates itself and reports back — " +
+      "different on every machine, for when the domain cannot be reached.",
+    doc: "local-administrator",
+  },
   {
     key: "remote_desktop_session",
     title: "Remote desktop session",
-    half: "Computer" as Half,
+    half: "Computer",
+    help:
+      "What a remote desktop session may carry between the client and the host: " +
+      "clipboard, printers, drives, audio.",
+    doc: "remote-desktop-session",
   },
-  { key: "password_self_service", title: "Self-service password", half: "User" as Half },
-  { key: "roaming_profile", title: "Roaming profile", half: "User" as Half },
-  { key: "wallpaper", title: "Desktop background", half: "User" as Half },
-  { key: "browser", title: "Browser policy", half: "Computer" as Half },
-  { key: "admx", title: "Administrative templates", half: "Computer" as Half },
-] as const;
+  {
+    key: "password_self_service",
+    title: "Self-service password",
+    half: "User",
+    help:
+      "Whether people may change their own password from the sign-in page, and what " +
+      "the new one has to look like.",
+    doc: "self-service-password",
+  },
+  {
+    key: "roaming_profile",
+    title: "Roaming profile",
+    half: "User",
+    help:
+      "Where a person's home directory lives, so it follows them from machine to " +
+      "machine instead of staying on one desk.",
+    doc: "roaming-profile",
+  },
+  {
+    key: "wallpaper",
+    title: "Desktop background",
+    half: "User",
+    help: "The picture behind the desktop of whoever is signed in, and whether they may change it.",
+    doc: "desktop-background",
+  },
+  {
+    key: "admx",
+    title: "Administrative templates",
+    half: "Computer",
+    help:
+      "Settings from vendor-supplied ADMX templates — Chrome, Firefox, anything that " +
+      "ships them. Import the template under Group Policy, then configure it here.",
+    doc: "quickstart",
+    docPage: "administrative-templates",
+  },
+];
+
+function specialFor(key: string): SpecialSpec {
+  const found = SPECIAL.find((entry) => entry.key === key);
+  if (!found) throw new Error(`no such setting ${key}`);
+  return found;
+}
 
 type Selected = string;
 
@@ -450,6 +603,12 @@ export function SettingsEditor({
 }) {
   const [selected, setSelected] = useState<Selected>(categoryId(CATEGORIES[0]));
 
+  // Browser policy is no longer offered: an imported ADMX template configures
+  // Chrome and Firefox, and two ways to set the same thing is one too many.
+  // A policy that already carries one keeps it, and can be read and cleared
+  // here, so nothing set before this change becomes invisible.
+  const legacyBrowser = countOf(settings, "browser") > 0;
+
   const entries = [
     ...CATEGORIES.map((category) => ({
       key: categoryId(category),
@@ -461,6 +620,9 @@ export function SettingsEditor({
       title: special.title,
       half: special.half,
     })),
+    ...(legacyBrowser
+      ? [{ key: "browser", title: "Browser policy", half: "Computer" as Half }]
+      : []),
   ];
 
   const tree = (
@@ -534,9 +696,7 @@ export function SettingsEditor({
           {selected === "browser" && <BrowserEditor settings={settings} onChange={onChange} />}
           {selected === "admx" && (
             <>
-              <header>
-                <h3>Administrative templates</h3>
-              </header>
+              <SettingHeading meta={specialFor("admx")} />
               <AdmxEditor
                 selections={settings.admx ?? []}
                 onChange={(admx: AdmxSelection[]) => onChange({ ...settings, admx })}
@@ -546,6 +706,43 @@ export function SettingsEditor({
         </div>
       </Split>
     </div>
+  );
+}
+
+/** The heading every setting shares: what it is called, what it does, where
+ * the rest of it is written down, and whatever the setting itself offers on
+ * the right — Add, or Remove once it is configured. */
+function SettingHeading({
+  meta,
+  actions,
+}: {
+  meta: { title: string; help: string; doc: string; docPage?: string };
+  actions?: ReactNode;
+}) {
+  return (
+    <>
+      <header>
+        <h3>{meta.title}</h3>
+        <span className="spacer" />
+        {actions}
+      </header>
+      <InfoPanel page={meta.docPage ?? "policy-settings"} anchor={meta.doc}>
+        {meta.help}
+      </InfoPanel>
+    </>
+  );
+}
+
+/** Remove, for a setting that is configured once rather than as a list.
+ *
+ * Removing it is not the same as turning it off: the policy stops carrying
+ * the setting at all, and whatever a policy below it says then applies. */
+function RemoveSetting({ onRemove }: { onRemove: () => void }) {
+  return (
+    <button type="button" className="ghost" onClick={onRemove}>
+      <Trash2 size={15} aria-hidden="true" />
+      Remove
+    </button>
   );
 }
 
@@ -591,14 +788,11 @@ function RowsEditor({
   onChange: (next: PolicySettings) => void;
 }) {
   const { mine: current, others } = rowsOf(settings, category);
-  const [targeting, setTargeting] = useState<number | null>(null);
-  const [editing, setEditing] = useState<number | null>(null);
-
-  // Four or more fields in a row squeezes every one of them to nothing. Those
-  // categories show what an entry is and open the rest in a dialog, which is
-  // also where a long value has room to be read.
-  const cramped = category.fields.length > 3;
-  const summary = cramped ? category.fields.slice(0, 2) : category.fields;
+  // The index being edited, or "new" while an entry that does not exist yet is
+  // being filled in. Nothing is added to the policy until it is saved, so a
+  // cancelled Add leaves no half-written row behind.
+  const [editing, setEditing] = useState<number | "new" | null>(null);
+  const targetable = TARGETABLE.has(String(category.key));
 
   function update(next: Record<string, unknown>[]) {
     onChange({ ...settings, [category.key]: [...others, ...next] });
@@ -606,38 +800,28 @@ function RowsEditor({
 
   return (
     <>
-      <header>
-        <h3>{category.title}</h3>
-        <span className="spacer" />
-        <button
-          type="button"
-          className="primary"
-          onClick={() => update([...current, { ...category.blank }])}
-        >
-          <Plus size={15} aria-hidden="true" />
-          Add
-        </button>
-      </header>
-      {category.note && <p className="muted">{category.note}</p>}
+      <SettingHeading
+        meta={category}
+        actions={
+          <button type="button" className="primary" onClick={() => setEditing("new")}>
+            <Plus size={15} aria-hidden="true" />
+            Add
+          </button>
+        }
+      />
 
-      {/* The table is drawn whether or not it has rows. A bare "Not
-          configured" in the middle of an empty panel shows nothing about what
-          would go there; the column headings do. */}
+      {/* One row per entry, and one way to change it. Half the fields inline
+          and the rest behind an Edit button meant the same entry was edited in
+          two places, with the row's own columns deciding which half you got. */}
       <table className="data compact">
         <thead>
           <tr>
-            {summary.map((field) => (
-              <th key={field.key} style={field.width ? { width: field.width } : undefined}>
-                {field.label}
-              </th>
-            ))}
-            {cramped && <th>Settings</th>}
-            {TARGETABLE.has(String(category.key)) && <th style={{ width: "120px" }}>Applies to</th>}
-            {cramped && (
-              <th style={{ width: "84px" }}>
-                <span className="sr-only">Edit</span>
-              </th>
-            )}
+            <th scope="col">{identityLabel(category)}</th>
+            <th scope="col">Settings</th>
+            {targetable && <th scope="col" style={{ width: "150px" }}>Applies to</th>}
+            <th style={{ width: "90px" }}>
+              <span className="sr-only">Edit</span>
+            </th>
             <th style={{ width: "44px" }}>
               <span className="sr-only">Remove</span>
             </th>
@@ -645,48 +829,23 @@ function RowsEditor({
         </thead>
         <tbody>
           {current.map((row, index) => (
-            <tr key={index}>
-              {summary.map((field) => (
-                <td key={field.key}>
-                  <Cell
-                    field={field}
-                    value={row[field.key]}
-                    onChange={(value) => {
-                      const next = [...current];
-                      next[index] = { ...row, [field.key]: value };
-                      update(next);
-                    }}
-                  />
-                </td>
-              ))}
-              {cramped && (
-                <td className="muted truncate">
-                  {category.fields
-                    .slice(2)
-                    .map((field) => `${field.label}: ${describe(row[field.key])}`)
-                    .join(" · ")}
-                </td>
+            <tr key={index} onDoubleClick={() => setEditing(index)}>
+              <td className="entry-name">{identityOf(category, row)}</td>
+              <td className="muted truncate">{summarise(category, row)}</td>
+              {targetable && (
+                <td className="muted">{row.targeting ? "Some machines" : "Everyone"}</td>
               )}
-              {cramped && (
-                <td>
-                  <button type="button" className="ghost" onClick={() => setEditing(index)}>
-                    <Pencil size={14} aria-hidden="true" />
-                    Edit
-                  </button>
-                </td>
-              )}
-              {TARGETABLE.has(String(category.key)) && (
-                <td>
-                  <button type="button" className="ghost" onClick={() => setTargeting(index)}>
-                    {row.targeting ? "Some" : "Everyone"}
-                  </button>
-                </td>
-              )}
+              <td>
+                <button type="button" className="ghost" onClick={() => setEditing(index)}>
+                  <Pencil size={14} aria-hidden="true" />
+                  Edit
+                </button>
+              </td>
               <td>
                 <button
                   type="button"
                   className="icon"
-                  aria-label={`Remove ${category.title} entry ${index + 1}`}
+                  aria-label={`Remove ${identityOf(category, row)}`}
                   onClick={() => update(current.filter((_, i) => i !== index))}
                 >
                   <Trash2 size={14} aria-hidden="true" />
@@ -696,14 +855,7 @@ function RowsEditor({
           ))}
           {current.length === 0 && (
             <tr>
-              <td
-                className="empty"
-                colSpan={
-                  summary.length +
-                  (cramped ? 2 : 0) +
-                  (TARGETABLE.has(String(category.key)) ? 2 : 1)
-                }
-              >
+              <td className="empty" colSpan={targetable ? 5 : 4}>
                 Nothing configured. Add creates the first entry.
               </td>
             </tr>
@@ -711,34 +863,51 @@ function RowsEditor({
         </tbody>
       </table>
 
-      {editing !== null && current[editing] && (
+      {editing !== null && (
         <EntryDialog
           category={category}
-          row={current[editing]}
-          index={editing}
+          row={editing === "new" ? { ...category.blank } : current[editing]}
+          adding={editing === "new"}
           onClose={() => setEditing(null)}
           onSave={(next) => {
-            const rows = [...current];
-            rows[editing] = next;
-            update(rows);
+            if (editing === "new") {
+              update([...current, next]);
+            } else {
+              const rows = [...current];
+              rows[editing] = next;
+              update(rows);
+            }
             setEditing(null);
           }}
         />
       )}
-
-      {targeting !== null && current[targeting] && (
-        <ItemTargetingDialog
-          value={(current[targeting].targeting as ItemTargeting | undefined) ?? null}
-          onClose={() => setTargeting(null)}
-          onSave={(next) => {
-            const rows = [...current];
-            rows[targeting] = { ...rows[targeting], targeting: next ?? undefined };
-            update(rows);
-            setTargeting(null);
-          }}
-        />
-      )}
     </>
+  );
+}
+
+/** The field that names an entry, and what its column is called. */
+function identityField(category: CategorySpec): FieldSpec {
+  const named = category.fields.find((field) => field.key === category.identity);
+  return named ?? category.fields[0];
+}
+
+function identityLabel(category: CategorySpec): string {
+  return identityField(category).label;
+}
+
+function identityOf(category: CategorySpec, row: Record<string, unknown>): string {
+  const value = describe(row[identityField(category).key], 60);
+  return value === "—" ? "Unnamed" : value;
+}
+
+/** Everything about the entry except its name, as one line. */
+function summarise(category: CategorySpec, row: Record<string, unknown>): string {
+  const identity = identityField(category).key;
+  return (
+    category.fields
+      .filter((field) => field.key !== identity)
+      .map((field) => `${field.label}: ${describe(row[field.key])}`)
+      .join(" · ") || "—"
   );
 }
 
@@ -747,21 +916,28 @@ function RowsEditor({
  *
  * The fields are the object's own, so what "matches" means does not depend on
  * where it is written. Empty everywhere means the entry applies to whoever the
- * policy object reaches.
+ * policy object reaches. Shown inside the entry's own dialog: who an entry is
+ * for is part of the entry.
  */
-function ItemTargetingDialog({
+function ItemTargetingFields({
   value,
-  onClose,
-  onSave,
+  onChange,
 }: {
   value: ItemTargeting | null;
-  onClose: () => void;
-  onSave: (value: ItemTargeting | null) => void;
+  onChange: (value: ItemTargeting | null) => void;
 }) {
-  const [os, setOs] = useState<string[]>(value?.os ?? []);
-  const [hostname, setHostname] = useState(value?.hostname_pattern ?? "");
-  const [groups, setGroups] = useState<string[]>(value?.security_groups ?? []);
-  const [ranges, setRanges] = useState((value?.ip_ranges ?? []).join(", "));
+  const os = value?.os ?? [];
+  const groups = value?.security_groups ?? [];
+
+  function set(changes: Partial<ItemTargeting>) {
+    const next: ItemTargeting = { ...(value ?? {}), ...changes };
+    const empty =
+      !next.os?.length &&
+      !next.hostname_pattern &&
+      !next.security_groups?.length &&
+      !next.ip_ranges?.length;
+    onChange(empty ? null : next);
+  }
 
   const lines = (text: string) =>
     text
@@ -770,31 +946,7 @@ function ItemTargetingDialog({
       .filter(Boolean);
 
   return (
-    <Modal
-      title="This entry applies to"
-      submitLabel="Save"
-      wide
-      onClose={onClose}
-      onSubmit={() => {
-        const next: ItemTargeting = {
-          os,
-          hostname_pattern: hostname || undefined,
-          security_groups: groups,
-          ip_ranges: lines(ranges),
-        };
-        const empty =
-          !next.os?.length &&
-          !next.hostname_pattern &&
-          !next.security_groups?.length &&
-          !next.ip_ranges?.length;
-        onSave(empty ? null : next);
-      }}
-    >
-      <p className="muted">
-        Leave everything empty and the entry applies wherever the policy object does. Anything set
-        here narrows it further — it can never widen it.
-      </p>
-
+    <>
       {/* The releases ODM supports, rather than a free-text field where a
           typo produces a rule that quietly matches nothing. */}
       <div className="field">
@@ -806,11 +958,11 @@ function ItemTargetingDialog({
                 type="checkbox"
                 checked={os.includes(release.value)}
                 onChange={(e) =>
-                  setOs(
-                    e.target.checked
+                  set({
+                    os: e.target.checked
                       ? [...os, release.value]
                       : os.filter((entry) => entry !== release.value),
-                  )
+                  })
                 }
               />
               {release.label}
@@ -821,14 +973,18 @@ function ItemTargetingDialog({
       </div>
       <label className="field">
         <span>Host name pattern</span>
-        <input value={hostname} placeholder="ws-*" onChange={(e) => setHostname(e.target.value)} />
+        <input
+          value={value?.hostname_pattern ?? ""}
+          placeholder="ws-*"
+          onChange={(e) => set({ hostname_pattern: e.target.value || undefined })}
+        />
       </label>
       <div className="field">
         <span>Groups</span>
         <ChoiceList
           kind="group"
           values={groups}
-          onChange={setGroups}
+          onChange={(next) => set({ security_groups: next })}
           addLabel="Add a group…"
           emptyLabel="Any group. Add one to narrow this entry to its members."
         />
@@ -836,12 +992,12 @@ function ItemTargetingDialog({
       <label className="field">
         <span>Address ranges</span>
         <input
-          value={ranges}
+          value={(value?.ip_ranges ?? []).join(", ")}
           placeholder="10.20.0.0/24"
-          onChange={(e) => setRanges(e.target.value)}
+          onChange={(e) => set({ ip_ranges: lines(e.target.value) })}
         />
       </label>
-    </Modal>
+    </>
   );
 }
 
@@ -872,20 +1028,12 @@ function UpdatesEditor({
 
   return (
     <>
-      <header>
-        <h3>System updates</h3>
-        <span className="spacer" />
-        {current && (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange({ ...settings, updates: undefined })}
-          >
-            <Trash2 size={15} aria-hidden="true" />
-            Remove
-          </button>
-        )}
-      </header>
+      <SettingHeading
+        meta={specialFor("updates")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, updates: undefined })} />
+        }
+      />
 
       {!current ? (
         <EmptySetting onAdd={() => set({})} />
@@ -981,20 +1129,12 @@ function LoginScreenEditor({
 
   return (
     <>
-      <header>
-        <h3>Login screen</h3>
-        <span className="spacer" />
-        {current && (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange({ ...settings, login_screen: undefined })}
-          >
-            <Trash2 size={15} aria-hidden="true" />
-            Remove
-          </button>
-        )}
-      </header>
+      <SettingHeading
+        meta={specialFor("login_screen")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, login_screen: undefined })} />
+        }
+      />
       <p className="muted">
         What a machine shows before anyone signs in. Separate from the desktop background, which
         belongs to whoever is signed in.
@@ -1099,20 +1239,12 @@ function AlwaysOnVpnEditor({
 
   return (
     <>
-      <header>
-        <h3>Always-on VPN</h3>
-        <span className="spacer" />
-        {current && (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange({ ...settings, always_on_vpn: undefined })}
-          >
-            <Trash2 size={15} aria-hidden="true" />
-            Remove
-          </button>
-        )}
-      </header>
+      <SettingHeading
+        meta={specialFor("always_on_vpn")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, always_on_vpn: undefined })} />
+        }
+      />
       <p className="muted">
         The machine holds this tunnel up from boot, before anyone signs in, and the person using it
         cannot turn it off. Each machine needs a peer on the tunnel under Remote Access; the key is
@@ -1216,20 +1348,12 @@ function LocalAdministratorEditor({
 
   return (
     <>
-      <header>
-        <h3>Local administrator</h3>
-        <span className="spacer" />
-        {current && (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange({ ...settings, local_administrator: undefined })}
-          >
-            <Trash2 size={15} aria-hidden="true" />
-            Remove
-          </button>
-        )}
-      </header>
+      <SettingHeading
+        meta={specialFor("local_administrator")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, local_administrator: undefined })} />
+        }
+      />
       <p className="muted">
         A local account on every machine this reaches, with a password the machine chooses and
         rotates itself. It is the way in when the domain is unreachable, and because every machine
@@ -1330,20 +1454,12 @@ function RemoteDesktopSessionEditor({
 
   return (
     <>
-      <header>
-        <h3>Remote desktop session</h3>
-        <span className="spacer" />
-        {current && (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange({ ...settings, remote_desktop_session: undefined })}
-          >
-            <Trash2 size={15} aria-hidden="true" />
-            Remove
-          </button>
-        )}
-      </header>
+      <SettingHeading
+        meta={specialFor("remote_desktop_session")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, remote_desktop_session: undefined })} />
+        }
+      />
       <p className="muted">
         What a session may carry between the client and the host it runs on. This is a rule about
         machines rather than about a collection, so it is set here and linked where it should apply.
@@ -1404,20 +1520,12 @@ function SelfServiceEditor({
 
   return (
     <>
-      <header>
-        <h3>Self-service password</h3>
-        <span className="spacer" />
-        {current && (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange({ ...settings, password_self_service: undefined })}
-          >
-            <Trash2 size={15} aria-hidden="true" />
-            Remove
-          </button>
-        )}
-      </header>
+      <SettingHeading
+        meta={specialFor("password_self_service")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, password_self_service: undefined })} />
+        }
+      />
       <p className="muted">
         Whether these people may change their own password from the console. Not configured anywhere
         means yes — changing your own password is ordinary, and a policy object is how it is taken
@@ -1509,9 +1617,14 @@ function WallpaperEditor({
 }) {
   return (
     <>
-      <header>
-        <h3>Desktop background</h3>
-      </header>
+      <SettingHeading
+        meta={specialFor("wallpaper")}
+        actions={
+          settings.wallpaper && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, wallpaper: undefined })} />
+          )
+        }
+      />
       <label className="field">
         <span>Picture</span>
         <FileInput
@@ -1594,6 +1707,14 @@ function WallpaperEditor({
   );
 }
 
+/** A browser policy set before administrative templates replaced it.
+ *
+ * Not offered for new policy objects: Chrome and Firefox both ship ADMX
+ * templates, and importing one gives every setting a name, a type and a
+ * description instead of a JSON document that has to be right first time.
+ * What a policy already carries is still applied, and is shown here so it can
+ * be read and cleared rather than quietly living on.
+ */
 function BrowserEditor({
   settings,
   onChange,
@@ -1603,12 +1724,18 @@ function BrowserEditor({
 }) {
   return (
     <>
-      <header>
-        <h3>Browser policy</h3>
-      </header>
-      <p className="muted">
-        Managed-policy documents, written to each browser&rsquo;s own policy directory.
-      </p>
+      <SettingHeading
+        meta={{
+          title: "Browser policy",
+          help:
+            "Set before this policy object could use administrative templates. Import the " +
+            "browser's own ADMX template under Group Policy and configure it there; this " +
+            "one still applies until it is removed.",
+          doc: "quickstart",
+          docPage: "administrative-templates",
+        }}
+        actions={<RemoveSetting onRemove={() => onChange({ ...settings, browser: undefined })} />}
+      />
       <JsonField
         label="Chromium"
         value={settings.browser?.chromium}
@@ -1764,32 +1891,40 @@ function JsonField({
 }
 
 /** What a field holds, short enough for a summary column. */
-function describe(value: unknown): string {
+function describe(value: unknown, limit = 40): string {
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "boolean") return value ? "yes" : "no";
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
   const text = String(value).replace(/\s+/g, " ").trim();
-  return text.length > 40 ? text.slice(0, 39) + "…" : text;
+  return text.length > limit ? text.slice(0, limit - 1) + "…" : text;
 }
 
-/** One entry of a category with too many fields to sit in a table row. */
+/** One entry of a category, all of it, in one place.
+ *
+ * Every field the entry has, and — where the category supports it — who the
+ * entry applies to, which is part of the entry rather than a second dialog
+ * behind a second button in the row. */
 function EntryDialog({
   category,
   row,
-  index,
+  adding,
   onClose,
   onSave,
 }: {
   category: CategorySpec;
   row: Record<string, unknown>;
-  index: number;
+  adding: boolean;
   onClose: () => void;
   onSave: (next: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Record<string, unknown>>({ ...row });
+  const targetable = TARGETABLE.has(String(category.key));
+  const targeting = (draft.targeting as ItemTargeting | undefined) ?? null;
+
   return (
     <Modal
-      title={`${category.title} — entry ${index + 1}`}
-      submitLabel="Done"
+      title={adding ? `New ${category.title.toLowerCase()} entry` : identityOf(category, draft)}
+      submitLabel={adding ? "Add" : "Save"}
       wide
       onClose={onClose}
       onSubmit={() => onSave(draft)}
@@ -1804,6 +1939,20 @@ function EntryDialog({
           />
         </Field>
       ))}
+
+      {targetable && (
+        <>
+          <h3 className="section-title">Applies to</h3>
+          <p className="muted">
+            Leave this empty and the entry applies wherever the policy object does. Anything set
+            here narrows that further — it can never widen it.
+          </p>
+          <ItemTargetingFields
+            value={targeting}
+            onChange={(next) => setDraft((was) => ({ ...was, targeting: next ?? undefined }))}
+          />
+        </>
+      )}
     </Modal>
   );
 }
@@ -1837,20 +1986,14 @@ function RoamingProfileEditor({
 
   return (
     <>
-      <header>
-        <h3>Roaming profile</h3>
-        <span className="spacer" />
-        {current && (
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => onChange({ ...settings, roaming_profile: undefined })}
-          >
-            <Trash2 size={14} aria-hidden="true" />
-            Not configured
-          </button>
-        )}
-      </header>
+      <SettingHeading
+        meta={specialFor("roaming_profile")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, roaming_profile: undefined })} />
+          )
+        }
+      />
       {!current ? (
         <EmptySetting
           message="People keep a local home directory on whichever machine they sign in to."

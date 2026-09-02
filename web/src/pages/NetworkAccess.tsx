@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Router, Trash2 } from "lucide-react";
 import { ApiError, api, type RadiusClient, type RadiusPolicy } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerDialog, PickerField } from "../components/Picker";
 import Select from "../components/Select"
@@ -27,7 +28,9 @@ export function NetworkAccess() {
   const [preview, setPreview] = useState("");
   const [addingClient, setAddingClient] = useState(false);
   const [addingPolicy, setAddingPolicy] = useState(false);
-  const [secret, setSecret] = useState<{ name: string; secret: string } | null>(null);
+  const [secret, setSecret] = useState<{ name: string; secret: string; node: string } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -70,6 +73,10 @@ export function NetworkAccess() {
           </button>
         )}
       </div>
+
+      <InfoPanel page="network-access">
+        A device asks — a switch, an access point — and a rule decides, against the directory's own groups. Denials are checked first, and a request matching no rule is refused.
+      </InfoPanel>
 
       {error && (
         <p className="alert" role="alert">
@@ -227,9 +234,9 @@ export function NetworkAccess() {
       {addingClient && (
         <ClientDialog
           onClose={() => setAddingClient(false)}
-          onAdded={(name, value) => {
+          onAdded={(name, value, node) => {
             setAddingClient(false);
-            setSecret({ name, secret: value });
+            setSecret({ name, secret: value, node });
             void load();
           }}
         />
@@ -248,17 +255,39 @@ export function NetworkAccess() {
 
       {secret && (
         <Modal
-          title={`Shared secret for ${secret.name}`}
+          title={`Configure ${secret.name}`}
           submitLabel="I have copied it"
           onClose={() => setSecret(null)}
           onSubmit={() => setSecret(null)}
         >
-          <p>Enter this on the device. It is not shown again.</p>
-          <pre className="wiki-code">{secret.secret}</pre>
-          <p className="muted">
-            If it is lost, remove the device and add it back: a secret nobody has is not one worth
-            keeping.
-          </p>
+          {/* Everything that goes into the device, in one place. The secret on
+              its own leaves the operator looking up the ports and the server
+              address somewhere else, with a value they cannot come back for. */}
+          <p>Enter these on the device. The shared secret is not shown again.</p>
+          <table className="data compact">
+            <tbody>
+              <tr>
+                <th scope="row">RADIUS server</th>
+                <td className="mono selectable">{secret.node}</td>
+              </tr>
+              <tr>
+                <th scope="row">Authentication</th>
+                <td className="mono">1812/udp</td>
+              </tr>
+              <tr>
+                <th scope="row">Accounting</th>
+                <td className="mono">1813/udp</td>
+              </tr>
+              <tr>
+                <th scope="row">Shared secret</th>
+                <td className="mono selectable">{secret.secret}</td>
+              </tr>
+            </tbody>
+          </table>
+          <InfoPanel page="network-access" anchor="a-switch-and-an-access-point-worked-through">
+            If the secret is lost, remove the device and add it back: a secret nobody has is not one
+            worth keeping. Nothing here opens 1812 or 1813 in a firewall between the two.
+          </InfoPanel>
         </Modal>
       )}
     </main>
@@ -270,7 +299,7 @@ function ClientDialog({
   onAdded,
 }: {
   onClose: () => void;
-  onAdded: (name: string, secret: string) => void;
+  onAdded: (name: string, secret: string, node: string) => void;
 }) {
   const [node, setNode] = useState("");
   const [name, setName] = useState("");
@@ -298,7 +327,7 @@ function ClientDialog({
             description,
             nas_identifier: network,
           });
-          onAdded(created.name, created.secret);
+          onAdded(created.name, created.secret, node);
         } catch (err) {
           setError(err instanceof ApiError ? err.message : String(err));
         } finally {

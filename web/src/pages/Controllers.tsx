@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, RefreshCw, Server as ServerIcon } from "lucide-react";
 import { ApiError, api, type ControllerOverview, type DomainController, type Site } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 import Select from "../components/Select"
@@ -58,6 +59,10 @@ export function Controllers() {
           Add a controller
         </button>
       </div>
+
+      <InfoPanel page="domain-controllers">
+        The controllers holding the directory, how they are replicating, and the sites that decide which one a client uses.
+      </InfoPanel>
 
       {error && (
         <p className="alert" role="alert">

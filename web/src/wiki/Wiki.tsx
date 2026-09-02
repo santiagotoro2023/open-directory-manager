@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { BookOpen, Search } from "lucide-react";
 import { PAGES, findPage, search, sections } from "./index";
 
@@ -79,7 +79,20 @@ function WikiNav() {
 
 function WikiContent() {
   const { pageId } = useParams();
+  const { hash } = useLocation();
   const page = findPage(pageId);
+
+  // Arriving from a link in the console: the section it named, not the top of
+  // the page. The content renders in the same pass, so the scroll waits for
+  // the element to exist rather than assuming it already does.
+  useEffect(() => {
+    if (!hash) {
+      window.scrollTo(0, 0);
+      return;
+    }
+    const target = document.getElementById(decodeURIComponent(hash.slice(1)));
+    target?.scrollIntoView({ block: "start" });
+  }, [hash, pageId]);
 
   if (!page) {
     return (

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiError, api, type VpnPeer, type VpnTunnel } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
+import { Wizard } from "../components/Wizard";
 import { PickerDialog, PickerField } from "../components/Picker";
 import { ScopeSelector } from "../components/ScopeSelector";
 import { Split } from "../components/Split";
@@ -123,6 +125,10 @@ function TunnelDetail({ tunnel, onChanged }: { tunnel: VpnTunnel; onChanged: () 
           Add a peer
         </button>
       </div>
+
+      <InfoPanel page="remote-access">
+        A tunnel is a remote-access network: an address range for the people connecting and the networks it carries them into. Each peer gets a configuration file that can be handed over before the machine ever connects.
+      </InfoPanel>
 
       {tunnel.last_error && (
         <p className="alert" role="alert">
@@ -328,13 +334,113 @@ function TunnelDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =
       .filter(Boolean);
 
   return (
-    <Modal
+    <Wizard
       title="New tunnel"
       submitLabel="Create"
       busy={busy}
       error={error}
-      wide
       onClose={onClose}
+      steps={[
+        {
+          title: "Server",
+          hint: "Which machine terminates the tunnel, and what it is called.",
+          incomplete: !node
+            ? "Choose the server the tunnel runs on."
+            : !name
+              ? "Give the tunnel a name."
+              : undefined,
+          fields: (
+            <>
+              <Field label="Server" hint="A machine carrying the VPN role">
+                <PickerField
+                  kind="computer"
+                  as="host"
+                  ariaLabel="Server"
+                  value={node}
+                  required
+                  placeholder="vpn01.corp.example.internal"
+                  onChange={setNode}
+                />
+              </Field>
+              <Field label="Name" hint="Becomes the interface name; letters, digits and dashes">
+                <input
+                  value={name}
+                  required
+                  placeholder="homeoffice"
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </Field>
+              <Field label="Description">
+                <input value={description} onChange={(e) => setDescription(e.target.value)} />
+              </Field>
+            </>
+          ),
+        },
+        {
+          title: "How people reach it",
+          hint: "What goes into every configuration handed out. A name can be repointed later; an address cannot.",
+          incomplete: !endpoint ? "Say what clients dial from outside." : undefined,
+          fields: (
+            <div className="inline-fields">
+              <Field label="Clients dial" hint="The name or address reachable from outside">
+                <input
+                  value={endpoint}
+                  required
+                  placeholder="vpn.example.org"
+                  onChange={(e) => setEndpoint(e.target.value)}
+                />
+              </Field>
+              <Field label="Port" hint="UDP, and it has to be forwarded to this server">
+                <input
+                  type="number"
+                  value={port}
+                  onChange={(e) => setPort(Number(e.target.value))}
+                />
+              </Field>
+            </div>
+          ),
+        },
+        {
+          title: "Addresses",
+          hint: "The range peers are given while connected.",
+          incomplete: !network ? "Give the tunnel a network of its own." : undefined,
+          fields: (
+            <Field
+              label="Tunnel network"
+              hint="Not one of your existing networks, and not one a home router hands out."
+            >
+              <input value={network} required onChange={(e) => setNetwork(e.target.value)} />
+            </Field>
+          ),
+        },
+        {
+          title: "What it reaches",
+          hint: "Chosen from the DHCP scopes, so a tunnel carries the networks it is meant to and no others. Nothing ticked carries only the tunnel's own network.",
+          fields: <ScopeSelector value={routes} onChange={setRoutes} />,
+        },
+        {
+          title: "Name resolution",
+          hint: "Without a name server, nothing inside the domain resolves while connected.",
+          fields: (
+            <div className="inline-fields">
+              <Field label="Name servers" hint="Comma separated. A domain controller, usually.">
+                <input
+                  value={dns}
+                  placeholder="10.10.0.10"
+                  onChange={(e) => setDns(e.target.value)}
+                />
+              </Field>
+              <Field label="Search domain">
+                <input
+                  value={searchDomain}
+                  placeholder="corp.example.internal"
+                  onChange={(e) => setSearchDomain(e.target.value)}
+                />
+              </Field>
+            </div>
+          ),
+        },
+      ]}
       onSubmit={async () => {
         setBusy(true);
         setError(null);
@@ -357,71 +463,6 @@ function TunnelDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =
           setBusy(false);
         }
       }}
-    >
-      <Field label="Server" hint="A machine carrying the VPN role">
-        <PickerField
-          kind="computer"
-          as="host"
-          ariaLabel="Server"
-          value={node}
-          required
-          placeholder="vpn01.corp.example.internal"
-          onChange={setNode}
-        />
-      </Field>
-      <Field label="Name" hint="Becomes the interface name; letters, digits and dashes">
-        <input
-          value={name}
-          required
-          placeholder="homeoffice"
-          onChange={(e) => setName(e.target.value)}
-        />
-      </Field>
-      <Field label="Description">
-        <input value={description} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-
-      <div className="inline-fields">
-        <Field label="Clients dial" hint="The name or address reachable from outside">
-          <input
-            value={endpoint}
-            required
-            placeholder="vpn.example.org"
-            onChange={(e) => setEndpoint(e.target.value)}
-          />
-        </Field>
-        <Field label="Port">
-          <input type="number" value={port} onChange={(e) => setPort(Number(e.target.value))} />
-        </Field>
-      </div>
-
-      <Field
-        label="Tunnel network"
-        hint="Addresses given to peers. Not one of your existing networks."
-      >
-        <input value={network} required onChange={(e) => setNetwork(e.target.value)} />
-      </Field>
-
-      <h3 className="section-title">Which networks the tunnel reaches</h3>
-      <p className="muted">
-        Chosen from the DHCP scopes, so a tunnel carries the networks it is meant to and no others.
-        Leave everything unticked to carry only the tunnel's own network.
-      </p>
-      <ScopeSelector value={routes} onChange={setRoutes} />
-
-      <h3 className="section-title">Name resolution</h3>
-      <div className="inline-fields">
-        <Field label="Name servers" hint="Comma separated. A domain controller, usually.">
-          <input value={dns} placeholder="10.10.0.10" onChange={(e) => setDns(e.target.value)} />
-        </Field>
-        <Field label="Search domain">
-          <input
-            value={searchDomain}
-            placeholder="corp.example.internal"
-            onChange={(e) => setSearchDomain(e.target.value)}
-          />
-        </Field>
-      </div>
-    </Modal>
+    />
   );
 }

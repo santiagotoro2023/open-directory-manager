@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type DeletedObject } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 
@@ -55,6 +56,10 @@ export function RecycleBin() {
   return (
     <main className="content">
       <h1>Deleted Objects</h1>
+
+      <InfoPanel page="deleted-objects">
+        Everything deleted through the console is kept for the retention window, with its group memberships, and can be restored to where it was.
+      </InfoPanel>
       <p className="muted">
         Everything deleted through ODM is snapshotted before the directory delete and kept for{" "}
         {retention} days, then purged automatically.

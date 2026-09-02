@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { ApiError, api, type RdCollection, type RdSession } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { ChoiceList } from "../components/ChoiceList";
 import { Field, Modal } from "../components/Modal";
 import { PickerDialog, PickerField } from "../components/Picker";
@@ -63,6 +64,10 @@ export function RemoteDesktop() {
           New collection
         </button>
       </div>
+
+      <InfoPanel page="remote-desktop">
+        Session hosts run the desktops; a collection decides who reaches which of them. What a session may carry between client and host is a policy setting.
+      </InfoPanel>
 
       <nav className="tabs" aria-label="Remote desktop views">
         {(

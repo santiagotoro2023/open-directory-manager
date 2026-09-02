@@ -10,6 +10,7 @@ import {
   Upload,
 } from "lucide-react";
 import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
 import { ChoiceList, SUPPORTED_RELEASES } from "../components/ChoiceList";
@@ -99,6 +100,12 @@ export function Policy() {
           New GPO
         </button>
       </div>
+
+      <InfoPanel page="group-policy">
+        A policy object carries settings; a link decides where they land. Nothing here applies to
+        anything until the object is linked to an organizational unit, and what a machine ends up
+        with is every link above it, in order.
+      </InfoPanel>
 
       {error && (
         <p className="alert" role="alert">
@@ -356,12 +363,29 @@ function GpoDetail({
 
       {tab === "settings" && <SettingsEditor settings={settings} onChange={setSettings} />}
 
-      {tab === "links" && <LinksEditor gpo={gpo} onChanged={onReload} />}
+      {tab === "links" && (
+        <>
+          <InfoPanel page="group-policy" anchor="how-precedence-is-decided">
+            Where this object applies. Links lower in the tree win over links above them, an
+            enforced link wins over everything below it, and an OU that blocks inheritance stops
+            everything above it except what is enforced.
+          </InfoPanel>
+          <LinksEditor gpo={gpo} onChanged={onReload} />
+        </>
+      )}
 
       {tab === "scope" && (
         /* Three groups side by side rather than one 720px column with two
            thirds of a wide screen left blank underneath it. */
         <div className="scope-form">
+          <section className="scope-form-intro">
+            <InfoPanel page="group-policy" anchor="security-filtering">
+              Narrowing, on top of where the object is linked. Security filtering picks who inside
+              those links it applies to; item-level targeting picks which machines. Both can only
+              narrow what the links already reach.
+            </InfoPanel>
+          </section>
+
           <section>
             <h3>Identity</h3>
             <Field label="Name">

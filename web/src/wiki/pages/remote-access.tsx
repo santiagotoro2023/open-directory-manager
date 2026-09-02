@@ -121,15 +121,101 @@ export function Content() {
           </Note>
         </Section>
 
-        <Section title="What has to be open">
+        <Section title="Choosing the addresses">
+          <Reference
+            headers={["Field", "Recommended", "Notes"]}
+            rows={[
+              [
+                "Endpoint clients dial",
+                <>
+                  A name, e.g. <C key="a">vpn.example.org</C>
+                </>,
+                "It goes into every configuration handed out. A name can be repointed at a new address; an address cannot, and every configuration issued with it has to be reissued.",
+              ],
+              [
+                "Listening port",
+                <C key="b">51820</C>,
+                "UDP. Any port works; a port already allowed outbound from hotel and café networks — 443 is the usual choice — connects in more places.",
+              ],
+              [
+                "Tunnel network",
+                <C key="c">10.99.0.0/24</C>,
+                "A range that is not one of yours and not one a home router hands out. 192.168.0.0/24 and 192.168.1.0/24 collide with half the routers in the world.",
+              ],
+              [
+                "Networks it carries",
+                "The scopes people actually need",
+                "Everything routed into the tunnel. Carrying only the internal networks — a split tunnel — leaves everything else on the local connection.",
+              ],
+              [
+                "Name server",
+                "A domain controller",
+                "Without it, names inside the domain do not resolve while connected, and nothing that is reached by name works.",
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="A tunnel behind a firewall">
           <p>
-            The port each tunnel listens on has to reach the server from outside. Nothing in ODM
-            opens it at a perimeter firewall, and it will not say so on its own — a tunnel that
-            never connects with no error in the console is almost always this.
+            The usual arrangement: the VPN server sits inside on <C>10.10.0.30</C>, the perimeter
+            firewall holds the public address <C>203.0.113.10</C>, and people connect from outside.
+            Nothing in ODM opens a port at a perimeter firewall — a tunnel that simply never
+            connects, with nothing in the console to say why, is almost always this.
           </p>
-          <Code>{`# on the VPN server, to confirm it is listening
-sudo wg show
-sudo ss -ulnp | grep 51820`}</Code>
+          <Steps>
+            <li>
+              Forward <C>UDP 51820</C> on <C>203.0.113.10</C> to <C>10.10.0.30:51820</C>. UDP, not
+              TCP: WireGuard does not answer TCP at all, and a rule written for TCP looks correct
+              and forwards nothing.
+            </li>
+            <li>
+              Publish <C>vpn.example.org</C> in public DNS as <C>203.0.113.10</C>, and set that
+              name as the endpoint on the tunnel so configurations carry it.
+            </li>
+            <li>
+              Allow the tunnel network <C>10.99.0.0/24</C> to reach the internal networks the
+              tunnel carries, and allow return traffic. A firewall that permits the connection but
+              not the routed traffic gives a tunnel that comes up and carries nothing.
+            </li>
+            <li>
+              Give peers a keepalive of <C>25</C> seconds where a NAT sits in front of them, so the
+              mapping the firewall holds does not expire between packets.
+            </li>
+          </Steps>
+          <Code>{`# on the VPN server: is it listening, and has anything arrived?
+sudo ss -ulnp | grep 51820
+sudo wg show                 # latest handshake, per peer
+
+# from outside, with the tunnel down: does the port reach the server at all?
+sudo nmap -sU -p 51820 vpn.example.org`}</Code>
+          <Reference
+            headers={["What you see", "Where it is"]}
+            rows={[
+              [
+                "No handshake at all, from any peer",
+                "The port is not reaching the server: the forward, the protocol, or the public name.",
+              ],
+              [
+                "A handshake, then nothing passes",
+                "Routing. The networks the tunnel carries, or the firewall rule for return traffic.",
+              ],
+              [
+                "It works, then stops after a minute idle",
+                "A NAT in front of the peer dropped the mapping. Set the keepalive.",
+              ],
+              [
+                "Everything resolves except internal names",
+                "No name server on the tunnel, or the one given is not reachable through it.",
+              ],
+              [
+                "Websites hang, small requests are fine",
+                <>
+                  MTU. Lower the peer&rsquo;s to <C key="d">1380</C> and see whether it clears.
+                </>,
+              ],
+            ]}
+          />
         </Section>
 
         <Section title="Removing access">

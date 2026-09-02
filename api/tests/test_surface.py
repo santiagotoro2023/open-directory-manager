@@ -680,3 +680,55 @@ def test_the_console_can_set_a_picture():
 
     paths = {route.path for route in router.routes if isinstance(route, APIRoute)}
     assert "/api/v1/directory/user/photo" in paths
+
+
+def test_every_documentation_link_lands_on_a_page_that_exists() -> None:
+    """The console links a setting to the section of the wiki about it.
+
+    A link naming a page or an anchor that is not there is worse than no link:
+    it lands on "Not found", or silently at the top of the right page, and the
+    operator concludes the documentation does not cover the setting.
+    """
+    import pathlib
+    import re
+
+    web = pathlib.Path("..") / "web" / "src"
+
+    def slug(title: str) -> str:
+        return re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", title.lower()))
+
+    pages: dict[str, set[str]] = {}
+    for source in sorted((web / "wiki" / "pages").glob("*.tsx")):
+        body = source.read_text()
+        page_id = re.search(r'id:\s*"([^"]+)"', body)
+        assert page_id, f"{source.name} has no page id"
+        anchors = {slug(title) for title in re.findall(r'<Section title="([^"]+)"', body)}
+        anchors |= set(re.findall(r'<Section[^>]*?\bid="([^"]+)"', body))
+        # Every page has these two, from the components it is built from.
+        pages[page_id.group(1)] = anchors | {"quickstart", "details"}
+
+    # A duplicate section title on one page gives two headings the same anchor,
+    # and a link to it lands on whichever came first.
+    for source in sorted((web / "wiki" / "pages").glob("*.tsx")):
+        titles = re.findall(r'<Section title="([^"]+)"', source.read_text())
+        slugs = [slug(title) for title in titles]
+        assert len(slugs) == len(set(slugs)), f"{source.name} has two sections with one anchor"
+
+    links: list[tuple[str, str, str]] = []
+    for source in sorted(web.rglob("*.tsx")):
+        body = source.read_text()
+        for match in re.finditer(
+            r'page="([^"]+)"(?:\s*\n?\s*anchor="([^"]+)")?', body
+        ):
+            links.append((source.name, match.group(1), match.group(2) or ""))
+        # The settings editor carries its links as data rather than as markup.
+        for match in re.finditer(
+            r'doc:\s*"([^"]+)",\n(?:\s*docPage:\s*"([^"]+)",)?', body
+        ):
+            links.append((source.name, match.group(2) or "policy-settings", match.group(1)))
+
+    assert links, "no documentation links found; has the component been renamed?"
+    for where, page, anchor in links:
+        assert page in pages, f"{where} links to the wiki page {page!r}, which does not exist"
+        if anchor:
+            assert anchor in pages[page], f"{where} links to {page}#{anchor}, which does not exist"

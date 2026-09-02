@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DhcpLease, type DhcpScope } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
+import { Wizard } from "../components/Wizard";
 import { RoleConfiguration } from "../components/RoleConfiguration";
 
 type Tab = "scopes" | "leases" | "configuration";
@@ -107,6 +109,12 @@ export function Dhcp() {
         </p>
       )}
 
+      <InfoPanel page="dhcp">
+        Scopes hand out addresses and the settings that come with them — the gateway, the domain
+        controllers to resolve names against, and the domain to search. Leases show what is
+        currently held, and are written into DNS as they are handed out.
+      </InfoPanel>
+
       <nav className="tabs" aria-label="DHCP views">
         {(["scopes", "leases", "configuration"] as Tab[]).map((current) => (
           <button
@@ -135,6 +143,7 @@ export function Dhcp() {
               <th scope="col">Pools</th>
               <th scope="col">Utilisation</th>
               <th scope="col">Reservations</th>
+              <th scope="col">Hands out</th>
               <th scope="col">Comment</th>
               <th scope="col">
                 <span className="sr-only">Actions</span>
@@ -148,6 +157,16 @@ export function Dhcp() {
                 <td className="mono">{scope.pools.map((pool) => pool.pool).join(", ")}</td>
                 <td>{utilisation(stats, scope.id)}</td>
                 <td>{scope.reservations?.length ?? 0}</td>
+                {/* A scope that hands out no DNS server is the usual reason a
+                    client with an address still cannot reach anything by
+                    name, and nothing on this page used to say so. */}
+                <td>
+                  {option(scope, "domain-name-servers") ? (
+                    <span className="mono">{handsOut(scope)}</span>
+                  ) : (
+                    <span className="badge failure">no DNS server</span>
+                  )}
+                </td>
                 <td>{scope["user-context"]?.comment ?? ""}</td>
                 <td>
                   <button
@@ -173,7 +192,7 @@ export function Dhcp() {
             ))}
             {scopes.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted">
+                <td colSpan={7} className="muted">
                   No scopes configured.
                 </td>
               </tr>
@@ -243,6 +262,17 @@ export function Dhcp() {
   );
 }
 
+function option(scope: DhcpScope, name: string): string {
+  return scope["option-data"]?.find((entry) => entry.name === name)?.data ?? "";
+}
+
+/** The options a client is handed, short enough for a column. */
+function handsOut(scope: DhcpScope): string {
+  return [option(scope, "domain-name-servers"), option(scope, "domain-name")]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function utilisation(stats: Record<string, number>, id: number): string {
   const total = stats[`subnet[${id}].total-addresses`];
   const assigned = stats[`subnet[${id}].assigned-addresses`];
@@ -255,17 +285,103 @@ function ScopeDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   const [pool, setPool] = useState("");
   const [routers, setRouters] = useState("");
   const [dnsServers, setDnsServers] = useState("");
+  const [domainName, setDomainName] = useState("");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The domain's own values, filled in rather than left to be remembered. A
+  // scope built without them hands out an address and nothing else, and every
+  // name a client is given afterwards — a share, the controller it should
+  // join — fails to resolve.
+  useEffect(() => {
+    api.dhcp
+      .defaults()
+      .then((defaults) => {
+        setDnsServers((current) => current || defaults.dns_servers.join(", "));
+        setDomainName((current) => current || defaults.domain_name);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // The middle of the subnet, offered rather than typed out. Everything below
+  // it is left free for the switches, printers and servers that hold a fixed
+  // address, which is how most networks are laid out anyway.
+  const suggestedPool = suggestPool(subnet);
+
   return (
-    <Modal
+    <Wizard
       title="New DHCP scope"
       submitLabel="Create"
       busy={busy}
       error={error}
       onClose={onClose}
+      steps={[
+        {
+          title: "The network",
+          hint: "One scope per subnet, written as CIDR.",
+          incomplete: !subnet ? "Give the subnet this scope serves." : undefined,
+          fields: (
+            <Field label="Subnet" hint="For example 10.10.0.0/24">
+              <input
+                value={subnet}
+                required
+                placeholder="10.10.0.0/24"
+                onChange={(e) => setSubnet(e.target.value)}
+              />
+            </Field>
+          ),
+        },
+        {
+          title: "Addresses to hand out",
+          hint: "The range clients are given. Anything outside it stays free for machines with a fixed address.",
+          fields: (
+            <>
+              <Field label="Pool" hint="First and last address">
+                <input
+                  value={pool}
+                  placeholder={suggestedPool || "10.10.0.100 - 10.10.0.200"}
+                  onChange={(e) => setPool(e.target.value)}
+                />
+              </Field>
+              {suggestedPool && pool !== suggestedPool && (
+                <div className="actions-row">
+                  <button type="button" className="ghost" onClick={() => setPool(suggestedPool)}>
+                    Use {suggestedPool}
+                  </button>
+                </div>
+              )}
+            </>
+          ),
+        },
+        {
+          title: "What clients are told",
+          hint: "An address on its own gets a machine onto the wire and no further.",
+          fields: (
+            <>
+              <Field label="Routers" hint="The default gateway on this subnet">
+                <input
+                  value={routers}
+                  placeholder="10.10.0.1"
+                  onChange={(e) => setRouters(e.target.value)}
+                />
+              </Field>
+              <Field
+                label="DNS servers"
+                hint="The domain controllers. A client given anything else cannot resolve the domain, its shares, or the records a join needs."
+              >
+                <input value={dnsServers} onChange={(e) => setDnsServers(e.target.value)} />
+              </Field>
+              <Field label="Domain name" hint="The search domain clients on this subnet are given">
+                <input value={domainName} onChange={(e) => setDomainName(e.target.value)} />
+              </Field>
+              <Field label="Comment" hint="Shown in the scope list">
+                <input value={comment} onChange={(e) => setComment(e.target.value)} />
+              </Field>
+            </>
+          ),
+        },
+      ]}
       onSubmit={async () => {
         setBusy(true);
         setError(null);
@@ -273,6 +389,7 @@ function ScopeDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           const options = [];
           if (routers) options.push({ name: "routers", data: routers });
           if (dnsServers) options.push({ name: "domain-name-servers", data: dnsServers });
+          if (domainName) options.push({ name: "domain-name", data: domainName });
           await api.dhcp.createScope({
             subnet,
             pools: pool ? [{ pool }] : [],
@@ -286,24 +403,20 @@ function ScopeDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           setBusy(false);
         }
       }}
-    >
-      <Field label="Subnet" hint="CIDR, e.g. 10.10.0.0/24">
-        <input value={subnet} required onChange={(e) => setSubnet(e.target.value)} />
-      </Field>
-      <Field label="Pool" hint="First and last address, e.g. 10.10.0.100 - 10.10.0.200">
-        <input value={pool} onChange={(e) => setPool(e.target.value)} />
-      </Field>
-      <Field label="Routers">
-        <input value={routers} onChange={(e) => setRouters(e.target.value)} />
-      </Field>
-      <Field label="DNS servers" hint="Point clients at the domain controllers">
-        <input value={dnsServers} onChange={(e) => setDnsServers(e.target.value)} />
-      </Field>
-      <Field label="Comment">
-        <input value={comment} onChange={(e) => setComment(e.target.value)} />
-      </Field>
-    </Modal>
+    />
   );
+}
+
+/** The upper half of a subnet: a pool that leaves room for fixed addresses.
+ *
+ * Only for the obvious case — an IPv4 network of /16 or smaller, written as
+ * CIDR. Anything else is left to be typed, rather than guessed at. */
+function suggestPool(subnet: string): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)\.\d+\/(\d+)$/.exec(subnet.trim());
+  if (!match) return "";
+  const [, a, b, c, bits] = match;
+  if (Number(bits) !== 24) return "";
+  return `${a}.${b}.${c}.100 - ${a}.${b}.${c}.254`;
 }
 
 function ReservationDialog({

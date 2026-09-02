@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Printer as PrinterIcon, Search } from "lucide-react";
 import { ApiError, api, type Printer } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { useContextMenu } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
@@ -52,6 +53,10 @@ export function Printers() {
           New printer
         </button>
       </div>
+
+      <InfoPanel page="printing">
+        Queues on a machine carrying the print-server role. A policy hands a queue to the people who should have it, and the driver comes from the server.
+      </InfoPanel>
 
       {error && (
         <p className="alert" role="alert">

@@ -9,6 +9,7 @@ import {
   type RoleDescriptor,
   type RoleInstance,
 } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 import Select from "../components/Select"
@@ -71,6 +72,10 @@ export function Roles() {
       <div className="page-header">
         <h1>Server Roles</h1>
       </div>
+
+      <InfoPanel page="server-roles">
+        A role is a capability a server gains: DHCP, file server, print server, VPN, RADIUS, certificate authority. Install it here; configure what it does on that service&rsquo;s own page.
+      </InfoPanel>
 
       {error && (
         <p className="alert" role="alert">

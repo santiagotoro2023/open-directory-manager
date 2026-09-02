@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Folder, Monitor, Search, User, Users } from 
 import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
 import { Modal } from "./Modal";
 import Select from "./Select"
+import { isSystemContainer } from "./directoryTree";
 
 const ICONS = {
   user: User,
@@ -241,6 +242,9 @@ export function ContainerPicker({
   const [rootLabel, setRootLabel] = useState("");
   const [selected, setSelected] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Off, as it is on the Directory page: a move destination is somewhere an
+  // operator put there, not CN=Policies with a folder per policy object in it.
+  const [showSystem, setShowSystem] = useState(false);
 
   useEffect(() => {
     api.directory
@@ -272,6 +276,8 @@ export function ContainerPicker({
       .catch((err) => setLoadError(String(err)));
   }, [onlyOrganizationalUnits, exclude]);
 
+  const visible = showSystem ? nodes : nodes.filter((node) => !isSystemContainer(node));
+
   return (
     <Modal
       title={title}
@@ -283,7 +289,7 @@ export function ContainerPicker({
     >
       <div className="picker-tree">
         <Branch
-          nodes={nodes}
+          nodes={visible}
           dn={root}
           label={rootLabel}
           selected={selected}
@@ -291,6 +297,14 @@ export function ContainerPicker({
         />
       </div>
       <p className="mono muted">{selected}</p>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={showSystem}
+          onChange={(e) => setShowSystem(e.target.checked)}
+        />
+        Show system containers
+      </label>
     </Modal>
   );
 }

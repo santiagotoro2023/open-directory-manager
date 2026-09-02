@@ -113,6 +113,68 @@ export function Content() {
           </p>
         </Section>
 
+        <Section title="A switch and an access point, worked through">
+          <p>
+            Wired ports on a switch at <C>10.10.0.2</C>, and access points on a controller at{" "}
+            <C>10.10.0.3</C>, both authenticating against a RADIUS server at <C>10.10.0.25</C>.
+          </p>
+          <Steps>
+            <li>
+              <strong>Devices</strong> → <strong>Add a device</strong> → <C>10.10.0.2</C>, network
+              name <C>corp-wired</C>. Copy the shared secret straight into the switch: it is shown
+              once and never again.
+            </li>
+            <li>
+              Add the controller as a second device, <C>10.10.0.3</C>, network name{" "}
+              <C>corp-wifi</C>. A range can be entered instead — <C>10.10.0.0/24</C> — where a stack
+              of access points authenticates from their own addresses.
+            </li>
+            <li>
+              On the switch: point <C>802.1X</C> at <C>10.10.0.25</C>, ports{" "}
+              <C>1812</C> and <C>1813</C> UDP, with that shared secret, and send{" "}
+              <C>NAS-Identifier</C> or the SSID as <C>corp-wired</C> so rules can tell the two
+              networks apart.
+            </li>
+            <li>
+              <strong>Rules</strong> → a deny rule first, at order <C>10</C>, for the group that
+              must never get on. Then allows: <C>Domain Computers</C> on <C>corp-wired</C> with
+              VLAN <C>10</C>, staff on <C>corp-wifi</C> with VLAN <C>20</C>, contractors on{" "}
+              <C>corp-wifi</C> with VLAN <C>90</C>.
+            </li>
+            <li>
+              Leave the guest network off the RADIUS server entirely. A network that should let
+              anybody on does not need an access decision.
+            </li>
+          </Steps>
+          <Reference
+            headers={["Recommended", "Value", "Why"]}
+            rows={[
+              ["Authentication port", <C key="a">1812/udp</C>, "The registered port; nothing here opens it in a firewall."],
+              ["Accounting port", <C key="b">1813/udp</C>, "Sessions are logged with the same secret."],
+              [
+                "One device entry per address, or a range",
+                "Whichever matches reality",
+                "A request from an address no device covers is refused before any rule is read, which looks exactly like a wrong password.",
+              ],
+              [
+                "A deny rule for leavers' group at order 10",
+                "Order 10",
+                "Denials are checked before allows, and an explicit one is easier to read than the absence of an allow.",
+              ],
+              [
+                "VLAN per rule",
+                "10 wired, 20 staff, 90 contractors",
+                "The switch places the session; the number has to exist on the switch as well.",
+              ],
+            ]}
+          />
+          <Note>
+            Test with one port and one machine before enabling 802.1X everywhere. A switch
+            configured to authenticate every port, against a server that refuses everything, locks
+            out the people who would fix it.
+          </Note>
+        </Section>
+
         <Section title="If nothing can get on">
           <Reference
             headers={["Check", "How"]}

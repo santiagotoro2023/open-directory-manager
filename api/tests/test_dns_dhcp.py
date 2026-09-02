@@ -246,3 +246,27 @@ def test_an_error_line_survives_and_silence_falls_back():
     assert message("ERROR(runtime): no such zone\n", "", "fb") == "ERROR(runtime): no such zone"
     assert message("", "", "fb") == "fb"
     assert message("", "  indented only\n", "fb") == "fb"
+
+
+# -------------------------------------------------------------- Kea leases --
+
+
+def test_all_leases_are_asked_for_without_a_subnet_filter(monkeypatch):
+    """{"subnets": []} is not "every subnet" — it is "these zero subnets".
+
+    Kea answers it with no leases at all, so the console showed an empty
+    Leases tab under a scope whose utilisation said an address was in use.
+    """
+    sent: dict[str, object] = {}
+
+    def fake_command(settings, name, arguments=None, service="dhcp4"):
+        sent["name"] = name
+        sent["arguments"] = arguments
+        return {"leases": [{"ip-address": "10.10.0.50"}]}
+
+    monkeypatch.setattr(kea, "command", fake_command)
+    leases = kea.leases(get_settings())
+
+    assert sent["name"] == "lease4-get-all"
+    assert sent["arguments"] is None
+    assert leases == [{"ip-address": "10.10.0.50"}]

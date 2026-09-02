@@ -8,6 +8,7 @@ import {
   type IssuedCertificate,
   type TrustAnchor,
 } from "../api";
+import { InfoPanel } from "../components/DocsLink";
 import { FileInput } from "../components/FileInput";
 import { Field, Modal } from "../components/Modal";
 import Select from "../components/Select"
@@ -129,6 +130,10 @@ export function Certificates() {
           Issue certificate
         </button>
       </div>
+
+      <InfoPanel page="certificates">
+        The domain&rsquo;s own certificate authority: what it has issued, what it will issue, and the trust anchor every machine gets.
+      </InfoPanel>
 
       {status?.subject && (
         <table className="data" style={{ maxWidth: "860px", marginBottom: "18px" }}>

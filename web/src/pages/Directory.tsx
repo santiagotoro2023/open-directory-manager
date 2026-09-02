@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -18,6 +18,7 @@ import { isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select"
+import { isSystemContainer, label, parentOf } from "../components/directoryTree";
 
 const ICONS = {
   user: User,
@@ -37,21 +38,6 @@ const TYPE_LABELS: Record<string, string> = {
   domain: "Domain",
 };
 
-// Containers the directory keeps for its own bookkeeping. Nothing an operator
-// manages lives in them, so they are out of the way until asked for.
-const PLUMBING = new Set([
-  "keys",
-  "foreignsecurityprincipals",
-  "managed service accounts",
-  "program data",
-  "system",
-  "ntds quotas",
-  "infrastructure",
-  "lostandfound",
-  "tpm devices",
-  "deleted objects",
-]);
-
 // Organizational units the directory creates for itself. Together with the
 // containers (Users, Computers, Builtin) these are the structure that was
 // always there, as opposed to the structure an operator built.
@@ -61,6 +47,27 @@ const BUILTIN_OUS = new Set(["domain controllers"]);
 // drop target only reacts to a directory object and not, say, a file dragged
 // in from the desktop.
 const DN_MEDIA_TYPE = "application/x-odm-dn";
+
+// Where in the tree the operator was. Session storage rather than local: it is
+// navigation state, and a new browser session starts at the domain head.
+const CONTAINER_KEY = "odm.directory.container";
+
+function remembered(key: string): string {
+  try {
+    return window.sessionStorage.getItem(key) ?? "";
+  } catch {
+    // Storage can be refused outright; the tree still works without it.
+    return "";
+  }
+}
+
+function remember(key: string, value: string): void {
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    /* nothing to do: the position is not worth an error message */
+  }
+}
 
 // A name match alone isn't identity: an operator can create their own
 // "Domain Controllers" OU elsewhere in the tree, and it must not borrow the
@@ -75,24 +82,16 @@ function isBuiltin(node: DirectoryObject, baseDn: string): boolean {
   );
 }
 
-function parentOf(dn: string): string {
-  const comma = dn.indexOf(",");
-  return comma === -1 ? "" : dn.slice(comma + 1);
-}
-
-function label(node: DirectoryObject): string {
-  return String(node.ou ?? node.cn ?? node.name ?? node.distinguishedName);
-}
-
-function isPlumbing(node: DirectoryObject): boolean {
-  return PLUMBING.has(label(node).toLowerCase());
-}
 
 export function Directory() {
   const [nodes, setNodes] = useState<DirectoryObject[]>([]);
   const [baseDn, setBaseDn] = useState("");
   const [domainLabel, setDomainLabel] = useState("");
-  const [container, setContainer] = useState("");
+  // Where the tree was left. Opening an object unmounts this page, and coming
+  // back put every operator at the top of the domain again — several clicks
+  // below where they were working. Kept for the browser session, so it is the
+  // same navigation state a Back button would have restored.
+  const [container, setContainer] = useState(() => remembered(CONTAINER_KEY));
   const [objects, setObjects] = useState<DirectoryObject[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [typeFilter, setTypeFilter] = useState<ObjectType | "">("");
@@ -116,8 +115,22 @@ export function Directory() {
     // of the tree is called here too.
     setDomainLabel(tree.netbios_name || tree.domain || tree.base_dn);
     setNodes(tree.nodes);
-    setContainer((current) => current || tree.base_dn);
+    setContainer((current) => {
+      // A remembered container that has since been deleted or renamed is not
+      // somewhere to put anybody back.
+      const known =
+        current &&
+        (current.toLowerCase() === tree.base_dn.toLowerCase() ||
+          tree.nodes.some(
+            (node) => node.distinguishedName.toLowerCase() === current.toLowerCase(),
+          ));
+      return known ? current : tree.base_dn;
+    });
   }, []);
+
+  useEffect(() => {
+    if (container) remember(CONTAINER_KEY, container);
+  }, [container]);
 
   const loadObjects = useCallback(async () => {
     if (!container) return;
@@ -180,7 +193,7 @@ export function Directory() {
   );
 
   const visible = useMemo(
-    () => (showPlumbing ? nodes : nodes.filter((node) => !isPlumbing(node))),
+    () => (showPlumbing ? nodes : nodes.filter((node) => !isSystemContainer(node))),
     [nodes, showPlumbing],
   );
 
@@ -455,14 +468,21 @@ function TreeNode({
 }) {
   const [open, setOpen] = useState(true);
   const [dragOver, setDragOver] = useState(false);
+  const row = useRef<HTMLDivElement>(null);
   const self = nodes.find((n) => n.distinguishedName === dn);
   // ponytail: O(n) scan per node. Directory trees are tens to hundreds of
   // containers; build a parent index here if that stops being true.
   const children = nodes.filter(
     (n) => parentOf(n.distinguishedName).toLowerCase() === dn.toLowerCase(),
   );
+  const name = self ? rootLabel ?? label(self) : "";
+  // Remembered position, made visible: a container several levels down is of
+  // no use if the pane is still scrolled to the top of the domain.
+  useEffect(() => {
+    if (selected === dn) row.current?.scrollIntoView({ block: "nearest" });
+  }, [selected, dn]);
+
   if (!self) return null;
-  const name = rootLabel ?? label(self);
   const builtin = isBuiltin(self, baseDn);
 
   const rowClass = [selected === dn ? "tree-row active" : "tree-row", dragOver && "drag-over"]
@@ -472,6 +492,7 @@ function TreeNode({
   return (
     <div className="tree-node">
       <div
+        ref={row}
         className={rowClass}
         {...bind(menuFor(self))}
         onDragOver={(event) => {

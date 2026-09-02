@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from typing import Annotated, Any
 
 import asyncpg
@@ -78,6 +79,38 @@ async def status(
         "configured": True,
         "high_availability": await run_in_threadpool(kea.ha_status, settings),
         "statistics": await run_in_threadpool(kea.statistics, settings),
+    }
+
+
+def _domain_addresses(domain: str) -> list[str]:
+    """The addresses the domain itself answers on — its domain controllers.
+
+    Every DC registers an A record for the domain name, which is how a client
+    finds one in the first place, so this is the same list a joined machine
+    resolves.
+    """
+    try:
+        infos = socket.getaddrinfo(domain, None, socket.AF_INET, socket.SOCK_DGRAM)
+    except OSError:
+        return []
+    return sorted({str(info[4][0]) for info in infos})
+
+
+@router.get("/defaults", dependencies=[Depends(requires("dhcp.read"))])
+async def scope_defaults(
+    _: Session = Depends(require_admin),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """What a new scope should hand out unless the operator says otherwise.
+
+    A scope that hands out no DNS server is the single most common way a
+    working domain looks broken: the client gets an address, and then nothing
+    it is told to reach by name resolves — a share included, where the file
+    manager reports "Invalid argument" rather than anything about DNS.
+    """
+    return {
+        "domain_name": settings.domain,
+        "dns_servers": await run_in_threadpool(_domain_addresses, settings.domain),
     }
 
 
