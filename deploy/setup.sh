@@ -640,7 +640,18 @@ fi
 AGENT_BINARY="$REPO/agent/odm-agent"
 AGENT_LOG="/var/log/odm-agent-install.log"
 
-if [[ ! -x "$AGENT_BINARY" ]]; then
+# Rebuilt when it is missing, and when the one that is there is older than the
+# tree: setup is the upgrade path, and skipping the build on a second run left
+# the controller running the agent it was first installed with — new appliers,
+# new subcommands and fixes all absent on the one machine an operator is most
+# likely to test on.
+TREE_VERSION="$(sed -n 's/^const version = "\(.*\)"$/\1/p' "$REPO/agent/main.go" | head -1)"
+AGENT_VERSION=""
+if [[ -x "$AGENT_BINARY" ]]; then
+    AGENT_VERSION="$("$AGENT_BINARY" --version 2>/dev/null | awk '{print $2}' || true)"
+fi
+
+if [[ ! -x "$AGENT_BINARY" || ( -n "$TREE_VERSION" && "$AGENT_VERSION" != "$TREE_VERSION" ) ]]; then
     command -v go >/dev/null 2>&1 || {
         info "Installing Go to build the agent"
         apt-get install -y --no-install-recommends golang-go >>"$AGENT_LOG" 2>&1 || true

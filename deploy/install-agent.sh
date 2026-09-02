@@ -125,7 +125,11 @@ chmod 0640 /etc/odm/agent.json
 
 install -m 0644 "$(dirname "$0")/odm-agent.service" /etc/systemd/system/odm-agent.service
 systemctl daemon-reload
-systemctl enable --now odm-agent
+systemctl enable odm-agent
+# restart, not "enable --now": on a machine where the service is already
+# running, --now does nothing and the old binary keeps running until the next
+# reboot — so an upgrade appeared to install and changed nothing.
+systemctl restart odm-agent
 
 cat <<SUMMARY
 
