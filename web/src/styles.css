@@ -191,6 +191,7 @@ button.icon {
 .picker-results button,
 .role-row,
 .wiki-link,
+.wizard-rail button,
 .tree-label {
   justify-content: flex-start;
   text-align: left;
@@ -1773,6 +1774,47 @@ ul.plain {
 
 .category-editor > header .spacer {
   flex: 1;
+}
+
+/* -------------------------------------------------- prefixed address -- */
+
+/* An address on a network the console already knows: the part every address
+   on it shares sits beside the field instead of being typed again. */
+.prefixed-input {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.prefixed-input span {
+  display: flex;
+  align-items: center;
+  padding: 0 2px 0 10px;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--surface-recessed);
+  border-right: 1px solid var(--border);
+}
+
+.prefixed-input input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+}
+
+.prefixed-input:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.prefixed-input input:focus-visible {
+  outline: none;
 }
 
 /* ------------------------------------------------------------- wizard -- */

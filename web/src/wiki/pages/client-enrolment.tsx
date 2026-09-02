@@ -38,18 +38,17 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          A machine with nothing on it boots from the network, installs Debian without being
-          answered, and joins the domain the first time it starts. What it installs — which release,
-          from which mirror, into which container — is configuration on the{" "}
-          <strong>Client Enrolment</strong> page, changed at any time without reinstalling
-          anything.
+          A machine boots from the network, installs Debian unattended, and joins the domain on
+          first boot. Which release, from which mirror, into which container is set on the{" "}
+          <strong>Client Enrolment</strong> page and applied by re-running the boot server&rsquo;s
+          installer.
         </p>
 
         <Example title="Set it up, end to end">
           <Steps>
             <li>
               <strong>Directory</strong> → <strong>Enrolment tokens</strong> → create a multi-use
-              token. Machines join with it, and it is the one thing to create first.
+              token. Installed machines join with it.
             </li>
             <li>
               <strong>Server Roles</strong> → <strong>DHCP</strong> → install it, if nothing already
@@ -73,8 +72,7 @@ export function Content() {
         <Example title="Build every machine the same, months apart">
           Set <strong>Mirror</strong> to a snapshot —{" "}
           <C>https://snapshot.debian.org/archive/debian/20250801T000000Z</C>. The default mirror
-          installs whatever the release currently is, so a machine built today and one built next
-          month are not the same machine.
+          tracks the release, so machines built weeks apart carry different package versions.
         </Example>
 
         <Where>
@@ -101,7 +99,7 @@ export function Content() {
               [
                 "Enrolment token",
                 "A multi-use token created for deployment",
-                "What the machine authenticates its join with. One is issued if the field is left empty, but a token created deliberately can be revoked without touching anything else.",
+                "What the machine authenticates its join with. One is issued when the field is empty; a token created under Directory can be revoked on its own.",
               ],
               [
                 "Debian release",
@@ -116,7 +114,7 @@ export function Content() {
               [
                 "Container for installed machines",
                 "An OU you link policy to, e.g. OU=Workstations,DC=corp,DC=example,DC=internal",
-                "Where the computer account is created. Put it where the policy for desktops is linked, or every new machine lands in the default container and gets none of it.",
+                "Where the computer account is created. Set it to the OU carrying the policy for these machines; empty means the default Computers container.",
               ],
               [
                 "Local administrator account",
@@ -128,14 +126,13 @@ export function Content() {
                 "Generated",
                 <>
                   A <C key="a">crypt(3)</C> hash, as <C key="b">openssl passwd -6</C> produces. One
-                  is generated and printed once when the field is empty. A plain password is never
-                  stored here.
+                  is generated and printed once when the field is empty.
                 </>,
               ],
               [
                 "Client installer",
                 <C key="c">/usr/sbin/odm-client-install</C>,
-                "The join binary published to installs. The installer refuses to run without it rather than leaving machines that install and never join.",
+                "The join binary published to installs. The role installer requires it.",
               ],
             ]}
           />
@@ -143,15 +140,13 @@ export function Content() {
 
         <Section title="Networks to offer boot on">
           <p>
-            Network boot is advertised over DHCP, so a deployment reaches exactly the scopes ticked
-            and no others. That is what keeps a provisioning network separate from a client network
-            on the same wire: a machine plugged into a desk port is never offered an installer, and
-            one plugged into the provisioning VLAN always is.
+            Network boot is advertised over DHCP, so a deployment reaches the scopes ticked and no
+            others. A machine on a desk port is not offered an installer; one on the provisioning
+            VLAN is.
           </p>
           <Note>
-            The boot server runs as a proxy DHCP server. It answers boot questions only; addresses
-            still come from the DHCP role, or from whatever already serves that network. Nothing has
-            to be moved to make network boot work.
+            The boot server runs as a proxy DHCP server: it answers boot questions only, and
+            addresses still come from the DHCP role or whatever already serves that network.
           </Note>
         </Section>
 
@@ -183,10 +178,9 @@ export function Content() {
             </li>
           </Steps>
           <Note>
-            Where the boot server is not on the same wire as the machines, the network has to carry
-            the boot request to it: a DHCP relay or <C>ip helper-address</C> on the router,
-            pointing at both the address server and the boot server. Without that a machine gets an
-            address and nothing to boot.
+            Where the boot server is not on the same wire as the machines, the router has to relay
+            the boot request to it — <C>ip helper-address</C> pointing at both the address server
+            and the boot server.
           </Note>
         </Section>
 
@@ -225,8 +219,8 @@ export function Content() {
             ]}
           />
           <p>
-            All three are rewritten by <strong>Apply</strong>. Edit them on the server and the next
-            change from the console replaces them.
+            All three are rewritten by <strong>Apply</strong>; edits made on the server are
+            replaced by the next change from the console.
           </p>
         </Section>
 
@@ -268,10 +262,10 @@ ls -l /srv/tftp /srv/odm-preseed`}</Code>
 
         <Section title="Joining a machine that already exists">
           <p>
-            Enrolment builds new machines. A machine that is already installed joins with the client
-            installer instead, by hand or from a script — see{" "}
-            <PageLink page="domain-join">Domain join</PageLink>. Both paths end in the same place: a
-            computer account, a keytab, and the agent enabled.
+            Enrolment builds new machines. An installed machine joins with the client installer
+            instead, by hand or from a script — see{" "}
+            <PageLink page="domain-join">Domain join</PageLink>. Both end with a computer account, a
+            keytab and the agent enabled.
           </p>
         </Section>
       </Details>

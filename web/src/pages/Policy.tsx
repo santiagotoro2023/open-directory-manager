@@ -102,9 +102,8 @@ export function Policy() {
       </div>
 
       <InfoPanel page="group-policy">
-        A policy object carries settings; a link decides where they land. Nothing here applies to
-        anything until the object is linked to an organizational unit, and what a machine ends up
-        with is every link above it, in order.
+        A policy object carries settings; a link decides where they apply. A machine or user gets
+        every object linked at or above its organizational unit, applied in precedence order.
       </InfoPanel>
 
       {error && (
@@ -366,9 +365,9 @@ function GpoDetail({
       {tab === "links" && (
         <>
           <InfoPanel page="group-policy" anchor="how-precedence-is-decided">
-            Where this object applies. Links lower in the tree win over links above them, an
-            enforced link wins over everything below it, and an OU that blocks inheritance stops
-            everything above it except what is enforced.
+            Where this object applies. A link lower in the tree wins over one above it; an enforced
+            link wins over everything below it; blocked inheritance stops everything above except
+            enforced links.
           </InfoPanel>
           <LinksEditor gpo={gpo} onChanged={onReload} />
         </>
@@ -380,9 +379,8 @@ function GpoDetail({
         <div className="scope-form">
           <section className="scope-form-intro">
             <InfoPanel page="group-policy" anchor="security-filtering">
-              Narrowing, on top of where the object is linked. Security filtering picks who inside
-              those links it applies to; item-level targeting picks which machines. Both can only
-              narrow what the links already reach.
+              Security filtering picks which users and groups inside the links it applies to;
+              item-level targeting picks which machines. Both narrow what the links reach.
             </InfoPanel>
           </section>
 

@@ -285,8 +285,8 @@ export function NetworkAccess() {
             </tbody>
           </table>
           <InfoPanel page="network-access" anchor="a-switch-and-an-access-point-worked-through">
-            If the secret is lost, remove the device and add it back: a secret nobody has is not one
-            worth keeping. Nothing here opens 1812 or 1813 in a firewall between the two.
+            A lost secret is replaced by removing the device and adding it again. Ports 1812 and
+            1813 have to be open between the device and the server.
           </InfoPanel>
         </Modal>
       )}

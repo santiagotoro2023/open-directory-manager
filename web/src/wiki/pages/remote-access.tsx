@@ -130,17 +130,17 @@ export function Content() {
                 <>
                   A name, e.g. <C key="a">vpn.example.org</C>
                 </>,
-                "It goes into every configuration handed out. A name can be repointed at a new address; an address cannot, and every configuration issued with it has to be reissued.",
+                "Written into every configuration handed out. A name can be repointed at a new address; configurations carrying an address have to be reissued.",
               ],
               [
                 "Listening port",
                 <C key="b">51820</C>,
-                "UDP. Any port works; a port already allowed outbound from hotel and café networks — 443 is the usual choice — connects in more places.",
+                "UDP. 443 instead where clients connect from networks that allow little else outbound.",
               ],
               [
                 "Tunnel network",
                 <C key="c">10.99.0.0/24</C>,
-                "A range that is not one of yours and not one a home router hands out. 192.168.0.0/24 and 192.168.1.0/24 collide with half the routers in the world.",
+                "A range used nowhere else. 192.168.0.0/24 and 192.168.1.0/24 collide with what home routers hand out.",
               ],
               [
                 "Networks it carries",
@@ -150,7 +150,7 @@ export function Content() {
               [
                 "Name server",
                 "A domain controller",
-                "Without it, names inside the domain do not resolve while connected, and nothing that is reached by name works.",
+                "What resolves domain names while connected.",
               ],
             ]}
           />
@@ -158,25 +158,22 @@ export function Content() {
 
         <Section title="A tunnel behind a firewall">
           <p>
-            The usual arrangement: the VPN server sits inside on <C>10.10.0.30</C>, the perimeter
-            firewall holds the public address <C>203.0.113.10</C>, and people connect from outside.
-            Nothing in ODM opens a port at a perimeter firewall — a tunnel that simply never
-            connects, with nothing in the console to say why, is almost always this.
+            The VPN server sits inside on <C>10.10.0.30</C>, the perimeter firewall holds the public
+            address <C>203.0.113.10</C>, and people connect from outside. The port has to be opened
+            and forwarded there; ODM configures the server, not the perimeter.
           </p>
           <Steps>
             <li>
-              Forward <C>UDP 51820</C> on <C>203.0.113.10</C> to <C>10.10.0.30:51820</C>. UDP, not
-              TCP: WireGuard does not answer TCP at all, and a rule written for TCP looks correct
-              and forwards nothing.
+              Forward <C>UDP 51820</C> on <C>203.0.113.10</C> to <C>10.10.0.30:51820</C>. WireGuard
+              is UDP only; a rule written for TCP forwards nothing.
             </li>
             <li>
               Publish <C>vpn.example.org</C> in public DNS as <C>203.0.113.10</C>, and set that
               name as the endpoint on the tunnel so configurations carry it.
             </li>
             <li>
-              Allow the tunnel network <C>10.99.0.0/24</C> to reach the internal networks the
-              tunnel carries, and allow return traffic. A firewall that permits the connection but
-              not the routed traffic gives a tunnel that comes up and carries nothing.
+              Allow the tunnel network <C>10.99.0.0/24</C> to reach the internal networks it
+              carries, and allow the return traffic.
             </li>
             <li>
               Give peers a keepalive of <C>25</C> seconds where a NAT sits in front of them, so the

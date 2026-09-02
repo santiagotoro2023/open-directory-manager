@@ -94,11 +94,9 @@ export function Content() {
 
         <Section title="What a scope hands out">
           <p>
-            An address on its own gets a client onto the wire and no further. The options beside it
-            are what make it a member of the network: which gateway to use, which servers resolve
-            names, and which domain to append to a bare host name. New scopes are created with the
-            domain&rsquo;s own values already filled in; change them only where a subnet genuinely
-            differs.
+            Alongside the address, a scope hands out the gateway to use, the servers that resolve
+            names, and the domain to append to a bare host name. New scopes are created with the
+            domain&rsquo;s own values filled in.
           </p>
           <Reference
             headers={["Option", "Recommended", "What it decides"]}
@@ -112,10 +110,9 @@ export function Content() {
                 <C key="b">domain-name-servers</C>,
                 "Every domain controller, in order",
                 <>
-                  Whether anything resolves. Point clients at the controllers, not at a public
-                  resolver: <C key="c">corp.example.internal</C> only exists in the domain&rsquo;s
-                  own DNS, and a client using <C key="d">8.8.8.8</C> cannot find a controller, a
-                  share, or the service records a domain join needs.
+                  Which server resolves names. <C key="c">corp.example.internal</C> exists only in
+                  the domain&rsquo;s DNS: a client pointed at a public resolver finds no
+                  controller, no share, and none of the service records a join reads.
                 </>,
               ],
               [
@@ -127,10 +124,9 @@ export function Content() {
           />
           <Note>
             A scope with no <C>domain-name-servers</C> is listed as{" "}
-            <strong>no DNS server</strong> in the scope list. It is the usual cause of a machine
-            that has an address and still cannot reach anything: names fail to resolve, and the
-            program reporting it rarely says so. GNOME Files, asked to open a share, says
-            &ldquo;Invalid argument&rdquo;.
+            <strong>no DNS server</strong> in the scope list. Clients on it get an address and
+            resolve nothing; GNOME Files, asked to open a share, reports &ldquo;Invalid
+            argument&rdquo;.
           </Note>
           <Example title="A branch office subnet">
             <Steps>
@@ -218,7 +214,7 @@ export function Content() {
           </Steps>
           <Note>
             Scopes are configured on each node. A pair whose scopes differ hands out different
-            answers depending on which node replied, which reads as an intermittent fault.
+            answers depending on which node replied.
           </Note>
         </Section>
 

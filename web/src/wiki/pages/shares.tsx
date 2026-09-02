@@ -129,10 +129,10 @@ export function Content() {
 
         <Section title="Reaching a share from outside the domain">
           <p>
-            A machine that is not joined can still open a share: it is asked for a name and password
-            and authenticates with NTLM, and the access list on the share decides the rest. What it
-            cannot do is find the server without help, because the server&rsquo;s name lives only in
-            the domain&rsquo;s DNS.
+            A machine that is not joined opens a share by name and password, authenticating with
+            NTLM against the domain; the access list on the share decides the rest. The
+            server&rsquo;s name resolves only in the domain&rsquo;s DNS, so the machine has to be
+            using it.
           </p>
           <Reference
             headers={["Symptom", "What it means", "What to do"]}
@@ -140,9 +140,8 @@ export function Content() {
               [
                 <>&ldquo;Invalid argument&rdquo; (GNOME Files), or an immediate failure</>,
                 <>
-                  The name did not resolve. The SMB library reports a failed lookup as{" "}
-                  <C key="a">EINVAL</C>, which the file manager prints literally — nothing in the
-                  message mentions DNS.
+                  The name did not resolve. libsmbclient returns <C key="a">EINVAL</C> for a failed
+                  lookup, which the file manager prints as &ldquo;Invalid argument&rdquo;.
                 </>,
                 <>
                   On the client: <C key="b">getent hosts fs01.corp.example.internal</C>. Nothing
@@ -153,8 +152,8 @@ export function Content() {
                 "A password prompt that keeps coming back",
                 "The name resolved and the credential was refused.",
                 <>
-                  Use the domain account&rsquo;s logon name, and leave the domain field at whatever
-                  the client suggests — the controller maps an unknown workgroup to its own domain.
+                  Use the domain account&rsquo;s logon name. The domain field can be left as the
+                  client suggests: a controller maps an unknown workgroup to its own domain.
                 </>,
               ],
               [
@@ -167,23 +166,22 @@ export function Content() {
           <p>Three ways to make the name resolve on a machine that is not joined:</p>
           <Steps>
             <li>
-              Give it the domain&rsquo;s DHCP — the scope hands out the controllers as DNS servers
-              and the domain as the search domain. This is the one to prefer: it fixes every name at
-              once, not just this share.
+              Put it on the domain&rsquo;s DHCP, where the scope hands out the controllers as DNS
+              servers and the domain as the search domain. Recommended: it covers every name in the
+              domain, not just this share.
             </li>
             <li>
               Point its resolver at a controller by hand, and add the domain as a search domain.
             </li>
             <li>
-              Type the server&rsquo;s address instead of its name —{" "}
-              <C>smb://10.10.0.20/share-01</C>. It works and it is a workaround: nothing else the
-              domain publishes resolves, and the address changes without warning unless it is
-              reserved.
+              Use the server&rsquo;s address in place of its name —{" "}
+              <C>smb://10.10.0.20/share-01</C>. Reserve that address in DHCP if it is going to be
+              typed anywhere.
             </li>
           </Steps>
           <Note>
-            A machine that is joined has none of this to think about: it resolves through the
-            domain, mounts with its Kerberos ticket, and a drive-map policy does it at sign-in.
+            A joined machine resolves through the domain and mounts with its Kerberos ticket; a
+            drive-map policy does it at sign-in.
           </Note>
         </Section>
 

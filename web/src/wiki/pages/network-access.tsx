@@ -142,8 +142,7 @@ export function Content() {
               <C>corp-wifi</C> with VLAN <C>90</C>.
             </li>
             <li>
-              Leave the guest network off the RADIUS server entirely. A network that should let
-              anybody on does not need an access decision.
+              Leave an open guest network off the RADIUS server; it has no access decision to make.
             </li>
           </Steps>
           <Reference
@@ -153,13 +152,13 @@ export function Content() {
               ["Accounting port", <C key="b">1813/udp</C>, "Sessions are logged with the same secret."],
               [
                 "One device entry per address, or a range",
-                "Whichever matches reality",
-                "A request from an address no device covers is refused before any rule is read, which looks exactly like a wrong password.",
+                "Whichever matches the network",
+                "A request from an address no device covers is refused before any rule is read.",
               ],
               [
-                "A deny rule for leavers' group at order 10",
+                "A deny rule ahead of the allows",
                 "Order 10",
-                "Denials are checked before allows, and an explicit one is easier to read than the absence of an allow.",
+                "Denials are checked first; an explicit one states the intent.",
               ],
               [
                 "VLAN per rule",
@@ -169,9 +168,8 @@ export function Content() {
             ]}
           />
           <Note>
-            Test with one port and one machine before enabling 802.1X everywhere. A switch
-            configured to authenticate every port, against a server that refuses everything, locks
-            out the people who would fix it.
+            Test one port and one machine before enabling 802.1X on every port. A switch that
+            authenticates all of them against a server refusing everything leaves nobody a way in.
           </Note>
         </Section>
 

@@ -62,10 +62,9 @@ export function Shares() {
       </div>
 
       <InfoPanel page="file-shares">
-        A share is a directory on a server carrying the file-server role, published under a name and
-        reached by that name. Clients resolve it through the domain&rsquo;s DNS, so a machine using
-        anything else — a public resolver, a network without the domain&rsquo;s DHCP — cannot open
-        it however right its credentials are.
+        A directory on a server carrying the file-server role, published under a name. Clients
+        resolve that name through the domain&rsquo;s DNS and authenticate with their own domain
+        credentials.
       </InfoPanel>
 
       {error && (
@@ -258,9 +257,8 @@ function ShareDialog({
             </tbody>
           </table>
           <InfoPanel page="file-shares" anchor="reaching-a-share-from-outside-the-domain">
-            The machine opening this has to resolve {share.node_fqdn}. A machine that cannot reports
-            it as something else entirely — GNOME Files says &ldquo;Invalid argument&rdquo; — so
-            check the name resolves before looking at permissions.
+            The machine opening this resolves {share.node_fqdn} through the domain&rsquo;s DNS. A
+            failed lookup surfaces as &ldquo;Invalid argument&rdquo; in GNOME Files.
           </InfoPanel>
         </>
       ) : (

@@ -4,6 +4,7 @@ import { ApiError, api, type RdCollection, type RdSession } from "../api";
 import { InfoPanel } from "../components/DocsLink";
 import { ChoiceList } from "../components/ChoiceList";
 import { Field, Modal } from "../components/Modal";
+import { Wizard } from "../components/Wizard";
 import { PickerDialog, PickerField } from "../components/Picker";
 import Select from "../components/Select"
 
@@ -334,13 +335,191 @@ function CollectionDialog({
   }, []);
 
   return (
-    <Modal
+    <Wizard
       title={editing ? collection.name : "New collection"}
       submitLabel={editing ? "Save" : "Create"}
       busy={busy}
       error={error}
-      wide
       onClose={onClose}
+      steps={[
+        {
+          title: "Name and broker",
+          hint: "People connect to the broker, which sends them to a session host in the collection.",
+          incomplete: !name
+            ? "Name the collection."
+            : !broker
+              ? "Choose the broker people connect to."
+              : undefined,
+          fields: (
+            <>
+              <div className="field-grid">
+                <Field label="Name">
+                  <input
+                    value={name}
+                    required
+                    disabled={editing}
+                    placeholder="Finance"
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </Field>
+                <Field label="Broker" hint="The machine people connect to, never a host">
+                  <PickerField
+                    kind="computer"
+                    as="host"
+                    ariaLabel="Broker"
+                    value={broker}
+                    required
+                    placeholder="rdbroker.corp.example.internal"
+                    onChange={setBroker}
+                  />
+                </Field>
+              </div>
+              <Field label="Description">
+                <input value={description} onChange={(e) => setDescription(e.target.value)} />
+              </Field>
+            </>
+          ),
+        },
+        {
+          title: "What people get",
+          hint: "A whole desktop, or one program with nothing around it.",
+          incomplete:
+            kind === "remoteapp" && !appPath ? "Give the path of the program to publish." : undefined,
+          fields: (
+            <>
+              <Field label="Session">
+                <Select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+                  <option value="desktop">A full desktop</option>
+                  <option value="remoteapp">One published application</option>
+                </Select>
+              </Field>
+              {kind === "remoteapp" && (
+                <div className="field-grid">
+                  <Field label="Program" hint="Absolute path on the session hosts">
+                    <input
+                      value={appPath}
+                      required
+                      placeholder="/usr/bin/libreoffice"
+                      onChange={(e) => setAppPath(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Shown as" hint="What the person sees in the connection file">
+                    <input
+                      value={appName}
+                      placeholder="LibreOffice"
+                      onChange={(e) => setAppName(e.target.value)}
+                    />
+                  </Field>
+                </div>
+              )}
+            </>
+          ),
+        },
+        {
+          title: "Profiles",
+          hint: "Where a person's settings and files live between sessions.",
+          fields: (
+            <>
+              <p className="muted">
+                Every person gets a disk on the share below, named for them, and it follows them to
+                whichever host answers. Leave the share empty and sessions use whatever home
+                directory the host already gives them &mdash; right for a single session host, and
+                wrong for a farm, where a profile that stays on one host is a different profile on
+                every other one.
+              </p>
+              <div className="field-grid">
+                <Field label="Profile share" hint="A share you made under File Shares">
+                  <Select value={share} onChange={(e) => setShare(e.target.value)}>
+                    <option value="">No profile disks</option>
+                    {shares.map((unc) => (
+                      <option key={unc} value={unc}>
+                        {unc}
+                      </option>
+                    ))}
+                    {share && !shares.includes(share) && <option value={share}>{share}</option>}
+                  </Select>
+                </Field>
+                <Field label="Each disk may grow to (GB)">
+                  <input
+                    type="number"
+                    min={1}
+                    max={2048}
+                    value={profileGb}
+                    onChange={(e) => setProfileGb(Number(e.target.value))}
+                  />
+                </Field>
+              </div>
+            </>
+          ),
+        },
+        {
+          title: "Sessions",
+          hint: "How long a session outlives the person using it, and where a new one lands.",
+          fields: (
+            <>
+              <div className="field-grid">
+                <Field label="Sign out after idle (minutes)" hint="0 never">
+                  <input
+                    type="number"
+                    min={0}
+                    value={idle}
+                    onChange={(e) => setIdle(Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="End disconnected after (minutes)" hint="0 never">
+                  <input
+                    type="number"
+                    min={0}
+                    value={disconnected}
+                    onChange={(e) => setDisconnected(Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Most sessions per host" hint="0 no limit">
+                  <input
+                    type="number"
+                    min={0}
+                    value={maxSessions}
+                    onChange={(e) => setMaxSessions(Number(e.target.value))}
+                  />
+                </Field>
+                <Field
+                  label="Send a new session to"
+                  hint="Someone reconnecting always returns to the host they were on"
+                >
+                  <Select
+                    value={balance}
+                    onChange={(e) => setBalance(e.target.value as RdCollection["balance_method"])}
+                  >
+                    <option value="leastconn">The host with the fewest sessions</option>
+                    <option value="roundrobin">Each host in turn</option>
+                    <option value="first">The first host with room, then the next</option>
+                  </Select>
+                </Field>
+              </div>
+              <p className="muted">
+                This decides where somebody with no session yet lands. They can land on any host in
+                the collection because their profile is a disk on the share, not files on one
+                machine.
+              </p>
+            </>
+          ),
+        },
+        {
+          title: "Who may connect",
+          hint: "The users and groups whose members may connect.",
+          incomplete:
+            principals.length === 0 ? "Add at least one user or group, or nobody can connect." : undefined,
+          fields: (
+            <ChoiceList
+              kind="principal"
+              values={principals}
+              onChange={setPrincipals}
+              addLabel="Add a user or group…"
+              emptyLabel="Nobody yet. A collection with nobody on it serves nobody."
+            />
+          ),
+        },
+      ]}
       onSubmit={async () => {
         setBusy(true);
         setError(null);
@@ -372,145 +551,7 @@ function CollectionDialog({
           setBusy(false);
         }
       }}
-    >
-      <div className="field-grid">
-        <Field label="Name">
-          <input
-            value={name}
-            required
-            disabled={editing}
-            placeholder="Finance"
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        <Field label="Broker" hint="The machine people connect to, never a host">
-          <PickerField
-            kind="computer"
-            as="host"
-            ariaLabel="Broker"
-            value={broker}
-            required
-            placeholder="rdbroker.corp.example.internal"
-            onChange={setBroker}
-          />
-        </Field>
-      </div>
-
-      <Field label="Description">
-        <input value={description} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-
-      <h3 className="section-title">What people get</h3>
-      <Field label="Session">
-        <Select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-          <option value="desktop">A full desktop</option>
-          <option value="remoteapp">One published application</option>
-        </Select>
-      </Field>
-      {kind === "remoteapp" && (
-        <div className="field-grid">
-          <Field label="Program" hint="Absolute path on the session hosts">
-            <input
-              value={appPath}
-              required
-              placeholder="/usr/bin/libreoffice"
-              onChange={(e) => setAppPath(e.target.value)}
-            />
-          </Field>
-          <Field label="Shown as" hint="What the person sees in the connection file">
-            <input
-              value={appName}
-              placeholder="LibreOffice"
-              onChange={(e) => setAppName(e.target.value)}
-            />
-          </Field>
-        </div>
-      )}
-
-      <h3 className="section-title">Profiles</h3>
-      <p className="muted">
-        Every person gets a disk on the share below, named for them, and it follows them to
-        whichever host answers. Leave the share empty and sessions use whatever home directory the
-        host already gives them &mdash; right for a single session host, and wrong for a farm,
-        where a profile that stays on one host is a different profile on every other one.
-      </p>
-      <div className="field-grid">
-        <Field label="Profile share" hint="A share you made under File Shares">
-          <Select value={share} onChange={(e) => setShare(e.target.value)}>
-            <option value="">No profile disks</option>
-            {shares.map((unc) => (
-              <option key={unc} value={unc}>
-                {unc}
-              </option>
-            ))}
-            {share && !shares.includes(share) && <option value={share}>{share}</option>}
-          </Select>
-        </Field>
-        <Field label="Each disk may grow to (GB)">
-          <input
-            type="number"
-            min={1}
-            max={2048}
-            value={profileGb}
-            onChange={(e) => setProfileGb(Number(e.target.value))}
-          />
-        </Field>
-      </div>
-
-      <h3 className="section-title">Sessions</h3>
-      <div className="field-grid">
-        <Field label="Sign out after idle (minutes)" hint="0 never">
-          <input
-            type="number"
-            min={0}
-            value={idle}
-            onChange={(e) => setIdle(Number(e.target.value))}
-          />
-        </Field>
-        <Field label="End disconnected after (minutes)" hint="0 never">
-          <input
-            type="number"
-            min={0}
-            value={disconnected}
-            onChange={(e) => setDisconnected(Number(e.target.value))}
-          />
-        </Field>
-        <Field label="Most sessions per host" hint="0 no limit">
-          <input
-            type="number"
-            min={0}
-            value={maxSessions}
-            onChange={(e) => setMaxSessions(Number(e.target.value))}
-          />
-        </Field>
-        <Field
-          label="Send a new session to"
-          hint="Someone reconnecting always returns to the host they were on"
-        >
-          <Select
-            value={balance}
-            onChange={(e) => setBalance(e.target.value as RdCollection["balance_method"])}
-          >
-            <option value="leastconn">The host with the fewest sessions</option>
-            <option value="roundrobin">Each host in turn</option>
-            <option value="first">The first host with room, then the next</option>
-          </Select>
-        </Field>
-      </div>
-      <p className="muted">
-        This decides where somebody with no session yet lands. They can land on any host in the
-        collection because their profile is a disk on the share, not files on one machine.
-      </p>
-
-      <h3 className="section-title">Who may connect</h3>
-      <ChoiceList
-        kind="principal"
-        values={principals}
-        onChange={setPrincipals}
-        addLabel="Add a user or group…"
-        emptyLabel="Nobody yet. A collection with nobody on it serves nobody."
-      />
-    </Modal>
+    />
   );
 }
 

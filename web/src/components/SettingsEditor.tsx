@@ -130,7 +130,7 @@ export const CATEGORIES: CategorySpec[] = [
     identity: "path",
     help:
       "A file written to every machine the policy reaches, with the owner and mode " +
-      "it should have. Rewritten whenever what is set here changes.",
+      "it should have.",
     doc: "file-deployment",
     fields: [
       { key: "path", label: "Path", placeholder: "/etc/motd" },
@@ -149,8 +149,7 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     identity: "name",
     help:
-      "A script the machine runs as root when it starts or as it shuts down. " +
-      "It runs whether or not anybody signs in.",
+      "A script the machine runs as root when it starts or as it shuts down.",
     doc: "scripts",
     fields: [
       {
@@ -174,8 +173,7 @@ export const CATEGORIES: CategorySpec[] = [
     half: "User",
     identity: "name",
     help:
-      "A script that runs as the person signing in or out, in their own session " +
-      "and with their own rights.",
+      "A script that runs as the person signing in or out, in their own session.",
     doc: "scripts",
     fields: [
       {
@@ -197,8 +195,8 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     identity: "unit",
     help:
-      "The state a service, socket or timer is held in. Masked is the strongest: " +
-      "the unit cannot be started at all, by anything.",
+      "The state a service, socket or timer is held in: enabled, disabled, masked, " +
+      "started or stopped.",
     doc: "systemd-units",
     fields: [
       { key: "unit", label: "Unit", placeholder: "telnet.socket" },
@@ -218,8 +216,8 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     identity: "name",
     help:
-      "A command run on a schedule, written into the machine's own cron. Five " +
-      "cron fields, or an @keyword such as @daily.",
+      "A command run on a schedule, written into the machine's cron. Five cron " +
+      "fields, or an @keyword such as @daily.",
     doc: "scheduled-tasks",
     fields: [
       { key: "name", label: "Name", width: "160px" },
@@ -235,8 +233,7 @@ export const CATEGORIES: CategorySpec[] = [
     half: "User",
     identity: "name",
     help:
-      "A share mounted for the person signing in, with their own Kerberos ticket. " +
-      "No password is stored on the machine.",
+      "A share mounted for the person signing in, with their own Kerberos ticket.",
     doc: "drive-maps",
     fields: [
       { key: "name", label: "Name", width: "140px" },
@@ -261,7 +258,7 @@ export const CATEGORIES: CategorySpec[] = [
     identity: "name",
     help:
       "Who may run which commands as another user on the machines this policy " +
-      "reaches. Stored in the directory as a sudoRole, which SSSD reads natively.",
+      "reaches. Written to the directory as a sudoRole.",
     doc: "sudo-rules",
     fields: [
       { key: "name", label: "Name", width: "140px" },
@@ -290,7 +287,7 @@ export const CATEGORIES: CategorySpec[] = [
     identity: "principal",
     help:
       "Who may open a session, and how: locally, over SSH, or over remote desktop. " +
-      "Deny beats allow, and root is never locked out.",
+      "Deny beats allow.",
     doc: "hbac-rules",
     note: "A group is written with a leading % — Select… does that for you.",
     half: "Computer",
@@ -325,8 +322,8 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     identity: "name",
     help:
-      "Packages the machine should have, keep current, or not have. Installed with " +
-      "apt from the machine's own sources.",
+      "Packages the machine should have, keep current, or not have, installed with " +
+      "apt from its own sources.",
     doc: "software-deployment",
     fields: [
       { key: "name", label: "Package", placeholder: "cifs-utils" },
@@ -361,8 +358,7 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     identity: "profile",
     help:
-      "Certificates the machine asks for by itself and renews before they expire. " +
-      "The subject is the machine's own identity; a policy cannot name one.",
+      "Certificates the machine requests for itself and renews before they expire.",
     doc: "certificate-enrolment",
     fields: [
       {
@@ -384,8 +380,8 @@ export const CATEGORIES: CategorySpec[] = [
     half: "User",
     identity: "name",
     help:
-      "Printers the person signing in should have. They come from a machine " +
-      "carrying the print-server role.",
+      "Printers the person signing in should have, from a machine carrying the " +
+      "print-server role.",
     doc: "printers",
     fields: [
       { key: "name", label: "Printer", width: "180px" },
@@ -407,8 +403,8 @@ export const CATEGORIES: CategorySpec[] = [
     half: "Computer",
     identity: "name",
     help:
-      "Rules applied to the machine's own firewall. Everything not named here is " +
-      "left as the machine has it.",
+      "Rules applied to the machine's firewall. Anything not named here is left as " +
+      "it is.",
     doc: "firewall-rules",
     fields: [
       { key: "name", label: "Name", width: "140px" },
@@ -488,8 +484,8 @@ const SPECIAL: SpecialSpec[] = [
     title: "System updates",
     half: "Computer",
     help:
-      "Whether the machine installs updates on its own, which ones, and whether it " +
-      "may restart itself to finish them.",
+      "Which updates the machine installs unattended, on what schedule, and whether " +
+      "it may restart to finish them.",
     doc: "system-updates",
   },
   {
@@ -498,7 +494,7 @@ const SPECIAL: SpecialSpec[] = [
     half: "Computer",
     help:
       "The greeter, before anybody has signed in: its message, its background, and " +
-      "whether it lists the accounts on the machine.",
+      "whether it lists accounts.",
     doc: "login-screen-and-desktop-background",
   },
   {
@@ -506,8 +502,8 @@ const SPECIAL: SpecialSpec[] = [
     title: "Always-on VPN",
     half: "Computer",
     help:
-      "Holds a tunnel up on the machine whatever the person using it does, and can " +
-      "refuse to route anything until it is up.",
+      "Holds a WireGuard tunnel up on the machine, optionally refusing to route the " +
+      "networks it carries until it is up.",
     doc: "always-on-vpn",
   },
   {
@@ -515,8 +511,8 @@ const SPECIAL: SpecialSpec[] = [
     title: "Local administrator",
     half: "Computer",
     help:
-      "A local account whose password the machine rotates itself and reports back — " +
-      "different on every machine, for when the domain cannot be reached.",
+      "A local account with a password the machine generates, rotates on a schedule " +
+      "and reports back. Different on every machine.",
     doc: "local-administrator",
   },
   {
@@ -524,8 +520,8 @@ const SPECIAL: SpecialSpec[] = [
     title: "Remote desktop session",
     half: "Computer",
     help:
-      "What a remote desktop session may carry between the client and the host: " +
-      "clipboard, printers, drives, audio.",
+      "What a remote desktop session carries between client and host: clipboard, " +
+      "printers, drives, audio, microphone.",
     doc: "remote-desktop-session",
   },
   {
@@ -533,8 +529,8 @@ const SPECIAL: SpecialSpec[] = [
     title: "Self-service password",
     half: "User",
     help:
-      "Whether people may change their own password from the sign-in page, and what " +
-      "the new one has to look like.",
+      "Whether people may change their own password from the sign-in page, and the " +
+      "rules a new one has to meet.",
     doc: "self-service-password",
   },
   {
@@ -543,14 +539,14 @@ const SPECIAL: SpecialSpec[] = [
     half: "User",
     help:
       "Where a person's home directory lives, so it follows them from machine to " +
-      "machine instead of staying on one desk.",
+      "machine.",
     doc: "roaming-profile",
   },
   {
     key: "wallpaper",
     title: "Desktop background",
     half: "User",
-    help: "The picture behind the desktop of whoever is signed in, and whether they may change it.",
+    help: "The picture behind the desktop, and whether the person signing in may change it.",
     doc: "desktop-background",
   },
   {
@@ -558,8 +554,8 @@ const SPECIAL: SpecialSpec[] = [
     title: "Administrative templates",
     half: "Computer",
     help:
-      "Settings from vendor-supplied ADMX templates — Chrome, Firefox, anything that " +
-      "ships them. Import the template under Group Policy, then configure it here.",
+      "Settings from imported ADMX templates. Import a template under Group Policy, " +
+      "then configure its policies here.",
     doc: "quickstart",
     docPage: "administrative-templates",
   },
@@ -1728,9 +1724,8 @@ function BrowserEditor({
         meta={{
           title: "Browser policy",
           help:
-            "Set before this policy object could use administrative templates. Import the " +
-            "browser's own ADMX template under Group Policy and configure it there; this " +
-            "one still applies until it is removed.",
+            "A managed-policy document set on this object. Chrome and Firefox both ship " +
+            "ADMX templates; import one under Group Policy to configure them there.",
           doc: "quickstart",
           docPage: "administrative-templates",
         }}
