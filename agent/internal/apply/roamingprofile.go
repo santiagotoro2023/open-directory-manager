@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"odm.example.org/agent/internal/policy"
 )
@@ -42,6 +43,15 @@ func MountProfile(ctx context.Context, profile *policy.RoamingProfile, user stri
 	// homes and must keep them, or the machine cannot be recovered.
 	if account.uid < 1000 {
 		return nil
+	}
+
+	// Theirs before anything else happens. Everything below may fail — the
+	// share may be down, the ticket refused — and what it must never leave
+	// behind is a home directory owned by root: nothing in the session can
+	// write to one, including the X server, so a session host with a home
+	// like that answered "X server could not be started" on every connection.
+	if err := ensureHome(account); err != nil {
+		return err
 	}
 
 	// Already attached — a second session for the same person on the same
@@ -105,6 +115,26 @@ func ReleaseProfile(ctx context.Context, user string, env Env) {
 	if !anyProfileMounted(account.home) {
 		_, _ = env.Run.Run(ctx, "umount", ProfileStore)
 	}
+}
+
+// ensureHome makes somebody's home directory theirs, creating it if it is not
+// there. Run before a profile is attached and after: a home the agent made as
+// root and left is a session that cannot start.
+func ensureHome(who account) error {
+	if err := os.MkdirAll(who.home, 0o700); err != nil {
+		return fmt.Errorf("creating %s: %w", who.home, err)
+	}
+	info, err := os.Stat(who.home)
+	if err != nil {
+		return err
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok && int(stat.Uid) == who.uid {
+		return nil
+	}
+	if err := os.Chown(who.home, who.uid, who.gid); err != nil {
+		return fmt.Errorf("giving %s to its owner: %w", who.home, err)
+	}
+	return os.Chmod(who.home, 0o700)
 }
 
 type account struct {
@@ -187,7 +217,7 @@ func mountShare(ctx context.Context, share string, who account, env Env) error {
 }
 
 func bindDirectory(ctx context.Context, target string, who account, env Env) error {
-	if err := os.MkdirAll(who.home, 0o700); err != nil {
+	if err := ensureHome(who); err != nil {
 		return err
 	}
 	_ = os.Chown(target, who.uid, who.gid)
@@ -220,7 +250,7 @@ func attachDisk(
 			return fmt.Errorf("formatting %s: %w", image, err)
 		}
 	}
-	if err := os.MkdirAll(who.home, 0o700); err != nil {
+	if err := ensureHome(who); err != nil {
 		return err
 	}
 	if _, err := env.Run.Run(ctx, "mount", "-o", "loop,noatime", image, who.home); err != nil {
