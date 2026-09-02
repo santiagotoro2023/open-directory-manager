@@ -139,6 +139,22 @@ async def build(
     ip_addresses: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     gpos, links, blocked = await load_inputs(pool)
+    # An agent says what it is when it asks; the console preview has to look it
+    # up, or it resolves with no operating system and no address and hides
+    # every entry targeted at one — showing an operator a resultant set that
+    # is not what the machine gets.
+    if not os_id:
+        remembered = await pool.fetchval(
+            """
+            SELECT operating_system FROM computer_fact
+            WHERE lower(computer_dn) = lower($1)
+               OR lower(split_part(computer_dn, ',', 1)) = lower(split_part($1, ',', 1))
+            ORDER BY (lower(computer_dn) = lower($1)) DESC
+            LIMIT 1
+            """,
+            dn,
+        )
+        os_id = remembered or ""
     target = target_facts(conn, settings, dn, os_id=os_id, ip_addresses=ip_addresses)
     document = policy.effective_policy(
         chain=policy.container_chain(target.dn, settings.base_dn),
