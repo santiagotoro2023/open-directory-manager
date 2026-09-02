@@ -87,6 +87,13 @@ cat > /etc/odm/print-server <<'MARKER'
 # This machine scans the network for printers, so it keeps avahi.
 MARKER
 
+# A managed machine masks avahi so a printer advertising itself does not show
+# up beside the ones the domain handed out. If this machine was one of those
+# before it became a print server, the mask is still on and every scan for
+# printers would come back empty.
+systemctl unmask avahi-daemon.service avahi-daemon.socket >/dev/null 2>&1 || true
+odm_enable avahi-daemon
+
 echo "==> Starting CUPS"
 odm_enable cups
 
