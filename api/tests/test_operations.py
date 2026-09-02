@@ -157,7 +157,9 @@ def test_the_default_policies_are_valid_policy_documents():
     controllers = PolicySettings(**_default_dc_settings(settings))
 
     assert domain.files[0].path == "/etc/issue.net"
-    assert domain.agent is not None
+    # The polling interval is a domain setting, not something the shipped
+    # policy carries: a copy here would win over the console for every machine.
+    assert domain.agent is None
     assert controllers.systemd_units[0].unit == "ssh.service"
     assert controllers.hbac_rules[0].principal == f"%{settings.admin_group}"
     assert controllers.hbac_rules[0].access == "allow"

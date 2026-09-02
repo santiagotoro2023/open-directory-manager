@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -28,9 +29,23 @@ import (
 	"odm.example.org/agent/internal/tasks"
 )
 
-const version = "0.8.0"
+const version = "0.7.1"
 
 const serialPath = "/var/lib/odm/last-serial"
+
+// How often to apply policy, and where the domain's answer is kept.
+//
+// The interval is a domain setting, so it arrives in the policy document. It
+// is written down because the machine has to keep polling on the domain's
+// interval across a restart and across a control plane it cannot reach —
+// falling back to a built-in default the moment a document is missed would
+// mean a fleet that quietly drifts off the interval it was set to.
+const (
+	refreshPath           = "/var/lib/odm/refresh-minutes"
+	defaultRefreshMinutes = 15
+	minRefreshMinutes     = 1
+	maxRefreshMinutes     = 1440
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -175,12 +190,12 @@ func runDaemon(args []string) int {
 	// which is what somebody clicking Refresh in the console asked for.
 	forced := false
 	for {
-		wait := 15 * time.Minute
 		if err := applyOnce(ctx, *configPath, *root, "", forced); err != nil {
 			fmt.Fprintln(os.Stderr, "odm-agent:", err)
-		} else if cfg, err := config.Load(*configPath); err == nil && cfg.RefreshMinutes > 0 {
-			wait = time.Duration(cfg.RefreshMinutes) * time.Minute
 		}
+		// Read after the run, so an interval the run just learned about takes
+		// effect now rather than one cycle later.
+		wait := refreshInterval(apply.NewEnv(*root), *configPath)
 
 		keepGoing, refresh := waitAndPoll(ctx, *configPath, *root, wait+jitter(wait))
 		if !keepGoing {
@@ -292,6 +307,12 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	}
 
 	env := apply.NewEnv(root)
+	// Before the unchanged check: the interval is a domain setting, not part
+	// of the policy serial, so a machine whose policy has not changed still
+	// has to pick up a new one.
+	if username == "" {
+		saveRefresh(env, document.RefreshMinutes)
+	}
 	if !force && username == "" && document.Serial == lastSerial(env) {
 		fmt.Println("policy unchanged")
 		runTasks(ctx, api, env)
@@ -438,6 +459,63 @@ func saveSerial(env apply.Env, serial string) {
 	full := env.Path(serialPath)
 	if err := os.MkdirAll(filepath.Dir(full), 0o750); err == nil {
 		_ = os.WriteFile(full, []byte(serial), 0o600)
+	}
+}
+
+// refreshInterval is how long to wait before applying policy again: what the
+// domain last said, then what domain join wrote, then the built-in default.
+// Never zero and never absurd, whatever any of the three say, because an
+// agent that stops asking is an agent nobody can reach again.
+func refreshInterval(env apply.Env, configPath string) time.Duration {
+	minutes := savedRefresh(env)
+	if minutes == 0 {
+		if cfg, err := config.Load(configPath); err == nil {
+			minutes = sensibleRefresh(cfg.RefreshMinutes)
+		}
+	}
+	if minutes == 0 {
+		minutes = defaultRefreshMinutes
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+// sensibleRefresh returns the interval to actually use for a stated one, or
+// zero when nothing was stated. Anything outside the supported range is
+// pulled into it rather than rejected: a document from a control plane that
+// offers intervals this build has not heard of should still leave the machine
+// polling.
+func sensibleRefresh(minutes int) int {
+	switch {
+	case minutes <= 0:
+		return 0
+	case minutes < minRefreshMinutes:
+		return minRefreshMinutes
+	case minutes > maxRefreshMinutes:
+		return maxRefreshMinutes
+	}
+	return minutes
+}
+
+func savedRefresh(env apply.Env) int {
+	raw, err := os.ReadFile(env.Path(refreshPath))
+	if err != nil {
+		return 0
+	}
+	minutes, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		return 0
+	}
+	return sensibleRefresh(minutes)
+}
+
+func saveRefresh(env apply.Env, minutes int) {
+	minutes = sensibleRefresh(minutes)
+	if minutes == 0 || minutes == savedRefresh(env) {
+		return
+	}
+	full := env.Path(refreshPath)
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err == nil {
+		_ = os.WriteFile(full, []byte(strconv.Itoa(minutes)), 0o600)
 	}
 }
 

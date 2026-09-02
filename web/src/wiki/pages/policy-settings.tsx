@@ -416,6 +416,13 @@ user      root`}</Code>
             sidebar, where a drive letter would be on Windows, and taken back out when the policy
             stops naming it.
           </p>
+          <p>
+            <strong>Shown as</strong> is the label in that sidebar. A share published as{" "}
+            <C>firmendaten</C> and mounted at <C>/mnt/firmendaten</C> can read as <C>Daten</C>
+            without the share, the mount point or anything on the machine changing. Left empty, the
+            drive map&rsquo;s own name is used. Changing it renames the entry rather than adding a
+            second one.
+          </p>
           <Reference
             headers={["For", "Who gets it"]}
             rows={[
@@ -429,7 +436,15 @@ user      root`}</Code>
           <Code>{`name          shared
 unc           //fs01/shared
 mount point   /mnt/shared
+shown as      Daten           (optional)
 for           %Engineers      (optional)`}</Code>
+          <Note>
+            Unlinking the policy object, or removing the drive map from it, removes the drive. The
+            mount is taken down at the machine&rsquo;s next refresh, including for people already
+            signed in, and it is not mounted again at the next sign-in. The sidebar entry goes at
+            that next sign-in, which is the only point at which the agent is in a position to edit
+            that person&rsquo;s file manager.
+          </Note>
         </Section>
 
         <Section title="Roaming profile">

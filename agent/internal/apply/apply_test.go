@@ -1038,3 +1038,72 @@ func TestLocalPasswordPolicyLeavesLoginDefsWhenItStops(t *testing.T) {
 		t.Errorf("the rules file outlived its policy: %v", err)
 	}
 }
+
+func TestADriveIsLabelledByItsDisplayName(t *testing.T) {
+	env, runner := testEnv(t)
+	home := env.Path("/home/alice")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner.output["getent"] = "alice:x:1000:1000::" + home + ":/bin/bash\n"
+
+	drive := policy.DriveMap{
+		Name: "firmendaten", UNC: "//fs01/firmendaten", MountPoint: "/mnt/firmendaten",
+		DisplayName: "Daten",
+	}
+	if err := bookmark(account{home: home, uid: os.Getuid(), gid: os.Getgid()},
+		drive); err != nil {
+		t.Fatalf("bookmark: %v", err)
+	}
+	body := read(t, env, "/home/alice/.config/gtk-3.0/bookmarks")
+	if !strings.Contains(body, "file:///mnt/firmendaten Daten") {
+		t.Errorf("not labelled with the display name:\n%s", body)
+	}
+
+	// Renaming it does not leave the old label behind as a second entry.
+	drive.DisplayName = "Firmendaten"
+	if err := bookmark(account{home: home, uid: os.Getuid(), gid: os.Getgid()},
+		drive); err != nil {
+		t.Fatalf("bookmark: %v", err)
+	}
+	body = read(t, env, "/home/alice/.config/gtk-3.0/bookmarks")
+	if strings.Count(body, "/mnt/firmendaten") != 1 {
+		t.Errorf("the drive is bookmarked twice:\n%s", body)
+	}
+	if !strings.Contains(body, "Firmendaten") {
+		t.Errorf("the new label was not written:\n%s", body)
+	}
+}
+
+// Unlinking the policy object that added a drive takes the drive away from
+// the people already signed in, not only from whoever signs in next.
+func TestADriveMapNoLongerInPolicyIsDetached(t *testing.T) {
+	env, runner := testEnv(t)
+	saveCreated(env, created{DriveMaps: []string{"/mnt/shared", "/mnt/old"}})
+
+	was := isMounted
+	isMounted = func(string) bool { return true }
+	defer func() { isMounted = was }()
+
+	results := applyDriveMaps(context.Background(), policy.Settings{
+		DriveMaps: []policy.DriveMap{
+			{Name: "shared", UNC: "//fs01/shared", MountPoint: "/mnt/shared"},
+		},
+	}, env)
+
+	if !runner.ran("umount", env.Path("/mnt/old")) {
+		t.Errorf("the removed drive was not detached: %+v", runner.commands)
+	}
+	if runner.ran("umount", env.Path("/mnt/shared")) {
+		t.Error("a drive still in policy was detached")
+	}
+	if statuses(results)["drive_maps:/mnt/old"] != "success" {
+		t.Errorf("the removal was not reported: %+v", results)
+	}
+
+	// The record is left for the next sign-in, which is the only context that
+	// can take the entry out of that person's file manager sidebar.
+	if got := loadCreated(env).DriveMaps; len(got) != 2 {
+		t.Errorf("state = %v, want both mount points still recorded", got)
+	}
+}

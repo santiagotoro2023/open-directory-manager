@@ -10,7 +10,7 @@ toggle that could not do what it says.
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query, Request
@@ -92,6 +92,77 @@ async def list_controllers(
         "writable": sum(1 for entry in controllers if not entry["read_only"]),
         "read_only": sum(1 for entry in controllers if entry["read_only"]),
     }
+
+
+class AgentSchedule(BaseModel):
+    """How often every machine asks for policy, and how it hears about changes."""
+
+    # Four intervals rather than a free number: a minute is as often as is
+    # useful, half an hour as rare as is safe, and anything between them is a
+    # preference rather than a decision.
+    poll_minutes: Literal[1, 5, 15, 30] = 15
+    push_enabled: bool = False
+
+
+async def agent_schedule(pool: asyncpg.Pool) -> dict[str, Any]:
+    """The domain's agent schedule, with the defaults where none is stored."""
+    row = await pool.fetchrow("SELECT poll_minutes, push_enabled FROM agent_schedule")
+    if row is None:
+        return {"poll_minutes": 15, "push_enabled": False}
+    return {"poll_minutes": row["poll_minutes"], "push_enabled": row["push_enabled"]}
+
+
+@router.get("/agents", dependencies=[Depends(requires("dc.read"))])
+async def read_agent_schedule(
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    return await agent_schedule(pool)
+
+
+@router.put("/agents", dependencies=[Depends(requires("dc.write"))])
+async def write_agent_schedule(
+    body: AgentSchedule,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Set the interval every agent polls on, and whether changes are pushed.
+
+    A machine learns the interval from the policy document it already fetches,
+    so it takes effect on the next poll — within half an hour at the longest
+    interval — and no machine is left without a working one in the meantime.
+    """
+    async with pool.acquire() as conn:
+        before = await agent_schedule(pool)
+        await conn.execute(
+            """
+            INSERT INTO agent_schedule (id, poll_minutes, push_enabled, updated_by)
+            VALUES (true, $1, $2, $3)
+            ON CONFLICT (id) DO UPDATE SET
+                poll_minutes = EXCLUDED.poll_minutes,
+                push_enabled = EXCLUDED.push_enabled,
+                updated_at = now(),
+                updated_by = EXCLUDED.updated_by
+            """,
+            body.poll_minutes,
+            body.push_enabled,
+            session.principal,
+        )
+        after = await agent_schedule(pool)
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="agent.schedule",
+            outcome="success",
+            object_type="domain",
+            object_dn="agents",
+            before=before,
+            after=after,
+        )
+    return after
 
 
 @router.get("/join-command", dependencies=[Depends(requires("dc.read"))])

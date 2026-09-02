@@ -45,6 +45,40 @@ KINDS = (
 )
 
 
+async def push_policy(conn: asyncpg.Connection | asyncpg.Pool, requested_by: str) -> int:
+    """Tell every machine that its policy may have changed.
+
+    Only when the domain is set to push. The agent already holds a request
+    open for queued work, so a refresh reaches it within a second; without
+    this it finds out at its next poll. Queued for machines that have
+    reported, and skipped where one is already waiting, so a run of edits does
+    not leave a machine with a queue of identical refreshes to work through.
+    """
+    schedule = await conn.fetchrow("SELECT push_enabled FROM agent_schedule")
+    if schedule is None or not schedule["push_enabled"]:
+        return 0
+    rows = await conn.fetch(
+        """
+        SELECT hostname FROM computer_fact
+        WHERE NOT EXISTS (
+            SELECT 1 FROM node_task
+            WHERE lower(node_task.node_fqdn) = lower(computer_fact.hostname)
+              AND node_task.kind = 'policy-refresh'
+              AND node_task.state IN ('pending', 'claimed')
+        )
+        """
+    )
+    for row in rows:
+        await enqueue(
+            conn,
+            node_fqdn=row["hostname"],
+            kind="policy-refresh",
+            payload={"reason": "policy changed"},
+            requested_by=requested_by,
+        )
+    return len(rows)
+
+
 async def enqueue(
     conn: asyncpg.Connection,
     *,

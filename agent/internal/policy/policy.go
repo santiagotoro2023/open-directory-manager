@@ -118,8 +118,18 @@ type DriveMap struct {
 	Name         string `json:"name"`
 	UNC          string `json:"unc"`
 	MountPoint   string `json:"mount_point"`
+	DisplayName  string `json:"display_name"`
 	ForPrincipal string `json:"for_principal"`
 	Options      string `json:"options"`
+}
+
+// Label is what the file manager shows for this drive: the display name where
+// one is set, and the drive's own name where it is not.
+func (d DriveMap) Label() string {
+	if d.DisplayName != "" {
+		return d.DisplayName
+	}
+	return d.Name
 }
 
 type SudoRule struct {

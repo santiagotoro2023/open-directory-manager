@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
-from . import audit, ca, objects, rsop, sites, tasks
+from . import audit, ca, objects, routes_dc, rsop, sites, tasks
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -101,10 +101,12 @@ async def agent_policy(
             os_id=os_id,
             ip_addresses=tuple(ip or ()),
         )
-    document["refresh_minutes"] = (
-        document["settings"].get("agent", {}).get("refresh_minutes")
-        or settings.agent_refresh_minutes
-    )
+    # The interval is a domain setting and only a domain setting: a machine
+    # polling on something nobody can see is the failure this has to avoid.
+    # The control plane's configured value is the fallback, so a machine has a
+    # working interval even before the schedule row exists.
+    schedule = await routes_dc.agent_schedule(pool)
+    document["refresh_minutes"] = schedule["poll_minutes"] or settings.agent_refresh_minutes
     return document
 
 

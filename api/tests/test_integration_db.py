@@ -379,6 +379,53 @@ async def test_a_task_nobody_collects_stops_a_role_saying_installing(fresh):
 
 
 
+async def test_a_policy_change_reaches_machines_only_when_the_domain_pushes(fresh):
+    """Push is a domain setting and off by default: a policy edit must not
+    queue work for every machine in the domain unless somebody turned it on.
+
+    All of it is SQL — the schedule row, the machines that have reported, and
+    the check for a refresh already waiting — so it runs against the real
+    schema."""
+    from odm import tasks
+
+    async with fresh.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO computer_fact (computer_dn, hostname) VALUES
+                ('CN=WS-01,CN=Computers,DC=example,DC=org', 'ws-01.example.org'),
+                ('CN=WS-02,CN=Computers,DC=example,DC=org', 'ws-02.example.org')
+            """
+        )
+
+        # Off, which is how the domain starts.
+        assert await tasks.push_policy(conn, "suite") == 0
+        assert await conn.fetchval("SELECT count(*) FROM node_task") == 0
+
+        await conn.execute("UPDATE agent_schedule SET push_enabled = true")
+        assert await tasks.push_policy(conn, "suite") == 2
+        kinds = await conn.fetch("SELECT kind, node_fqdn FROM node_task ORDER BY node_fqdn")
+        assert [row["kind"] for row in kinds] == ["policy-refresh", "policy-refresh"]
+
+        # A second edit while the first refresh is still waiting does not
+        # leave a machine a queue of identical refreshes to work through.
+        assert await tasks.push_policy(conn, "suite") == 0
+        assert await conn.fetchval("SELECT count(*) FROM node_task") == 2
+
+
+async def test_the_agent_schedule_holds_one_row_and_only_the_four_intervals(fresh):
+    """The interval an agent polls on is a domain setting with four values.
+    Anything else is a machine that polls on something nobody chose."""
+    async with fresh.acquire() as conn:
+        assert await conn.fetchrow("SELECT poll_minutes, push_enabled FROM agent_schedule") == (
+            15,
+            False,
+        )
+        import asyncpg
+
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await conn.execute("UPDATE agent_schedule SET poll_minutes = 7")
+
+
 async def test_a_certificate_profile_round_trips_its_purpose_array(client):
     """purposes is text[]; PREPARE cannot tell whether Python's list survives
     the conversion, and the issue route reads it straight back out."""

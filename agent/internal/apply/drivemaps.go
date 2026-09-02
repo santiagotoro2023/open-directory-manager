@@ -25,11 +25,11 @@ import (
 //
 // multiuser, so a second person signing in to the same machine reaches the
 // same mount point with their own credentials rather than the first person's.
-func applyDriveMaps(_ context.Context, s policy.Settings, env Env) []policy.Result {
+func applyDriveMaps(ctx context.Context, s policy.Settings, env Env) []policy.Result {
+	results := detachRemoved(ctx, s.DriveMaps, env)
 	if len(s.DriveMaps) == 0 {
-		return nil
+		return results
 	}
-	results := make([]policy.Result, 0, len(s.DriveMaps))
 	for _, drive := range s.DriveMaps {
 		setting := "drive_maps:" + drive.Name
 		if _, _, ok := splitUNC(drive.UNC); !ok {
@@ -42,6 +42,46 @@ func applyDriveMaps(_ context.Context, s policy.Settings, env Env) []policy.Resu
 			continue
 		}
 		results = append(results, policy.Ok(setting))
+	}
+	return results
+}
+
+// detachRemoved takes down the mounts this policy no longer names.
+//
+// The maps are attached in a session, but they are removed here too: unlinking
+// a policy object should take the drive away from the people already signed
+// in, not only from whoever signs in next. The sidebar entry and the record of
+// what was mounted are left for that next sign-in, which is the only context
+// that knows whose sidebar it is.
+// Replaced in tests, where nothing is really mounted.
+var isMounted = mounted
+
+func detachRemoved(ctx context.Context, drives []policy.DriveMap, env Env) []policy.Result {
+	state := loadCreated(env)
+	if len(state.DriveMaps) == 0 || env.Run == nil {
+		return nil
+	}
+	wanted := make([]string, 0, len(drives))
+	for _, drive := range drives {
+		wanted = append(wanted, drive.MountPoint)
+	}
+	var results []policy.Result
+	for _, gone := range goneFrom(state.DriveMaps, wanted) {
+		if !isMounted(env.Path(gone)) {
+			continue
+		}
+		setting := "drive_maps:" + gone
+		if out, err := env.Run.Run(ctx, "umount", env.Path(gone)); err != nil {
+			results = append(results, policy.Result{
+				Setting: setting,
+				Status:  "failed",
+				Reason:  fmt.Sprintf("detaching: %v: %s", err, strings.TrimSpace(lastLine(out))),
+			})
+			continue
+		}
+		results = append(results, policy.Result{
+			Setting: setting, Status: "success", Reason: "removed: no longer in policy",
+		})
 	}
 	return results
 }
@@ -146,7 +186,7 @@ func unbookmark(who account, mountPoint string) {
 // occupies on Windows.
 func bookmark(who account, drive policy.DriveMap) error {
 	path := filepath.Join(who.home, ".config", "gtk-3.0", "bookmarks")
-	line := "file://" + drive.MountPoint + " " + drive.Name
+	line := "file://" + drive.MountPoint + " " + drive.Label()
 	existing, err := os.ReadFile(path)
 	if err == nil {
 		for _, present := range strings.Split(string(existing), "\n") {
@@ -160,6 +200,10 @@ func bookmark(who account, drive policy.DriveMap) error {
 	if err := makeUnder(who, filepath.Dir(path)); err != nil {
 		return nil
 	}
+	// A label that changed leaves the old line behind, and the sidebar would
+	// then hold the same drive twice under two names.
+	unbookmark(who, drive.MountPoint)
+	existing, _ = os.ReadFile(path)
 	body := string(existing)
 	if body != "" && !strings.HasSuffix(body, "\n") {
 		body += "\n"

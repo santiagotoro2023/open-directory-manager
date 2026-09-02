@@ -51,6 +51,9 @@ PERMISSIONS: tuple[str, ...] = (
     "rd.read",
     "rd.write",
     "dc.read",
+    # Domain-wide settings for the machines: how often an agent asks for
+    # policy, and whether a change is pushed to it.
+    "dc.write",
     "radius.read",
     "radius.write",
     "password.self_service",

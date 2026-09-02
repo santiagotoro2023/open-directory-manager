@@ -101,7 +101,10 @@ journalctl -u odm-agent -n 50`}</Code>
               ["keytab", "The machine keytab, normally /etc/krb5.keytab."],
               ["realm", "The Kerberos realm."],
               ["ca_cert", "The certificate that validates the control plane's TLS certificate."],
-              ["refresh_minutes", "Fallback interval when policy does not set one."],
+              [
+                "refresh_minutes",
+                "Interval to use until the domain's own is known — at first start, before the machine has reached the control plane.",
+              ],
             ]}
           />
         </Section>
@@ -128,9 +131,23 @@ journalctl -u odm-agent -n 50`}</Code>
             ]}
           />
           <p>
-            The interval defaults to 15 minutes and is itself policy. A small random offset is added
-            so a fleet does not check in at the same instant.
+            The interval is a domain setting, under{" "}
+            <strong>Domain Controllers &rarr; Agents</strong>: 1, 5, 15 or 30 minutes, 15 by
+            default. It arrives in the policy document the agent already fetches, so a change takes
+            effect at each machine&rsquo;s next poll. A small random offset is added so a fleet does
+            not check in at the same instant.
           </p>
+          <p>
+            The agent records the interval it was last told in{" "}
+            <C>/var/lib/odm/refresh-minutes</C> and keeps using it across a restart and while the
+            control plane is unreachable. Without that file it uses <C>refresh_minutes</C> from its
+            configuration, and 15 minutes without that.
+          </p>
+          <Note>
+            With push on for the domain, a policy edit queues a refresh for every machine that has
+            reported, and the held request below carries it — so an edit applies within seconds
+            rather than at the next poll. It is off by default.
+          </Note>
           <Note>
             Queued work &mdash; a role to install, a restart, a share to render &mdash; does not
             wait for the next policy refresh. Between refreshes the agent asks for work and the
@@ -156,6 +173,10 @@ journalctl -u odm-agent -n 50`}</Code>
               [
                 <C key="3">/var/lib/odm/last-serial</C>,
                 "The fingerprint of the last applied policy.",
+              ],
+              [
+                <C key="7">/var/lib/odm/refresh-minutes</C>,
+                "The polling interval the domain last set.",
               ],
               [<C key="4">/etc/odm/scripts/</C>, "Deployed scripts, by trigger."],
               [<C key="5">/etc/odm/firewall.nft</C>, "The generated nftables ruleset."],

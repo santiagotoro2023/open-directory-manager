@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, RefreshCw, Server as ServerIcon } from "lucide-react";
-import { ApiError, api, type ControllerOverview, type DomainController, type Site } from "../api";
+import {
+  ApiError,
+  api,
+  type AgentSchedule,
+  type ControllerOverview,
+  type DomainController,
+  type Site,
+} from "../api";
 import { InfoPanel } from "../components/DocsLink";
+import { Loading } from "../components/Loading";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 import Select from "../components/Select"
@@ -15,7 +23,7 @@ function since(value: string | null): string {
   return hours < 48 ? `${hours} hours ago` : `${Math.round(hours / 24)} days ago`;
 }
 
-type Tab = "controllers" | "sites";
+type Tab = "controllers" | "sites" | "agents";
 
 /**
  * The controllers that hold the directory.
@@ -71,7 +79,7 @@ export function Controllers() {
       )}
 
       <nav className="tabs" aria-label="Domain controller views">
-        {(["controllers", "sites"] as Tab[]).map((current) => (
+        {(["controllers", "sites", "agents"] as Tab[]).map((current) => (
           <button
             key={current}
             type="button"
@@ -79,12 +87,18 @@ export function Controllers() {
             aria-current={tab === current ? "true" : undefined}
             onClick={() => setTab(current)}
           >
-            {current === "controllers" ? "Controllers" : "Sites and subnets"}
+            {current === "controllers"
+              ? "Controllers"
+              : current === "sites"
+                ? "Sites and subnets"
+                : "Agents"}
           </button>
         ))}
       </nav>
 
       {tab === "sites" && <Sites controllers={overview?.controllers ?? []} />}
+
+      {tab === "agents" && <Agents />}
 
       {tab === "controllers" && (
         <>
@@ -172,6 +186,111 @@ export function Controllers() {
 
       {adding && <AddControllerDialog onClose={() => setAdding(false)} />}
     </main>
+  );
+}
+
+const POLL_INTERVALS: { minutes: AgentSchedule["poll_minutes"]; label: string }[] = [
+  { minutes: 1, label: "Every minute" },
+  { minutes: 5, label: "Every 5 minutes" },
+  { minutes: 15, label: "Every 15 minutes" },
+  { minutes: 30, label: "Every 30 minutes" },
+];
+
+/**
+ * How often every machine in the domain asks for its policy.
+ *
+ * The interval reaches a machine in the policy document it already fetches,
+ * so it takes effect at that machine's next poll. Pushing is separate: with it
+ * on, a policy change is queued for the machines it reaches and the agent,
+ * which already holds a request open for queued work, applies within seconds.
+ */
+function Agents() {
+  const [schedule, setSchedule] = useState<AgentSchedule | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.controllers
+      .agents()
+      .then(setSchedule)
+      .catch((err) => setError(err instanceof ApiError ? err.message : String(err)));
+  }, []);
+
+  async function save(next: AgentSchedule) {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      setSchedule(await api.controllers.setAgents(next));
+      setNotice("Saved. Each machine picks this up at its next poll.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!schedule) {
+    return error ? (
+      <p className="alert" role="alert">
+        {error}
+      </p>
+    ) : (
+      <Loading label="Reading the agent schedule…" />
+    );
+  }
+
+  return (
+    <section className="role-configuration">
+      <header>
+        <h3>Policy refresh</h3>
+        <p className="muted">
+          Applies to every machine in the domain. A policy object that sets its own interval wins
+          for the machines it reaches.
+        </p>
+      </header>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && <p className="muted">{notice}</p>}
+
+      <Field label="Polling interval" hint="How often an agent asks for its policy">
+        <Select
+          value={String(schedule.poll_minutes)}
+          disabled={saving}
+          aria-label="Polling interval"
+          onChange={(e) =>
+            void save({
+              ...schedule,
+              poll_minutes: Number(e.target.value) as AgentSchedule["poll_minutes"],
+            })
+          }
+        >
+          {POLL_INTERVALS.map((interval) => (
+            <option key={interval.minutes} value={String(interval.minutes)}>
+              {interval.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={schedule.push_enabled}
+          disabled={saving}
+          onChange={(e) => void save({ ...schedule, push_enabled: e.target.checked })}
+        />
+        Push a change to every machine as soon as it is made
+      </label>
+      <p className="muted">
+        One request per machine per policy edit, on top of the polling above.
+      </p>
+    </section>
   );
 }
 

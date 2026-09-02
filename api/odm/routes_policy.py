@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import db, objects, rsop, sysvol
+from . import db, objects, rsop, sysvol, tasks
 from .config import Settings, get_settings
 from .policy_schema import PolicySettings, Targeting
 from .routes_directory import _audit_context, _bound
@@ -355,6 +355,7 @@ async def import_gpos(
             "skipped": [entry["name"] for entry in skipped],
             "links_restored": linked,
         }
+        await tasks.push_policy(pool, session.principal)
 
     return {
         "created": created,
@@ -428,6 +429,7 @@ async def update_gpo(
 
         entry.before = _gpo_json(before)
         entry.after = _gpo_json(row)
+        await tasks.push_policy(pool, session.principal)
         return _gpo_json(row)
 
 
@@ -478,6 +480,7 @@ async def delete_gpo(
                 await run_in_threadpool(sysvol.delete, conn, settings, str(guid))
         for target in targets:
             await _mirror_links(pool, settings, target)
+        await tasks.push_policy(pool, session.principal)
 
 
 # ------------------------------------------------------------------- links ---
@@ -541,6 +544,7 @@ async def create_link(
             "link_order": row["link_order"],
             "enforced": body.enforced,
         }
+        await tasks.push_policy(pool, session.principal)
         return {"id": str(row["id"]), "link_order": row["link_order"]}
 
 
@@ -579,6 +583,7 @@ async def update_link(
         await _mirror_links(pool, settings, before["target_dn"])
         row = await pool.fetchrow("SELECT * FROM gpo_link WHERE id = $1", body.id)
         entry.after = {k: row[k] for k in ("link_order", "enforced", "enabled")}
+        await tasks.push_policy(pool, session.principal)
         return {**entry.after, "id": str(body.id)}
 
 
@@ -623,6 +628,7 @@ async def delete_link(
                     "UPDATE gpo_link SET link_order = $2 WHERE id = $1", link["id"], index
                 )
         await _mirror_links(pool, settings, row["target_dn"])
+        await tasks.push_policy(pool, session.principal)
 
 
 @router.post("/inheritance", dependencies=[Depends(requires("gpo.write"))])
@@ -652,6 +658,7 @@ async def set_inheritance(
             body.block_inheritance,
         )
         entry.after = {"block_inheritance": body.block_inheritance}
+        await tasks.push_policy(pool, session.principal)
         return {"ou_dn": body.ou_dn, "block_inheritance": body.block_inheritance}
 
 
@@ -666,7 +673,6 @@ DEFAULT_DC_POLICY = "Default Domain Controllers Policy"
 
 def _default_domain_settings(settings: Settings) -> dict[str, Any]:
     return {
-        "agent": {"refresh_minutes": settings.agent_refresh_minutes},
         "files": [
             {
                 "path": "/etc/issue.net",

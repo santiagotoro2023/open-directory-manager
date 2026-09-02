@@ -333,6 +333,12 @@ export interface DomainController {
   last_seen: string | null;
 }
 
+/** How often every agent asks for policy, and how it hears about a change. */
+export interface AgentSchedule {
+  poll_minutes: 1 | 5 | 15 | 30;
+  push_enabled: boolean;
+}
+
 export interface ControllerOverview {
   controllers: DomainController[];
   replication: {
@@ -1183,6 +1189,14 @@ export const api = {
       request<{ server: string; inbound: unknown[]; healthy: boolean }>(
         `/controllers/replication${qs({ server })}`,
       ),
+
+    agents: () => request<AgentSchedule>("/controllers/agents"),
+
+    setAgents: (body: AgentSchedule) =>
+      request<AgentSchedule>("/controllers/agents", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
   },
 
   radius: {

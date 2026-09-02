@@ -243,6 +243,12 @@ export const CATEGORIES: CategorySpec[] = [
       { key: "unc", label: "Share", placeholder: "//fs01/shared" },
       { key: "mount_point", label: "Mount point", placeholder: "/mnt/shared" },
       {
+        key: "display_name",
+        label: "Shown as",
+        placeholder: "The name above",
+        width: "160px",
+      },
+      {
         key: "for_principal",
         label: "For user or group",
         placeholder: "%Engineers",
@@ -251,7 +257,7 @@ export const CATEGORIES: CategorySpec[] = [
       },
       { key: "options", label: "Options" },
     ],
-    blank: { name: "", unc: "", mount_point: "", for_principal: "", options: "" },
+    blank: { name: "", unc: "", mount_point: "", display_name: "", for_principal: "", options: "" },
   },
   {
     key: "sudo_rules",

@@ -104,6 +104,43 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Agent polling and push">
+          <p>
+            Every domain machine runs the agent, which asks for its policy on an interval and
+            applies what it is handed. The interval and whether a change is pushed are domain
+            settings, under <strong>Domain Controllers → Agents</strong>.
+          </p>
+          <Reference
+            headers={["Setting", "Effect"]}
+            rows={[
+              [
+                "Polling interval",
+                "1, 5, 15 or 30 minutes. A machine learns it from the policy document it already fetches, so a change takes effect at that machine's next poll — up to 30 minutes at the longest interval.",
+              ],
+              [
+                "Push a change to every machine",
+                "Off by default. On, a policy edit queues a refresh for every machine that has reported, and the agent applies within seconds of the edit.",
+              ],
+            ]}
+          />
+          <p>
+            This is the only place the interval is set. It is deliberately not a policy setting:
+            two places to set one thing meant a console reading 5 minutes over a fleet still
+            polling on 15.
+          </p>
+          <Example title="A domain that reacts fast without a request per minute">
+            Polling interval <C>15 minutes</C>, push on. Idle machines cost one held request each;
+            an edit reaches all of them at once. Turn push off, and a machine finds out at its next
+            poll instead.
+          </Example>
+          <Note>
+            The agent writes down the interval it was last told and keeps polling on it across a
+            restart and across a control plane it cannot reach. A machine that has never reached
+            the control plane uses what domain join wrote, and 15 minutes if that is missing too —
+            there is no state in which a machine stops asking.
+          </Note>
+        </Section>
+
         <Section title="Replication">
           <p>
             Samba is multi-master: a change made on any writable controller reaches the others. The

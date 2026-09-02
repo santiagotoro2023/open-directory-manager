@@ -141,6 +141,10 @@ class DriveMap(Strict):
     name: str
     unc: str
     mount_point: str
+    # What the file manager calls it. The share's own name where this is
+    # empty, so a drive is labelled without renaming the share or moving the
+    # mount point.
+    display_name: Annotated[str, Field(max_length=64)] = ""
     for_principal: str | None = None
     options: Annotated[str, Field(max_length=256)] = ""
     # Optional: this entry applies only where it matches.
@@ -597,6 +601,12 @@ class LocalPasswordPolicy(Strict):
 
 
 class AgentSettings(Strict):
+    """Kept so a policy object written before the interval became a domain
+    setting still reads and still exports. The interval now comes from the
+    domain (Domain Controllers → Agents) and nothing else: two places to set
+    one thing meant a console that said 5 minutes over a machine polling on
+    15. Values here are ignored."""
+
     refresh_minutes: Annotated[int, Field(ge=1, le=1440)] = 15
 
 
