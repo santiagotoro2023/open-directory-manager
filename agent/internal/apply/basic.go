@@ -116,8 +116,17 @@ odm_repair_home() {
   [ -n "$home" ] && [ -d "$home" ] && [ -n "$uid" ] || return 0
   owner=$(stat -c %u "$home" 2>/dev/null) || return 0
   [ "$owner" = "$uid" ] && return 0
-  getent passwd "$owner" >/dev/null 2>&1 && return 0
+  # Root, or an account that no longer exists. Both are homes nobody can
+  # write to, and neither is an ownership anybody chose: a home left by an
+  # earlier incarnation of the account, or one a service made on their behalf
+  # before they arrived. On a session host that one stopped Xorg writing
+  # .Xauthority, so every remote desktop connection ended with "X server could
+  # not be started".
+  if [ "$owner" != "0" ] && getent passwd "$owner" >/dev/null 2>&1; then
+    return 0
+  fi
   chown -R "$uid:$(id -g "$PAM_USER")" "$home" 2>/dev/null || true
+  chmod 0700 "$home" 2>/dev/null || true
 }
 
 `

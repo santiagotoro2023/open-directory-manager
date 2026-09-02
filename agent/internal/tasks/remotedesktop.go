@@ -179,6 +179,11 @@ fi
 mountpoint -q "$HOME_DIR" && exit 0
 
 mkdir -p "$STORE" "$HOME_DIR" 2>/dev/null || warn "cannot create $HOME_DIR"
+# Theirs from the moment it exists. Made by root and left that way, nothing in
+# their session can write to it — including the X server, which then does not
+# start at all.
+chown "$USER_NAME" "$HOME_DIR" 2>/dev/null || true
+chmod 0700 "$HOME_DIR" 2>/dev/null || true
 
 # The share is reached with the machine's own credentials: the user's ticket
 # is not available to PAM at this point, and the disk is the machine's to
