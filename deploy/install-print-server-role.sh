@@ -77,6 +77,16 @@ PYTHON
 
 rm -f /etc/cups/cupsd.conf.d/odm-access.conf
 
+# A print server is the machine that goes looking for printers, and looking is
+# an avahi browse. Managed machines turn avahi off so a printer advertising
+# itself does not appear beside the ones the domain gave them; this says not
+# here.
+install -d -m 0755 /etc/odm
+cat > /etc/odm/print-server <<'MARKER'
+# Managed by Open Directory Manager.
+# This machine scans the network for printers, so it keeps avahi.
+MARKER
+
 echo "==> Starting CUPS"
 odm_enable cups
 

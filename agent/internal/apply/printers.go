@@ -155,6 +155,11 @@ func lastLine(out string) string {
 // somebody has.
 const browsedConf = "/etc/cups/cups-browsed.conf"
 
+// PrintServerMarker is written by the print-server role. A print server is the
+// machine that scans the network for printers, so it keeps the service that
+// answers a scan.
+const printServerMarker = "/etc/odm/print-server"
+
 func quietBrowsing(ctx context.Context, env Env) policy.Result {
 	if _, err := os.Stat(env.Path(browsedConf)); err != nil {
 		return policy.Result{
@@ -184,7 +189,13 @@ func quietBrowsing(ctx context.Context, env Env) policy.Result {
 	// somebody, looking exactly like them. avahi is what answers that
 	// enumeration; on a machine whose printers come from the domain, nothing
 	// else here needs it.
-	_, _ = env.Run.Run(ctx, "systemctl", "disable", "--now",
-		"avahi-daemon.service", "avahi-daemon.socket")
+	//
+	// Except on a print server, which is the machine that goes looking: its
+	// scan for printers on the network is an avahi browse, and taking avahi
+	// away there would mean no printer could ever be found to hand out.
+	if _, err := os.Stat(env.Path(printServerMarker)); err != nil {
+		_, _ = env.Run.Run(ctx, "systemctl", "disable", "--now",
+			"avahi-daemon.service", "avahi-daemon.socket")
+	}
 	return policy.Ok("printers:browsing")
 }
