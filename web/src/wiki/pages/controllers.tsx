@@ -144,24 +144,34 @@ export function Content() {
         <Section title="Replication">
           <p>
             Samba is multi-master: a change made on any writable controller reaches the others. The
-            table reports inbound replication as the controller ODM is running on sees it — which
-            partition, from which partner, when it last tried, and how many times in a row it has
-            failed.
+            table reports inbound replication — which partition, from which partner, when it last
+            tried, how many times in a row it has failed, and which controller saw it.
+          </p>
+          <p>
+            Each controller collects its own state with its inventory, so the table appears at a
+            controller&rsquo;s next check-in and <strong>Collected</strong> says how old it is. It
+            is collected there rather than read centrally because Samba answers the call behind{" "}
+            <C>samba-tool drs showrepl</C> only to a caller that is itself a domain controller or an
+            administrator: no delegated right grants it, and the control plane&rsquo;s account is
+            deliberately neither. A controller&rsquo;s machine account does hold that level, and
+            the agent runs as root there, which is where the machine account&rsquo;s password is
+            readable.
           </p>
           <Reference
             headers={["Reading", "Means"]}
             rows={[
               ["No inbound partnerships", "One controller. Nothing to replicate."],
               [
+                "No controller has reported its replication state yet",
+                "The agent on that controller has not checked in since this was installed. Check odm-agent there.",
+              ],
+              [
                 "Consecutive failures rising",
                 "Usually DNS or the clock between the two machines. Check both before anything else.",
               ],
               [
-                "The account may not read replication state",
-                <>
-                  Run <C key="a">deploy/create-api-service-account.sh</C> on a controller to grant
-                  the right.
-                </>,
+                "Collected hours ago",
+                "That controller stopped reporting; what is shown is the last state it had, not the current one.",
               ],
             ]}
           />

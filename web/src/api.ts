@@ -290,7 +290,13 @@ export interface ManagedServer {
   operating_system: string;
   domain_controller: boolean;
   roles: { role: string; state: string }[];
+  /** The last contact of any kind: a policy run, an inventory, or collecting
+      queued work. Null only for a machine that has never run the agent. */
   last_seen: string | null;
+  last_seen_how: string;
+  /** The last run that applied policy. Policy already applied is not applied
+      again, so this is older than last_seen on a settled machine. */
+  last_policy_run: string | null;
   pending_tasks: number;
 }
 
@@ -331,6 +337,8 @@ export interface DomainController {
   operating_system: string;
   read_only: boolean;
   last_seen: string | null;
+  last_seen_how: string;
+  last_policy_run: string | null;
 }
 
 /** How often every agent asks for policy, and how it hears about a change. */
@@ -351,7 +359,13 @@ export interface ControllerOverview {
       last_attempt: string;
       succeeded: boolean | null;
       failures: number;
+      /** The controller that reported this row. */
+      on?: string;
     }[];
+    /** The controllers whose agents collected it. */
+    servers?: string[];
+    collected_at?: string | null;
+    source?: string;
   };
   writable: number;
   read_only: number;

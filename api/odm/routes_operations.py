@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, backup, ca, kea, objects, replication, tasks
+from . import agents, audit, backup, ca, kea, objects, replication, tasks
 from .config import Settings, get_settings
 from .routes_directory import _audit_context, _bound
 from .security import get_pool, require_admin, requires
@@ -261,18 +261,14 @@ async def _certificate_health(pool: asyncpg.Pool, settings: Settings) -> dict[st
 
 async def _agent_health(pool: asyncpg.Pool, settings: Settings) -> dict[str, Any]:
     stale_after = max(settings.agent_refresh_minutes * 3, 60)
-    row = await pool.fetchrow(
+    counts = await agents.freshness(pool, stale_after)
+    failures = await pool.fetchval(
         """
-        SELECT count(*) AS total,
-               count(*) FILTER (WHERE reported_at > now() - ($1 || ' minutes')::interval)
-                   AS fresh,
-               coalesce(sum(failures), 0) AS failures
-        FROM (
-            SELECT DISTINCT ON (computer_dn) computer_dn, reported_at, failures
+        SELECT coalesce(sum(failures), 0) FROM (
+            SELECT DISTINCT ON (computer_dn) computer_dn, failures
             FROM agent_report ORDER BY computer_dn, reported_at DESC
         ) latest
-        """,
-        str(stale_after),
+        """
     )
     # A count of failures nobody can turn into a name is a number to worry
     # about and nothing to do about it. The settings themselves come back with
@@ -290,10 +286,8 @@ async def _agent_health(pool: asyncpg.Pool, settings: Settings) -> dict[str, Any
         """
     )
     return {
-        "checked_in": row["total"],
-        "fresh": row["fresh"],
-        "stale": row["total"] - row["fresh"],
-        "failing_settings": row["failures"],
+        **counts,
+        "failing_settings": failures,
         "failing": [dict(entry) for entry in failing],
         "stale_after_minutes": stale_after,
     }

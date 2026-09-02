@@ -67,7 +67,7 @@ open it, and use **Join a Domain** from the applications menu. Or from a
 terminal:
 
 ```bash
-sudo apt install ./odm-client_0.7.1_amd64.deb
+sudo apt install ./odm-client_0.7.2_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -81,6 +81,20 @@ Leaving again needs a domain credential to remove the computer account, or
 ```bash
 sudo odm-client-install --leave --domain corp.example.internal --admin-user Administrator
 ```
+
+### Upgrading
+
+Setup is the upgrade path: steps that already completed are skipped, an
+existing domain is never re-provisioned, and the console certificate is left
+alone. On the controller:
+
+```bash
+sudo git pull
+sudo deploy/setup.sh --console-fqdn <this controller's name>
+```
+
+It rebuilds the console, reinstalls the control plane, rebuilds the agent and
+restarts both; database migrations run when the control plane starts.
 
 ### Doing it by hand
 
@@ -192,7 +206,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.7.1   # -> dist/odm-client_0.7.1_amd64.deb
+bash packaging/deb/build-in-container.sh 0.7.2   # -> dist/odm-client_0.7.2_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

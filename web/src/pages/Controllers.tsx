@@ -126,7 +126,17 @@ export function Controllers() {
                     )}
                   </td>
                   <td>{controller.operating_system || "—"}</td>
-                  <td>{since(controller.last_seen)}</td>
+                  <td>
+                    {since(controller.last_seen)}
+                    {controller.last_seen && (
+                      <p className="stat-note">
+                        {controller.last_seen_how}
+                        {controller.last_policy_run
+                          ? ` · policy ${since(controller.last_policy_run)}`
+                          : " · policy not applied yet"}
+                      </p>
+                    )}
+                  </td>
                 </tr>
               ))}
               {overview?.controllers.length === 0 && (
@@ -149,11 +159,18 @@ export function Controllers() {
                   {replication?.healthy ? "in step" : "attention needed"}
                 </span>
               </p>
+              {/* Each controller collects its own state with its inventory, so
+                  say when it was collected: a controller that has stopped
+                  reporting shows the last state it had, not the current one. */}
+              {replication?.collected_at && (
+                <p className="stat-note">Collected {since(replication.collected_at)}</p>
+              )}
               <table className="data">
                 <thead>
                   <tr>
                     <th scope="col">Partition</th>
                     <th scope="col">From</th>
+                    <th scope="col">On</th>
                     <th scope="col">Last attempt</th>
                     <th scope="col">Failures</th>
                   </tr>
@@ -163,6 +180,7 @@ export function Controllers() {
                     <tr key={index}>
                       <td className="mono">{entry.naming_context}</td>
                       <td className="mono">{entry.partner}</td>
+                      <td className="mono">{entry.on ?? replication?.servers?.[0] ?? "—"}</td>
                       <td>
                         {entry.last_attempt}
                         {entry.succeeded === false && <span className="badge failure">failed</span>}
@@ -172,8 +190,10 @@ export function Controllers() {
                   ))}
                   {(replication?.inbound ?? []).length === 0 && (
                     <tr>
-                      <td colSpan={4} className="empty">
-                        Nothing to replicate: this domain has one controller.
+                      <td colSpan={5} className="empty">
+                        {(replication?.servers ?? []).length === 0
+                          ? "No controller has reported its replication state yet. Each one collects it with its inventory, so it appears at that controller's next check-in."
+                          : "Nothing to replicate: this domain has one controller."}
                       </td>
                     </tr>
                   )}

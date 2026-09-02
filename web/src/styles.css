@@ -543,7 +543,8 @@ table.data tbody tr[draggable="true"] {
   min-width: 0;
 }
 
-.toolbar .search {
+.toolbar .search,
+.page-header .search {
   flex: 1 1 260px;
   max-width: 420px;
 }
@@ -2043,9 +2044,11 @@ ul.plain {
   border-radius: var(--radius-sm);
 }
 
-/* On a page it is a band of its own, not the top edge of the table under it.
-   Inside the settings editor the column's own gap already spaces it. */
-.content > .info-panel {
+/* A band of its own, not the top edge of whatever is under it. On the
+   directory page the panel sits inside the object pane rather than directly in
+   the page container, so a child selector left it flush against the
+   distinguished name and the table below. */
+.info-panel {
   margin-bottom: 18px;
 }
 
@@ -2664,6 +2667,19 @@ tr.detail-row td {
   width: 100%;
   text-align: left;
   font-weight: inherit;
+}
+
+/* In a form a control fills its field; in a toolbar it does not. Full width
+   there put every dropdown on a line of its own — the directory page showed
+   the type filter and Create… as two full-width bars stacked under the search
+   box. */
+.page-header > .select,
+.toolbar > .select,
+.tabs > .select,
+.pane-footer > .select {
+  width: auto;
+  min-width: 148px;
+  max-width: 260px;
 }
 
 .select .select-value {

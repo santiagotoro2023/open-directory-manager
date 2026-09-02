@@ -379,6 +379,104 @@ async def test_a_task_nobody_collects_stops_a_role_saying_installing(fresh):
 
 
 
+async def test_replication_comes_from_the_controllers_that_reported_it(fresh):
+    """Samba refuses the call behind `samba-tool drs showrepl` to anything
+    below domain-controller level, so the control plane's own account can never
+    read replication state — it used to report that as a missing right and
+    point at a script that could not grant it. Each controller collects its own
+    state with its inventory instead."""
+    from test_operations import SHOWREPL
+
+    from odm import routes_dc
+    from odm.config import get_settings
+
+    dn = "CN=DC1,OU=Domain Controllers,DC=corp,DC=example,DC=internal"
+    controllers = [{"distinguished_name": dn, "name": "DC1"}]
+    settings = get_settings()
+
+    # Nothing reported: the page says so rather than showing an error about
+    # rights, and asking here is the fallback.
+    empty = await routes_dc._replication(fresh, settings, controllers)
+    assert empty.get("servers") == [] or empty.get("available") is False
+
+    async with fresh.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO computer_fact (computer_dn, hostname, replication, replication_at)
+            VALUES ($1, $2, $3, now())
+            """,
+            dn,
+            "dc1.corp.example.internal",
+            SHOWREPL,
+        )
+
+    status = await routes_dc._replication(fresh, settings, controllers)
+    assert status["source"] == "agent"
+    assert status["servers"] == ["dc1.corp.example.internal"]
+    assert status["collected_at"] is not None
+    # Two inbound partnerships in the fixture, one of them failing, and each
+    # row says which controller saw it.
+    assert len(status["inbound"]) == 2
+    assert {entry["on"] for entry in status["inbound"]} == {"dc1.corp.example.internal"}
+    assert status["healthy"] is False
+
+
+async def test_a_machine_that_reports_only_its_inventory_counts_as_alive(fresh):
+    """A policy report is posted by a run that applied something, and policy
+    already applied is not applied again — so a settled machine posts none for
+    as long as nothing changes. Judged by that alone the console said "has
+    never reported in, so it is probably not running the agent" over machines
+    checking in every fifteen minutes, and refused to install a role on them.
+    """
+    from odm import agents, tasks
+
+    dn = "CN=WS-01,CN=Computers,DC=example,DC=org"
+    async with fresh.acquire() as conn:
+        # Nothing at all: this one really has never run the agent.
+        assert await agents.last_contact(fresh) == {}
+
+        await conn.execute(
+            "INSERT INTO computer_fact (computer_dn, hostname) VALUES ($1, $2)",
+            dn,
+            "ws-01.example.org",
+        )
+        contact = (await agents.last_contact(fresh))[dn.lower()]
+        assert contact.how == "inventory"
+        assert contact.policy_run is None
+        assert agents.describe(contact)["last_seen"] == contact.at
+        assert (await agents.freshness(fresh, 60))["fresh"] == 1
+
+        # Collecting queued work is contact too, and it is the machine itself
+        # that claims it.
+        await tasks.enqueue(
+            conn,
+            node_fqdn="ws-01.example.org",
+            kind="policy-refresh",
+            payload={},
+            requested_by="suite",
+        )
+        await tasks.claim(conn, "ws-01.example.org")
+        assert (await agents.last_contact(fresh))[dn.lower()].how == "queued work"
+
+        # And a policy run is reported next to the last contact, not instead
+        # of it.
+        await conn.execute(
+            """
+            INSERT INTO agent_report (computer_dn, hostname, agent_version, policy_serial,
+                                      applied_gpos, results, failures)
+            VALUES ($1, $2, '0.0.0', 'abc', '[]'::jsonb, '[]'::jsonb, 0)
+            """,
+            dn,
+            "ws-01.example.org",
+        )
+        contact = (await agents.last_contact(fresh))[dn.lower()]
+        assert contact.how == "policy report"
+        assert contact.policy_run is not None
+
+        # A machine nobody has heard from is still nobody: no row, no guess.
+        assert "cn=ws-02,cn=computers,dc=example,dc=org" not in await agents.last_contact(fresh)
+
+
 async def test_a_policy_change_reaches_machines_only_when_the_domain_pushes(fresh):
     """Push is a domain setting and off by default: a policy edit must not
     queue work for every machine in the domain unless somebody turned it on.

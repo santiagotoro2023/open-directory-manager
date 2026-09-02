@@ -75,6 +75,10 @@ type Report struct {
 	// everything else so choosing one in the console is instant, rather than
 	// a request that waits for the machine's next check-in.
 	PrintDevices []PrintDevice `json:"print_devices,omitempty"`
+	// `samba-tool drs showrepl` as this machine sees it, on a controller.
+	// Empty everywhere else. See replication.go for why the controller
+	// collects this rather than the control plane reading it.
+	Replication string `json:"replication,omitempty"`
 }
 
 // PrintDevice is one thing CUPS found: a URI it can print to and, when the
@@ -180,6 +184,7 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		report.Packages, report.PackageCount = installedPackages(ctx, env)
 
 		report.PrintDevices = printDevices(ctx, env, 10)
+		report.Replication = replicationState(ctx, env)
 
 		previous := strings.TrimSpace(readFile(env, CursorPath))
 		report.Logs, report.LogCursor = CollectLogs(ctx, env, previous, LogUnits, 200)

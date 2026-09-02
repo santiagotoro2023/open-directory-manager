@@ -467,6 +467,11 @@ class Inventory(BaseModel):
     logs: Annotated[list[LogEntry], Field(max_length=500)] = []
     log_cursor: Annotated[str, Field(max_length=256)] = ""
     print_devices: Annotated[list[PrintDevice], Field(max_length=200)] = []
+    # `samba-tool drs showrepl` as this machine ran it, on a controller; empty
+    # from anything else. Parsed rather than trusted: it is one machine's
+    # account of its own replication, which is exactly whose account it should
+    # be, and the console only reads it for controllers.
+    replication: Annotated[str, Field(max_length=32768)] = ""
 
 
 @router.post("/inventory", status_code=204)
@@ -483,11 +488,13 @@ async def agent_inventory(
                 computer_dn, hostname, operating_system, kernel, booted_at,
                 local_users, sessions, pending_updates, security_updates,
                 updates, updates_checked_at, packages, package_count,
-                addresses, site_name, print_devices, reported_at
+                addresses, site_name, print_devices, replication,
+                replication_at, reported_at
             )
             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
                     CASE WHEN $11 THEN now() ELSE NULL END, $12::jsonb, $13,
-                    $14::jsonb, $15, $16::jsonb, now())
+                    $14::jsonb, $15, $16::jsonb, nullif($17, ''),
+                    CASE WHEN $17 <> '' THEN now() ELSE NULL END, now())
             ON CONFLICT (computer_dn) DO UPDATE SET
                 hostname           = excluded.hostname,
                 operating_system   = excluded.operating_system,
@@ -505,6 +512,13 @@ async def agent_inventory(
                 addresses          = excluded.addresses,
                 site_name          = excluded.site_name,
                 print_devices      = excluded.print_devices,
+                -- A machine that reports none keeps what it last reported:
+                -- an agent restarted mid-collection must not blank the
+                -- replication panel.
+                replication        = COALESCE(excluded.replication,
+                                              computer_fact.replication),
+                replication_at     = COALESCE(excluded.replication_at,
+                                              computer_fact.replication_at),
                 reported_at        = now()
             """,
             machine.dn,
@@ -532,6 +546,7 @@ async def agent_inventory(
                 },
             ),
             json.dumps([device.model_dump() for device in body.print_devices]),
+            body.replication,
         )
 
         # A session host's logged-on users are the session directory. Derived

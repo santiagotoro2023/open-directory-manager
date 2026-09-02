@@ -10,6 +10,7 @@ toggle that could not do what it says.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 import asyncpg
@@ -17,7 +18,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, directory, objects, replication, sites
+from . import agents, audit, directory, objects, replication, sites
 from .config import Settings, get_settings
 from .routes_directory import _read
 from .security import client_ip, get_pool, require_admin, requires
@@ -67,31 +68,74 @@ async def list_controllers(
 ) -> dict[str, Any]:
     controllers = await _read(settings, _controllers)
 
-    reports = await pool.fetch(
-        """
-        SELECT DISTINCT ON (lower(computer_dn)) computer_dn, reported_at
-        FROM agent_report ORDER BY lower(computer_dn), reported_at DESC
-        """
-    )
-    seen = {row["computer_dn"].lower(): row["reported_at"] for row in reports}
-
-    # Replication is asked of one controller at a time, and a controller that
-    # will not answer must not stop the list rendering.
-    status: dict[str, Any] = {}
-    try:
-        status = await run_in_threadpool(replication.status, settings)
-    except Exception as exc:  # noqa: BLE001 - reported, not raised
-        status = {"available": False, "detail": str(exc)}
+    contact = await agents.last_contact(pool)
+    status = await _replication(pool, settings, controllers)
 
     return {
         "controllers": [
-            {**controller, "last_seen": seen.get(controller["distinguished_name"].lower())}
+            {
+                **controller,
+                **agents.describe(contact.get(controller["distinguished_name"].lower())),
+            }
             for controller in controllers
         ],
         "replication": status,
         "writable": sum(1 for entry in controllers if not entry["read_only"]),
         "read_only": sum(1 for entry in controllers if entry["read_only"]),
     }
+
+
+async def _replication(
+    pool: asyncpg.Pool, settings: Settings, controllers: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Replication as the controllers themselves report it.
+
+    Each controller collects its own state with its inventory, because Samba
+    will not answer the call to anything below domain-controller level
+    (replication.py says which check and why). Running it here is the fallback
+    for a control plane that does hold that level, and a controller that will
+    not answer must not stop the page rendering.
+    """
+    reported = await pool.fetch(
+        """
+        SELECT computer_dn, hostname, replication, replication_at
+        FROM computer_fact WHERE replication IS NOT NULL
+        """
+    )
+    by_dn = {row["computer_dn"].lower(): row for row in reported}
+
+    inbound: list[dict[str, Any]] = []
+    collected: datetime | None = None
+    sources: list[str] = []
+    for controller in controllers:
+        row = by_dn.get(controller["distinguished_name"].lower())
+        if row is None:
+            continue
+        parsed = replication.parse(row["replication"], row["hostname"])
+        for entry in parsed["inbound"]:
+            inbound.append({**entry, "on": row["hostname"]})
+        sources.append(row["hostname"])
+        if row["replication_at"] and (collected is None or row["replication_at"] > collected):
+            collected = row["replication_at"]
+
+    if sources:
+        return {
+            "inbound": inbound,
+            "healthy": all(entry["succeeded"] is not False for entry in inbound),
+            "servers": sources,
+            "collected_at": collected,
+            "source": "agent",
+        }
+
+    # Nothing reported yet: try here, and say what the answer was.
+    try:
+        return {
+            **await run_in_threadpool(replication.status, settings),
+            "servers": [],
+            "source": "control plane",
+        }
+    except Exception as exc:  # noqa: BLE001 - reported, not raised
+        return {"available": False, "detail": str(exc)}
 
 
 class AgentSchedule(BaseModel):

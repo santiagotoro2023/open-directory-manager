@@ -338,8 +338,13 @@ function InstallDialog({
   }, []);
 
   // The agent on the target machine is what installs a role. Picking a machine
-  // that has never run one means watching "installing" until somebody works
-  // out why — so say it before the click, not after the wait.
+  // whose agent has never been heard from means watching "installing" until
+  // somebody works out why — so say it before the click, not after the wait.
+  //
+  // Heard from, not "applied policy": policy already applied is not applied
+  // again, so a settled machine posts no policy report for as long as nothing
+  // changes. Judging it by that said "never reported in" over machines
+  // checking in every fifteen minutes.
   const chosen = servers.find((server) => server.fqdn.toLowerCase() === node.trim().toLowerCase());
   const silent = node.trim() !== "" && chosen !== undefined && chosen.last_seen === null;
 
@@ -390,8 +395,8 @@ function InstallDialog({
 
       {silent && (
         <p className="alert" role="alert">
-          {chosen?.name} has never reported in, so it is probably not running the agent — and the
-          agent is what installs a role. Install it there first, or this will sit at
+          {chosen?.name} has never been heard from, so it is probably not running the agent — and
+          the agent is what installs a role. Install it there first, or this will sit at
           &ldquo;installing&rdquo; until it does.
         </p>
       )}

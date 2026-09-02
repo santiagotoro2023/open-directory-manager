@@ -2,6 +2,22 @@
 
 Samba is multi-master; an operator should be able to see replication state
 and force a run without dropping to samba-tool by hand.
+
+Reading it is not something the control plane's own account can do. Samba
+gates DsReplicaGetInfo — the call behind `samba-tool drs showrepl` — on the
+caller's session level rather than on any right that can be delegated:
+
+    level = security_session_user_level(session_info, NULL);
+    if (level < SECURITY_DOMAIN_CONTROLLER) {
+            return WERR_DS_DRA_ACCESS_DENIED;
+
+So no access-control entry on the domain object can grant it, and the console
+used to answer the resulting error by telling the operator to run a script
+that could never have helped. What does hold that level is a controller's own
+machine account, and only root on that controller can use it: its password
+lives in secrets.tdb. Root on that controller is the agent — so each
+controller collects its own replication state with its inventory, and this
+module parses what they report.
 """
 
 from __future__ import annotations
@@ -13,7 +29,7 @@ from typing import Any
 from ldap3 import Connection
 
 from . import objects
-from .config import Settings, get_settings
+from .config import Settings
 from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available
 from .dns import message as samba_message
 
@@ -49,14 +65,13 @@ def _run(*args: str) -> str:
     if completed.returncode != 0:
         message = samba_message(completed.stderr, completed.stdout, "samba-tool drs failed")
         if "ACCESS_DENIED" in message:
-            # The rights are granted at setup. A domain provisioned before
-            # they were is the case that reaches here, and the fix is the same
-            # script run again — so it is quoted rather than named.
+            # Not a missing right: Samba requires the caller to be a domain
+            # controller or an administrator, which the control plane's account
+            # is deliberately neither of.
             raise ReplicationError(
-                "the control plane's account does not hold the replication "
-                "rights. On a domain controller, run: sudo "
-                "deploy/create-api-service-account.sh --realm "
-                f"{get_settings().realm}"
+                "replication state is collected by each controller's own "
+                "agent, which holds the machine account Samba requires for it; "
+                "the control plane's account cannot read it itself"
             )
         raise ReplicationError(message)
     return completed.stdout
@@ -86,10 +101,18 @@ def controllers(conn: Connection, settings: Settings) -> list[dict[str, Any]]:
 
 
 def status(settings: Settings, server: str | None = None) -> dict[str, Any]:
-    """Parse `samba-tool drs showrepl` into something a table can render."""
-    target = server or settings.ldap_uri.removeprefix("ldaps://").split(":")[0]
-    output = _run("showrepl", target)
+    """`samba-tool drs showrepl`, run on this host.
 
+    Useful only where the control plane runs as something Samba accepts for
+    the call. A controller's agent reports the same output for everywhere
+    else, so this is the second source rather than the first.
+    """
+    target = server or settings.ldap_uri.removeprefix("ldaps://").split(":")[0]
+    return parse(_run("showrepl", target), target)
+
+
+def parse(output: str, server: str) -> dict[str, Any]:
+    """Turn `samba-tool drs showrepl` output into something a table renders."""
     inbound: list[dict[str, Any]] = []
     section = ""
     current: dict[str, Any] | None = None
@@ -124,7 +147,7 @@ def status(settings: Settings, server: str | None = None) -> dict[str, Any]:
             current["failures"] = int(failures.group("count"))
 
     healthy = all(entry["succeeded"] is not False for entry in inbound)
-    return {"server": target, "inbound": inbound, "healthy": healthy}
+    return {"server": server, "inbound": inbound, "healthy": healthy}
 
 
 def replicate(settings: Settings, destination: str, source: str, naming_context: str) -> str:

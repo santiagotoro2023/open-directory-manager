@@ -16,7 +16,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from . import audit, objects, tasks
+from . import agents, audit, objects, tasks
 from .config import Settings, get_settings
 from .routes_directory import _read
 from .security import Authz, authorization, client_ip, get_pool, require_admin, requires
@@ -86,12 +86,7 @@ async def list_servers(
     roles = await pool.fetch(
         "SELECT role_name, node_fqdn, state FROM server_role WHERE state <> 'removed'"
     )
-    reports = await pool.fetch(
-        """
-        SELECT DISTINCT ON (lower(computer_dn)) computer_dn, hostname, reported_at
-        FROM agent_report ORDER BY lower(computer_dn), reported_at DESC
-        """
-    )
+    contact = await agents.last_contact(pool)
     pending = await pool.fetch(
         """
         SELECT lower(node_fqdn) AS node, count(*) AS waiting
@@ -104,7 +99,6 @@ async def list_servers(
         by_node.setdefault(row["node_fqdn"].lower(), []).append(
             {"role": row["role_name"], "state": row["state"]}
         )
-    seen = {row["computer_dn"].lower(): row["reported_at"] for row in reports}
     waiting = {row["node"]: row["waiting"] for row in pending}
 
     return {
@@ -112,7 +106,7 @@ async def list_servers(
             {
                 **machine,
                 "roles": by_node.get(machine["fqdn"].lower(), []),
-                "last_seen": seen.get(machine["distinguished_name"].lower()),
+                **agents.describe(contact.get(machine["distinguished_name"].lower())),
                 "pending_tasks": waiting.get(machine["fqdn"].lower(), 0),
             }
             for machine in machines

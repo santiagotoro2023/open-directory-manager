@@ -335,6 +335,26 @@ export function Content() {
             headers={["Symptom", "Check"]}
             rows={[
               [
+                'A role sits at "installing" and nothing on the machine happens',
+                <>
+                  The agent installs a role; the control plane cannot run anything on a machine it
+                  is not. If <strong>Progress</strong> never says the machine picked the work up,
+                  the agent there is not collecting: <C key="ri">systemctl status odm-agent</C> and{" "}
+                  <C key="rj">journalctl -u odm-agent -n 50</C> on that machine, then{" "}
+                  <C key="rk">odm-agent apply --force</C> to make it check in at once.
+                </>,
+              ],
+              [
+                '"has never been heard from, so it is probably not running the agent"',
+                <>
+                  Correct if nothing at all has arrived from it. It used to appear over machines
+                  checking in every fifteen minutes, because it was judged on the last run that
+                  applied policy and policy already applied is not applied again &mdash; upgrade
+                  the control plane. If it persists, the agent really is not reaching the console
+                  from there.
+                </>,
+              ],
+              [
                 'A printer, tunnel or collection sits at "applying"',
                 <>
                   Fixed: only three kinds of work ever wrote their outcome back, so a queue that
@@ -439,11 +459,21 @@ export function Content() {
             headers={["Symptom", "Check"]}
             rows={[
               [
-                "Replication says the account may not read replication state",
+                "No controller has reported its replication state yet",
                 <>
-                  Reading the topology and forcing a run are separate directory rights. Run{" "}
-                  <C key="e">deploy/create-api-service-account.sh</C> on a domain controller to
-                  grant them.
+                  Each controller collects it with its inventory, so it appears at that
+                  controller&rsquo;s next check-in. If it never does, the agent there is not
+                  running: <C key="e">systemctl status odm-agent</C> on that controller.
+                </>,
+              ],
+              [
+                "Replication said the account may not read replication state",
+                <>
+                  No right could have fixed that, and re-running the service-account script never
+                  helped: Samba answers <C key="e2">samba-tool drs showrepl</C> only to a caller
+                  that is itself a domain controller or an administrator. Each controller now
+                  collects its own state as root, with the machine account Samba accepts. Upgrade
+                  the control plane and the agents.
                 </>,
               ],
               [

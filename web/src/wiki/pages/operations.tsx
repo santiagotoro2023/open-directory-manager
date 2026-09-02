@@ -1,5 +1,6 @@
 import {
   C,
+  Code,
   Details,
   Example,
   Note,
@@ -60,15 +61,25 @@ export function Content() {
             ]}
           />
           <p>
-            A machine counts as stale when its last report is older than three refresh intervals.
+            A machine counts as stale when nothing has arrived from it for three refresh intervals.
+            Anything counts: a policy run, an inventory, or collecting queued work. Policy already
+            applied is not applied again, so a settled machine reports no policy run for as long as
+            nothing changes &mdash; and judged on that alone it looked like a machine that had
+            never run the agent.
           </p>
         </Section>
 
         <Section title="Replication">
           <p>
-            Every domain controller is listed from its own account. For the controller the control
-            plane talks to, each inbound partnership is shown with its naming context, its partner,
-            the last attempt, and the consecutive failure count.
+            Every domain controller is listed from its own account, and each inbound partnership
+            with its naming context, its partner, the controller that saw it, the last attempt and
+            the consecutive failure count.
+          </p>
+          <p>
+            Each controller collects its own replication state with its inventory, because Samba
+            answers the call behind <C>samba-tool drs showrepl</C> only to a caller that is itself a
+            domain controller or an administrator. So the table appears at a controller&rsquo;s next
+            check-in, and <strong>Collected</strong> says how old it is.
           </p>
           <Reference
             headers={["Naming context", "Holds"]}
@@ -89,6 +100,39 @@ export function Content() {
           <Note>
             A single-controller domain has no partnerships and nothing to replicate. That is
             expected, not a fault.
+          </Note>
+        </Section>
+
+        <Section title="Upgrading">
+          <p>
+            Fetch the new version and run setup again on the controller. Steps that already
+            completed are skipped, so it upgrades in place: it rebuilds the console, reinstalls the
+            control plane, rebuilds the agent, and restarts both. Database migrations run when the
+            control plane starts.
+          </p>
+          <Code>{`cd /path/to/open-directory-manager
+sudo git pull
+sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
+          <Reference
+            headers={["Then", "Why"]}
+            rows={[
+              [
+                <C key="u1">systemctl status odm-api odm-agent</C>,
+                "Both are restarted by setup; this is what says they came back.",
+              ],
+              [
+                <C key="u2">odm-agent apply --force</C>,
+                "Makes this machine check in at once rather than at its next interval, so the console is current.",
+              ],
+              [
+                "Every other domain machine",
+                "Its agent keeps working across a control-plane upgrade. Upgrade agents by reinstalling the client package where a change names the agent.",
+              ],
+            ]}
+          />
+          <Note>
+            A domain already provisioned is never re-provisioned. Setup detects it and skips
+            straight to the control plane, the console and the agent.
           </Note>
         </Section>
 
