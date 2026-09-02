@@ -21,7 +21,7 @@ import (
 	"odm.example.org/client-join/join"
 )
 
-const version = "0.7.3"
+const version = "0.7.4"
 
 func main() {
 	flags := flag.NewFlagSet("odm-client-install", flag.ContinueOnError)
@@ -35,7 +35,8 @@ func main() {
 	otp := flags.String("otp", "", "enrol with a one-time token instead of a credential")
 	ou := flags.String("ou", "", "container for the host account")
 	hostname := flags.String("hostname", "", "override this machine's name")
-	caCert := flags.String("ca-cert", "", "certificate validating the control plane's TLS certificate")
+	caCert := flags.String("ca-cert", "",
+		"the console's certificate. Read from the domain's SYSVOL when omitted")
 	noAgent := flags.Bool("no-agent", false, "join without installing the policy agent")
 	keepName := flags.Bool("keep-hostname", false, "fail rather than rename this machine")
 	unattended := flags.Bool("unattended", false, "never prompt; fail instead")
@@ -122,14 +123,19 @@ func trustNote(result *join.Result) string {
 	}
 	return `
 WARNING: the agent cannot verify the console's certificate, so it will not
-report and no policy will be applied. Until the domain has its own certificate
-authority the console's certificate is self-signed, and this machine has to be
-given it:
+report and no policy will be applied.
 
-  scp <console>:/etc/odm/tls/api.crt /tmp/odm-console.crt
-  sudo odm-agent trust /tmp/odm-console.crt
+The domain publishes that certificate in SYSVOL and this machine reads it from
+there, so this means the copy is missing or could not be read. On a domain
+controller:
 
-Joining with --ca-cert /tmp/odm-console.crt does the same thing at join time.
+  sudo deploy/publish-console-certificate.sh
+
+then on this machine:
+
+  sudo odm-agent check
+
+Or give it the certificate directly: sudo odm-agent trust /path/to/api.crt.
 `
 }
 
@@ -293,7 +299,7 @@ policy agent.
   --otp             enrol with a one-time token instead of a credential
   --ou              container for the host account
   --hostname        override this machine's name
-  --ca-cert         certificate validating the control plane's TLS certificate
+  --ca-cert         the console's certificate. Read from the domain when omitted
   --no-agent        join without installing the policy agent
   --keep-hostname   fail rather than rename this machine to its domain name
   --unattended      never prompt; fail instead

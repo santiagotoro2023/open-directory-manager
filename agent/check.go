@@ -16,6 +16,7 @@ import (
 	"odm.example.org/agent/internal/client"
 	"odm.example.org/agent/internal/config"
 	"odm.example.org/agent/internal/inventory"
+	"odm.example.org/agent/internal/trust"
 )
 
 // odm-agent check: why this machine is not reporting.
@@ -70,9 +71,24 @@ func runCheck(args []string) int {
 				"/etc/krb5.keytab --principal="+principal)
 	}
 
-	step("reaching the control plane", client.Reachable(cfg),
-		"Check the name resolves to the controller, that port is open, and that "+
-			"ca_cert is the console's certificate.")
+	// A certificate that cannot be verified is the one failure the machine can
+	// fix by itself: the domain publishes the console's certificate in SYSVOL,
+	// and this is the same fetch the service does on its own pass.
+	reach := client.Reachable(cfg)
+	if trust.Untrusted(reach) {
+		if _, err := trust.FromDomain(context.Background(), cfg, configPath,
+			apply.NewEnv("")); err == nil {
+			fmt.Println("  ..    fetched the console's certificate from the domain")
+			if healed, err := config.Load(configPath); err == nil {
+				cfg = healed
+				reach = client.Reachable(cfg)
+			}
+		}
+	}
+	step("reaching the control plane", reach,
+		"Check the name resolves to the controller, that the port is open, and that the "+
+			"console's certificate is published: deploy/publish-console-certificate.sh "+
+			"on the controller.")
 
 	// Everything the daemon does, in the order it does it. A ticket, the
 	// policy document, the inventory that is this machine's check-in.

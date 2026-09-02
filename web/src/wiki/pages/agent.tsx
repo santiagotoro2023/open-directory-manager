@@ -86,7 +86,7 @@ journalctl -u odm-agent -n 50`}</Code>
               ],
               [
                 <C key="7">odm-agent trust FILE</C>,
-                "Trusts the console's certificate and re-checks. For a join that was not given one.",
+                "Trusts the console's certificate and re-checks. For a machine that cannot read it from the domain.",
               ],
               [<C key="5">odm-agent --version</C>, "Prints the version."],
             ]}
@@ -109,11 +109,11 @@ journalctl -u odm-agent -n 50`}</Code>
               [
                 "reaching the control plane: x509: certificate signed by unknown authority",
                 <>
-                  The commonest one. Until the domain has a certificate authority the
-                  console&rsquo;s certificate is self-signed, and a join without{" "}
-                  <C key="t1">--ca-cert</C> left the agent nothing to verify it with. Copy{" "}
-                  <C key="t2">/etc/odm/tls/api.crt</C> from the console and run{" "}
-                  <C key="t3">sudo odm-agent trust /path/to/api.crt</C>.
+                  The machine has no copy of the console&rsquo;s certificate, or the copy is out of
+                  date. It fetches one from the domain by itself — <C key="t1">check</C> does it
+                  too — so this means SYSVOL has none: run{" "}
+                  <C key="t2">deploy/publish-console-certificate.sh</C> on the controller. Or hand
+                  it over directly with <C key="t3">sudo odm-agent trust /path/to/api.crt</C>.
                 </>,
               ],
               [
@@ -224,6 +224,26 @@ journalctl -u odm-agent -n 50`}</Code>
             root code written against an ordinary machine: run under the agent&rsquo;s
             restrictions, some of them fail in ways that look like a broken package.
           </p>
+        </Section>
+
+        <Section title="Verifying the console">
+          <p>
+            The agent holds a copy of the console&rsquo;s certificate, at{" "}
+            <C>/etc/odm/tls/api-ca.pem</C>, because a self-signed certificate is in no
+            machine&rsquo;s trust store. The domain publishes it in SYSVOL and the join reads it
+            from there, so nothing is carried to a machine by hand.
+          </p>
+          <p>
+            When verification fails — a replaced certificate, or a machine joined before it was
+            published — the agent fetches it again from SYSVOL as the machine account, over
+            Kerberos with mandatory signing, and retries the request once. A domain that issues
+            itself a real certificate would otherwise silence every agent in it.
+          </p>
+          <Note>
+            Only a verification failure is healed this way. A refused ticket, a name that does not
+            resolve or a rejected request are different problems, and re-fetching the certificate
+            would not touch them.
+          </Note>
         </Section>
 
         <Section title="Files the agent owns">

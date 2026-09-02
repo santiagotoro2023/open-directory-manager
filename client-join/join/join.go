@@ -211,6 +211,15 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 	}
 
 	if !options.NoAgent {
+		// The certificate the agent verifies the console with, from the domain
+		// itself unless one was supplied. Not fatal: the join is finished
+		// either way, and the warning below says what is missing.
+		if anchor, err := FetchTrustAnchor(ctx, options, result.Controller, env); err == nil {
+			options.CACert = anchor
+		} else {
+			progress("The console certificate could not be fetched", err.Error())
+		}
+
 		progress("Installing the policy agent", AgentConfigPath)
 		if err := InstallAgent(ctx, options, env); err != nil {
 			return nil, err

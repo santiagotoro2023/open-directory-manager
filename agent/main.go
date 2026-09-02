@@ -27,9 +27,10 @@ import (
 	"odm.example.org/agent/internal/inventory"
 	"odm.example.org/agent/internal/policy"
 	"odm.example.org/agent/internal/tasks"
+	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.7.3"
+const version = "0.7.4"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -302,17 +303,37 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	}
 	defer api.Close()
 
-	var document *policy.Document
-	if username != "" {
-		document, err = api.UserPolicy(ctx, username)
-	} else {
-		document, err = api.Policy(ctx)
+	env := apply.NewEnv(root)
+
+	fetch := func() (*policy.Document, error) {
+		if username != "" {
+			return api.UserPolicy(ctx, username)
+		}
+		return api.Policy(ctx)
+	}
+	document, err := fetch()
+	// The console's certificate is the one thing this machine holds a copy of,
+	// and a copy goes stale: a domain that issues itself a real certificate
+	// would otherwise silence every agent in it, and a machine joined before
+	// the certificate was published has no copy at all. The domain publishes
+	// it in SYSVOL, so fetch it again — as this machine, over Kerberos — and
+	// try once more.
+	if trust.Untrusted(err) {
+		if _, healErr := trust.FromDomain(ctx, cfg, configPath, env); healErr != nil {
+			fmt.Fprintln(os.Stderr, "odm-agent: the console's certificate:", healErr)
+		} else if healed, loadErr := config.Load(configPath); loadErr == nil {
+			fmt.Println("fetched the console's certificate from the domain")
+			if next, newErr := client.New(healed, version); newErr == nil {
+				api.Close()
+				api = next
+				document, err = fetch()
+			}
+		}
 	}
 	if err != nil {
 		return err
 	}
 
-	env := apply.NewEnv(root)
 	// Before the unchanged check: the interval is a domain setting, not part
 	// of the policy serial, so a machine whose policy has not changed still
 	// has to pick up a new one.

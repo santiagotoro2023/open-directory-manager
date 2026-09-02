@@ -513,6 +513,20 @@ step "Setting up TLS and the database"
     --service-group "$SERVICE_USER" >/dev/null
 ok "Console certificate created (self-signed for now)"
 
+# Published where every domain machine can fetch it over Kerberos, so a join
+# needs nothing but the domain and a credential: a self-signed certificate is
+# in no machine's trust store, and passing it by hand made a joined machine
+# that reports nothing the normal outcome of a normal join.
+if [[ "$SKIP_DC" != "yes" ]]; then
+    if "$HERE/publish-console-certificate.sh" >/dev/null 2>&1; then
+        ok "Clients can fetch the console certificate from SYSVOL"
+    else
+        warn "Could not publish the console certificate to SYSVOL. Clients will"
+        warn "need --ca-cert on the join until this works:"
+        warn "  $HERE/publish-console-certificate.sh"
+    fi
+fi
+
 "$HERE/setup-db.sh" --secrets-file "$SECRETS_FILE" --venv "$VENV" \
     --service-user "$SERVICE_USER" >/dev/null
 ok "PostgreSQL database created and migrated"

@@ -68,6 +68,10 @@ install -m 0755 "$REPO/deploy/odm-apply-console-certificate" "$ROOT/usr/lib/odm/
 # the missing package.
 DEPENDS="samba-common-bin, sssd-ad, sssd-tools, krb5-user, libnss-winbind, libpam-winbind, adcli"
 DEPENDS="$DEPENDS, cifs-utils, keyutils"
+# smbclient reads the console's certificate out of SYSVOL during the join, so
+# nothing has to be carried to the machine by hand. Without it a join has no
+# way to give the agent a trust anchor and says so.
+DEPENDS="$DEPENDS, smbclient"
 if [[ "$GUI_BUILT" == "yes" ]]; then
     install -d -m 0755 "$ROOT/usr/bin" \
         "$ROOT/usr/share/applications" \

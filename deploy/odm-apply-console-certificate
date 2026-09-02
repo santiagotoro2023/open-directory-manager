@@ -42,4 +42,13 @@ shred -u "$STAGING/console.key" 2>/dev/null || rm -f "$STAGING/console.key"
 rm -f "$STAGING/console.crt"
 
 systemctl restart "$SERVICE"
+
+# The anchor every machine fetches has to be the certificate the console now
+# presents, or the next agent to verify it fails against the old one.
+PUBLISH="$(dirname "$0")/publish-console-certificate.sh"
+if [[ -x "$PUBLISH" ]]; then
+    "$PUBLISH" "$TLS_DIR/api.crt" >/dev/null 2>&1 ||
+        echo "warning: could not publish the new certificate to SYSVOL" >&2
+fi
+
 echo "installed; $SERVICE restarted"

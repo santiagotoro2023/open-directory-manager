@@ -38,15 +38,11 @@ export function Content() {
         </p>
 
         <Example title="Join from the command line">
-          <Code>{`scp lern-st-odm-01:/etc/odm/tls/api.crt /tmp/odm-console.crt
-sudo odm-client-install \\
+          <Code>{`sudo odm-client-install \\
   --domain corp.example.internal \\
-  --admin-user Administrator \\
-  --ca-cert /tmp/odm-console.crt`}</Code>
-          Prompts for anything not given. Add <C>--unattended</C> with <C>--otp</C> for scripted
-          provisioning. <C>--ca-cert</C> is the console&rsquo;s certificate: without it the agent
-          has nothing to verify the console with and will not report — the join says so, and{" "}
-          <C>sudo odm-agent trust /tmp/odm-console.crt</C> fixes it afterwards.
+  --admin-user Administrator`}</Code>
+          The domain and a credential are all it needs. Prompts for anything not given; add{" "}
+          <C>--unattended</C> with <C>--otp</C> for scripted provisioning.
         </Example>
 
         <Example title="Join from the desktop">
@@ -138,7 +134,7 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
               ],
               [
                 <C key="13">--ca-cert</C>,
-                "The console's certificate, which the agent verifies it with. Needed until the domain has a certificate authority of its own.",
+                "The console's certificate. Read from the domain when omitted, so this is only for a machine that cannot read SYSVOL yet — a token join, or a network where the controller is reachable over HTTPS but not SMB.",
               ],
               [<C key="8">--no-agent</C>, "Join without installing the policy agent."],
               [<C key="9">--unattended</C>, "Never prompt. Fails rather than asking."],
@@ -150,6 +146,51 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
               ],
             ]}
           />
+        </Section>
+
+        <Section title="How the console's certificate reaches the machine">
+          <p>
+            A machine has to verify the console before it will talk to it, and until the domain has
+            a certificate authority of its own the console&rsquo;s certificate is self-signed — so
+            nothing in the system trust store vouches for it. The domain publishes it in SYSVOL and
+            the join reads it from there, as the machine account it has just created.
+          </p>
+          <Reference
+            headers={["Step", "Where"]}
+            rows={[
+              [
+                "Published",
+                <>
+                  <C key="p1">&lt;sysvol&gt;/&lt;domain&gt;/odm/api-ca.pem</C> on the controller,
+                  written by setup and again whenever the certificate is replaced.
+                </>,
+              ],
+              [
+                "Fetched",
+                <>
+                  <C key="p2">smbclient --machine-pass --use-kerberos=required</C> during the join,
+                  and by the agent itself whenever verification starts failing.
+                </>,
+              ],
+              [
+                "Stored",
+                <>
+                  <C key="p3">/etc/odm/tls/api-ca.pem</C>, named by{" "}
+                  <C key="p4">ca_cert</C> in the agent&rsquo;s configuration.
+                </>,
+              ],
+            ]}
+          />
+          <Note>
+            What makes reading it safe is that the transfer is Kerberos-authenticated with
+            mandatory signing: the controller proves itself with the KDC, not with the certificate
+            being fetched. Nothing is taken on trust because it happened to answer.
+          </Note>
+          <p>
+            A token join is the exception. It has no Kerberos identity yet — it is exchanging a
+            token for one — so it cannot read SYSVOL and needs <C>--ca-cert</C>. Client enrolment
+            stages the certificate on the boot server for exactly this reason.
+          </p>
         </Section>
 
         <Section title="What a join changes">

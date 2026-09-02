@@ -347,12 +347,11 @@ export function Content() {
               [
                 "A joined machine never reports, even after a reboot",
                 <>
-                  <C key="jn">sudo odm-agent check</C> on that machine names the step that fails.
-                  The commonest answer on a fresh join is the console&rsquo;s certificate: without{" "}
-                  <C key="jn2">--ca-cert</C> the agent has nothing to verify it with, so every
-                  request fails. Copy <C key="jn3">/etc/odm/tls/api.crt</C> from the console and run{" "}
-                  <C key="jn4">sudo odm-agent trust /path/to/api.crt</C>. A join now warns about
-                  this instead of finishing quietly.
+                  <C key="jn">sudo odm-agent check</C> on that machine names the step that fails,
+                  and fixes the commonest one itself: the console&rsquo;s certificate, which the
+                  machine fetches from the domain. If that step still fails, SYSVOL has no copy —
+                  run <C key="jn2">deploy/publish-console-certificate.sh</C> on the controller —
+                  or hand it over with <C key="jn3">sudo odm-agent trust /path/to/api.crt</C>.
                 </>,
               ],
               [
