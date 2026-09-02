@@ -146,10 +146,49 @@ done
 # by default only administrators can even see. Without both, a restore quietly
 # fell back to creating a new object with a new SID: every file the account
 # owned, and every rule that named it, then pointed at nobody.
-DELETED_DN="CN=Deleted Objects,$BASE_DN"
-samba-tool dsacl set --objectdn="$DELETED_DN" \
-    --sddl="(A;;CCDCLCRPWPRC;;;${SID})" 2>/dev/null ||
-    echo "    (could not grant access to $DELETED_DN; restores will not keep SIDs)" >&2
+# samba-tool dsacl cannot read this container at all — it searches without the
+# show-deleted control and falls over on the empty result — so the descriptor
+# is edited through the same library samba-tool uses.
+ODM_SERVICE_SID="$SID" python3 <<'PYTHON' || \
+    echo "    (could not grant access to the deleted-objects container;" \
+         "restores will not keep the SID)" >&2
+import os
+import sys
+
+from ldb import FLAG_MOD_REPLACE, SCOPE_BASE, Dn, Message, MessageElement
+from samba.auth import system_session
+from samba.dcerpc import security
+from samba.ndr import ndr_pack, ndr_unpack
+from samba.param import LoadParm
+from samba.samdb import SamDB
+
+account = os.environ["ODM_SERVICE_SID"]
+lp = LoadParm()
+lp.load_default()
+db = SamDB(session_info=system_session(), lp=lp)
+domain_sid = security.dom_sid(db.get_domain_sid())
+dn = "CN=Deleted Objects,%s" % db.domain_dn()
+
+found = db.search(
+    base=dn, scope=SCOPE_BASE, attrs=["nTSecurityDescriptor"],
+    controls=["show_deleted:1"],
+)
+descriptor = ndr_unpack(security.descriptor, found[0]["nTSecurityDescriptor"][0])
+sddl = descriptor.as_sddl(domain_sid)
+
+# List children, read and write them, and read the container itself: what
+# reanimating a tombstone needs, and nothing more.
+ace = "(A;;CCDCLCRPWPRC;;;%s)" % account
+if ace in sddl:
+    sys.exit(0)
+updated = security.descriptor.from_sddl(sddl.replace("D:PAI", "D:PAI" + ace, 1), domain_sid)
+message = Message()
+message.dn = Dn(db, dn)
+message["nTSecurityDescriptor"] = MessageElement(
+    ndr_pack(updated), FLAG_MOD_REPLACE, "nTSecurityDescriptor"
+)
+db.modify(message, controls=["show_deleted:1"])
+PYTHON
 
 echo "==> Exporting keytab to $KEYTAB"
 install -d -m 0750 "$(dirname "$KEYTAB")"
