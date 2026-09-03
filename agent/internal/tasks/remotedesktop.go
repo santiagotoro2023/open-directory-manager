@@ -244,6 +244,15 @@ mount -o loop,noatime "$TARGET/$IMAGE" "$HOME_DIR" 2>/dev/null \
     || warn "could not attach $USER_NAME's profile disk"
 chown "$USER_ID:$(id -g "$USER_NAME")" "$HOME_DIR"
 chmod 0700 "$HOME_DIR"
+
+# A brand new disk gets the same starting point a brand new local home gets.
+# Without it the first session lands in an empty directory and the desktop
+# comes up with none of its defaults — no XDG directories, no dconf, nothing.
+# lost+found alone is a freshly made filesystem.
+if [ "$(ls -A "$HOME_DIR" 2>/dev/null | grep -vc '^lost+found$')" = "0" ]; then
+    cp -a /etc/skel/. "$HOME_DIR/" 2>/dev/null || true
+    chown -R "$USER_ID:$(id -g "$USER_NAME")" "$HOME_DIR" 2>/dev/null || true
+fi
 `
 }
 
