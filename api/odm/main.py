@@ -30,6 +30,7 @@ from . import (
     objects,
     printers,
     radius,
+    remotedesktop,
     roles,
     routes_admx,
     routes_agent,
@@ -190,6 +191,11 @@ def create_app() -> FastAPI:
         (roles.RoleError, status.HTTP_400_BAD_REQUEST),
         (shares.ShareError, status.HTTP_400_BAD_REQUEST),
         (printers.PrinterError, status.HTTP_400_BAD_REQUEST),
+        # Unmapped, every rejected collection field — the name, the published
+        # application, the profile share — came back as "Internal Server
+        # Error" with the reason only in the log, which reads as the console
+        # being broken rather than as the entry being wrong.
+        (remotedesktop.RemoteDesktopError, status.HTTP_400_BAD_REQUEST),
         (vpn.VpnError, status.HTTP_400_BAD_REQUEST),
         (radius.RadiusError, status.HTTP_400_BAD_REQUEST),
         (ca.CaNotInitialised, status.HTTP_501_NOT_IMPLEMENTED),

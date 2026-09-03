@@ -497,11 +497,11 @@ for           %Engineers      (optional)`}</Code>
           </p>
           <p>
             It is the same mechanism a remote desktop collection uses for its user profile disks,
-            and the two are best kept on separate shares. Nothing stops one disk image being
-            mounted by a desktop and a session host at once, and an image mounted from two
-            machines is a corrupted one; a collection takes a share and names the disk after the
-            account, while this path takes <C>%username%</C> after the share, so the two do
-            not collide unless they are deliberately pointed at the same place.
+            down to the layout: both take <C>%username%</C> after the share and name the disk after
+            the account. Give the collection its own share. Nothing stops one image being mounted
+            by a desktop and a session host at the same time, and an image mounted from two
+            machines is a corrupted one &mdash; point both at one share only where people use one
+            or the other, never both at once.
           </p>
           <Reference
             headers={["Field", "Notes"]}

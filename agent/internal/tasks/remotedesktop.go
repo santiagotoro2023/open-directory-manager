@@ -30,7 +30,10 @@ const (
 )
 
 var (
-	safeShare    = regexp.MustCompile(`^//[A-Za-z0-9._-]+/[A-Za-z0-9._$ -]{1,64}$`)
+	// //server/share, and optionally a path within it. %username% is
+	// substituted at logon, so one collection gives everybody their own.
+	safeShare = regexp.MustCompile(
+		`^//[A-Za-z0-9._-]+/[A-Za-z0-9._$ -]{1,64}(/[A-Za-z0-9._$% -]{1,64})*$`)
 	safeHostName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,253}$`)
 	safeAppPath  = regexp.MustCompile(`^/[A-Za-z0-9._/-]{1,255}$`)
 )
@@ -47,8 +50,14 @@ func applyRemoteDesktopHost(
 	// default for a single session host, and it means remote desktop does not
 	// need a file server before it works at all.
 	share, _ := payload["profile_share"].(string)
+	share = strings.TrimRight(share, "/")
 	if share != "" && !safeShare.MatchString(share) {
 		return "", fmt.Errorf("invalid profile share %q", share)
+	}
+	for _, part := range strings.Split(share, "/") {
+		if part == "." || part == ".." {
+			return "", fmt.Errorf("invalid profile share %q", share)
+		}
 	}
 	kind, _ := payload["kind"].(string)
 	appPath, _ := payload["app_path"].(string)
@@ -169,16 +178,31 @@ esac
 # Named for the account and nothing else, so the same person gets the same
 # disk here as a roaming-profile policy gives them on an ordinary desktop.
 # A uid does not travel between machines; a name does.
-IMAGE="UPD-$(printf '%s' "$USER_NAME" | tr 'A-Z' 'a-z').img"
+LOWER_NAME="$(printf '%s' "$USER_NAME" | tr 'A-Z' 'a-z')"
+IMAGE="UPD-$LOWER_NAME.img"
 STORE=/run/odm/profiles
 HOME_DIR="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 [ -n "$HOME_DIR" ] || HOME_DIR="/home/$USER_NAME"
 
 if [ "${PAM_TYPE:-}" = "close_session" ]; then
     umount "$HOME_DIR" 2>/dev/null || true
-    umount "$STORE" 2>/dev/null || true
+    # The share only when nobody else on this host still has a profile on it:
+    # unmounted unconditionally, the first person to sign out took the store
+    # away from everybody still working.
+    grep -q " $STORE/\? " /proc/mounts && ! grep -q " /home/" /proc/mounts \
+        && umount "$STORE" 2>/dev/null
     exit 0
 fi
+
+# The share is what gets mounted; anything after it is a directory inside it,
+# made if it is not there. mount.cifs will not create one, and a per-person
+# path is the whole point of %username%.
+SHARE="$(printf '%s' "$PROFILE_SHARE" | sed "s|%username%|$LOWER_NAME|g")"
+REST="${SHARE#//}"
+MOUNT_SRC="//$(printf '%s' "$REST" | cut -d/ -f1,2)"
+SUB=""
+case "$REST" in */*/*) SUB="$(printf '%s' "$REST" | cut -d/ -f3-)" ;; esac
+case "$SUB" in *..*) warn "$PROFILE_SHARE may not contain .." ;; esac
 
 # A roaming-profile policy runs from the ordinary session hook, which is in
 # this PAM stack too. Whichever got there first, the profile is attached.
@@ -196,21 +220,27 @@ chmod 0700 "$HOME_DIR" 2>/dev/null || true
 # is not available to PAM at this point, and the disk is the machine's to
 # mount on their behalf.
 if ! mountpoint -q "$STORE"; then
-    mount -t cifs "$PROFILE_SHARE" "$STORE" \
+    mount -t cifs "$MOUNT_SRC" "$STORE" \
         -o sec=krb5,cruid=0,multiuser,vers=3.1.1,noperm 2>/dev/null \
-    || mount -t cifs "$PROFILE_SHARE" "$STORE" \
+    || mount -t cifs "$MOUNT_SRC" "$STORE" \
         -o sec=krb5,vers=3.0,noperm 2>/dev/null \
-    || warn "$PROFILE_SHARE could not be mounted; $USER_NAME gets a local home this session"
+    || warn "$MOUNT_SRC could not be mounted; $USER_NAME gets a local home this session"
 fi
 
-if [ ! -f "$STORE/$IMAGE" ]; then
+TARGET="$STORE"
+if [ -n "$SUB" ]; then
+    TARGET="$STORE/$SUB"
+    mkdir -p "$TARGET" 2>/dev/null || warn "could not create $SUB on $MOUNT_SRC"
+fi
+
+if [ ! -f "$TARGET/$IMAGE" ]; then
     # Sparse: it takes the space it uses, and cannot exceed what it was made.
-    truncate -s "${PROFILE_GB}G" "$STORE/$IMAGE" 2>/dev/null \
-        && mkfs.ext4 -q -F "$STORE/$IMAGE" 2>/dev/null \
+    truncate -s "${PROFILE_GB}G" "$TARGET/$IMAGE" 2>/dev/null \
+        && mkfs.ext4 -q -F "$TARGET/$IMAGE" 2>/dev/null \
         || warn "could not create a profile disk for $USER_NAME on $PROFILE_SHARE"
 fi
 
-mount -o loop,noatime "$STORE/$IMAGE" "$HOME_DIR" 2>/dev/null \
+mount -o loop,noatime "$TARGET/$IMAGE" "$HOME_DIR" 2>/dev/null \
     || warn "could not attach $USER_NAME's profile disk"
 chown "$USER_ID:$(id -g "$USER_NAME")" "$HOME_DIR"
 chmod 0700 "$HOME_DIR"

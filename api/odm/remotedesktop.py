@@ -13,8 +13,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# //server/share — a share that exists, made under File Shares.
-_SHARE_RE = re.compile(r"^//[A-Za-z0-9._-]+/[A-Za-z0-9._$ -]{1,64}$")
+# //server/share, and optionally a path within it — a share that exists, made
+# under File Shares. %username% is allowed anywhere in the path.
+_SHARE_RE = re.compile(
+    r"^//[A-Za-z0-9._-]+/[A-Za-z0-9._$ -]{1,64}(?:/[A-Za-z0-9._$%\ -]{1,64})*$"
+)
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,62}$")
 _PATH_RE = re.compile(r"^/[A-Za-z0-9._/-]{1,255}$")
 
@@ -30,14 +33,16 @@ def validate_share(value: str) -> str:
     gives the user. That is the right shape for a single session host, and it
     means remote desktop does not need a file server before it works at all.
     """
-    value = (value or "").strip().replace("\\", "/")
+    value = (value or "").strip().replace("\\", "/").rstrip("/")
     if not value:
         return ""
     if not _SHARE_RE.match(value):
         raise RemoteDesktopError(
-            "the profile share must look like //server/share, and should be one "
-            "you created under File Shares"
+            "the profile share must look like //server/share, optionally with a "
+            "path inside it, and should be one you created under File Shares"
         )
+    if any(part in (".", "..") for part in value.split("/")):
+        raise RemoteDesktopError("the profile share may not contain . or ..")
     return value
 
 

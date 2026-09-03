@@ -175,14 +175,15 @@ export function Content() {
           <p>
             Each person gets one disk image on the profile share, named for their account and
             mounted over their home directory when they sign in. It follows them to whichever host
-            answers.
+            answers. <C>%username%</C> after the share gives each person their own directory in
+            it, and is made if it is not there.
           </p>
-          <Code>{`//fs01/Profiles/UPD-jdoe.img`}</Code>
+          <Code>{`//fs01/rds-profiles/%username%  →  //fs01/rds-profiles/jdoe/UPD-jdoe.img`}</Code>
           <p>
-            It is named for the account and nothing else, so it is the same disk a roaming-profile
-            policy attaches on an ordinary desktop. Point a collection and a policy at the same
-            share and somebody has one profile everywhere &mdash; a uid does not travel between
-            machines, and naming the disk after one meant a different profile on every host.
+            It is named for the account and nothing else &mdash; a uid does not travel between
+            machines, and naming the disk after one meant a different profile on every host. That
+            is also the same layout a roaming-profile policy uses, so give a collection its own
+            share unless one profile everywhere is what you want; see the row below.
           </p>
           <Reference
             headers={["Property", "Means"]}

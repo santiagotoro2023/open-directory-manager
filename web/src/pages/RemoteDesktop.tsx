@@ -423,7 +423,9 @@ function CollectionDialog({
             <>
               <p className="muted">
                 Every person gets a disk on the share below, named for them, and it follows them to
-                whichever host answers. Leave the share empty and sessions use whatever home
+                whichever host answers. Put <code>%username%</code> after the share to give each
+                person their own directory, which is what keeps a collection's disks apart from a
+                roaming-profile policy's. Leave the share empty and sessions use whatever home
                 directory the host already gives them &mdash; right for a single session host, and
                 wrong for a farm, where a profile that stays on one host is a different profile on
                 every other one.
@@ -431,18 +433,15 @@ function CollectionDialog({
               <div className="field-grid">
                 <Field
                   label="Profile share"
-                  hint="Pick one, or type a share this console does not manage"
+                  hint="%username% becomes the person's own name, so one collection serves everybody"
                 >
                   {/* Typeable, not only chosen: a farm's profile storage is
                       often somewhere the console has no file-server role on,
-                      and that was a share nobody could enter. No %username%
-                      here — the share is mounted once per host and shared by
-                      every session on it, so people are separated by the file
-                      name, not by the path. */}
+                      and that was a share nobody could enter. */}
                   <div className="picker-field">
                     <input
                       aria-label="Profile share"
-                      placeholder="//fileserver.example.org/rds-profiles"
+                      placeholder="//fileserver.example.org/rds-profiles/%username%"
                       value={share}
                       onChange={(e) => setShare(e.target.value)}
                     />

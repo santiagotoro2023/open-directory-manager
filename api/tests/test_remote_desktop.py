@@ -53,6 +53,18 @@ def test_a_profile_share_that_is_not_a_share_is_refused(value):
         remotedesktop.validate_share(value)
 
 
+def test_a_share_may_name_a_path_inside_itself():
+    """A collection and a roaming-profile policy are best kept apart, and the
+    way to keep them apart is a path per person, the same as the policy takes."""
+    assert (
+        remotedesktop.validate_share("//fs01/rds-profiles/%username%")
+        == "//fs01/rds-profiles/%username%"
+    )
+    assert remotedesktop.validate_share("//fs01/profiles/teams/%username%/") == (
+        "//fs01/profiles/teams/%username%"
+    )
+
+
 def test_no_profile_share_is_a_collection_without_profile_disks():
     """Remote desktop must not need a file server before it works at all."""
     assert remotedesktop.validate_share("") == ""
