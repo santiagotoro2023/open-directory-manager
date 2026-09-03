@@ -451,6 +451,18 @@ if [[ ! -f "$LDAP_CA" && -f /var/lib/samba/private/tls/ca.pem ]]; then
     install -m 0644 /var/lib/samba/private/tls/ca.pem "$LDAP_CA"
 fi
 
+# Settings this file already carries that the block below does not write.
+#
+# Role installers put their own here — the DHCP role writes the Control
+# Agent's URL and credential when it installs — and this rewrote the file
+# whole on every run. So the upgrade path silently erased them: DHCP stayed
+# installed, registered and running, while the console said the role was not
+# installed at all and told the operator to install it again.
+KEPT_SETTINGS=""
+if [[ -f "$SECRETS_FILE" ]]; then
+    KEPT_SETTINGS="$(grep -E '^ODM_[A-Z0-9_]+=' "$SECRETS_FILE" || true)"
+fi
+
 # Scoped deliberately: the secrets file must never exist world-readable, even
 # for an instant. Left set, it would also strip the read bits off everything
 # written below, including the console the service has to serve.
@@ -499,6 +511,24 @@ ODM_RETENTION_DAYS=180
 
 # The database URL is appended below by setup-db.sh.
 ENVFILE
+
+# Everything the block above did not write, put back as it was. Keyed by name,
+# so a setting this script now owns takes the new value and a setting it does
+# not own survives untouched.
+if [[ -n "$KEPT_SETTINGS" ]]; then
+    KEPT_COUNT=0
+    while IFS= read -r KEPT_LINE; do
+        [[ -n "$KEPT_LINE" ]] || continue
+        KEPT_KEY="${KEPT_LINE%%=*}"
+        grep -q "^${KEPT_KEY}=" "$SECRETS_FILE" && continue
+        if [[ $KEPT_COUNT -eq 0 ]]; then
+            printf '\n# --- Kept from the previous run (roles write their own here) ---\n' \
+                >> "$SECRETS_FILE"
+        fi
+        printf '%s\n' "$KEPT_LINE" >> "$SECRETS_FILE"
+        KEPT_COUNT=$((KEPT_COUNT + 1))
+    done <<< "$KEPT_SETTINGS"
+fi
 umask 022
 chown root:"$SERVICE_USER" "$SECRETS_FILE"
 chmod 0640 "$SECRETS_FILE"
@@ -659,13 +689,25 @@ AGENT_LOG="/var/log/odm-agent-install.log"
 # the controller running the agent it was first installed with — new appliers,
 # new subcommands and fixes all absent on the one machine an operator is most
 # likely to test on.
+#
+# Older than the tree means the source, not the version string. Most changes
+# to the agent land between releases and carry the version they were released
+# under, so comparing versions skipped the rebuild for all of them: the
+# controller kept the binary it was first built with, and — since that binary
+# is also what the console hands out — so did every machine told to update.
 TREE_VERSION="$(sed -n 's/^const version = "\(.*\)"$/\1/p' "$REPO/agent/main.go" | head -1)"
 AGENT_VERSION=""
+AGENT_STALE="no"
 if [[ -x "$AGENT_BINARY" ]]; then
     AGENT_VERSION="$("$AGENT_BINARY" --version 2>/dev/null | awk '{print $2}' || true)"
+    # Any Go source in the agent or its shared packages newer than the binary.
+    if [[ -n "$(find "$REPO/agent" -name '*.go' -newer "$AGENT_BINARY" -print -quit 2>/dev/null)" ]]; then
+        AGENT_STALE="yes"
+    fi
 fi
 
-if [[ ! -x "$AGENT_BINARY" || ( -n "$TREE_VERSION" && "$AGENT_VERSION" != "$TREE_VERSION" ) ]]; then
+if [[ ! -x "$AGENT_BINARY" || "$AGENT_STALE" == "yes" \
+      || ( -n "$TREE_VERSION" && "$AGENT_VERSION" != "$TREE_VERSION" ) ]]; then
     command -v go >/dev/null 2>&1 || {
         info "Installing Go to build the agent"
         apt-get install -y --no-install-recommends golang-go >>"$AGENT_LOG" 2>&1 || true

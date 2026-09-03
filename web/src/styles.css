@@ -2864,3 +2864,14 @@ td.row-actions {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+
+/* One line of a task's output beside the link that opens the rest. Some of
+   these are a machine's whole directory listing; wrapped, one of them was the
+   page. */
+.task-preview {
+  margin: 2px 0 0;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

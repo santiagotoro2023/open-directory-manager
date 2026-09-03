@@ -794,8 +794,6 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         <dd>{when(facts.reported_at)}</dd>
       </dl>
 
-      <LocalAdministratorPanel dn={dn} />
-
       <h3 className="section-title">Updates</h3>
       <dl className="definition">
         <dt>Waiting</dt>
@@ -829,14 +827,14 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
       </div>
 
       <h3 className="section-title">Agent</h3>
-      <dl className="facts">
+      <dl className="definition">
         <dt>Installed</dt>
-        <dd>{detail.agent.installed || "not reported yet"}</dd>
-        <dt>This console hands out</dt>
-        <dd>
-          {detail.agent.available || "nothing"}
-          {detail.agent.behind && <span className="badge"> update available</span>}
+        <dd className="mono">
+          {detail.agent.installed || "not reported yet"}
+          {detail.agent.behind && <span className="badge"> behind</span>}
         </dd>
+        <dt>Available</dt>
+        <dd className="mono">{detail.agent.available || "this console has none to hand out"}</dd>
       </dl>
       <div className="actions-row">
         <button
@@ -850,6 +848,8 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         </button>
       </div>
 
+      <LocalAdministratorPanel dn={dn} />
+
       <h3 className="section-title">This machine</h3>
       <div className="actions-row">
         <button
@@ -858,12 +858,14 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
           disabled={busy}
           onClick={() => void ask("policy-refresh")}
         >
+          <RefreshCw size={15} aria-hidden="true" />
           Re-apply policy
         </button>
         <button type="button" className="ghost" disabled={busy} onClick={() => setPower("restart")}>
           <Power size={15} aria-hidden="true" />
           Restart
         </button>
+        <span className="spacer" />
         <button
           type="button"
           className="danger"
@@ -921,7 +923,9 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
                   {task.state}
                 </span>
               </td>
-              <td className="mono">{task.output ?? ""}</td>
+              <td>
+                <TaskOutput text={task.output ?? ""} />
+              </td>
             </tr>
           ))}
           {detail.tasks.length === 0 && (
@@ -933,6 +937,31 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
           )}
         </tbody>
       </table>
+    </>
+  );
+}
+
+/**
+ * What a task printed, in the space a table row has for it.
+ *
+ * Some of these are a machine's whole directory listing in JSON. Rendered as
+ * it arrived, one browse pushed everything else off the page.
+ */
+function TaskOutput({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const trimmed = text.trim();
+  if (!trimmed) return <span className="muted">—</span>;
+
+  const long = trimmed.length > 160 || trimmed.includes("\n");
+  if (!long) return <span className="mono">{trimmed}</span>;
+
+  return (
+    <>
+      <button type="button" className="button-link" onClick={() => setOpen((was) => !was)}>
+        {open ? "Hide" : `Show ${trimmed.length.toLocaleString()} characters`}
+      </button>
+      {open && <pre className="command-output">{trimmed}</pre>}
+      {!open && <p className="mono muted task-preview">{trimmed.slice(0, 120)}…</p>}
     </>
   );
 }
