@@ -283,11 +283,13 @@ jobs:
           done
       - name: It must install, run and uninstall cleanly
         run: |
-          # The runner image ships a stale package index — pre-baked hours or
-          # days ago — and security.ubuntu.com prunes superseded builds on its
-          # own schedule. Between the two, an apt-get install of anything with
-          # a dependency reaches for a filename the mirror no longer has and
-          # dies on 404. Refreshing is the fix.
+          # The runner image ships a package index baked hours or days ago,
+          # and the archive prunes superseded builds on its own schedule, so
+          # an install against that index reaches for filenames the mirror no
+          # longer has and dies on 404. This job used to refresh it by
+          # accident — the step that installed the desktop toolkit headers ran
+          # apt-get update first — and removing that step with the desktop
+          # application removed the refresh with it.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             "./dist/odm-client_${ODM_CLIENT_VERSION}_amd64.deb"
@@ -354,6 +356,7 @@ jobs:
             Download `odm-client_*.deb` and run one command.
 
             ```
+            sudo apt update
             sudo apt install ./odm-client_*.deb
             sudo odm-client-install --domain corp.example.internal --admin-user Administrator
             ```

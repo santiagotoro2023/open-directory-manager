@@ -25,12 +25,15 @@ export function Content() {
     <>
       <Quickstart>
         <Example title="Install the package and run the join">
-          <Code>{`sudo apt install ./odm-client_<version>_amd64.deb
+          <Code>{`sudo apt update
+sudo apt install ./odm-client_<version>_amd64.deb
 sudo odm-client-install \
   --domain corp.example.internal \
   --admin-user Administrator`}</Code>
           One file, one command, the same on a workstation as on a server. Anything omitted is
-          prompted for; <C>--unattended</C> with <C>--otp</C> is the scripted form.
+          prompted for; <C>--unattended</C> with <C>--otp</C> is the scripted form. The refresh
+          matters on a machine installed from an older image: the package pulls in Samba and
+          SSSD, and a stale index asks for files the mirror has already pruned.
         </Example>
 
         <p>

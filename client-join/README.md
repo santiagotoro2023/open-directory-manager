@@ -10,6 +10,7 @@ role installers.
 ## Joining
 
 ```
+sudo apt update
 sudo apt install ./odm-client_<version>_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 sudo odm-client-install --domain corp.example.internal --otp <token>

@@ -66,9 +66,14 @@ Download `odm-client_*.deb` from the
 and run one command:
 
 ```bash
+sudo apt update
 sudo apt install ./odm-client_0.7.12_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
+
+The refresh matters on a machine installed from an older image: the package
+pulls in Samba and SSSD, and an index older than the archive's last point
+release asks for filenames the mirror has already pruned.
 
 Without `--admin-user` it prompts. There is no graphical installer — one
 command that runs the same way scripted and interactive, so what a person
