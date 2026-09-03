@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     sysvol_path: Path | None = None
     agent_refresh_minutes: int = 15
 
+    # The agent binary this console hands out when a machine is told to
+    # update. The one the setup script installs and rebuilds beside the API,
+    # so what a machine gets is what this console was deployed with.
+    agent_binary: Path | None = Path("/usr/sbin/odm-agent")
+
     # --- DHCP (ISC Kea Control Agent) ---
     # Unset until the DHCP role is installed; the endpoints then report the
     # role as unavailable rather than failing obscurely.

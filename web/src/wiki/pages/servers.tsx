@@ -97,6 +97,38 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Running a command on a machine">
+          <p>
+            A computer object has a <strong>Shell</strong> tab. What is typed there runs as root on
+            that machine and its output comes back &mdash; a round trip of about a second, because
+            the agent already holds a request open for work.
+          </p>
+          <p>
+            It is not a terminal. Each command starts fresh, so a <C>cd</C> does not carry to the
+            next one and nothing can be typed at a prompt: a command that stops to ask a question
+            waits until its timeout and is killed. Write one line that does the whole thing.
+          </p>
+          <Note>
+            This is root on that machine, so it is its own right rather than something that comes
+            with reading a computer object, and it is checked against that machine the way any
+            other change to it is. Every command is written to the audit log with who ran it, from
+            where, and what came back &mdash; including the ones that failed.
+          </Note>
+        </Section>
+
+        <Section title="Updating a machine's agent">
+          <p>
+            The <strong>Machine</strong> tab shows what the agent on that machine is and what this
+            console would hand it, with a button to update it. For a fleet rather than one machine,
+            the <strong>Agent updates</strong> policy setting does the same thing on a schedule.
+          </p>
+          <p>
+            The console hands out the binary it was deployed with &mdash; the one{" "}
+            <C>deploy/setup.sh</C> installs beside the API. Publish a release, run that script on
+            the controller, and every machine set to install takes it at its next refresh.
+          </p>
+        </Section>
+
         <Section title="A machine that never reports">
           <Reference
             headers={["Check", "How"]}

@@ -14,9 +14,10 @@ from typing import Annotated, Any
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import agents, audit, objects, tasks
+from . import agents, agentupdate, audit, objects, tasks
 from .config import Settings, get_settings
 from .routes_directory import _read
 from .security import Authz, authorization, client_ip, get_pool, require_admin, requires
@@ -123,6 +124,7 @@ async def computer_detail(
     dn: Annotated[str, Query(min_length=3, max_length=1024)],
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Everything the machine has told us about itself."""
     fact = await pool.fetchrow(
@@ -146,8 +148,26 @@ async def computer_detail(
         fact["hostname"] if fact else None,
     )
 
+    # What this machine's agent is, and what this console would give it. The
+    # version a machine is on decides which remote jobs work at all, so it
+    # belongs beside the machine rather than in a report somewhere else.
+    installed = await pool.fetchval(
+        """
+        SELECT agent_version FROM agent_report
+        WHERE lower(computer_dn) = lower($1) AND agent_version <> ''
+        ORDER BY reported_at DESC LIMIT 1
+        """,
+        dn,
+    )
+    offer = await run_in_threadpool(agentupdate.available, settings.agent_binary)
+
     return {
         "known": fact is not None,
+        "agent": {
+            "installed": installed or "",
+            "available": offer.version if offer else "",
+            "behind": bool(offer and agentupdate.newer(offer.version, installed or "")),
+        },
         "facts": None
         if fact is None
         else {
@@ -220,10 +240,15 @@ class ComputerAction(BaseModel):
         str,
         Field(
             pattern="^(update-check|update-install|package-install|package-remove"
-            "|local-user-add|local-user-remove|policy-refresh|restart|shutdown)$"
+            "|local-user-add|local-user-remove|policy-refresh|restart|shutdown"
+            "|agent-update)$"
         ),
     ]
     package: Annotated[str, Field(max_length=128)] | None = None
+    # For agent-update: empty takes whatever this console has, which is what
+    # the button means. A version pins it, and a machine already on it does
+    # nothing rather than reinstalling the same file.
+    version: Annotated[str, Field(default="", max_length=32, pattern=r"^(\d+\.\d+\.\d+)?$")] = ""
     # A local account, for the two local-user actions. Directory accounts are
     # objects in the directory and are not created from here.
     local_user: LocalUser | None = None
@@ -251,6 +276,8 @@ async def run_action(
         if body.local_user is None:
             raise objects.ObjectError("no local account was given")
         payload = body.local_user.model_dump(exclude_none=True)
+    if body.action == "agent-update":
+        payload["version"] = body.version
 
     async with pool.acquire() as conn:
         fact = await conn.fetchrow(
@@ -333,6 +360,75 @@ async def browse_computer(
         return json.loads(answer)
     except ValueError as exc:
         raise objects.ObjectError(f"{row['hostname']} sent something unreadable back") from exc
+
+
+class ShellCommand(BaseModel):
+    dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    # One command line, run by the machine's own shell. Not validated into a
+    # shape here beyond a length: there is no subset of shell that is safe and
+    # every subset that is useful is the whole thing. What guards this is the
+    # right to call it and the record of who did.
+    command: Annotated[str, Field(min_length=1, max_length=4096)]
+    timeout_seconds: Annotated[int, Field(default=60, ge=1, le=600)] = 60
+
+
+@router.post("/computer/shell", dependencies=[Depends(requires("computer.shell"))])
+async def run_shell(
+    body: ShellCommand,
+    request: Request,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Run one command on a machine and hand back what it printed.
+
+    This is root on that machine. It is deliberately not dressed up as
+    anything smaller: the point of a remote shell is that an operator can do
+    what they would have done sitting at the console, and pretending otherwise
+    would only mean they sign in to the machine instead and nothing is
+    recorded at all.
+
+    So what makes it safe to have is what surrounds it — its own right, the
+    same scope check as any other change to that machine, and a record of the
+    command, who ran it, from where, and what came back, written whether it
+    succeeded or not.
+    """
+    authz.require("computer.shell", body.dn)
+    fact = await pool.fetchrow(HOSTNAME_BY_DN, body.dn)
+    if fact is None:
+        raise objects.NotFound(
+            "this machine has not reported yet, so there is nowhere to send the command"
+        )
+
+    output, failed = "", ""
+    try:
+        output = await tasks.run_now(
+            pool,
+            node_fqdn=fact["hostname"],
+            kind="shell-run",
+            payload={"command": body.command, "timeout_seconds": body.timeout_seconds},
+            requested_by=session.principal,
+            timeout=body.timeout_seconds + 30,
+        )
+    except tasks.TaskFailed as exc:
+        failed = str(exc)
+
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="computer.shell",
+            outcome="failure" if failed else "success",
+            object_type="computer",
+            object_dn=body.dn,
+            detail=f"{fact['hostname']}: {body.command}",
+            after={"output": (failed or output)[-8000:]},
+        )
+    if failed:
+        raise objects.ObjectError(failed)
+    return {"node": fact["hostname"], "output": output}
 
 
 @router.get("/computer/localadmin",

@@ -44,6 +44,11 @@ PERMISSIONS: tuple[str, ...] = (
     # computer object because it is the credential that opens the machine when
     # the domain cannot be reached.
     "computer.localadmin.read",
+    # Running a command on a machine as root. Its own right rather than part
+    # of managing a computer: it is the same power as installing a role by a
+    # shorter route, and a delegated administrator may be given one and not
+    # the other.
+    "computer.shell",
     "printer.read",
     "printer.write",
     "vpn.read",

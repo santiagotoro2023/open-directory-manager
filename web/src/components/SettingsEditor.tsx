@@ -677,6 +677,15 @@ const SPECIAL: SpecialSpec[] = [
     doc: "remote-desktop-session",
   },
   {
+    key: "agent_update",
+    title: "Agent updates",
+    half: "Computer",
+    help:
+      "Whether machines take the ODM agent this console hands out. Off keeps every " +
+      "agent where it is; notify only reports how far behind a machine is.",
+    doc: "agent-updates",
+  },
+  {
     key: "local_password_policy",
     title: "Local password policy",
     half: "Computer",
@@ -736,6 +745,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
   if (key === "remote_desktop_session") return settings.remote_desktop_session ? 1 : 0;
+  if (key === "agent_update") return settings.agent_update ? 1 : 0;
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
   if (key === "local_password_policy") return settings.local_password_policy ? 1 : 0;
   if (key === "roaming_profile") return settings.roaming_profile ? 1 : 0;
@@ -838,6 +848,9 @@ export function SettingsEditor({
           )}
           {selected === "local_administrator" && (
             <LocalAdministratorEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "agent_update" && (
+            <AgentUpdateEditor settings={settings} onChange={onChange} />
           )}
           {selected === "remote_desktop_session" && (
             <RemoteDesktopSessionEditor settings={settings} onChange={onChange} />
@@ -1648,6 +1661,73 @@ function RemoteDesktopSessionEditor({
               <option value="8">8-bit</option>
             </Select>
             <small>Lower is less to send, which shows on a slow or distant link.</small>
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function AgentUpdateEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.agent_update;
+
+  function set(changes: Partial<NonNullable<PolicySettings["agent_update"]>>) {
+    onChange({
+      ...settings,
+      agent_update: { mode: "notify", version: "", ...current, ...changes },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("agent_update")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, agent_update: undefined })} />
+          )
+        }
+      />
+      <p className="muted">
+        The agent is what carries every other setting here, so the version a machine is on decides
+        which of them work. It takes what this console was deployed with.
+      </p>
+
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <label className="field">
+            <span>When a newer agent is available</span>
+            <Select value={current.mode} onChange={(e) => set({ mode: e.target.value as "off" | "notify" | "install" })}>
+              <option value="notify">Report it and change nothing</option>
+              <option value="install">Install it at the next refresh</option>
+              <option value="off">Do nothing</option>
+            </Select>
+            <small>
+              A machine notices within its refresh interval, so a release published now reaches
+              the fleet without anybody signing in to it.
+            </small>
+          </label>
+
+          <label className="field">
+            <span>Version</span>
+            <input
+              className="mono"
+              placeholder="Whatever this console hands out"
+              value={current.version}
+              onChange={(e) => set({ version: e.target.value.trim() })}
+            />
+            <small>
+              A version pins it in both directions: a machine ahead of it comes back to it. Left
+              empty, machines follow the console.
+            </small>
           </label>
         </>
       )}

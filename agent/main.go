@@ -382,7 +382,7 @@ func waitAndPoll(
 				// A refresh ends the wait rather than being noted and
 				// forgotten: the point of asking for one is not waiting a
 				// quarter of an hour for it.
-				if runQueued(ctx, api, apply.NewEnv(root), queued) {
+				if runQueued(ctx, api, taskEnv(root, api), queued) {
 					return true, true
 				}
 			}
@@ -404,6 +404,8 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	defer api.Close()
 
 	env := apply.NewEnv(root)
+	env.Version = version
+	env.Download = api.DownloadAgent
 
 	fetch := func() (*policy.Document, error) {
 		if username != "" {
@@ -440,7 +442,14 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	if username == "" {
 		saveRefresh(env, document.RefreshMinutes)
 	}
-	if !force && username == "" && document.Serial == lastSerial(env) {
+	if document.AgentAvailable != nil {
+		env.Offered = document.AgentAvailable.Version
+	}
+	// An unchanged policy is normally nothing to do. Not when the console has
+	// started handing out a different agent: that changes no policy object and
+	// no serial, and waiting for one to change is waiting forever — which is
+	// the opposite of "the release is out, take it".
+	if !force && username == "" && document.Serial == lastSerial(env) && !updateWaiting(document, env) {
 		fmt.Println("policy unchanged")
 		runTasks(ctx, api, env)
 		reportInventory(ctx, api, env)
@@ -513,6 +522,26 @@ func runTasks(ctx context.Context, api *client.Client, env apply.Env) bool {
 		return false
 	}
 	return runQueued(ctx, api, env, queued)
+}
+
+// updateWaiting reports whether this run has an agent update to consider,
+// which an unchanged policy otherwise skips over.
+func updateWaiting(document *policy.Document, env apply.Env) bool {
+	wanted := document.Settings.AgentUpdate
+	if wanted == nil || wanted.Mode == "" || wanted.Mode == "off" {
+		return false
+	}
+	return env.Offered != "" && env.Offered != env.Version
+}
+
+// taskEnv is the machine as a queued task sees it: what this agent is, and
+// how to fetch the one the console hands out, so an update asked for from a
+// computer object can be carried out by the agent being replaced.
+func taskEnv(root string, api *client.Client) apply.Env {
+	env := apply.NewEnv(root)
+	env.Version = version
+	env.Download = api.DownloadAgent
+	return env
 }
 
 // runQueued reports whether one of the tasks asked for the policy to be

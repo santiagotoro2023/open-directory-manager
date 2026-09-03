@@ -682,6 +682,44 @@ for           %Engineers      (optional)`}</Code>
           />
         </Section>
 
+        <Section title="Agent updates">
+          <p>
+            Whether machines take the ODM agent this console hands out. The agent carries every
+            other setting on this page, so the version a machine is on decides which of them work
+            &mdash; and updating it by signing in to each machine is the one job that most wants
+            doing remotely.
+          </p>
+          <Reference
+            headers={["Mode", "What a machine does"]}
+            rows={[
+              [
+                "Do nothing",
+                "Keeps the agent it has. What a policy object written before this existed does, so nothing starts replacing binaries because a setting appeared.",
+              ],
+              [
+                "Report it and change nothing",
+                "Says what it is on and what is available, and installs nothing. The machine's Agent panel and its Policy tab show how far behind it is.",
+              ],
+              [
+                "Install it at the next refresh",
+                "Takes the update within the refresh interval, so a release published now reaches the fleet without anybody signing in to a machine.",
+              ],
+            ]}
+          />
+          <p>
+            Leaving <C>Version</C> empty follows whatever the console hands out. A version pins it
+            in both directions: a machine that got ahead comes back to it, and a machine behind it
+            waits until the console has that version rather than taking a different one.
+          </p>
+          <Note>
+            The binary comes from the console over the channel the agent already has &mdash; no
+            package repository to reach, nothing fetched from the internet. It is checked against
+            the digest the console offered and run once before it replaces the agent, and the one
+            it replaced is kept beside it as <C>odm-agent.previous</C>. A single machine can also
+            be updated from its own object, under Machine.
+          </Note>
+        </Section>
+
         <Section title="Local password policy">
           <p>
             Rules for accounts that live on the machine: what a new local password must be, and how

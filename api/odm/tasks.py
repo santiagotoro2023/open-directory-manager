@@ -43,6 +43,8 @@ KINDS = (
     "radius-apply",
     "rd-host-apply",
     "rd-broker-apply",
+    "agent-update",
+    "shell-run",
 )
 
 

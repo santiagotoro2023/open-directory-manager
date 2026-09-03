@@ -14,6 +14,10 @@ type Document struct {
 	Settings       Settings   `json:"settings"`
 	Serial         string     `json:"serial"`
 	RefreshMinutes int        `json:"refresh_minutes"`
+	// What the console would hand out if this machine asked for it. Sent on
+	// every poll, so an agent can report how far behind it is even where
+	// policy says to change nothing.
+	AgentAvailable *AgentAvailable `json:"agent_available,omitempty"`
 	// What the account itself carries, as opposed to what a policy object
 	// says about it. Only present on a document resolved for one person.
 	User UserDetails `json:"user"`
@@ -66,6 +70,7 @@ type Settings struct {
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
 	LocalPasswordPolicy  *LocalPasswordPolicy   `json:"local_password_policy,omitempty"`
 	RemoteDesktopSession *RemoteDesktopSession  `json:"remote_desktop_session,omitempty"`
+	AgentUpdate          *AgentUpdate           `json:"agent_update,omitempty"`
 	Agent                *AgentConfig           `json:"agent,omitempty"`
 }
 
@@ -291,6 +296,22 @@ type Result struct {
 	Setting string `json:"setting"`
 	Status  string `json:"status"` // success | failed | skipped
 	Reason  string `json:"reason,omitempty"`
+}
+
+// AgentAvailable is the agent the console hands out.
+type AgentAvailable struct {
+	Version string `json:"version"`
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size"`
+}
+
+// AgentUpdate is whether this machine takes it.
+type AgentUpdate struct {
+	// off, notify, install. Empty is off: a policy object written before this
+	// existed must not start replacing binaries.
+	Mode string `json:"mode"`
+	// Empty follows whatever the console hands out; a version pins it.
+	Version string `json:"version"`
 }
 
 // Report is what the agent posts after an apply run.

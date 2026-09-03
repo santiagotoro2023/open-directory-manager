@@ -7,8 +7,10 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -406,4 +409,60 @@ func why(response *http.Response) string {
 		return response.Status
 	}
 	return response.Status + ": " + strings.TrimSpace(string(body))
+}
+
+// DownloadAgent fetches the agent binary this console hands out, writing it
+// beside the destination so the move into place is atomic. Returns the
+// temporary file's path and the version the console said it was.
+//
+// A 60-second client timeout covers a policy request and is not enough for a
+// 30 MB binary over a slow link, so this one gets its own deadline.
+func (c *Client) DownloadAgent(ctx context.Context, beside string) (path, version string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/api/v1/agent/binary", nil)
+	if err != nil {
+		return "", "", err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return "", "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("agent binary: %s", why(response))
+	}
+
+	// In the destination's own directory: a rename across filesystems is not
+	// atomic and /tmp is very often one.
+	file, err := os.CreateTemp(filepath.Dir(beside), ".odm-agent-*")
+	if err != nil {
+		return "", "", err
+	}
+	digest := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(file, digest), response.Body); err != nil {
+		file.Close()
+		os.Remove(file.Name())
+		return "", "", fmt.Errorf("downloading the agent: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(file.Name())
+		return "", "", err
+	}
+
+	// What arrived is what the console said it was sending. This catches a
+	// truncated transfer, which otherwise installs a binary that will not run
+	// and takes the machine's agent with it.
+	if want := response.Header.Get("X-ODM-Agent-Sha256"); want != "" {
+		if got := hex.EncodeToString(digest.Sum(nil)); got != want {
+			os.Remove(file.Name())
+			return "", "", fmt.Errorf("the agent that arrived is not the one offered")
+		}
+	}
+	if err := os.Chmod(file.Name(), 0o755); err != nil {
+		os.Remove(file.Name())
+		return "", "", err
+	}
+	return file.Name(), response.Header.Get("X-ODM-Agent-Version"), nil
 }

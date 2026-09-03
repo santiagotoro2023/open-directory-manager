@@ -100,6 +100,10 @@ export interface PolicySettings {
   updates?: SystemUpdates;
   login_screen?: LoginScreenSettings;
   certificate_enrolment?: Record<string, unknown>[];
+  agent_update?: {
+    mode: "off" | "notify" | "install";
+    version: string;
+  };
   remote_desktop_session?: {
     allow_clipboard: boolean;
     allow_printers: boolean;
@@ -580,6 +584,7 @@ export interface ComputerFacts {
 }
 
 export type ComputerAction =
+  | "agent-update"
   | "update-check"
   | "update-install"
   | "package-install"
@@ -600,6 +605,8 @@ export interface NewLocalUser {
 
 export interface ComputerDetail {
   known: boolean;
+  /** What this machine's agent is, and what this console would hand it. */
+  agent: { installed: string; available: string; behind: boolean };
   facts: ComputerFacts | null;
   events: { kind: string; principal: string; occurred_at: string; detail: string | null }[];
   tasks: {
@@ -1459,10 +1466,24 @@ export const api = {
         })}`,
       ),
 
-    action: (dn: string, action: ComputerAction, pkg?: string, localUser?: NewLocalUser) =>
+    action: (
+      dn: string,
+      action: ComputerAction,
+      pkg?: string,
+      localUser?: NewLocalUser,
+      version?: string,
+    ) =>
       request<{ task: string; node: string }>(
         "/servers/computer/action",
-        json({ dn, action, package: pkg, local_user: localUser }),
+        json({ dn, action, package: pkg, local_user: localUser, version }),
+      ),
+
+    /** Run one command on a machine and read what it printed. Root on that
+     *  machine, its own right, and every call is in the audit log. */
+    shell: (dn: string, command: string, timeoutSeconds = 60) =>
+      request<{ node: string; output: string }>(
+        "/servers/computer/shell",
+        json({ dn, command, timeout_seconds: timeoutSeconds }),
       ),
   },
 

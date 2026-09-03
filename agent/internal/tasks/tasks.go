@@ -129,6 +129,10 @@ func RunWithProgress(
 		output, err = applyRemoteDesktopHost(ctx, task.Payload, env)
 	case "rd-broker-apply":
 		output, err = applyRemoteDesktopBroker(ctx, task.Payload, env)
+	case "agent-update":
+		output, err = updateAgent(ctx, task.Payload, env)
+	case "shell-run":
+		output, err = runShell(ctx, task.Payload, env)
 	default:
 		err = fmt.Errorf("unknown task kind %q", task.Kind)
 	}
@@ -159,6 +163,13 @@ func timeoutFor(kind string) time.Duration {
 	case "printer-discover":
 		// A network sweep, which the agent bounds at twenty seconds.
 		return 60 * time.Second
+	case "agent-update":
+		// Downloading the binary over whatever link the machine has.
+		return 20 * time.Minute
+	case "shell-run":
+		// Bounded by the command's own timeout, which the console sets and
+		// this only has to outlast.
+		return 11 * time.Minute
 	default:
 		return 5 * time.Minute
 	}

@@ -20,9 +20,10 @@ from typing import Annotated, Any
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import audit, ca, objects, routes_dc, rsop, sites, tasks
+from . import agentupdate, audit, ca, objects, routes_dc, rsop, sites, tasks
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -107,7 +108,44 @@ async def agent_policy(
     # working interval even before the schedule row exists.
     schedule = await routes_dc.agent_schedule(pool)
     document["refresh_minutes"] = schedule["poll_minutes"] or settings.agent_refresh_minutes
+    # What this console would hand out if asked. Told to every machine on
+    # every poll rather than only to the ones being updated: an agent that
+    # knows what is available can say so in its report, which is what makes
+    # the fleet's versions visible without asking each machine in turn.
+    offer = await run_in_threadpool(agentupdate.available, settings.agent_binary)
+    if offer is not None:
+        document["agent_available"] = {
+            "version": offer.version,
+            "sha256": offer.sha256,
+            "size": offer.size,
+        }
     return document
+
+
+@router.get("/binary")
+async def agent_binary(
+    machine: Machine = Depends(require_machine),
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    """The agent binary, for a machine updating itself.
+
+    Authenticated as the machine, over the channel it already verified. The
+    console is not asked to prove anything more than it proves for policy —
+    if a machine can be lied to about its policy it can already be told to run
+    a script, so the binary is not a new trust boundary, only a bigger file.
+    """
+    offer = await run_in_threadpool(agentupdate.available, settings.agent_binary)
+    if offer is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "this console has no agent binary to hand out",
+        )
+    return FileResponse(
+        offer.path,
+        media_type="application/octet-stream",
+        filename=f"odm-agent-{offer.version}",
+        headers={"X-ODM-Agent-Version": offer.version, "X-ODM-Agent-Sha256": offer.sha256},
+    )
 
 
 @router.get("/user-policy")

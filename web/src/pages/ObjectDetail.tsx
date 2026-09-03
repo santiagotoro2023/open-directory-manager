@@ -73,6 +73,7 @@ type Tab =
   | "users"
   | "files"
   | "activity"
+  | "shell"
   | "logs";
 
 function when(value: string | null | undefined): string {
@@ -152,6 +153,7 @@ export function ObjectDetail() {
           { id: "software" as Tab, label: "Software" },
           { id: "users" as Tab, label: "Local users" },
           { id: "files" as Tab, label: "Files" },
+          { id: "shell" as Tab, label: "Shell" },
           { id: "activity" as Tab, label: "Activity" },
           { id: "logs" as Tab, label: "Logs" },
         ]
@@ -354,6 +356,7 @@ export function ObjectDetail() {
         />
       )}
 
+      {isComputer && tab === "shell" && <ShellTab dn={dn} />}
       {isComputer && tab === "logs" && <LogsTab dn={dn} />}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
@@ -825,6 +828,28 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         </button>
       </div>
 
+      <h3 className="section-title">Agent</h3>
+      <dl className="facts">
+        <dt>Installed</dt>
+        <dd>{detail.agent.installed || "not reported yet"}</dd>
+        <dt>This console hands out</dt>
+        <dd>
+          {detail.agent.available || "nothing"}
+          {detail.agent.behind && <span className="badge"> update available</span>}
+        </dd>
+      </dl>
+      <div className="actions-row">
+        <button
+          type="button"
+          className={detail.agent.behind ? "primary" : "ghost"}
+          disabled={busy || !detail.agent.available}
+          onClick={() => void ask("agent-update")}
+        >
+          <RefreshCw size={15} aria-hidden="true" />
+          {detail.agent.behind ? `Update to ${detail.agent.available}` : "Reinstall the agent"}
+        </button>
+      </div>
+
       <h3 className="section-title">This machine</h3>
       <div className="actions-row">
         <button
@@ -945,6 +970,104 @@ function InstallPackageDialog({
  * expands two hundred lines answers nothing, and the counts are what decide
  * which group is worth opening.
  */
+/**
+ * A command, run on the machine, for troubleshooting it from here.
+ *
+ * Not a terminal: each command starts fresh, so a cd does not carry to the
+ * next one and nothing can be typed at a prompt. That is what the task queue
+ * can carry — a round trip is about a second — and it covers what
+ * troubleshooting a machine actually asks for.
+ *
+ * This is root on that machine. It is its own right rather than something
+ * that comes with reading a computer, and every command is in the audit log
+ * with who ran it and what came back.
+ */
+function ShellTab({ dn }: { dn: string }) {
+  const [command, setCommand] = useState("");
+  const [history, setHistory] = useState<{ command: string; output: string; failed: boolean }[]>(
+    [],
+  );
+  const [busy, setBusy] = useState(false);
+  const [recalled, setRecalled] = useState<number | null>(null);
+
+  async function run() {
+    const typed = command.trim();
+    if (!typed || busy) return;
+    setBusy(true);
+    setCommand("");
+    setRecalled(null);
+    try {
+      const result = await api.servers.shell(dn, typed);
+      setHistory((was) => [...was, { command: typed, output: result.output, failed: false }]);
+    } catch (err) {
+      setHistory((was) => [
+        ...was,
+        {
+          command: typed,
+          output: err instanceof ApiError ? err.message : String(err),
+          failed: true,
+        },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Up and down walk what has been run, which is the one terminal habit worth
+  // having here.
+  function recall(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (history.length === 0) return;
+    event.preventDefault();
+    const next =
+      event.key === "ArrowUp"
+        ? Math.max(0, (recalled ?? history.length) - 1)
+        : Math.min(history.length, (recalled ?? history.length) + 1);
+    setRecalled(next);
+    setCommand(next >= history.length ? "" : history[next].command);
+  }
+
+  return (
+    <>
+      <p className="muted">
+        Each command runs as root on this machine and finishes before the next one starts. Every
+        one is recorded in the audit log.
+      </p>
+
+      {history.length > 0 && (
+        <div className="command-output" role="log">
+          {history.map((entry, index) => (
+            <div key={index}>
+              <p className="mono">
+                <strong>$ {entry.command}</strong>
+              </p>
+              <pre className={entry.failed ? "alert" : undefined}>{entry.output}</pre>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="picker-field">
+        <input
+          aria-label="Command"
+          className="mono"
+          placeholder="journalctl -u odm-agent -n 50"
+          value={command}
+          disabled={busy}
+          onChange={(event) => setCommand(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void run();
+            else recall(event);
+          }}
+        />
+        <button type="button" className="primary" disabled={busy || !command.trim()} onClick={() => void run()}>
+          {busy ? "Running…" : "Run"}
+        </button>
+      </div>
+    </>
+  );
+}
+
 function LogsTab({ dn }: { dn: string }) {
   const [hours, setHours] = useState(24);
   const [groups, setGroups] = useState<LogGroup[]>([]);

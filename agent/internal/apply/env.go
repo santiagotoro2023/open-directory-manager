@@ -54,6 +54,16 @@ type Env struct {
 	// State records the paths this run owns, so files a policy no longer
 	// contains are removed on the next run.
 	State *State
+
+	// Version is what this agent is; Download fetches the one the console
+	// hands out, into a temporary file beside the path given. Both are set by
+	// the agent itself and left empty everywhere else — an applier with no
+	// way to download simply reports that it cannot update.
+	Version string
+	// Offered is the version the console said it would hand out, from the
+	// policy document this run is applying.
+	Offered  string
+	Download func(ctx context.Context, beside string) (path, version string, err error)
 }
 
 // Unsandboxed runs a command the way PID 1 would, outside this service's own

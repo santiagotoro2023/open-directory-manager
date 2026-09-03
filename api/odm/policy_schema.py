@@ -639,6 +639,28 @@ class LocalPasswordPolicy(Strict):
     accounts: Annotated[list[Name], Field(default_factory=list, max_length=64)]
 
 
+class AgentUpdate(Strict):
+    """Whether machines take the agent this console hands out.
+
+    The agent is what makes every other remote job possible, so the version a
+    machine is on decides which of them work — and updating it by signing in
+    to each machine is the one job that most wants doing remotely.
+
+    Off by default. A domain that has not asked for this keeps every agent
+    exactly where it is, which is what a machine should do about software
+    replacing itself.
+    """
+
+    # notify: the machine reports what it is on and what is available, and
+    # changes nothing — the console shows which machines are behind.
+    # install: it takes the update at its next refresh.
+    mode: Literal["off", "notify", "install"] = "off"
+    # Empty follows whatever this console hands out, which is what "latest"
+    # means in a domain that serves its own agent. A version pins it, in both
+    # directions: a machine ahead of it comes back to it.
+    version: Annotated[str, Field(default="", max_length=32, pattern=r"^(\d+\.\d+\.\d+)?$")] = ""
+
+
 class AgentSettings(Strict):
     """Kept so a policy object written before the interval became a domain
     setting still reads and still exports. The interval now comes from the
@@ -681,6 +703,7 @@ class PolicySettings(Strict):
     local_administrator: LocalAdministrator | None = None
     remote_desktop_session: RemoteDesktopSession | None = None
     agent: AgentSettings | None = None
+    agent_update: AgentUpdate | None = None
 
     def stored(self) -> dict[str, Any]:
         """Drop empty categories so a GPO's settings show only what it sets."""

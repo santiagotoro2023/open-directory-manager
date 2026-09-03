@@ -601,6 +601,9 @@ def test_every_task_with_a_subject_moves_something_on():
         # A test page changes nothing about the printer; the answer is whether
         # a page came out, which is the task's own output.
         "printer-test",
+        # A command run for troubleshooting moves nothing on: its answer is
+        # what it printed, and it is the audit log that keeps it.
+        "shell-run",
     }
 
     routes = pathlib.Path("odm")

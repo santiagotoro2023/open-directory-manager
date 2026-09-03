@@ -49,6 +49,9 @@ var appliers = []applier{
 	{"local_administrator", applyLocalAdministrator},
 	{"local_password_policy", applyLocalPasswordPolicy},
 	{"remote_desktop_session", applyRemoteDesktopSession},
+	// Last of the machine settings: it replaces this binary and schedules a
+	// restart, so everything else has already been applied and reported.
+	{"agent_update", applyAgentUpdate},
 	{"firewall", applyFirewall},
 	{"sudo_rules", applySudo},
 	{"hbac_rules", applyHbacRules},
