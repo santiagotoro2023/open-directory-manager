@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { ApiError, api, type DhcpLease, type DhcpScope } from "../api";
+import { ApiError, api, type DhcpLease, type DhcpScope, type RoleInstance } from "../api";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -33,13 +33,20 @@ export function Dhcp() {
   const [target, setTarget] = useState<DhcpScope | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Where the role says it is, which is not the same as the console being
+      able to reach it. */
+  const [installed, setInstalled] = useState<RoleInstance[]>([]);
 
   const load = useCallback(async () => {
     setError(null);
     try {
       const status = await api.dhcp.status();
       setConfigured(status.configured);
-      if (!status.configured) return;
+      if (!status.configured) {
+        const roles = await api.roles.list();
+        setInstalled(roles.installed.filter((role) => role.role_name === "dhcp"));
+        return;
+      }
       setHa((status.high_availability as HaStatus[]) ?? null);
       setStats(status.statistics ?? {});
       setScopes((await api.dhcp.scopes()).scopes);
@@ -73,14 +80,31 @@ export function Dhcp() {
   }
 
   if (!configured) {
+    // Two different situations wearing one message. The role registry knows
+    // which: a page that says "not installed" over a machine plainly running
+    // Kea sends an operator to install something twice.
+    const running = installed.filter((role) => role.state === "active");
     return (
       <main className="content">
         <h1>DHCP</h1>
-        <p className="muted">
-          The DHCP role is not installed. Run <code>deploy/install-dhcp-role.sh</code> on both nodes
-          of the failover pair, then set ODM_KEA_URL, ODM_KEA_USER and ODM_KEA_PASSWORD in the
-          secrets file.
-        </p>
+        {running.length > 0 ? (
+          <>
+            <p className="alert" role="alert">
+              The role is installed on {running.map((role) => role.node_fqdn).join(", ")}, but this
+              console has no Control Agent credential for it, so it cannot read or change anything.
+            </p>
+            <p className="muted">
+              Run <code>deploy/setup.sh</code> on the controller: it recovers the credential from
+              the node&rsquo;s own Kea configuration. Failing that, re-run{" "}
+              <code>deploy/install-dhcp-role.sh</code> there, which writes it again.
+            </p>
+          </>
+        ) : (
+          <p className="muted">
+            The DHCP role is not installed. Install it under Server Roles, or run{" "}
+            <code>deploy/install-dhcp-role.sh</code> on both nodes of the failover pair.
+          </p>
+        )}
       </main>
     );
   }

@@ -529,6 +529,23 @@ if [[ -n "$KEPT_SETTINGS" ]]; then
         KEPT_COUNT=$((KEPT_COUNT + 1))
     done <<< "$KEPT_SETTINGS"
 fi
+# A role installed on this machine records what the control plane needs to
+# reach it, in the file above. Where that has gone missing — an upgrade run of
+# this script before it kept what it did not write, a file restored from a
+# backup — put it back from the service's own configuration instead of asking
+# somebody to paste a password they never chose.
+if [[ -r /etc/kea/kea-api-password ]] && ! grep -q '^ODM_KEA_URL=' "$SECRETS_FILE"; then
+    KEA_PORT="$(sed -n 's/.*"http-port"[[:space:]]*:[[:space:]]*\([0-9]\{1,\}\).*/\1/p' \
+        /etc/kea/kea-ctrl-agent.conf 2>/dev/null | head -1)"
+    {
+        printf '\n# --- DHCP role (recovered from /etc/kea) ---\n'
+        printf 'ODM_KEA_URL=http://127.0.0.1:%s/\n' "${KEA_PORT:-8000}"
+        printf 'ODM_KEA_USER=%s\n' "$(cat /etc/kea/kea-api-user 2>/dev/null || echo odm)"
+        printf 'ODM_KEA_PASSWORD=%s\n' "$(cat /etc/kea/kea-api-password)"
+    } >> "$SECRETS_FILE"
+    ok "Recovered the DHCP role's Control Agent credential"
+fi
+
 umask 022
 chown root:"$SERVICE_USER" "$SECRETS_FILE"
 chmod 0640 "$SECRETS_FILE"
