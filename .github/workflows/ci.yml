@@ -322,6 +322,7 @@ jobs:
       # Publishing 0.7.0 from a tree that says 0.6.0 gives every client a
       # package whose --version disagrees with the release it came from.
       - name: The version released is the version in the tree
+        id: version
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
@@ -337,6 +338,10 @@ jobs:
               exit 1
             }
           done
+          # The tag comes from the same stripped value, so a run given
+          # "v0.8.0" and one given "0.8.0" produce one tag rather than
+          # v0.8.0 and vv0.8.0.
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: odm-client-deb
@@ -345,8 +350,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           # On a tag, the tag that was pushed. On a run given a version, the
-          # tag is created here from the commit the run checked out.
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', inputs.version) }}
+          # tag is created here from the commit the run checked out — named
+          # from the version the step above verified, with exactly one "v".
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: dist/*.deb
           fail_on_unmatched_files: true
