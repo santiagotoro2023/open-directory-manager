@@ -87,10 +87,45 @@ def host_task(row: dict[str, Any], node_fqdn: str = "") -> dict[str, Any]:
         "app_path": row["app_path"],
         "profile_share": row["profile_share"],
         "profile_gb": row["profile_gb"],
+        # Whether a session may start without the profile it is supposed to
+        # have. Off means it may not: a local home is a profile that exists on
+        # one host and not the others, and somebody handed one has quietly
+        # stopped keeping their work where they think it is.
+        "allow_local_home": bool(row.get("allow_local_home", False)),
         "idle_minutes": row["idle_minutes"],
         "disconnected_minutes": row["disconnected_minutes"],
         "rdp_port": host_port(node_fqdn, row.get("broker_fqdn") or ""),
     }
+
+
+def profile_share_entries(
+    existing: list[dict[str, Any]], hosts: list[str]
+) -> list[dict[str, Any]]:
+    """The access list a profile share needs, given the hosts serving it.
+
+    Nobody signing in ever authenticates to this share. The session host
+    mounts it as itself, before the person has a ticket, and creates and opens
+    their disk image as itself — so the machine accounts are what need access,
+    and the people need none at all. A share granted to the people instead
+    does not work; one granted to both lets anybody who can reach it open
+    everybody else's profile.
+
+    Each host is granted and inherits into the per-person directories it
+    creates. Every other entry keeps what it has on the share itself and stops
+    inheriting, so a grant made for some other purpose cannot reach inside
+    somebody's profile. Nothing is removed.
+    """
+    machines = {host.split(".")[0].upper() + "$" for host in hosts if host}
+    entries = [
+        {**entry, "inherit": False}
+        for entry in existing
+        if str(entry.get("principal", "")).upper() not in machines
+    ]
+    entries.extend(
+        {"principal": machine, "kind": "user", "access": "full", "inherit": True}
+        for machine in sorted(machines)
+    )
+    return entries
 
 
 def broker_task(row: dict[str, Any], hosts: list[str]) -> dict[str, Any]:

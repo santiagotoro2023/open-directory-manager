@@ -197,6 +197,14 @@ export function Content() {
                 "Inside a collection, the broker sends somebody back to the host already holding their session, so only that host has their disk. It cannot see a physical desktop: point a roaming-profile policy and a collection at the same share and somebody signed in at their desk and over RDP at once has one disk image mounted from two machines, which corrupts it. Give the collection its own share unless people use one or the other.",
               ],
               [
+                "Rights",
+                "Saving a collection puts its session hosts on the profile share's access list and takes inheritance off every other entry. The host mounts the share as itself, before anybody has a ticket, and creates and opens the disk as itself — so the machines are what need access and the people need none. Grants made for other reasons keep what they have on the share and stop reaching inside anyone's profile directory.",
+              ],
+              [
+                "If it cannot be attached",
+                "The sign-in is refused, and the reason is on the host under odm-rd-profile. A collection can choose a local home instead, which keeps it reachable while a file server is down at the cost of a profile that exists on one host and nowhere else.",
+              ],
+              [
                 "Optional",
                 "Leave the profile share empty and sessions use whatever home directory the host already gives somebody. Right for a single session host; wrong for a farm, where a profile that stays on one host is a different profile on every other one.",
               ],

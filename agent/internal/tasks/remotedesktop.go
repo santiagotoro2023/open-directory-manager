@@ -65,6 +65,10 @@ func applyRemoteDesktopHost(
 		return "", fmt.Errorf("invalid published application %q", appPath)
 	}
 	profileGB := intOf(payload["profile_gb"], 10)
+	allowLocalHome := "no"
+	if local, ok := payload["allow_local_home"].(bool); ok && local {
+		allowLocalHome = "yes"
+	}
 	idle := intOf(payload["idle_minutes"], 0)
 	disconnected := intOf(payload["disconnected_minutes"], 0)
 
@@ -92,7 +96,8 @@ func applyRemoteDesktopHost(
 	}
 	conf := apply.Header +
 		"PROFILE_SHARE=" + share + "\n" +
-		fmt.Sprintf("PROFILE_GB=%d\n", profileGB)
+		fmt.Sprintf("PROFILE_GB=%d\n", profileGB) +
+		fmt.Sprintf("ALLOW_LOCAL_HOME=%s\n", allowLocalHome)
 	if err := writeManaged(env, rdProfileSecrets, conf, 0o600); err != nil {
 		return "", err
 	}
@@ -140,13 +145,18 @@ func profileScript() string {
 # Mount this user's profile disk over their home directory. Run from PAM at
 # session open and again at session close.
 #
-# Every path out of here is exit 0. A profile disk that cannot be attached —
-# the share was renamed, the file server is down, the ticket was refused —
-# used to fail the PAM session, which does not mean "no roaming profile" to
-# xrdp, it means "Can't create session for user" and nobody on the farm can
-# log on at all. A local home for this session is a far smaller problem than
-# a session host nobody can reach, so that is what a failure falls back to,
-# with the reason in the journal.
+# What happens when the disk cannot be attached — the share was renamed, the
+# file server is down, the ticket was refused — is the collection's decision.
+#
+# Refusing is the default. The session manager reports it as "Can't create
+# session for user", which is blunt, but the alternative is worse: a local
+# home is a profile that exists on this host and nowhere else, so somebody
+# given one silently stops keeping their work where they think it is, and
+# nothing tells them until they land on another host and it is not there.
+#
+# Allow local homes turns that round, for a collection that would rather stay
+# reachable while a file server is down. Either way the reason is in the
+# journal under odm-rd-profile.
 # PAM runs this with almost no environment. An unset PATH means mkdir, chown
 # and mount are all "not found", and the home directory this was supposed to
 # make somebody's own stays root's — which stops their X server starting.
@@ -157,7 +167,13 @@ set -u
 
 warn() {
     logger -t odm-rd-profile "$1"
-    exit 0
+    if [ "${ALLOW_LOCAL_HOME:-no}" = "yes" ]; then
+        logger -t odm-rd-profile "${USER_NAME:-that session} gets a local home"
+        exit 0
+    fi
+    # Refused. The disk is the profile: starting without it hands somebody a
+    # home that is not theirs anywhere else.
+    exit 1
 }
 
 [ -r /etc/odm/rd-profile.conf ] || exit 0
@@ -224,7 +240,7 @@ if ! mountpoint -q "$STORE"; then
         -o sec=krb5,cruid=0,multiuser,vers=3.1.1,noperm 2>/dev/null \
     || mount -t cifs "$MOUNT_SRC" "$STORE" \
         -o sec=krb5,vers=3.0,noperm 2>/dev/null \
-    || warn "$MOUNT_SRC could not be mounted; $USER_NAME gets a local home this session"
+    || warn "$MOUNT_SRC could not be mounted for $USER_NAME"
 fi
 
 TARGET="$STORE"

@@ -716,18 +716,28 @@ func applyShare(ctx context.Context, payload map[string]any, env apply.Env) (str
 		}
 	}
 
+	// Which of them this machine can actually resolve, worked out before
+	// anything is cleared. setfacl refuses the whole list when one name in it
+	// is unknown, and the list was being cleared first — so a single name the
+	// file server could not look up left the share with no access list at all.
+	usable, unknown := resolvable(ctx, share.ACL, env)
+
 	// Replace the access list rather than adding to it: what the console shows
 	// has to be what the directory enforces, with nothing left over from a
 	// previous version of the share.
 	if out, err := env.Run.Run(ctx, "setfacl", "-b", full); err != nil {
 		return log.String(), fmt.Errorf("clearing the access list: %w: %s", err, out)
 	}
-	if len(share.ACL) > 0 {
-		args := append([]string{"-m", strings.Join(share.ACL, ",")}, full)
+	if len(usable) > 0 {
+		args := append([]string{"-m", strings.Join(usable, ",")}, full)
 		if out, err := env.Run.Run(ctx, "setfacl", args...); err != nil {
 			return log.String(), fmt.Errorf("setting the access list: %w: %s", err, out)
 		}
-		fmt.Fprintf(&log, "%d access entries applied\n", len(share.ACL))
+		fmt.Fprintf(&log, "%d access entries applied\n", len(usable))
+	}
+	if len(unknown) > 0 {
+		fmt.Fprintf(&log, "no account or group here named %s; skipped\n",
+			strings.Join(unknown, ", "))
 	}
 
 	if err := writeShares(ctx, share, env, false); err != nil {
@@ -735,6 +745,47 @@ func applyShare(ctx context.Context, payload map[string]any, env apply.Env) (str
 	}
 	fmt.Fprintf(&log, "//%s/%s is shared", hostname(), share.Name)
 	return log.String(), nil
+}
+
+// resolvable splits an access list into the entries this machine can look up
+// and the names it cannot. A name arrives from the directory and is resolved
+// here by whatever the machine uses — sssd, winbind, /etc/passwd — so a group
+// that exists in the domain is still unknown on a machine that cannot see it.
+func resolvable(ctx context.Context, acl []string, env apply.Env) (usable, unknown []string) {
+	known := map[string]bool{}
+	for _, entry := range acl {
+		// u:name:rwx, g:name:r-x, and the d: forms of both.
+		parts := strings.Split(entry, ":")
+		if len(parts) > 0 && parts[0] == "d" {
+			parts = parts[1:]
+		}
+		if len(parts) < 2 {
+			continue
+		}
+		kind, name := parts[0], parts[1]
+		if name == "" { // u::rwx and friends are the base entries
+			usable = append(usable, entry)
+			continue
+		}
+		key := kind + ":" + name
+		found, asked := known[key]
+		if !asked {
+			database := "passwd"
+			if kind == "g" {
+				database = "group"
+			}
+			_, err := env.Run.Run(ctx, "getent", database, name)
+			found = err == nil
+			known[key] = found
+			if !found {
+				unknown = append(unknown, name)
+			}
+		}
+		if found {
+			usable = append(usable, entry)
+		}
+	}
+	return usable, unknown
 }
 
 func removeShare(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {

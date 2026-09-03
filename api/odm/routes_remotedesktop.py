@@ -9,7 +9,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from . import audit, objects, remotedesktop, tasks
+from . import audit, objects, remotedesktop, shares, tasks
 from .security import client_ip, get_pool, require_admin, requires
 from .sessions import Session
 
@@ -25,6 +25,7 @@ class CollectionIn(BaseModel):
     app_name: Annotated[str, Field(max_length=64)] = ""
     profile_share: Annotated[str, Field(max_length=255)] = ""
     profile_gb: Annotated[int, Field(ge=1, le=2048)] = 10
+    allow_local_home: bool = False
     idle_minutes: Annotated[int, Field(ge=0, le=10080)] = 60
     disconnected_minutes: Annotated[int, Field(ge=0, le=10080)] = 120
     max_sessions_per_host: Annotated[int, Field(ge=0, le=1000)] = 0
@@ -41,6 +42,7 @@ class CollectionUpdate(BaseModel):
     app_name: Annotated[str, Field(max_length=64)] | None = None
     profile_share: Annotated[str, Field(max_length=255)] | None = None
     profile_gb: Annotated[int, Field(ge=1, le=2048)] | None = None
+    allow_local_home: bool | None = None
     idle_minutes: Annotated[int, Field(ge=0, le=10080)] | None = None
     disconnected_minutes: Annotated[int, Field(ge=0, le=10080)] | None = None
     max_sessions_per_host: Annotated[int, Field(ge=0, le=1000)] | None = None
@@ -66,6 +68,7 @@ def _collection_json(row: asyncpg.Record, hosts: list[str]) -> dict[str, Any]:
         "app_name": row["app_name"],
         "profile_share": row["profile_share"],
         "profile_gb": row["profile_gb"],
+        "allow_local_home": row["allow_local_home"],
         "idle_minutes": row["idle_minutes"],
         "disconnected_minutes": row["disconnected_minutes"],
         "max_sessions_per_host": row["max_sessions_per_host"],
@@ -94,6 +97,10 @@ async def _dispatch(conn: asyncpg.Connection, row: asyncpg.Record, actor: str) -
     worse than one that has nothing.
     """
     hosts = await _hosts_of(conn, row["id"])
+    # Before the hosts are told anything: a host that cannot reach the profile
+    # share refuses every logon on it, and what it mounts with is its own
+    # account rather than anybody's.
+    await _secure_profile_share(conn, row["profile_share"], hosts, actor)
     await conn.execute(
         "UPDATE rd_collection SET state = 'applying', updated_at = now() WHERE id = $1",
         row["id"],
@@ -188,6 +195,45 @@ async def _share_exists(conn: asyncpg.Connection, share: str) -> None:
         )
 
 
+async def _secure_profile_share(
+    conn: asyncpg.Connection, share: str, hosts: list[str], actor: str
+) -> None:
+    """Give the profile share exactly the rights the collection needs, and
+    queue the file server to apply them. See profile_share_entries."""
+    if not share or not hosts:
+        return
+    node, _, rest = share.lstrip("/").partition("/")
+    name = rest.partition("/")[0]
+    row = await conn.fetchrow(
+        "SELECT * FROM file_share WHERE lower(name) = lower($1) AND lower(node_fqdn) = lower($2)",
+        name,
+        node,
+    )
+    if row is None:
+        return
+
+    current = json.loads(row["entries"])
+    entries = remotedesktop.profile_share_entries(current, hosts)
+    if entries == current:
+        return
+    updated = await conn.fetchrow(
+        """
+        UPDATE file_share SET entries = $2::jsonb, state = 'applying', updated_at = now()
+        WHERE id = $1 RETURNING *
+        """,
+        row["id"],
+        json.dumps(entries),
+    )
+    await tasks.enqueue(
+        conn,
+        node_fqdn=updated["node_fqdn"],
+        kind="share-apply",
+        payload=shares.as_task(dict(updated)),
+        subject=str(updated["id"]),
+        requested_by=actor,
+    )
+
+
 @router.post("", status_code=201, dependencies=[Depends(requires("rd.write"))])
 async def create_collection(
     body: CollectionIn,
@@ -209,10 +255,11 @@ async def create_collection(
         row = await conn.fetchrow(
             """
             INSERT INTO rd_collection (name, description, broker_fqdn, kind, app_path,
-                                       app_name, profile_share, profile_gb, idle_minutes,
+                                       app_name, profile_share, profile_gb,
+                                       allow_local_home, idle_minutes,
                                        disconnected_minutes, max_sessions_per_host,
                                        balance_method, principals, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15)
             RETURNING *
             """,
             name,
@@ -223,6 +270,7 @@ async def create_collection(
             body.app_name,
             share,
             body.profile_gb,
+            body.allow_local_home,
             body.idle_minutes,
             body.disconnected_minutes,
             body.max_sessions_per_host,
@@ -282,11 +330,12 @@ async def update_collection(
                 app_name              = COALESCE($6, app_name),
                 profile_share         = COALESCE($7, profile_share),
                 profile_gb            = COALESCE($8, profile_gb),
-                idle_minutes          = COALESCE($9, idle_minutes),
-                disconnected_minutes  = COALESCE($10, disconnected_minutes),
-                max_sessions_per_host = COALESCE($11, max_sessions_per_host),
-                balance_method        = COALESCE($12, balance_method),
-                principals            = COALESCE($13::jsonb, principals),
+                allow_local_home      = COALESCE($9, allow_local_home),
+                idle_minutes          = COALESCE($10, idle_minutes),
+                disconnected_minutes  = COALESCE($11, disconnected_minutes),
+                max_sessions_per_host = COALESCE($12, max_sessions_per_host),
+                balance_method        = COALESCE($13, balance_method),
+                principals            = COALESCE($14::jsonb, principals),
                 updated_at            = now()
             WHERE id = $1::uuid
             RETURNING *
@@ -299,6 +348,7 @@ async def update_collection(
             body.app_name,
             share,
             body.profile_gb,
+            body.allow_local_home,
             body.idle_minutes,
             body.disconnected_minutes,
             body.max_sessions_per_host,

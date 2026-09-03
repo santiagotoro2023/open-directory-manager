@@ -6,6 +6,18 @@ import pytest
 
 from odm import remotedesktop, routes_remotedesktop
 
+# One stored collection, as the row handed to host_task looks.
+_ROW = {
+    "name": "Desks",
+    "kind": "desktop",
+    "app_path": "",
+    "profile_share": "//fs01/rds-profiles/%username%",
+    "profile_gb": 10,
+    "idle_minutes": 60,
+    "disconnected_minutes": 120,
+    "broker_fqdn": "rdbroker.corp.example.internal",
+}
+
 
 def test_the_connection_file_carries_the_user_name():
     # Not a convenience: an RDP client sends this in its first packet and the
@@ -196,3 +208,31 @@ async def test_a_share_that_does_not_exist_is_still_refused():
     # The share it looked for, not the path typed: the path is not the thing
     # that has to exist.
     assert "//fs01/nope is not a share" in str(refused.value)
+
+
+def test_a_session_may_not_start_without_its_profile_unless_that_is_asked_for():
+    """A local home exists on one host and nowhere else, so somebody handed one
+    has quietly stopped keeping their work where they think it is."""
+    assert remotedesktop.host_task({**_ROW})["allow_local_home"] is False
+    assert remotedesktop.host_task({**_ROW, "allow_local_home": True})["allow_local_home"] is True
+
+
+def test_the_hosts_are_what_the_profile_share_has_to_let_in():
+    """Not the people: the host mounts the share as itself, before anybody has
+    a ticket, and creates and opens their disk image as itself."""
+    entries = remotedesktop.profile_share_entries(
+        [{"principal": "gsg_rds_users", "kind": "group", "access": "change", "inherit": True}],
+        ["host1.corp.example.internal", "HOST2.corp.example.internal"],
+    )
+    assert {e["principal"] for e in entries} == {"gsg_rds_users", "HOST1$", "HOST2$"}
+    # The group keeps what it had on the share and stops reaching inside the
+    # directories the hosts make, so one person cannot open another's profile.
+    group = next(e for e in entries if e["principal"] == "gsg_rds_users")
+    assert group["access"] == "change" and group["inherit"] is False
+    assert all(e["inherit"] for e in entries if e["principal"].endswith("$"))
+
+
+def test_configuring_the_profile_share_twice_changes_nothing_the_second_time():
+    hosts = ["host1.corp.example.internal"]
+    once = remotedesktop.profile_share_entries([], hosts)
+    assert remotedesktop.profile_share_entries(once, hosts) == once

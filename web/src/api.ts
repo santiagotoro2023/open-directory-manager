@@ -631,6 +631,7 @@ export interface RdCollection {
   app_name: string;
   profile_share: string;
   profile_gb: number;
+  allow_local_home: boolean;
   idle_minutes: number;
   disconnected_minutes: number;
   max_sessions_per_host: number;

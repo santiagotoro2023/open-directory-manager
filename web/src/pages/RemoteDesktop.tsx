@@ -324,6 +324,7 @@ function CollectionDialog({
   const [appName, setAppName] = useState(collection?.app_name ?? "");
   const [share, setShare] = useState(collection?.profile_share ?? "");
   const [profileGb, setProfileGb] = useState(collection?.profile_gb ?? 10);
+  const [allowLocalHome, setAllowLocalHome] = useState(collection?.allow_local_home ?? false);
   const [idle, setIdle] = useState(collection?.idle_minutes ?? 60);
   const [disconnected, setDisconnected] = useState(collection?.disconnected_minutes ?? 120);
   const [maxSessions, setMaxSessions] = useState(collection?.max_sessions_per_host ?? 0);
@@ -469,6 +470,18 @@ function CollectionDialog({
                   />
                 </Field>
               </div>
+              <Field
+                label="If the profile disk cannot be attached"
+                hint="A local home exists on one host and nowhere else, so work saved to it is lost the next time somebody lands elsewhere"
+              >
+                <Select
+                  value={allowLocalHome ? "local" : "refuse"}
+                  onChange={(e) => setAllowLocalHome(e.target.value === "local")}
+                >
+                  <option value="refuse">Refuse the sign-in</option>
+                  <option value="local">Sign in with a local home</option>
+                </Select>
+              </Field>
             </>
           ),
         },
@@ -551,6 +564,7 @@ function CollectionDialog({
           app_path: appPath,
           app_name: appName,
           profile_share: share,
+          allow_local_home: allowLocalHome,
           profile_gb: profileGb,
           idle_minutes: idle,
           disconnected_minutes: disconnected,
