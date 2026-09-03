@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from odm import remotedesktop
+from odm import remotedesktop, routes_remotedesktop
 
 
 def test_the_connection_file_carries_the_user_name():
@@ -163,3 +163,36 @@ def test_a_host_that_shares_a_machine_with_the_broker_moves_aside():
     ports = {entry["host"]: entry["port"] for entry in broker["hosts"]}
     assert ports["rdb01.corp.example.internal"] == remotedesktop.HOST_BESIDE_BROKER_PORT
     assert ports["rdh01.corp.example.internal"] == remotedesktop.DEFAULT_RDP_PORT
+
+
+class _FakeConn:
+    """Records what the existence check looked for."""
+
+    def __init__(self, found: bool = True) -> None:
+        self.found = found
+        self.asked: tuple[str, str] | None = None
+
+    async def fetchval(self, _sql: str, name: str, node: str) -> int | None:
+        self.asked = (node, name)
+        return 1 if self.found else None
+
+
+async def test_only_the_share_is_checked_against_the_directory_of_shares():
+    """A per-person path lives inside a share; it is not a share of its own.
+
+    Matched whole, //fs01/rds-profiles/%username% came back as "not a share on
+    this domain" — which is a share nobody could point a collection at without
+    making one share per person.
+    """
+    conn = _FakeConn()
+    await routes_remotedesktop._share_exists(conn, "//fs01/rds-profiles/%username%")
+    assert conn.asked == ("fs01", "rds-profiles")
+
+
+async def test_a_share_that_does_not_exist_is_still_refused():
+    conn = _FakeConn(found=False)
+    with pytest.raises(remotedesktop.RemoteDesktopError) as refused:
+        await routes_remotedesktop._share_exists(conn, "//fs01/nope/%username%")
+    # The share it looked for, not the path typed: the path is not the thing
+    # that has to exist.
+    assert "//fs01/nope is not a share" in str(refused.value)

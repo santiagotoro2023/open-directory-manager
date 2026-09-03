@@ -170,7 +170,12 @@ async def _share_exists(conn: asyncpg.Connection, share: str) -> None:
     """
     if not share:
         return
-    node, _, name = share.lstrip("/").partition("/")
+    # The share is the first two parts; anything after it is a directory
+    # inside it, made at logon. Matched whole, //fs01/profiles/%username% was
+    # "not a share on this domain" — the share exists, the per-person path
+    # within it is the point.
+    node, _, rest = share.lstrip("/").partition("/")
+    name = rest.partition("/")[0]
     found = await conn.fetchval(
         "SELECT 1 FROM file_share WHERE lower(name) = lower($1) AND lower(node_fqdn) = lower($2)",
         name,
@@ -178,8 +183,8 @@ async def _share_exists(conn: asyncpg.Connection, share: str) -> None:
     )
     if not found:
         raise remotedesktop.RemoteDesktopError(
-            f"{share} is not a share on this domain. Create it under File Shares first, "
-            "or leave the profile share empty to keep each host's own home directories."
+            f"//{node}/{name} is not a share on this domain. Create it under File Shares "
+            "first, or leave the profile share empty to keep each host's own home directories."
         )
 
 
