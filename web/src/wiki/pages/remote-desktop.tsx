@@ -192,8 +192,8 @@ export function Content() {
                 "The image is created at the size the collection sets and cannot exceed it. It is sparse, so it takes the space it is using.",
               ],
               [
-                "Exclusive",
-                "A disk is mounted by one host at a time, which is what stops two sessions writing one profile.",
+                "One host at a time",
+                "Inside a collection, the broker sends somebody back to the host already holding their session, so only that host has their disk. It cannot see a physical desktop: point a roaming-profile policy and a collection at the same share and somebody signed in at their desk and over RDP at once has one disk image mounted from two machines, which corrupts it. Give the collection its own share unless people use one or the other.",
               ],
               [
                 "Optional",

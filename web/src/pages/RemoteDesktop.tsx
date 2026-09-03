@@ -7,6 +7,7 @@ import { ChoiceList } from "../components/ChoiceList";
 import { Field, Modal } from "../components/Modal";
 import { Wizard } from "../components/Wizard";
 import { PickerDialog, PickerField } from "../components/Picker";
+import { SharePicker } from "../components/ResourcePicker";
 import Select from "../components/Select"
 
 type Tab = "broker" | "hosts" | "sessions";
@@ -330,17 +331,9 @@ function CollectionDialog({
     collection?.balance_method ?? "leastconn",
   );
   const [principals, setPrincipals] = useState<string[]>(collection?.principals ?? []);
-  const [shares, setShares] = useState<string[]>([]);
+  const [pickingShare, setPickingShare] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Profile disks live on a share that already exists, so it is chosen.
-  useEffect(() => {
-    api.shares
-      .list()
-      .then((result) => setShares(result.shares.map((entry) => entry.unc)))
-      .catch(() => setShares([]));
-  }, []);
 
   return (
     <Wizard
@@ -436,16 +429,36 @@ function CollectionDialog({
                 every other one.
               </p>
               <div className="field-grid">
-                <Field label="Profile share" hint="A share you made under File Shares">
-                  <Select value={share} onChange={(e) => setShare(e.target.value)}>
-                    <option value="">No profile disks</option>
-                    {shares.map((unc) => (
-                      <option key={unc} value={unc}>
-                        {unc}
-                      </option>
-                    ))}
-                    {share && !shares.includes(share) && <option value={share}>{share}</option>}
-                  </Select>
+                <Field
+                  label="Profile share"
+                  hint="Pick one, or type a share this console does not manage"
+                >
+                  {/* Typeable, not only chosen: a farm's profile storage is
+                      often somewhere the console has no file-server role on,
+                      and that was a share nobody could enter. No %username%
+                      here — the share is mounted once per host and shared by
+                      every session on it, so people are separated by the file
+                      name, not by the path. */}
+                  <div className="picker-field">
+                    <input
+                      aria-label="Profile share"
+                      placeholder="//fileserver.example.org/rds-profiles"
+                      value={share}
+                      onChange={(e) => setShare(e.target.value)}
+                    />
+                    <button type="button" className="ghost" onClick={() => setPickingShare(true)}>
+                      Select…
+                    </button>
+                  </div>
+                  {pickingShare && (
+                    <SharePicker
+                      onClose={() => setPickingShare(false)}
+                      onPick={(picked) => {
+                        setPickingShare(false);
+                        setShare(picked.unc);
+                      }}
+                    />
+                  )}
                 </Field>
                 <Field label="Each disk may grow to (GB)">
                   <input

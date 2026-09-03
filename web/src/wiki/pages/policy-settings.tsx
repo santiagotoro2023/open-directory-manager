@@ -496,9 +496,12 @@ for           %Engineers      (optional)`}</Code>
             directories.
           </p>
           <p>
-            It is the same mechanism a remote desktop collection uses for its user profile disks.
-            Point a collection and a policy at the same share and somebody has one profile across
-            every desktop and every session host in the domain.
+            It is the same mechanism a remote desktop collection uses for its user profile disks,
+            and the two are best kept on separate shares. Nothing stops one disk image being
+            mounted by a desktop and a session host at once, and an image mounted from two
+            machines is a corrupted one; a collection takes a share and names the disk after the
+            account, while this path takes <C>%username%</C> after the share, so the two do
+            not collide unless they are deliberately pointed at the same place.
           </p>
           <Reference
             headers={["Field", "Notes"]}
