@@ -436,27 +436,16 @@ def test_network_boot_is_only_offered_where_dhcp_can_advertise_it() -> None:
     assert '"pxe"' in entry.group(0) and '"dhcp"' in entry.group(0), entry.group(0)
 
 
-def test_every_job_that_builds_the_desktop_app_installs_the_same_headers() -> None:
-    """The desktop build needs an X11 *and* a Wayland toolchain, because glfw
-    builds both backends on Linux. Two jobs build it; a second list that had
-    drifted from the first is what broke the client package."""
+def test_nothing_here_still_pulls_a_desktop_toolchain() -> None:
+    """The desktop domain-join front end is gone. What remains — the console
+    the operator uses and the servers the roles run on — has no graphical
+    dependency. A CI job still installing xorg/wayland/glfw headers is one
+    building something that no longer exists, so the guard is inverted."""
     import pathlib
-    import re
 
     workflow = (pathlib.Path("..") / ".github" / "workflows" / "ci.yml").read_text()
-    # One set per line that names the GL headers. Matching whole apt-get
-    # commands does not work: every following line is indented, so a greedy
-    # pattern swallows the file and finds one set however wrong they are.
-    installs = {
-        frozenset(re.findall(r"lib[a-z0-9-]+-dev|xorg-dev", line))
-        for line in workflow.splitlines()
-        if "libgl1-mesa-dev" in line
-    }
-    assert len(installs) >= 1, "nothing builds the desktop application any more"
-    assert len(installs) == 1, f"the desktop jobs install different headers: {installs}"
-    (headers,) = installs
-    for required in ("libwayland-dev", "libxkbcommon-dev", "xorg-dev", "libgl1-mesa-dev"):
-        assert required in headers, f"{required} is missing from {sorted(headers)}"
+    for gone in ("libgl1-mesa-dev", "libwayland-dev", "libxkbcommon-dev", "xorg-dev"):
+        assert gone not in workflow, f"CI still installs {gone}, which nothing now builds"
 
 
 def test_no_route_reads_a_field_the_session_does_not_have() -> None:
@@ -780,7 +769,6 @@ def test_the_version_is_the_same_everywhere_it_is_written() -> None:
         "agent/main.go",
         "web/package.json",
         "client-join/cmd/odm-client-install/main.go",
-        "client-join/cmd/odm-join-gui/main.go",
         "README.md",
     ):
         text = (root / path).read_text()

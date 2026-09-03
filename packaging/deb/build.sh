@@ -14,7 +14,6 @@ ARCH="${ARCH:-amd64}"
 OUT="${OUT:-$REPO/dist}"
 # The desktop build needs X11 and OpenGL headers; a package without it is
 # still useful on a server, so it is skipped rather than fatal.
-WITH_GUI="${WITH_GUI:-auto}"
 
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must be x.y.z" >&2; exit 1; }
 
@@ -32,22 +31,6 @@ echo "==> Building odm-client-install"
 echo "==> Building odm-agent"
 ( cd "$REPO/agent" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
     go build -trimpath -ldflags "-s -w" -o "$STAGE/odm-agent" . )
-
-GUI_BUILT="no"
-if [[ "$WITH_GUI" != "no" ]]; then
-    echo "==> Building odm-join (desktop)"
-    if ( cd "$REPO/client-join" && GOOS=linux GOARCH="$ARCH" \
-            go build -tags gui -trimpath -ldflags "-s -w" \
-            -o "$STAGE/odm-join" ./cmd/odm-join-gui ) 2>"$STAGE/gui.log"; then
-        GUI_BUILT="yes"
-    elif [[ "$WITH_GUI" == "yes" ]]; then
-        echo "the desktop build failed:" >&2
-        cat "$STAGE/gui.log" >&2
-        exit 1
-    else
-        echo "    skipped: $(tail -1 "$STAGE/gui.log")" >&2
-    fi
-fi
 
 ROOT="$STAGE/root"
 install -d -m 0755 "$ROOT/DEBIAN" "$ROOT/usr/sbin" "$ROOT/usr/share/doc/odm-client"
@@ -78,33 +61,16 @@ DEPENDS="$DEPENDS, cifs-utils, keyutils"
 # nothing has to be carried to the machine by hand. Without it a join has no
 # way to give the agent a trust anchor and says so.
 DEPENDS="$DEPENDS, smbclient"
-if [[ "$GUI_BUILT" == "yes" ]]; then
-    install -d -m 0755 "$ROOT/usr/bin" \
-        "$ROOT/usr/share/applications" \
-        "$ROOT/usr/share/icons/hicolor/scalable/apps"
-    install -m 0755 "$STAGE/odm-join" "$ROOT/usr/bin/odm-join"
-    # The mark alone is only ever an application icon; the window and the
-    # welcome screen carry the name as text (branding/BRAND.md).
-    install -m 0644 "$REPO/branding/odm-mark.svg" \
-        "$ROOT/usr/share/icons/hicolor/scalable/apps/odm-join.svg"
-    install -m 0644 "$HERE/odm-join.desktop" "$ROOT/usr/share/applications/odm-join.desktop"
-    DEPENDS="$DEPENDS, policykit-1 | polkitd, libgl1"
-fi
-
-# The libraries the binaries actually need, read out of the binaries rather
-# than listed by hand. A desktop build links against whatever the toolchain
-# gave it, and a hand-written list is a list that goes stale silently — the
-# first version of this package shipped without libwayland-client0 and the
-# desktop app would not have started.
+# The libraries odm-client-install and odm-agent actually need, read out of
+# the binaries rather than listed by hand: a change to what one of them links
+# against is a change dpkg-shlibdeps notices and this list would not.
 if command -v dpkg-shlibdeps >/dev/null 2>&1; then
     SHLIBS_DIR="$STAGE/shlibs"
     mkdir -p "$SHLIBS_DIR/debian"
     printf 'Source: odm-client\nPackage: odm-client\nArchitecture: %s\n' "$ARCH" \
         > "$SHLIBS_DIR/debian/control"
-    BINARIES=("$ROOT/usr/sbin/odm-client-install")
-    [[ "$GUI_BUILT" == "yes" ]] && BINARIES+=("$ROOT/usr/bin/odm-join")
     if SHLIBS="$(cd "$SHLIBS_DIR" && dpkg-shlibdeps -O --ignore-missing-info \
-            "${BINARIES[@]}" 2>/dev/null)"; then
+            "$ROOT/usr/sbin/odm-client-install" "$ROOT/usr/sbin/odm-agent" 2>/dev/null)"; then
         SHLIBS="${SHLIBS#shlibs:Depends=}"
         [[ -n "$SHLIBS" ]] && DEPENDS="$DEPENDS, $SHLIBS"
     else
@@ -132,8 +98,4 @@ echo
 echo "Built $PACKAGE"
 echo "  odm-client-install  command line, and what automated provisioning uses"
 echo "  odm-agent           applies policy and reports it back, once joined"
-if [[ "$GUI_BUILT" == "yes" ]]; then
-    echo "  odm-join            desktop application, in the applications menu"
-else
-    echo "  odm-join            not included: no desktop build toolchain here"
-fi
+

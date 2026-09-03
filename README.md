@@ -62,16 +62,18 @@ names the step it stopped at.
 ### Joining a client
 
 Download `odm-client_*.deb` from the
-[latest release](https://github.com/santiagotoro2023/open-directory-manager/releases),
-open it, and use **Join a Domain** from the applications menu. Or from a
-terminal:
+[latest release](https://github.com/santiagotoro2023/open-directory-manager/releases)
+and run one command:
 
 ```bash
 sudo apt install ./odm-client_0.7.12_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
-The client needs nothing but the domain and a credential: the console's
+Without `--admin-user` it prompts. There is no graphical installer — one
+command that runs the same way scripted and interactive, so what a person
+does at a desktop is what an unattended install does. The client needs
+nothing but the domain and a credential: the console's
 certificate is published in the domain's SYSVOL and the join reads it from
 there over Kerberos, so there is no file to carry to each machine.
 
@@ -136,7 +138,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Operations | Health dashboard on Overview, replication, and domain backups taken by the controller's own agent |
 | Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one, keeping the security identifier it had |
 | Audit | Every change with actor, outcome and before-and-after state |
-| Clients | One `.deb`: `odm-client-install` for scripts, **Join a Domain** for the desktop, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |
+| Clients | One `.deb`: `odm-client-install`, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |
 
 ## Architecture
 
@@ -147,7 +149,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Metadata store | PostgreSQL — audit log, delegation, policy objects, recycle bin, role registry, certificate inventory |
 | Console | React + TypeScript (`web/`), talks only to the control plane |
 | Policy agent | Go, one static binary (`agent/`) |
-| Domain join | Go library with a CLI and a desktop app (`client-join/`) |
+| Domain join | Go library with a CLI (`client-join/`) |
 | DHCP | ISC Kea, through its Control Agent |
 | File shares | Samba, with POSIX access lists |
 | Printing | CUPS, driverless or with an uploaded PPD |

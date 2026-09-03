@@ -30,7 +30,7 @@ docker run --rm \
     -v "$CACHE/mod:/gomod" \
     -u "$(id -u):$(id -g)" \
     -e HOME=/tmp -e GOCACHE=/gocache -e GOMODCACHE=/gomod \
-    -e OUT=/out -e WITH_GUI=yes \
+    -e OUT=/out \
     -w /repo "$IMAGE" \
     bash packaging/deb/build.sh "$VERSION"
 

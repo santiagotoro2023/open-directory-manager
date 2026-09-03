@@ -226,29 +226,21 @@ goal.
   make adding CA/software-deployment/PXE roles later a matter of writing a
   new role plugin, not touching the core.
 
-### 5.6 Domain-join client (CLI + GUI)
-Two front ends over **one shared Go join library** — do not implement the
-join logic twice. The library handles: discovering the ODM domain via DNS
-SRV records, authenticating a join credential/OTP, configuring `krb5.conf`
-and `sssd.conf`, performing the actual domain join (`net ads join`
-equivalent against the Samba AD DC), registering the machine's computer
-object, installing the machine keytab, and installing + enabling the Go
-policy agent as a systemd service.
+### 5.6 Domain-join client (CLI)
+`odm-client-install`, modelled directly on `ipa-client-install` — a single
+command with flags for non-interactive use (`--domain`, `--server`, `--otp` /
+`--admin-user`) and interactive prompts otherwise. It handles: discovering
+the ODM domain via DNS SRV records, authenticating a join credential/OTP,
+configuring `krb5.conf` and `sssd.conf`, performing the actual domain join
+(`net ads join` equivalent against the Samba AD DC), registering the
+machine's computer object, installing the machine keytab, fetching the
+console's certificate from SYSVOL over Kerberos, and installing + enabling
+the Go policy agent as a systemd service.
 
-- **CLI**: `odm-client-install`, modeled directly on `ipa-client-install` —
-  a single command, flags for non-interactive use
-  (`--domain`, `--server`, `--otp` / `--admin-user`), interactive prompts
-  when flags are omitted. This is the path for servers and scripted/
-  automated provisioning.
-- **GUI**: a small native desktop app (Go + Fyne, keeping the client stack
-  to one language) for interactively joining a Debian desktop to the
-  domain — domain name, server, and credential fields, a progress view,
-  and a clear success/failure result. This is the path for desktop
-  machines and admins who don't want a terminal. Ships as a `.deb` package
-  alongside the CLI tool, uses `odm-mark.svg` as its window/taskbar icon
-  and the `odm-logo-full.svg` lockup on its welcome screen (see §9).
-- Both front ends must produce an identical resulting configuration —
-  test them against the same fixtures.
+There is deliberately no graphical installer. A desktop user opens a
+terminal and runs the same one line a scripted install does; one code path
+means one thing to test, one shape of failure to report, and no missing
+dependency chain of graphics libraries to keep working.
 
 ---
 

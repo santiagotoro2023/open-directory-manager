@@ -188,29 +188,6 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go build ./...
 
-  gui:
-    name: join GUI (vet + build)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - name: Install desktop toolkit headers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
-      # The desktop application is behind a build tag so the other jobs do
-      # not need a graphics toolchain.
-      - name: Vet
-        working-directory: client-join
-        run: go vet -tags gui ./...
-      - name: Build
-        working-directory: client-join
-        run: go build -tags gui -o /dev/null ./cmd/odm-join-gui
-
   deploy:
     name: deploy scripts (syntax + uninstall coverage)
     runs-on: ubuntu-latest
@@ -273,13 +250,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      # The same set the gui job uses. glfw builds an X11 and a Wayland
-      # backend on Linux, so both sets of headers have to be here.
-      - name: Install desktop toolkit headers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
       - name: Build the package
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -294,26 +264,21 @@ jobs:
             VERSION="${RELEASE_VERSION#v}"
           fi
           echo "ODM_CLIENT_VERSION=$VERSION" >> "$GITHUB_ENV"
-          WITH_GUI=yes bash packaging/deb/build.sh "$VERSION"
-      - name: The package must contain both front ends
+          bash packaging/deb/build.sh "$VERSION"
+      - name: The package must contain what a machine needs to join and apply
         shell: bash
         run: |
           set -o pipefail
           PACKAGE="dist/odm-client_${ODM_CLIENT_VERSION}_amd64.deb"
           dpkg-deb --contents "$PACKAGE" | tee /tmp/contents.txt
-          # A package missing the desktop application is one somebody has to
-          # be told about, not one that quietly ships.
-          # odm-agent and its unit because the join's last step enables it,
-          # and a package without them fails there with "Unit
-          # odm-agent.service does not exist"; the role installers because a
-          # member server is given a role by its own agent running one.
-          for path in ./usr/sbin/odm-client-install ./usr/bin/odm-join \
+          # odm-agent and its unit because the join's last step enables it;
+          # the role installers because a member server is given a role by
+          # its own agent running one.
+          for path in ./usr/sbin/odm-client-install \
                       ./usr/sbin/odm-agent \
                       ./lib/systemd/system/odm-agent.service \
                       ./usr/lib/odm/roles/install-dhcp-role.sh \
-                      ./usr/lib/odm/roles/odm-role-common.sh \
-                      ./usr/share/applications/odm-join.desktop \
-                      ./usr/share/icons/hicolor/scalable/apps/odm-join.svg; do
+                      ./usr/lib/odm/roles/odm-role-common.sh; do
             grep -q "$path" /tmp/contents.txt || { echo "missing $path" >&2; exit 1; }
           done
       - name: It must install, run and uninstall cleanly
@@ -322,17 +287,14 @@ jobs:
             "./dist/odm-client_${ODM_CLIENT_VERSION}_amd64.deb"
           odm-client-install --version
           odm-agent --version
-          # A binary whose libraries do not resolve fails on first launch
-          # rather than at install: the desktop app shipped once without
-          # libwayland-client0 and would have done exactly that.
-          for BINARY in /usr/sbin/odm-client-install /usr/sbin/odm-agent /usr/bin/odm-join; do
+          for BINARY in /usr/sbin/odm-client-install /usr/sbin/odm-agent; do
             if ldd "$BINARY" | grep "not found"; then
               echo "$BINARY has unresolved libraries" >&2
               exit 1
             fi
           done
           sudo apt-get remove -y odm-client
-          test ! -e /usr/bin/odm-join
+          test ! -e /usr/sbin/odm-client-install
       - uses: actions/upload-artifact@v4
         with:
           name: odm-client-deb
@@ -361,8 +323,7 @@ jobs:
             VERSION="${RELEASE_VERSION#v}"
           fi
           for file in api/pyproject.toml agent/main.go web/package.json \
-                      client-join/cmd/odm-client-install/main.go \
-                      client-join/cmd/odm-join-gui/main.go; do
+                      client-join/cmd/odm-client-install/main.go; do
             grep -q "\"$VERSION\"" "$file" || {
               echo "$file does not say $VERSION; bump the version first" >&2
               exit 1
@@ -384,21 +345,17 @@ jobs:
           # Whoever downloads this is standing at a machine they want joined,
           # not reading the repository.
           body: |
-            Download `odm-client_*.deb`, open it, and join the domain.
-
-            **Desktop** — double-click the package to install it, then launch
-            **Join a Domain** from the applications menu.
-
-            **Server, or scripted**
+            Download `odm-client_*.deb` and run one command.
 
             ```
             sudo apt install ./odm-client_*.deb
             sudo odm-client-install --domain corp.example.internal --admin-user Administrator
             ```
 
-            Both front ends do the same work: they find the domain by its
-            service records, join it, install the machine keytab, and start the
-            policy agent. Joining needs root; leaving needs a domain credential
+            The command finds the domain by its service records, joins it,
+            installs the machine keytab and starts the policy agent. Anything
+            omitted is prompted for; add `--otp <token>` for scripted
+            provisioning. Joining needs root; leaving needs a domain credential
             or `--force` as root.
 
             Debian 12 and 13, amd64.

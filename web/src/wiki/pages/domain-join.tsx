@@ -16,7 +16,7 @@ export const meta: WikiPageMeta = {
   id: "domain-join",
   title: "Joining machines",
   section: "Clients",
-  summary: "Joining a Debian machine to the domain from the command line or the desktop app.",
+  summary: "Joining a Debian machine to the domain with odm-client-install.",
   keywords: ["join", "odm-client-install", "enroll", "sssd", "krb5", "keytab", "client"],
 };
 
@@ -24,31 +24,21 @@ export function Content() {
   return (
     <>
       <Quickstart>
-        <Example title="The easy way">
-          Download <C>odm-client_*.deb</C> from the project&rsquo;s releases, open it, and use{" "}
-          <strong>Join a Domain</strong> from the applications menu. One file, no checkout, no
-          flags. The same package carries <C>odm-client-install</C> for servers and scripts.
+        <Example title="Install the package and run the join">
+          <Code>{`sudo apt install ./odm-client_<version>_amd64.deb
+sudo odm-client-install \
+  --domain corp.example.internal \
+  --admin-user Administrator`}</Code>
+          One file, one command, the same on a workstation as on a server. Anything omitted is
+          prompted for; <C>--unattended</C> with <C>--otp</C> is the scripted form.
         </Example>
 
         <p>
           Joining a machine creates its account in the directory, installs its Kerberos keytab,
-          configures name resolution and authentication, and installs the policy agent. Two front
-          ends do the same work: a command for servers and scripted provisioning, and a desktop
-          application for workstations.
+          configures name resolution and authentication, and installs the policy agent. There is
+          no graphical installer: a desktop user opens a terminal and runs the same one line a
+          scripted install does, so what a person sees is what an unattended run does.
         </p>
-
-        <Example title="Join from the command line">
-          <Code>{`sudo odm-client-install \\
-  --domain corp.example.internal \\
-  --admin-user Administrator`}</Code>
-          The domain and a credential are all it needs. Prompts for anything not given; add{" "}
-          <C>--unattended</C> with <C>--otp</C> for scripted provisioning.
-        </Example>
-
-        <Example title="Join from the desktop">
-          Launch <strong>Join Domain</strong>, enter the domain and a credential, and follow the
-          progress view.
-        </Example>
 
         <Example title="Confirm it worked">
           <Code>{`sudo odm-agent check
@@ -238,11 +228,6 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
             <C>ws01.corp.example.internal</C>. Services already running keep the old name until they
             restart; reboot after a join that renamed the machine. <C>--keep-hostname</C> stops the
             join instead of renaming.
-          </Note>
-          <Note>
-            Both front ends produce the same configuration. The desktop application is a view over
-            the same join library the command uses, and a test asserts that two runs of the same
-            options produce identical files.
           </Note>
         </Section>
 
