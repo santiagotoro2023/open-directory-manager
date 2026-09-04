@@ -104,9 +104,16 @@ export function Content() {
             the agent already holds a request open for work.
           </p>
           <p>
-            It is not a terminal. Each command starts fresh, so a <C>cd</C> does not carry to the
-            next one and nothing can be typed at a prompt: a command that stops to ask a question
-            waits until its timeout and is killed. Write one line that does the whole thing.
+            The working directory carries from one command to the next, so <C>cd</C> works and the
+            prompt shows where you are. The arrow keys walk what has been typed, and{" "}
+            <C>clear</C> or Ctrl-L empties the screen.
+          </p>
+          <p>
+            It is not a terminal. There is no pty, so there is no job control, no full-screen
+            program and nothing to type at a prompt: a command that stops to ask a question waits
+            until its timeout and is killed. Nothing but the directory survives between commands
+            &mdash; a variable exported in one is gone in the next. Write one line that does the
+            whole thing.
           </p>
           <Note>
             This is root on that machine, so it is its own right rather than something that comes
@@ -126,6 +133,26 @@ export function Content() {
             The console hands out the binary it was deployed with &mdash; the one{" "}
             <C>deploy/setup.sh</C> installs beside the API. Publish a release, run that script on
             the controller, and every machine set to install takes it at its next refresh.
+          </p>
+        </Section>
+
+        <Section title="Files on a machine">
+          <p>
+            The <strong>Files</strong> tab walks that machine&rsquo;s disk. Each entry shows its
+            owner, its group and its mode, and <strong>Permissions&hellip;</strong> changes all
+            three &mdash; a domain account or a local one for the owner, a group from the
+            directory, and an octal mode as <C>chmod</C> takes it. On a folder, the change can be
+            applied to everything inside it.
+          </p>
+          <Note>
+            Names, sizes, times and ownership cross the wire; the contents of a file never do.
+            Changing permissions is checked against that machine the way any other change to it is,
+            and every change is in the audit log with the path and what it was set to.
+          </Note>
+          <p>
+            A share&rsquo;s own access list belongs under <strong>File Shares</strong> and not
+            here. That list applies to everything in the share and is reapplied whenever the share
+            changes, so a permission set here inside a share is overwritten the next time it is.
           </p>
         </Section>
 

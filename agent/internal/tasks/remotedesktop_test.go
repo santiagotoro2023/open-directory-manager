@@ -105,3 +105,44 @@ func TestAnAccessListKeepsTheNamesThisMachineKnows(t *testing.T) {
 		t.Errorf("the unknown name was still set: %q", set)
 	}
 }
+
+// The desktop is started through Debian's Xsession, which is what sets up
+// XDG_CONFIG_DIRS, XDG_DATA_DIRS and the session bus. Started without it,
+// xfce4-session cannot find its own defaults under /etc/xdg and every
+// connection ends at "Unable to determine failsafe session name".
+func TestTheSessionIsStartedThroughXsession(t *testing.T) {
+	script := startWM()
+	if !strings.Contains(script, "exec /etc/X11/Xsession "+rdSessionScript) {
+		t.Errorf("the collection's session is not started through Xsession:\n%s", script)
+	}
+	if !strings.Contains(script, "exec /etc/X11/Xsession startxfce4") {
+		t.Errorf("the plain desktop is not started through Xsession:\n%s", script)
+	}
+	if strings.Contains(script, "\nexec startxfce4") {
+		t.Error("a desktop is still started without a session environment")
+	}
+}
+
+// A profile disk left mounted after somebody signs out holds the loop device
+// and leaves a /home entry that looks like a local account — which is exactly
+// what a profile disk exists to avoid.
+func TestSigningOutDetachesTheProfileAndTakesTheMountPointWithIt(t *testing.T) {
+	script := profileScript()
+	for _, want := range []string{
+		`umount "$HOME_DIR" 2>/dev/null || umount -l "$HOME_DIR"`,
+		`rmdir "$HOME_DIR" 2>/dev/null || true`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the close hook is missing %q:\n%s", want, script)
+		}
+	}
+}
+
+// "No profile disk was created" and "this collection was never given a share"
+// look identical from the console unless the host says which it was.
+func TestTheHookSaysWhyItDidNothing(t *testing.T) {
+	script := profileScript()
+	if strings.Count(script, "logger -t odm-rd-profile") < 4 {
+		t.Errorf("the hook can still exit silently:\n%s", script)
+	}
+}

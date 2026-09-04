@@ -94,6 +94,8 @@ const TARGETABLE = new Set([
   "drive_maps",
   "printers",
   "packages",
+  "default_applications",
+  "dash",
 ]);
 
 /** Which halves of Group Policy this object actually configures.
@@ -506,6 +508,97 @@ export const CATEGORIES: CategorySpec[] = [
       for_principal: "",
       full_screen: true,
     },
+  },
+  {
+    key: "default_applications",
+    title: "Default applications",
+    half: "Computer",
+    identity: "mime_type",
+    help:
+      "Which program opens which kind of file. Give the extensions too for a type " +
+      "the machine does not already know, such as .rdp.",
+    doc: "default-applications",
+    fields: [
+      {
+        key: "mime_type",
+        label: "File type",
+        width: "220px",
+        placeholder: "application/x-rdp",
+        hint: "The MIME type, as the desktop names it",
+        suggestions: [
+          { value: "application/x-rdp", label: "Remote desktop connection — .rdp" },
+          { value: "application/pdf", label: "PDF" },
+          { value: "text/html", label: "Web page" },
+          { value: "text/plain", label: "Plain text" },
+          { value: "application/zip", label: "Zip archive" },
+          { value: "x-scheme-handler/http", label: "Links — http" },
+          { value: "x-scheme-handler/https", label: "Links — https" },
+          { value: "x-scheme-handler/mailto", label: "Mail links — mailto" },
+        ],
+      },
+      {
+        key: "application",
+        label: "Opened by",
+        placeholder: "org.remmina.Remmina.desktop",
+        hint: "The desktop entry, as it is named under /usr/share/applications",
+        suggestions: [
+          { value: "org.remmina.Remmina.desktop", label: "Remmina — remote desktop" },
+          { value: "firefox-esr.desktop", label: "Firefox ESR" },
+          { value: "chromium.desktop", label: "Chromium" },
+          { value: "org.gnome.Evince.desktop", label: "Evince — documents" },
+          { value: "org.gnome.TextEditor.desktop", label: "Text Editor" },
+          { value: "libreoffice-writer.desktop", label: "LibreOffice Writer" },
+          { value: "org.gnome.FileRoller.desktop", label: "Archive Manager" },
+        ],
+      },
+      {
+        key: "extensions",
+        label: "Extensions",
+        width: "150px",
+        placeholder: "rdp",
+        hint: "Only for a type the machine has never heard of. Comma separated, no dot.",
+      },
+    ],
+    blank: { mime_type: "", application: "", extensions: "" },
+  },
+  {
+    key: "dash",
+    title: "Dash and taskbar",
+    half: "User",
+    identity: "name",
+    help:
+      "What is pinned to the dash, and in what order, for the people this entry " +
+      "names. GNOME Shell; other desktops keep their launchers elsewhere.",
+    doc: "dash-and-taskbar",
+    fields: [
+      { key: "name", label: "Name", width: "160px", placeholder: "Finance layout" },
+      {
+        key: "applications",
+        label: "Pinned, in order",
+        placeholder: "firefox-esr.desktop, org.remmina.Remmina.desktop",
+        hint: "Desktop entries, comma separated. The order here is the order on screen.",
+        suggestionsAppend: true,
+        suggestions: [
+          { value: "firefox-esr.desktop", label: "Firefox ESR" },
+          { value: "chromium.desktop", label: "Chromium" },
+          { value: "org.gnome.Nautilus.desktop", label: "Files" },
+          { value: "org.gnome.Terminal.desktop", label: "Terminal" },
+          { value: "org.remmina.Remmina.desktop", label: "Remmina — remote desktop" },
+          { value: "libreoffice-startcenter.desktop", label: "LibreOffice" },
+          { value: "org.gnome.Software.desktop", label: "Software" },
+          { value: "org.gnome.Settings.desktop", label: "Settings" },
+        ],
+      },
+      {
+        key: "for_principal",
+        label: "For user or group",
+        width: "180px",
+        placeholder: "%Finance",
+        picker: "principal",
+        pickerValue: "principal",
+      },
+    ],
+    blank: { name: "", applications: "", for_principal: "" },
   },
   {
     key: "printers",

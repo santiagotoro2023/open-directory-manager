@@ -20,6 +20,7 @@ import (
 // machine behave like that" is always the collection, in one place.
 
 const (
+	rdStartWM        = "/etc/xrdp/startwm.sh"
 	rdSessionScript  = "/etc/odm/rd-session.sh"
 	rdProfileScript  = "/etc/odm/rd-profile.sh"
 	rdProfileSecrets = "/etc/odm/rd-profile.conf"
@@ -90,6 +91,15 @@ func applyRemoteDesktopHost(
 	}
 	written = append(written, rdSessionScript)
 
+	// And how it is started. The role installer writes this too, but a host
+	// installed before the fix keeps its old copy for ever otherwise — and
+	// the old copy ran the desktop with none of a session's environment, so
+	// every connection ended at "Unable to determine failsafe session name".
+	if err := writeManaged(env, rdStartWM, startWM(), 0o755); err != nil {
+		return "", err
+	}
+	written = append(written, rdStartWM)
+
 	// The profile disk, and the fact that there is no alternative to it.
 	if err := writeManaged(env, rdProfileScript, profileScript(), 0o755); err != nil {
 		return "", err
@@ -135,6 +145,24 @@ func applyRemoteDesktopHost(
 	return "configured " + strings.Join(written, ", "), nil
 }
 
+// startWM is what xrdp runs once a session has been authenticated.
+//
+// Through /etc/X11/Xsession, which is what makes a Debian graphical session:
+// XDG_CONFIG_DIRS, XDG_DATA_DIRS, the D-Bus session bus. Started without it,
+// xfce4-session cannot find its own defaults under /etc/xdg and every
+// connection ends at "Unable to load a failsafe session".
+func startWM() string {
+	return "#!/bin/sh\n" + apply.Header + `
+if [ -r /etc/profile ]; then
+    . /etc/profile
+fi
+if [ -x ` + rdSessionScript + ` ]; then
+    exec /etc/X11/Xsession ` + rdSessionScript + `
+fi
+exec /etc/X11/Xsession startxfce4
+`
+}
+
 // profileScript is the logon hook. It is deliberately the only way a home
 // directory comes into existence on a session host: if the profile cannot be
 // mounted the logon fails, because a local home would be a profile that
@@ -176,9 +204,18 @@ warn() {
     exit 1
 }
 
-[ -r /etc/odm/rd-profile.conf ] || exit 0
+[ -r /etc/odm/rd-profile.conf ] || {
+    logger -t odm-rd-profile "no collection settings on this host; nothing to mount"
+    exit 0
+}
 . /etc/odm/rd-profile.conf
-[ -n "${PROFILE_SHARE:-}" ] || exit 0
+[ -n "${PROFILE_SHARE:-}" ] || {
+    # A collection with no profile share. Said out loud, because "no profile
+    # disk was created" and "this collection was never given a share" look
+    # identical from the console otherwise.
+    logger -t odm-rd-profile "this collection has no profile share; using the host's own home"
+    exit 0
+}
 
 USER_NAME="${PAM_USER:-}"
 [ -n "$USER_NAME" ] || exit 0
@@ -201,7 +238,21 @@ HOME_DIR="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 [ -n "$HOME_DIR" ] || HOME_DIR="/home/$USER_NAME"
 
 if [ "${PAM_TYPE:-}" = "close_session" ]; then
-    umount "$HOME_DIR" 2>/dev/null || true
+    if mountpoint -q "$HOME_DIR"; then
+        # Lazy as the fallback: the session manager closes the PAM session
+        # before the last of the user's processes has gone, so a plain umount
+        # answers "target is busy" and the disk stays attached until the next
+        # reboot — which is how somebody who signed out an hour ago still had
+        # a home directory on the host.
+        umount "$HOME_DIR" 2>/dev/null || umount -l "$HOME_DIR" 2>/dev/null ||
+            logger -t odm-rd-profile "could not detach $USER_NAME's profile disk"
+    fi
+    # And the mount point with it. rmdir removes an empty directory and
+    # nothing else, so a home that is still mounted, or one holding files
+    # because the disk never attached, is left exactly as it is. Without this
+    # every person who has ever signed in leaves a local /home entry behind,
+    # which is the thing a profile disk exists to avoid.
+    rmdir "$HOME_DIR" 2>/dev/null || true
     # The share only when nobody else on this host still has a profile on it:
     # unmounted unconditionally, the first person to sign out took the store
     # away from everybody still working.

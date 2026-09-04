@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -28,6 +28,7 @@ import {
   type NewLocalUser,
 } from "../api";
 import { LoadingRow } from "../components/Loading";
+import { PickerField } from "../components/Picker";
 import { Field, Modal } from "../components/Modal";
 import { RsopDialog } from "../components/RsopDialog";
 import {
@@ -137,6 +138,9 @@ export function ObjectDetail() {
   const fields = EDITABLE[object.objectType] ?? [];
   const isAccount = object.objectType === "user" || object.objectType === "computer";
   const isComputer = object.objectType === "computer";
+  // What the machine answers to. The agent is keyed by its DNS host name; the
+  // common name is the fallback for one that has never reported.
+  const machineName = String(object.dNSHostName ?? object.cn ?? object.name ?? "");
   const Icon = ICONS[object.objectType as keyof typeof ICONS] ?? Folder;
 
   // Both directions, for every kind of object. A group is a member of groups
@@ -350,13 +354,9 @@ export function ObjectDetail() {
           <ComputerTabs dn={dn} tab={tab} />
         )}
 
-      {isComputer && tab === "files" && (
-        <FilesTab
-          hostname={String(object.dNSHostName ?? object.cn ?? object.name ?? "")}
-        />
-      )}
+      {isComputer && tab === "files" && <FilesTab hostname={machineName} />}
 
-      {isComputer && tab === "shell" && <ShellTab dn={dn} />}
+      {isComputer && tab === "shell" && <ShellTab dn={dn} hostname={machineName} />}
       {isComputer && tab === "logs" && <LogsTab dn={dn} />}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
@@ -1000,41 +1000,68 @@ function InstallPackageDialog({
  * which group is worth opening.
  */
 /**
- * A command, run on the machine, for troubleshooting it from here.
+ * A shell on the machine, for troubleshooting it from here.
  *
- * Not a terminal: each command starts fresh, so a cd does not carry to the
- * next one and nothing can be typed at a prompt. That is what the task queue
- * can carry — a round trip is about a second — and it covers what
- * troubleshooting a machine actually asks for.
+ * Not a terminal — there is no pty, so no job control, no curses program and
+ * nothing that stops to ask a question. What it does keep is the working
+ * directory, so cd carries from one command to the next, and what somebody
+ * has typed, so the arrow keys walk it. Everything else starts fresh: a
+ * variable exported in one command is gone in the next.
  *
  * This is root on that machine. It is its own right rather than something
  * that comes with reading a computer, and every command is in the audit log
  * with who ran it and what came back.
  */
-function ShellTab({ dn }: { dn: string }) {
+function ShellTab({ dn, hostname }: { dn: string; hostname: string }) {
   const [command, setCommand] = useState("");
-  const [history, setHistory] = useState<{ command: string; output: string; failed: boolean }[]>(
-    [],
-  );
+  const [cwd, setCwd] = useState("/");
+  const [lines, setLines] = useState<
+    { command: string; cwd: string; output: string; failed: string }[]
+  >([]);
+  // Every command typed, newest last, whether or not it worked — the arrow
+  // keys walk this rather than the transcript, so clearing the screen does
+  // not lose what was typed before it.
+  const [typed, setTyped] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [recalled, setRecalled] = useState<number | null>(null);
+  const transcript = useRef<HTMLDivElement | null>(null);
+
+  // A terminal scrolls to what just happened.
+  useEffect(() => {
+    transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
+  }, [lines]);
 
   async function run() {
-    const typed = command.trim();
-    if (!typed || busy) return;
-    setBusy(true);
+    const entry = command.trim();
+    if (!entry || busy) return;
     setCommand("");
     setRecalled(null);
+    setTyped((was) => (was[was.length - 1] === entry ? was : [...was, entry]));
+
+    // Handled here rather than sent: clear empties this screen, and the
+    // machine's own clear would send terminal escapes nothing here reads.
+    if (entry === "clear") {
+      setLines([]);
+      return;
+    }
+
+    setBusy(true);
+    const at = cwd;
     try {
-      const result = await api.servers.shell(dn, typed);
-      setHistory((was) => [...was, { command: typed, output: result.output, failed: false }]);
+      const result = await api.servers.shell(dn, entry, cwd);
+      setCwd(result.cwd || cwd);
+      setLines((was) => [
+        ...was,
+        { command: entry, cwd: at, output: result.output, failed: result.failed },
+      ]);
     } catch (err) {
-      setHistory((was) => [
+      setLines((was) => [
         ...was,
         {
-          command: typed,
-          output: err instanceof ApiError ? err.message : String(err),
-          failed: true,
+          command: entry,
+          cwd: at,
+          output: "",
+          failed: err instanceof ApiError ? err.message : String(err),
         },
       ]);
     } finally {
@@ -1042,54 +1069,73 @@ function ShellTab({ dn }: { dn: string }) {
     }
   }
 
-  // Up and down walk what has been run, which is the one terminal habit worth
-  // having here.
-  function recall(event: React.KeyboardEvent<HTMLInputElement>) {
+  function keys(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      void run();
+      return;
+    }
+    // Ctrl-L, where a terminal puts it.
+    if (event.key === "l" && event.ctrlKey) {
+      event.preventDefault();
+      setLines([]);
+      return;
+    }
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-    if (history.length === 0) return;
+    if (typed.length === 0) return;
     event.preventDefault();
     const next =
       event.key === "ArrowUp"
-        ? Math.max(0, (recalled ?? history.length) - 1)
-        : Math.min(history.length, (recalled ?? history.length) + 1);
+        ? Math.max(0, (recalled ?? typed.length) - 1)
+        : Math.min(typed.length, (recalled ?? typed.length) + 1);
     setRecalled(next);
-    setCommand(next >= history.length ? "" : history[next].command);
+    setCommand(next >= typed.length ? "" : typed[next]);
   }
+
+  const prompt = `root@${hostname.split(".")[0]}:${cwd}#`;
 
   return (
     <>
       <p className="muted">
-        Each command runs as root on this machine and finishes before the next one starts. Every
-        one is recorded in the audit log.
+        Each command runs as root on this machine and finishes before the next one starts.{" "}
+        <code>cd</code> carries over; nothing else does. <code>clear</code> empties this screen.
+        Every command is recorded in the audit log.
       </p>
 
-      {history.length > 0 && (
-        <div className="command-output" role="log">
-          {history.map((entry, index) => (
-            <div key={index}>
-              <p className="mono">
-                <strong>$ {entry.command}</strong>
-              </p>
-              <pre className={entry.failed ? "alert" : undefined}>{entry.output}</pre>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="command-output shell-transcript" role="log" ref={transcript}>
+        {lines.map((line, index) => (
+          <div key={index}>
+            <p className="mono shell-prompt">
+              <strong>
+                root@{hostname.split(".")[0]}:{line.cwd}#
+              </strong>{" "}
+              {line.command}
+            </p>
+            {line.output && <pre>{line.output}</pre>}
+            {line.failed && <pre className="alert">{line.failed}</pre>}
+          </div>
+        ))}
+        {lines.length === 0 && <p className="muted">Nothing run yet.</p>}
+      </div>
 
       <div className="picker-field">
+        <span className="mono shell-prompt" aria-hidden="true">
+          {prompt}
+        </span>
         <input
-          aria-label="Command"
+          aria-label={`Command on ${hostname}`}
           className="mono"
           placeholder="journalctl -u odm-agent -n 50"
           value={command}
           disabled={busy}
           onChange={(event) => setCommand(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void run();
-            else recall(event);
-          }}
+          onKeyDown={keys}
         />
-        <button type="button" className="primary" disabled={busy || !command.trim()} onClick={() => void run()}>
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || !command.trim()}
+          onClick={() => void run()}
+        >
           {busy ? "Running…" : "Run"}
         </button>
       </div>
@@ -1285,6 +1331,7 @@ function FilesTab({ hostname }: { hostname: string }) {
   const [path, setPath] = useState("/");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<DirectoryListing["entries"][number] | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -1328,11 +1375,23 @@ function FilesTab({ hostname }: { hostname: string }) {
         <thead>
           <tr>
             <th scope="col">Name</th>
-            <th scope="col" style={{ width: "140px" }}>
+            <th scope="col" style={{ width: "110px" }}>
               Size
             </th>
-            <th scope="col" style={{ width: "200px" }}>
+            <th scope="col" style={{ width: "160px" }}>
+              Owner
+            </th>
+            <th scope="col" style={{ width: "140px" }}>
+              Group
+            </th>
+            <th scope="col" style={{ width: "80px" }}>
+              Mode
+            </th>
+            <th scope="col" style={{ width: "180px" }}>
               Changed
+            </th>
+            <th scope="col" style={{ width: "110px" }}>
+              <span className="sr-only">Actions</span>
             </th>
           </tr>
         </thead>
@@ -1352,15 +1411,30 @@ function FilesTab({ hostname }: { hostname: string }) {
                 {entry.name}
               </td>
               <td className="mono">{entry.directory ? "—" : size(entry.size ?? 0)}</td>
+              <td className="mono">{entry.owner ?? "—"}</td>
+              <td className="mono">{entry.group ?? "—"}</td>
+              <td className="mono">{entry.mode ?? "—"}</td>
               <td>{entry.modified ? new Date(entry.modified).toLocaleString() : "—"}</td>
+              <td>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setEditing(entry);
+                  }}
+                >
+                  Permissions…
+                </button>
+              </td>
             </tr>
           ))}
           {loading ? (
-            <LoadingRow colSpan={3} />
+            <LoadingRow colSpan={7} />
           ) : (
             (listing?.entries ?? []).length === 0 && (
               <tr>
-                <td colSpan={3} className="empty">
+                <td colSpan={7} className="empty">
                   Nothing in this directory.
                 </td>
               </tr>
@@ -1369,10 +1443,129 @@ function FilesTab({ hostname }: { hostname: string }) {
         </tbody>
       </table>
 
-      {listing?.truncated && (
-        <p className="muted">Only the first 500 entries are listed.</p>
+      {listing?.truncated && <p className="muted">Only the first 500 entries are listed.</p>}
+
+      {editing && (
+        <PermissionsDialog
+          hostname={hostname}
+          entry={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(result) => {
+            setEditing(null);
+            setListing(result);
+          }}
+        />
       )}
     </>
+  );
+}
+
+/**
+ * Who a file or folder belongs to, and what they may do with it.
+ *
+ * Owner, group and mode — the three things a POSIX file has. An access
+ * control list is not editable here on purpose: a share's list is the share's,
+ * managed under File Shares where it applies to everything inside it, and two
+ * places to set one thing is how they end up disagreeing.
+ */
+function PermissionsDialog({
+  hostname,
+  entry,
+  onClose,
+  onSaved,
+}: {
+  hostname: string;
+  entry: DirectoryListing["entries"][number];
+  onClose: () => void;
+  onSaved: (listing: DirectoryListing) => void;
+}) {
+  const [owner, setOwner] = useState(entry.owner ?? "");
+  const [group, setGroup] = useState(entry.group ?? "");
+  const [mode, setMode] = useState(entry.mode ?? "");
+  const [recursive, setRecursive] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const changed =
+    owner !== (entry.owner ?? "") || group !== (entry.group ?? "") || mode !== (entry.mode ?? "");
+
+  return (
+    <Modal
+      title={entry.name}
+      submitLabel={busy ? "Applying…" : "Apply"}
+      onClose={onClose}
+      onSubmit={async () => {
+        if (!changed || busy) return;
+        setBusy(true);
+        setError(null);
+        try {
+          onSaved(
+            await api.servers.setPermissions({
+              node: hostname,
+              path: entry.path,
+              owner: owner !== (entry.owner ?? "") ? owner : "",
+              group: group !== (entry.group ?? "") ? group : "",
+              mode: mode !== (entry.mode ?? "") ? mode : "",
+              recursive,
+            }),
+          );
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+          setBusy(false);
+        }
+      }}
+    >
+      <p className="mono muted">{entry.path}</p>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="field-grid">
+        <Field label="Owner" hint="A domain or local account on that machine">
+          {/* The account name, not a sudoers principal: this reaches chown,
+              which takes a name and not a leading %. */}
+          <PickerField
+            kind="user"
+            as="name"
+            local
+            ariaLabel="Owner"
+            value={owner}
+            onChange={setOwner}
+          />
+        </Field>
+        <Field label="Group">
+          <PickerField
+            kind="group"
+            as="name"
+            ariaLabel="Group"
+            value={group}
+            onChange={setGroup}
+          />
+        </Field>
+        <Field label="Mode" hint="Octal, as chmod takes it: 0750">
+          <input
+            className="mono"
+            value={mode}
+            placeholder="0750"
+            pattern="0?[0-7]{3}"
+            onChange={(event) => setMode(event.target.value)}
+          />
+        </Field>
+      </div>
+      {entry.directory && (
+        <Field label="">
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={recursive}
+              onChange={(event) => setRecursive(event.target.checked)}
+            />
+            Apply to everything inside it as well
+          </label>
+        </Field>
+      )}
+    </Modal>
   );
 }
 

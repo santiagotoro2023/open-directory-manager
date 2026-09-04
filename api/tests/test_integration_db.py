@@ -254,12 +254,20 @@ def _sql_literals():
     for path in sorted(pathlib.Path("odm").glob("*.py")):
         tree = ast.parse(path.read_text(), str(path))
         for node in ast.walk(tree):
-            if (
+            if not (
                 isinstance(node, ast.Constant)
                 and isinstance(node.value, str)
                 and looks_like_sql.match(node.value)
             ):
-                yield f"{path.name}:{node.lineno}", node.value
+                continue
+            # An f-string arrives here one literal part at a time, so a
+            # statement whose table name is interpolated shows up as a
+            # fragment that stops mid-identifier. It is not a statement and
+            # cannot be prepared: what table it names is decided at runtime,
+            # from the schema itself.
+            if node.value.count('"') % 2:
+                continue
+            yield f"{path.name}:{node.lineno}", node.value
 
 
 async def test_every_statement_parses_against_the_real_schema(fresh):

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Archive, RefreshCw } from "lucide-react";
+import { Archive, Download, RefreshCw, Upload } from "lucide-react";
 import {
   ApiError,
   api,
   type BackupRecord,
+  type DomainImportSummary,
   type HealthReport,
   type SessionInfo,
 } from "../api";
+import { FileInput } from "../components/FileInput";
 
-type Tab = "health" | "replication" | "backups";
+type Tab = "health" | "replication" | "backups" | "configuration";
 
 /** What a row in the services table is saying, at a glance. */
 type State = "ok" | "attention" | "off";
@@ -271,7 +273,7 @@ export function Overview({ session }: { session: SessionInfo }) {
       </div>
 
       <nav className="tabs" aria-label="Operations views">
-        {(["health", "replication", "backups"] as Tab[]).map((current) => (
+        {(["health", "replication", "backups", "configuration"] as Tab[]).map((current) => (
           <button
             key={current}
             type="button"
@@ -283,7 +285,9 @@ export function Overview({ session }: { session: SessionInfo }) {
               ? "Health"
               : current === "replication"
                 ? "Replication"
-                : "Backups"}
+                : current === "backups"
+                  ? "Backups"
+                  : "Configuration"}
           </button>
         ))}
       </nav>
@@ -422,7 +426,177 @@ export function Overview({ session }: { session: SessionInfo }) {
           )}
         </>
       )}
+      {tab === "configuration" && <ConfigurationTab />}
     </main>
+  );
+}
+
+/**
+ * The whole domain's configuration, out as one file and back in from one.
+ *
+ * Not a backup, and beside one rather than instead of it: a backup is this
+ * domain's own database, restorable only onto a controller of the same
+ * domain. This is every setting written out in a form somebody can read,
+ * which is what makes it useful for building a second domain like this one,
+ * for keeping a record of what was configured, and for handing to whoever is
+ * being asked why something behaves the way it does.
+ */
+function ConfigurationTab() {
+  const [summary, setSummary] = useState<DomainImportSummary | null>(null);
+  const [document, setDocument] = useState<string>("");
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof api.operations.importDomain>
+  > | null>(null);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function read(content: string) {
+    setError(null);
+    setResult(null);
+    setConfirm("");
+    setDocument(content);
+    setBusy(true);
+    try {
+      setSummary((await api.operations.importDomain(content, false)).summary);
+    } catch (err) {
+      setSummary(null);
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3 className="section-title">Export</h3>
+      <p className="muted">
+        Every object in the directory, every DNS zone beside it, and every setting built on top
+        &mdash; policy objects, shares, printers, scopes, collections, roles and delegations
+        &mdash; in one file. Credentials are not in it: private keys, shared secrets, rotated
+        local-administrator passwords, join tokens and password hashes are left out on purpose,
+        and the file names which it withheld.
+      </p>
+      <div className="actions-row">
+        <button
+          type="button"
+          className="primary"
+          onClick={() => {
+            // A download rather than a fetch: the browser saves the file, and
+            // the API records who asked for it.
+            window.location.href = api.operations.exportUrl();
+          }}
+        >
+          <Download size={15} aria-hidden="true" />
+          Download the configuration
+        </button>
+      </div>
+
+      <h3 className="section-title">Import</h3>
+      <p className="muted">
+        Makes this domain the one in the file. ODM&rsquo;s own store is replaced wholesale, and
+        every object in the file is created here. Accounts come back disabled and without a
+        password, because the export never carried one.
+      </p>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <FileInput
+        accept="application/json,.json"
+        placeholder="No export chosen"
+        onChoose={(file) => void file.text().then(read)}
+      />
+
+      {busy && <p className="muted">Reading&hellip;</p>}
+
+      {summary && !result && (
+        <>
+          <dl className="definition">
+            <dt>Taken</dt>
+            <dd>{summary.taken_at ? new Date(summary.taken_at).toLocaleString() : "unknown"}</dd>
+            <dt>From</dt>
+            <dd className="mono">
+              {summary.from_domain ?? "unknown"} · ODM {summary.from_version ?? "unknown"}
+            </dd>
+            <dt>Directory</dt>
+            <dd>
+              {summary.organizational_units} organizational units, {summary.groups} groups,{" "}
+              {summary.users} users, {summary.computers} computers
+            </dd>
+            <dt>DNS</dt>
+            <dd>
+              {summary.dns_zones} zones, {summary.dns_records} records
+            </dd>
+            <dt>Settings</dt>
+            <dd>
+              {Object.entries(summary.tables)
+                .map(([name, count]) => `${name} (${count})`)
+                .join(", ") || "none"}
+            </dd>
+            {summary.withheld.length > 0 && (
+              <>
+                <dt>Withheld</dt>
+                <dd>{summary.withheld.join(", ")}</dd>
+              </>
+            )}
+          </dl>
+
+          <p className="alert" role="alert">
+            This replaces the configuration of the domain you are signed in to. Type{" "}
+            <strong>import</strong> to confirm.
+          </p>
+          <div className="picker-field">
+            <input
+              aria-label="Type import to confirm"
+              value={confirm}
+              placeholder="import"
+              onChange={(event) => setConfirm(event.target.value)}
+            />
+            <button
+              type="button"
+              className="danger"
+              disabled={confirm !== "import" || busy}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                try {
+                  setResult(await api.operations.importDomain(document, true));
+                } catch (err) {
+                  setError(err instanceof ApiError ? err.message : String(err));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <Upload size={15} aria-hidden="true" />
+              Import
+            </button>
+          </div>
+        </>
+      )}
+
+      {result?.result && (
+        <>
+          <p>
+            Imported{" "}
+            {Object.entries(result.result.directory)
+              .map(([name, count]) => `${count} ${name.replace(/_/g, " ")}`)
+              .join(", ")}
+            , {result.result.dns.zones} DNS zones and {result.result.dns.records} records.
+          </p>
+          {result.result.problems.length > 0 && (
+            <>
+              <h4 className="section-title">What did not come back</h4>
+              <pre className="command-output">{result.result.problems.join("\n")}</pre>
+            </>
+          )}
+        </>
+      )}
+    </>
   );
 }
 

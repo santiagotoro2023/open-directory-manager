@@ -19,6 +19,8 @@ _SHARE_RE = re.compile(
     r"^//[A-Za-z0-9._-]+/[A-Za-z0-9._$ -]{1,64}(?:/[A-Za-z0-9._$%\ -]{1,64})*$"
 )
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,62}$")
+_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+_FQDN_RE = re.compile(rf"^(?=.{{1,253}}$){_LABEL}(?:\.{_LABEL})+$")
 _PATH_RE = re.compile(r"^/[A-Za-z0-9._/-]{1,255}$")
 
 
@@ -53,6 +55,51 @@ def validate_name(value: str) -> str:
     return value
 
 
+def validate_fqdn(value: str, what: str) -> str:
+    """A host name ODM will put in a connection file or a DNS record."""
+    value = (value or "").strip().rstrip(".").lower()
+    if not value:
+        return ""
+    if not _FQDN_RE.match(value):
+        raise RemoteDesktopError(f"{what} must be a fully qualified name, e.g. rd.example.org")
+    return value
+
+
+def dns_placement(fqdn: str) -> tuple[str, str]:
+    """The record name and the zone it belongs in.
+
+    remote.example.org is the record "remote" in the zone "example.org" — the
+    same split Samba's own DNS makes, so a zone ODM creates for an external
+    name is a zone samba-tool would have created.
+    """
+    label, _, zone = fqdn.partition(".")
+    return label, zone
+
+
+def connection_address(row: dict[str, Any]) -> str:
+    """What a client is told to connect to.
+
+    The external name when there is one, because that is the point of having
+    one: the address in everybody's connection file stops naming the machine
+    that happens to be fronting the collection today.
+    """
+    return (row.get("external_fqdn") or "").strip() or (row.get("broker_fqdn") or "")
+
+
+def brokers(row: dict[str, Any]) -> list[str]:
+    """Every machine fronting this collection, primary first.
+
+    Both carry the same routing to the same session hosts. Which one a client
+    reaches is DNS's answer, not a decision made here.
+    """
+    primary = (row.get("broker_fqdn") or "").strip()
+    found = [primary] if primary else []
+    second = (row.get("broker_secondary_fqdn") or "").strip()
+    if second and second.lower() != primary.lower():
+        found.append(second)
+    return found
+
+
 def validate_app(kind: str, path: str) -> str:
     if kind != "remoteapp":
         return ""
@@ -72,9 +119,15 @@ DEFAULT_RDP_PORT = 3389
 HOST_BESIDE_BROKER_PORT = 3390
 
 
-def host_port(node_fqdn: str, broker_fqdn: str) -> int:
-    """Which port this host's xrdp listens on."""
-    if node_fqdn.lower() == (broker_fqdn or "").lower():
+def host_port(node_fqdn: str, *broker_fqdns: str) -> int:
+    """Which port this host's xrdp listens on.
+
+    Every broker of the collection is checked, not only the primary: a machine
+    that is the standby broker owns 3389 there too, and a host sharing it has
+    to move aside whether or not that broker is the one being connected to.
+    """
+    fronting = {(name or "").lower() for name in broker_fqdns} - {""}
+    if node_fqdn.lower() in fronting:
         return HOST_BESIDE_BROKER_PORT
     return DEFAULT_RDP_PORT
 
@@ -94,7 +147,7 @@ def host_task(row: dict[str, Any], node_fqdn: str = "") -> dict[str, Any]:
         "allow_local_home": bool(row.get("allow_local_home", False)),
         "idle_minutes": row["idle_minutes"],
         "disconnected_minutes": row["disconnected_minutes"],
-        "rdp_port": host_port(node_fqdn, row.get("broker_fqdn") or ""),
+        "rdp_port": host_port(node_fqdn, *brokers(row)),
     }
 
 
@@ -128,6 +181,36 @@ def profile_share_entries(
     return entries
 
 
+def external_records(
+    existing: list[dict[str, Any]], label: str, addresses: list[str]
+) -> tuple[list[str], list[str]]:
+    """Which A records the external name is missing, and which are stale.
+
+    Returned as two lists rather than "rewrite the name", because a zone is
+    shared: the records ODM did not put there stay where they are, and a
+    collection whose brokers have not changed writes nothing at all.
+
+    Both brokers are published under the one name. A client resolving it gets
+    both addresses and tries the next when the first refuses the connection,
+    which is how an RDP client has always found a second server.
+
+    ponytail: DNS round robin, not a health check — a broker that accepts the
+    connection and then fails still gets its share of clients. A floating
+    address between the two nodes is the upgrade if that matters.
+    """
+    wanted = list(dict.fromkeys(addresses))
+    have = [
+        str(record.get("data", ""))
+        for record in existing
+        if str(record.get("name", "")).lower() == label.lower()
+        and str(record.get("type", "")).upper() == "A"
+    ]
+    return (
+        [address for address in wanted if address not in have],
+        [address for address in have if address not in wanted],
+    )
+
+
 def broker_task(row: dict[str, Any], hosts: list[str]) -> dict[str, Any]:
     """What a broker is told: the collection, and where to send people.
 
@@ -137,12 +220,12 @@ def broker_task(row: dict[str, Any], hosts: list[str]) -> dict[str, Any]:
     mounted there, exclusively, and landing them anywhere else would refuse
     the logon rather than start a second session.
     """
-    broker = row.get("broker_fqdn") or ""
+    fronting = brokers(row)
     return {
         "collection": row["name"],
         # Each host with the port its xrdp is on, so a host that shares a
         # machine with the broker is reached where it actually listens.
-        "hosts": [{"host": host, "port": host_port(host, broker)} for host in hosts],
+        "hosts": [{"host": host, "port": host_port(host, *fronting)} for host in hosts],
         "balance_method": row.get("balance_method") or "leastconn",
         "affinity_minutes": affinity_minutes(
             row.get("disconnected_minutes") or 0, row.get("idle_minutes") or 0

@@ -31,6 +31,7 @@ KINDS = (
     "printer-discover",
     "domain-backup",
     "make-directory",
+    "set-permissions",
     "local-user-add",
     "local-user-remove",
     "policy-refresh",

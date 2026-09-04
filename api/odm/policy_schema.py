@@ -26,6 +26,12 @@ CRON_RE = re.compile(
 )
 UNC_RE = re.compile(r"^//[A-Za-z0-9._-]{1,253}/[A-Za-z0-9._$ -]{1,80}$")
 HOSTNAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
+# A MIME type and a desktop entry. Both reach files the whole machine
+# reads, so neither may carry a separator or a quote.
+_MIME_PART = r"[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,63}"
+MIME_RE = re.compile(rf"^{_MIME_PART}/{_MIME_PART}$")
+DESKTOP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,119}\.desktop$")
+EXTENSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,15}$")
 
 Name = Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -507,6 +513,79 @@ class Printer(Strict):
         return value
 
 
+class DefaultApplication(Strict):
+    """Which program opens a kind of file.
+
+    A machine setting: the association lives in the machine's own XDG
+    configuration, and a file type that opens one program for one person and
+    another for the next is a support call rather than a policy.
+    """
+
+    mime_type: Annotated[str, Field(min_length=3, max_length=128)]
+    application: Annotated[str, Field(min_length=9, max_length=128)]
+    # Extensions the machine may not already know — .rdp is not in
+    # shared-mime-info, so without this nothing can be the default for it.
+    extensions: Annotated[str, Field(max_length=128)] = ""
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
+
+    @field_validator("mime_type")
+    @classmethod
+    def _mime(cls, value: str) -> str:
+        if not MIME_RE.match(value):
+            raise ValueError("must be a MIME type, for example application/x-rdp")
+        return value
+
+    @field_validator("application")
+    @classmethod
+    def _application(cls, value: str) -> str:
+        if not DESKTOP_RE.match(value):
+            raise ValueError(
+                "must be a desktop entry, for example org.remmina.Remmina.desktop"
+            )
+        return value
+
+    @field_validator("extensions")
+    @classmethod
+    def _extensions(cls, value: str) -> str:
+        for part in value.split(","):
+            part = part.strip().lstrip(".")
+            if part and not EXTENSION_RE.match(part):
+                raise ValueError(f"{part!r} is not a file extension")
+        return value
+
+
+class DashLayout(Strict):
+    """What is pinned to the dash, and in what order.
+
+    A user setting, so one function group's layout is not another's — the same
+    shape as a drive map, and for the same reason: it is decided by who is
+    signing in rather than by the machine they signed in to.
+    """
+
+    name: Name
+    # Desktop entries in the order they should appear.
+    applications: Annotated[str, Field(min_length=1, max_length=1024)]
+    for_principal: Annotated[str, Field(max_length=128)] = ""
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
+
+    @field_validator("applications")
+    @classmethod
+    def _applications(cls, value: str) -> str:
+        entries = [part.strip() for part in value.split(",") if part.strip()]
+        if not entries:
+            raise ValueError("name at least one application")
+        cleaned = []
+        for entry in entries:
+            if not entry.endswith(".desktop"):
+                entry += ".desktop"
+            if not DESKTOP_RE.match(entry):
+                raise ValueError(f"{entry!r} is not a desktop entry")
+            cleaned.append(entry)
+        return ", ".join(cleaned)
+
+
 class AlwaysOnVpn(Strict):
     """Hold a tunnel up on this machine whatever the person using it does."""
 
@@ -699,6 +778,10 @@ class PolicySettings(Strict):
     remote_desktop_files: Annotated[
         list[RemoteDesktopFile], Field(default_factory=list, max_length=50)
     ]
+    default_applications: Annotated[
+        list[DefaultApplication], Field(default_factory=list, max_length=200)
+    ]
+    dash: Annotated[list[DashLayout], Field(default_factory=list, max_length=50)]
     always_on_vpn: AlwaysOnVpn | None = None
     local_administrator: LocalAdministrator | None = None
     remote_desktop_session: RemoteDesktopSession | None = None

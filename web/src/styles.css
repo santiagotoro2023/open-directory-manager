@@ -2553,6 +2553,31 @@ tr.detail-row td {
   border-radius: var(--radius-sm);
 }
 
+/* The remote shell: taller than an ordinary command's output, because it is
+   a transcript rather than one answer, and it scrolls to the newest line. */
+.shell-transcript {
+  max-height: 420px;
+  min-height: 220px;
+  margin-bottom: 10px;
+}
+
+.shell-transcript pre {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.shell-transcript > div + div {
+  margin-top: 6px;
+}
+
+/* The prompt, in front of the command rather than in the way of it. */
+.shell-prompt {
+  margin: 0 0 2px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
 /* A membership row: the object's name, its distinguished name under it, and
    the chevron that walks one level further up or down the nesting. */
 table.data td > .dn {

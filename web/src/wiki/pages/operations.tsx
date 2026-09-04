@@ -17,7 +17,19 @@ export const meta: WikiPageMeta = {
   title: "Health and backups",
   section: "Administration",
   summary: "Health, replication between domain controllers, and domain backups.",
-  keywords: ["health", "replication", "drs", "backup", "restore", "monitoring", "dashboard"],
+  keywords: [
+    "health",
+    "replication",
+    "drs",
+    "backup",
+    "restore",
+    "monitoring",
+    "dashboard",
+    "export",
+    "import",
+    "configuration",
+    "migration",
+  ],
 };
 
 export function Content() {
@@ -39,6 +51,10 @@ export function Content() {
         <Example title="Take a backup">
           <strong>Backups</strong> → <strong>Back up now</strong>. It runs in the background and
           appears in the list when it finishes.
+        </Example>
+        <Example title="Write the whole configuration to a file">
+          <strong>Configuration</strong> → <strong>Download the configuration</strong>. One JSON
+          file holding every object, zone and setting in the domain.
         </Example>
 
         <Where>Overview.</Where>
@@ -156,6 +172,93 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
             Retention keeps the newest archives and removes the rest. Nothing in the directory that
             is not a backup archive is touched.
           </p>
+        </Section>
+
+        <Section title="Configuration export">
+          <p>
+            <strong>Overview</strong> → <strong>Configuration</strong> →{" "}
+            <strong>Download the configuration</strong> writes one file holding everything this
+            domain is configured to be: every organizational unit, group, user and computer; every
+            DNS zone and the records in it; and everything ODM keeps on top of them &mdash; policy
+            objects and their settings, links and precedence, shares, printers, DHCP scopes, remote
+            desktop collections, sites, certificate profiles, roles, delegations and password
+            policy.
+          </p>
+          <p>
+            The file is readable JSON. It is enough to rebuild the domain on a machine that has
+            never seen this one, and enough for somebody to see every setting without being given
+            access to the running system.
+          </p>
+          <Reference
+            headers={["In the file", "Not in the file"]}
+            rows={[
+              [
+                "Every directory object, with its attributes and group memberships",
+                "Password hashes. The directory does not hand them out.",
+              ],
+              [
+                "Every DNS zone and record",
+                "Private keys: the certificate authority's, and each VPN tunnel's and peer's.",
+              ],
+              [
+                "Every policy object, its settings, its links and their order",
+                "RADIUS shared secrets, and rotated local-administrator passwords.",
+              ],
+              [
+                "Shares, printers, scopes, collections, roles, delegations, sites",
+                "Join tokens and second-factor enrolments.",
+              ],
+              [
+                "Which secrets were withheld, and how many of each",
+                "The audit log, the task queue, sign-in attempts and reported machine facts.",
+              ],
+            ]}
+          />
+          <Note>
+            An export is a document that gets copied, mailed and attached to a support request.
+            Credentials are left out so that producing one never hands over access to the domain it
+            describes. An import regenerates or asks for each.
+          </Note>
+        </Section>
+
+        <Section title="Configuration import">
+          <p>
+            An import makes this domain the one in the file. ODM&rsquo;s own store is replaced
+            wholesale and every object in the file is created in the directory, with distinguished
+            names rebased onto this domain &mdash; so an export from{" "}
+            <C>corp.example.internal</C> imports into a domain of another name.
+          </p>
+          <Steps>
+            <li>
+              <strong>Overview</strong> → <strong>Configuration</strong> → choose the file. Nothing
+              is written yet: the console first says what the file holds.
+            </li>
+            <li>
+              Read the summary, then type <C>import</C> to confirm.
+            </li>
+            <li>
+              What could not be recreated is listed afterwards, and every step is in the audit log.
+            </li>
+          </Steps>
+          <p>
+            At install time instead, <C>deploy/setup.sh --import &lt;file&gt;</C> does the same
+            thing once the console is up, so a new domain comes up already configured. The same
+            step can be run later with <C>deploy/import-configuration.py</C>.
+          </p>
+          <Example title="Bring up a domain from an export">
+            <Code>{`sudo deploy/setup.sh --realm corp.example.internal \\
+    --netbios EXAMPLE --import /root/odm-corp.example.internal.json`}</Code>
+          </Example>
+          <Note>
+            Accounts come back disabled and without a password, because the export never carried
+            one. Set a password and enable each account, or have people enrol again.
+          </Note>
+          <Note>
+            This is not a substitute for a backup. A backup restores this domain, with its
+            identifiers and password hashes intact; an import builds a domain configured the same
+            way, whose accounts are new accounts. Use a backup to recover this domain and an import
+            to build another like it.
+          </Note>
         </Section>
 
         <Section title="Restore drill">

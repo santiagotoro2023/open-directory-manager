@@ -38,6 +38,9 @@ type created struct {
 	// Connection files written onto people's desktops, by full path: one
 	// person's session must not forget another's.
 	RemoteDesktopFiles []string `json:"remote_desktop_files,omitempty"`
+	// The dash layout written into somebody's home, by full path, for the
+	// same reason.
+	Dash []string `json:"dash,omitempty"`
 }
 
 func createdPath(env Env) string {
@@ -72,6 +75,7 @@ func saveCreated(env Env, state created) {
 	sort.Strings(state.Printers)
 	sort.Strings(state.DriveMaps)
 	sort.Strings(state.RemoteDesktopFiles)
+	sort.Strings(state.Dash)
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return

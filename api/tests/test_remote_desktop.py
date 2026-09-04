@@ -236,3 +236,74 @@ def test_configuring_the_profile_share_twice_changes_nothing_the_second_time():
     hosts = ["host1.corp.example.internal"]
     once = remotedesktop.profile_share_entries([], hosts)
     assert remotedesktop.profile_share_entries(once, hosts) == once
+
+
+# ------------------------------------------ two brokers, and one name for them
+
+
+def test_a_standby_broker_is_carried_beside_the_primary_and_never_duplicated():
+    assert remotedesktop.brokers(_ROW) == ["rdbroker.corp.example.internal"]
+    both = remotedesktop.brokers({**_ROW, "broker_secondary_fqdn": "rd2.corp.example.internal"})
+    assert both == ["rdbroker.corp.example.internal", "rd2.corp.example.internal"]
+    # The same machine named twice is one broker, not two servers in haproxy.
+    same = remotedesktop.brokers(
+        {**_ROW, "broker_secondary_fqdn": "RDBROKER.corp.example.internal"}
+    )
+    assert same == ["rdbroker.corp.example.internal"]
+
+
+def test_a_host_sharing_a_machine_with_either_broker_moves_xrdp_aside():
+    """The standby owns 3389 on its machine too, whether or not it is the one
+    clients are reaching today."""
+    row = {**_ROW, "broker_secondary_fqdn": "rd2.corp.example.internal"}
+    assert remotedesktop.host_task(row, "host1.corp.example.internal")["rdp_port"] == 3389
+    assert remotedesktop.host_task(row, "rdbroker.corp.example.internal")["rdp_port"] == 3390
+    assert remotedesktop.host_task(row, "rd2.corp.example.internal")["rdp_port"] == 3390
+
+
+def test_clients_are_told_the_external_name_when_there_is_one():
+    assert remotedesktop.connection_address(_ROW) == "rdbroker.corp.example.internal"
+    external = {**_ROW, "external_fqdn": "remote.example.org"}
+    assert remotedesktop.connection_address(external) == "remote.example.org"
+    body = remotedesktop.rdp_file(
+        broker=remotedesktop.connection_address(external), username="jdoe", collection=external
+    )
+    assert "full address:s:remote.example.org:3389" in body
+
+
+def test_an_external_name_is_split_into_a_record_and_the_zone_holding_it():
+    assert remotedesktop.dns_placement("remote.example.org") == ("remote", "example.org")
+    assert remotedesktop.dns_placement("rd.corp.example.internal") == (
+        "rd",
+        "corp.example.internal",
+    )
+
+
+def test_only_a_fully_qualified_name_is_accepted_for_the_external_name():
+    assert remotedesktop.validate_fqdn("  Remote.Example.ORG. ", "the external name") == (
+        "remote.example.org"
+    )
+    assert remotedesktop.validate_fqdn("", "the external name") == ""
+    for bad in ("remote", "remote..org", "-remote.example.org", "remote.example.org/x"):
+        with pytest.raises(remotedesktop.RemoteDesktopError):
+            remotedesktop.validate_fqdn(bad, "the external name")
+
+
+def test_publishing_the_external_name_adds_what_is_missing_and_removes_what_is_stale():
+    existing = [
+        {"name": "remote", "type": "A", "data": "10.0.0.1"},
+        {"name": "remote", "type": "A", "data": "10.0.0.9"},
+        # Somebody else's record in the same zone stays where it is.
+        {"name": "www", "type": "A", "data": "10.0.0.5"},
+        {"name": "remote", "type": "TXT", "data": "hello"},
+    ]
+    add, remove = remotedesktop.external_records(existing, "remote", ["10.0.0.1", "10.0.0.2"])
+    assert add == ["10.0.0.2"]
+    assert remove == ["10.0.0.9"]
+
+    # Publishing again changes nothing.
+    settled = [{"name": "remote", "type": "A", "data": a} for a in ("10.0.0.1", "10.0.0.2")]
+    assert remotedesktop.external_records(settled, "remote", ["10.0.0.1", "10.0.0.2"]) == ([], [])
+
+    # And a collection that stops publishing takes its records with it.
+    assert remotedesktop.external_records(settled, "remote", []) == ([], ["10.0.0.1", "10.0.0.2"])

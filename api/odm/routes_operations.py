@@ -4,15 +4,28 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import socket
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import agents, audit, backup, ca, kea, objects, replication, tasks
+from . import (
+    agents,
+    audit,
+    backup,
+    ca,
+    dns,
+    domainexport,
+    kea,
+    objects,
+    replication,
+    tasks,
+)
 from .config import Settings, get_settings
 from .routes_directory import _audit_context, _bound
 from .security import get_pool, require_admin, requires
@@ -307,4 +320,309 @@ async def _backup_health(pool: asyncpg.Pool, settings: Settings) -> dict[str, An
         "configured": True,
         "interval_hours": settings.backup_interval_hours,
         "last": dict(row) if row else None,
+    }
+
+
+# ------------------------------------------------------------ export ------
+
+# How many of each kind of object one export carries. A domain larger than
+# this is one whose export belongs in a scheduled job rather than a request
+# somebody is waiting on, and silently truncating would be worse than saying
+# so.
+EXPORT_LIMIT = 20_000
+
+
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("odm")
+    except Exception:  # pragma: no cover - a source checkout without metadata
+        return "unknown"
+
+
+@router.get("/domain/export", dependencies=[Depends(requires("domain.export"))])
+async def export_domain(
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """Everything this domain is configured to be, as one file.
+
+    The directory's objects, the DNS zones beside them, and ODM's own record
+    of everything built on top: every policy object and its settings, every
+    share, printer, scope, collection, role and delegation. Enough to rebuild
+    the domain somewhere that has never seen this one, and enough for somebody
+    reading it to see every setting without access to the running system.
+
+    Credentials are not in it — see domainexport for which, and why.
+    """
+    directory: dict[str, list[dict[str, Any]]] = {}
+    async with _bound(settings, write=False) as conn:
+        for kind, key in (
+            ("ou", "organizational_units"),
+            ("group", "groups"),
+            ("user", "users"),
+            ("computer", "computers"),
+        ):
+            found, truncated = await run_in_threadpool(
+                objects.search,
+                conn,
+                settings,
+                object_type=kind,
+                container=None,
+                query=None,
+                scope="subtree",
+                limit=EXPORT_LIMIT,
+            )
+            if truncated:
+                raise objects.ObjectError(
+                    f"this domain has more than {EXPORT_LIMIT:,} {key.replace('_', ' ')}; "
+                    "an export that large belongs in a domain backup instead"
+                )
+            directory[key] = [domainexport.snapshot_of(entry) for entry in found]
+
+    zones: list[dict[str, Any]] = []
+    if dns.available():
+        for zone in await run_in_threadpool(dns.list_zones, settings):
+            name = str(zone.get("name", ""))
+            if not name or name.startswith("_msdcs"):
+                continue
+            try:
+                records = [
+                    record.as_json()
+                    for record in await run_in_threadpool(dns.list_records, settings, name)
+                ]
+            except dns.DnsError:
+                continue
+            zones.append({"name": name, "records": records})
+
+    async with pool.acquire() as conn:
+        database = await domainexport.database_section(conn)
+
+    document = {
+        "odm_export": domainexport.EXPORT_FORMAT,
+        "taken_at": datetime.now(UTC).isoformat(),
+        "version": _version(),
+        "domain": {
+            "realm": settings.realm,
+            "domain": settings.domain,
+            "base_dn": settings.base_dn,
+        },
+        "withheld": domainexport.withheld_in(database),
+        "directory": directory,
+        "dns": {"zones": zones},
+        "database": database,
+    }
+
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=request.client.host if request.client else "",
+            action="domain.export",
+            outcome="success",
+            object_type="domain",
+            object_dn=settings.base_dn,
+            detail=(
+                f"{len(directory['users'])} users, {len(directory['groups'])} groups, "
+                f"{len(zones)} DNS zones"
+            ),
+        )
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+    return Response(
+        content=domainexport.as_json(document),
+        media_type="application/json",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="odm-{settings.domain}-{stamp}.json"',
+        },
+    )
+
+
+@router.post("/domain/import", dependencies=[Depends(requires("domain.import"))])
+async def import_domain(
+    request: Request,
+    apply: Annotated[bool, Query()] = False,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Make this domain the one the file describes.
+
+    Nothing happens without apply: the same call without it reads the file and
+    answers with what importing it would bring in. An import replaces this
+    domain's configuration wholesale, and nobody should agree to that without
+    first being told the size of what they are agreeing to.
+    """
+    # The file itself as the body, rather than a multipart upload: an export
+    # is JSON, the console has it as text, and the installer sends it with
+    # curl. A form encoding would only be one more thing to get right.
+    raw = await request.body()
+    try:
+        document = domainexport.check(json.loads(raw))
+    except ValueError as exc:
+        raise objects.ObjectError(f"this file is not readable JSON: {exc}") from exc
+    except domainexport.ImportError_ as exc:
+        raise objects.ObjectError(str(exc)) from exc
+
+    summary = domainexport.summarise(document)
+    if not apply:
+        return {"applied": False, "summary": summary}
+
+    result = await _apply_import(document, settings, pool, session.principal)
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=request.client.host if request.client else "",
+            action="domain.import",
+            outcome="success",
+            object_type="domain",
+            object_dn=settings.base_dn,
+            before={"summary": summary},
+            after=result,
+        )
+    return {"applied": True, "summary": summary, "result": result}
+
+
+async def _apply_import(
+    document: dict[str, Any],
+    settings: Settings,
+    pool: asyncpg.Pool,
+    actor: str,
+) -> dict[str, Any]:
+    """Put the file back, directory first and ODM's own store after it.
+
+    In that order because the second half names the first: a GPO link points
+    at an OU, a share's access list names a group, a collection names the
+    people who may connect to it. Nothing is rolled back on a failure —
+    what did land is reported, and the import is safe to run again.
+    """
+    source_base = str((document.get("domain") or {}).get("base_dn") or "")
+    target_base = settings.base_dn
+    directory = document.get("directory") or {}
+    created: dict[str, int] = {}
+    problems: list[str] = []
+
+    def place(snapshot: dict[str, Any]) -> dict[str, Any]:
+        moved = dict(snapshot)
+        moved["object_dn"] = domainexport.rewrite_dn(
+            str(snapshot["object_dn"]), source_base, target_base
+        )
+        moved["parent_dn"] = domainexport.rewrite_dn(
+            str(snapshot.get("parent_dn") or ""), source_base, target_base
+        )
+        # Both directions of membership are re-added in a second pass, once
+        # every group in the file exists: a group nested in another cannot
+        # join it before it is there, and nothing in a file says which came
+        # first.
+        moved["memberships"] = []
+        moved["members"] = []
+        return moved
+
+    async with _bound(settings, write=True) as conn:
+        for key in ("organizational_units", "groups", "users", "computers"):
+            snapshots = [place(entry) for entry in directory.get(key) or []]
+            # Parents before children, so an OU three deep is not created
+            # before the one it lives in.
+            snapshots.sort(key=lambda entry: domainexport.depth(entry["object_dn"]))
+            done = 0
+            for snapshot in snapshots:
+                try:
+                    await run_in_threadpool(objects.restore, conn, settings, snapshot, None)
+                    done += 1
+                except (objects.ObjectError, objects.NotFound) as exc:
+                    problems.append(f"{snapshot['object_dn']}: {exc}")
+            created[key] = done
+
+        # And now the memberships, with every group in place.
+        rejoined = 0
+        for key in ("groups", "users", "computers"):
+            for entry in directory.get(key) or []:
+                dn = domainexport.rewrite_dn(str(entry["object_dn"]), source_base, target_base)
+                memberships = [
+                    domainexport.rewrite_dn(str(group), source_base, target_base)
+                    for group in entry.get("memberships") or []
+                ]
+                members = [
+                    domainexport.rewrite_dn(str(member), source_base, target_base)
+                    for member in entry.get("members") or []
+                ]
+                if not memberships and not members:
+                    continue
+                try:
+                    # The recycle bin's own re-join, because putting an object
+                    # back into the groups it was in is the same operation
+                    # here as it is there.
+                    await run_in_threadpool(
+                        objects._rejoin_groups, conn, settings, dn,
+                        {"memberships": memberships, "members": members},
+                    )
+                    rejoined += 1
+                except objects.ObjectError as exc:
+                    problems.append(f"{dn} memberships: {exc}")
+        created["memberships"] = rejoined
+
+    zones = 0
+    records = 0
+    if dns.available():
+        existing = {
+            str(zone.get("name", "")).lower()
+            for zone in await run_in_threadpool(dns.list_zones, settings)
+        }
+        for zone in (document.get("dns") or {}).get("zones") or []:
+            name = str(zone.get("name", ""))
+            if not name:
+                continue
+            if name.lower() not in existing:
+                try:
+                    await run_in_threadpool(dns.create_zone, settings, name)
+                    zones += 1
+                except dns.DnsError as exc:
+                    problems.append(f"DNS zone {name}: {exc}")
+                    continue
+            here = {
+                (r.name, r.type, r.data)
+                for r in await run_in_threadpool(dns.list_records, settings, name)
+            }
+            for record in domainexport.importable_records(name, zone.get("records") or []):
+                if (record["name"], record["type"], record["data"]) in here:
+                    continue
+                try:
+                    await run_in_threadpool(
+                        dns.add_record, settings, name,
+                        record["name"], record["type"], record["data"],
+                    )
+                    records += 1
+                except dns.DnsError as exc:
+                    problems.append(f"{record['name']}.{name} {record['type']}: {exc}")
+
+    tables: dict[str, int] = {}
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Constraints between ODM's own tables are checked at the end of
+            # the transaction rather than after each table, so the order the
+            # export happened to list them in does not matter.
+            await conn.execute("SET CONSTRAINTS ALL DEFERRED")
+            for table, rows in (document.get("database") or {}).items():
+                if table in domainexport.VOLATILE_TABLES:
+                    continue
+                try:
+                    tables[table] = await domainexport.replace_table(conn, table, rows)
+                except asyncpg.PostgresError as exc:
+                    raise objects.ObjectError(
+                        f"restoring {table}: {exc}. Nothing in ODM's own store was changed; "
+                        "the directory objects above were."
+                    ) from exc
+
+    return {
+        "directory": created,
+        "dns": {"zones": zones, "records": records},
+        "tables": {name: count for name, count in tables.items() if count},
+        "problems": problems[:200],
     }

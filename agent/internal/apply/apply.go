@@ -45,6 +45,7 @@ var appliers = []applier{
 	{"wallpaper", applyWallpaper},
 	{"login_screen", applyLoginScreen},
 	{"printers", applyPrinters},
+	{"default_applications", applyDefaultApplications},
 	{"always_on_vpn", applyAlwaysOnVpn},
 	{"local_administrator", applyLocalAdministrator},
 	{"local_password_policy", applyLocalPasswordPolicy},

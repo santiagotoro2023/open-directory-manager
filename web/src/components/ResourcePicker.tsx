@@ -224,7 +224,12 @@ export function CollectionPicker({
   const matches = useMemo(() => {
     const ok = matcher(search);
     return (collections ?? []).filter((collection) =>
-      ok([collection.name, collection.broker_fqdn, collection.description, collection.app_name]),
+      ok([
+        collection.name,
+        collection.connection_address,
+        collection.description,
+        collection.app_name,
+      ]),
     );
   }, [collections, search]);
 
@@ -248,7 +253,11 @@ export function CollectionPicker({
             onClick={() =>
               onPick({
                 name: collection.name,
-                address: collection.broker_fqdn,
+                // What the collection tells clients to connect to, which is
+                // its external name where it has one: a connection file that
+                // named the broker itself stopped working the day the broker
+                // was replaced.
+                address: collection.connection_address,
                 // A published application rather than a whole desktop: the
                 // file has to say which, and the collection knows.
                 application: collection.kind === "remoteapp" ? collection.app_name : "",
@@ -258,7 +267,7 @@ export function CollectionPicker({
             <MonitorSmartphone size={15} aria-hidden="true" />
             {collection.name}
             <span className="secondary">
-              {collection.broker_fqdn || "no broker yet"}
+              {collection.connection_address || "no broker yet"}
               {collection.kind === "remoteapp" ? " · application" : " · desktop"}
             </span>
           </button>

@@ -200,6 +200,13 @@ jobs:
             echo "-- $f"
             bash -n "$f"
           done
+          # Not every script under deploy/ is shell. The import helper runs on
+          # a freshly provisioned controller, with nothing installed but the
+          # system Python, so it is checked the same way the shell ones are.
+          for f in deploy/*.py; do
+            echo "-- $f"
+            python3 -m py_compile "$f"
+          done
       # deploy/uninstall.sh must be able to remove whatever a role installer
       # puts on a machine. This fails the build the moment a new
       # install-*-role.sh ships without a matching teardown, rather than

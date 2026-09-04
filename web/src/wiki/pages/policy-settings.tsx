@@ -149,6 +149,16 @@ export function Content() {
                 "single value",
                 "Whether people may change their own password.",
               ],
+              [
+                "Default applications",
+                "file type",
+                "Which program opens a kind of file, machine-wide.",
+              ],
+              [
+                "Dash and taskbar",
+                "name and principal",
+                "What is pinned to the dash, and in what order, for a user or group.",
+              ],
               ["Firewall rules", "name", "Rules in a dedicated nftables table."],
               ["Drive maps", "mount point", "A mounted SMB share, machine-wide or per user."],
               ["Sudo rules", "name", "A file in /etc/sudoers.d."],
@@ -680,6 +690,82 @@ for           %Engineers      (optional)`}</Code>
               ["Microphone", "Off", "On only where a session is used for calls."],
             ]}
           />
+        </Section>
+
+        <Section title="Default applications">
+          <p>
+            Which program opens which kind of file, for everybody on the machine. A file type is
+            named by its MIME type, and the program by its desktop entry &mdash; the name of a file
+            under <C>/usr/share/applications</C>, including the <C>.desktop</C> suffix.
+          </p>
+          <Reference
+            headers={["Field", "Notes"]}
+            rows={[
+              ["File type", "The MIME type, for example application/x-rdp or application/pdf."],
+              [
+                "Opened by",
+                "The desktop entry, for example org.remmina.Remmina.desktop. Both fields offer the common values.",
+              ],
+              [
+                "Extensions",
+                "Only for a type the machine does not already know. Comma separated, without the dot.",
+              ],
+            ]}
+          />
+          <Example title="Open .rdp files with Remmina">
+            <p>
+              Debian does not ship a MIME type for <C>.rdp</C>, so the extension has to be
+              registered before anything can be the default for it. One entry does both:
+            </p>
+            <Code>{`File type    application/x-rdp
+Opened by    org.remmina.Remmina.desktop
+Extensions   rdp`}</Code>
+            <p>
+              Deploy Remmina first under <strong>Software deployment</strong>; a default naming a
+              program the machine does not have is written and does nothing.
+            </p>
+          </Example>
+          <Note>
+            The machine keeps the association in <C>/etc/xdg/mimeapps.list</C> and, where
+            extensions were given, a MIME package under <C>/usr/share/mime/packages</C>. Both are
+            managed by ODM and rewritten on every refresh.
+          </Note>
+        </Section>
+
+        <Section title="Dash and taskbar">
+          <p>
+            What is pinned to the dash, and in what order, for the people the entry names. A user
+            setting, so one function group gets a layout and another gets a different one from the
+            same policy object &mdash; the same shape as a drive map.
+          </p>
+          <Reference
+            headers={["Field", "Notes"]}
+            rows={[
+              ["Name", "What the layout is called. Two layouts with the same name and principal collide."],
+              [
+                "Pinned, in order",
+                "Desktop entries, comma separated. The order here is the order on screen. Common entries are offered beside the field and add to what is there.",
+              ],
+              [
+                "For user or group",
+                "A group takes a leading %. Empty means everybody the policy reaches.",
+              ],
+            ]}
+          />
+          <Example title="A layout for the finance group">
+            <Code>{`Name              Finance layout
+Pinned, in order  firefox-esr.desktop, org.remmina.Remmina.desktop, libreoffice-startcenter.desktop
+For user or group %Finance`}</Code>
+            <p>
+              Where two layouts both reach one person, the last one applied wins &mdash; the same
+              precedence as every other setting.
+            </p>
+          </Example>
+          <Note>
+            GNOME Shell. Other desktops keep their launchers elsewhere and are unaffected. The
+            layout is applied at sign-in; a person may rearrange the dash during the session and
+            gets the layout back the next time they sign in.
+          </Note>
         </Section>
 
         <Section title="Agent updates">

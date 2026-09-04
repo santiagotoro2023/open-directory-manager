@@ -32,6 +32,12 @@ const (
 	debianGreeterDir     = "/usr/share/gdm/dconf"
 	debianGreeterKeyfile = debianGreeterDir + "/95-odm-login-screen"
 	debianGreeterConfig  = "/usr/share/gdm/generate-config"
+
+	// What Debian's own greeter profile points at, and what
+	// generate-config compiles into. Kept in the profile below rather than
+	// replaced: dropping it takes the distribution's greeter defaults with
+	// it, which is a setting nobody in the console ever turned off.
+	debianGreeterDB = "/var/lib/gdm3/greeter-dconf-defaults"
 )
 
 func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.Result {
@@ -42,9 +48,18 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 
 	// GDM's dconf database is its own; without this profile the keys below are
 	// written and never read.
-	if err := env.WriteFile(
-		greeterProfilePath, "user-db:user\nsystem-db:gdm\n", 0o644, "root", "root",
-	); err != nil {
+	//
+	// Debian's profile is two lines, and neither of them is system-db:gdm —
+	// it is user-db:user and a file database under /var/lib/gdm3 that
+	// generate-config compiles. Written here as a replacement, ODM's profile
+	// dropped that file database, so the distribution's own greeter settings
+	// stopped applying. Both are named instead, in the order that leaves
+	// ODM's own database winning where the two disagree.
+	profile := "user-db:user\nsystem-db:gdm\n"
+	if _, err := os.Stat(env.Path(debianGreeterConfig)); err == nil {
+		profile += "file-db:" + debianGreeterDB + "\n"
+	}
+	if err := env.WriteFile(greeterProfilePath, profile, 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("login_screen", err)}
 	}
 
@@ -116,7 +131,24 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 				[]string{debianGreeterConfig}))
 		}
 	}
+
+	// Tell the greeter that is already on screen. Its dconf-service read the
+	// database when it started and does not look again, so a banner set
+	// during the day appeared at the next reboot and not before — which reads
+	// as the setting working sometimes and not others.
+	reloadGreeter(ctx, env)
 	return results
+}
+
+// reloadGreeter asks the greeter's own dconf-service to re-read its database,
+// the same signal Debian's generate-config sends after compiling it. Failure
+// is not reported: on a machine with no greeter running there is nothing to
+// signal, which is not a problem with the policy.
+func reloadGreeter(ctx context.Context, env Env) {
+	if env.Run == nil {
+		return
+	}
+	_, _ = env.Run.Run(ctx, "pkill", "--signal", "HUP", "--uid", "Debian-gdm", "dconf-service")
 }
 
 // cssSize maps the fit an operator chose onto what CSS calls it.

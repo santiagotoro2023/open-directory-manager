@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo apt install ./odm-client_0.8.0_amd64.deb
+sudo apt install ./odm-client_0.8.1_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -107,6 +107,24 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>
 It rebuilds the console, reinstalls the control plane, rebuilds the agent and
 restarts both; database migrations run when the control plane starts.
 
+### Moving a domain, or starting one from another
+
+`Overview → Configuration → Download the configuration` writes every object,
+zone and setting in the domain to one readable JSON file. Give it to a fresh
+install and it comes up configured the same way:
+
+```bash
+sudo deploy/setup.sh --realm corp.example.internal --netbios EXAMPLE \
+    --import /root/odm-corp.example.internal.json
+```
+
+Credentials are deliberately not in the file — private keys, shared secrets,
+rotated local-administrator passwords, join tokens and password hashes are
+withheld, and the file says which. Accounts come back disabled and without a
+password. This is not a substitute for a domain backup: a backup recovers
+*this* domain with its identifiers intact, an export builds another one
+configured the same way.
+
 ### Doing it by hand
 
 Each step of the guided setup is its own script under `deploy/`, and
@@ -121,18 +139,18 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 |---|---|
 | Directory | Users, groups, computers and organizational units — create, edit, move, delete, bulk CSV import |
 | Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering, item-level targeting, and export/import as portable JSON |
-| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN, remote desktop session rules, and a local administrator whose password each machine rotates itself. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
+| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN, remote desktop session rules, default applications per file type, the dash layout per user or group, agent updates, and a local administrator whose password each machine rotates itself. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
 | Roaming profiles | A home directory on a share that follows the person between desktops and session hosts, as a disk image per person or a directory. The same mechanism a remote desktop collection uses, so one profile can serve both |
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
 | DHCP | ISC Kea scopes, reservations, leases, failover pair and dynamic DNS |
 | File shares | SMB shares on any file server, with per-user and per-group access levels, choosing the directory by browsing the server itself |
 | Printing | CUPS printers on any print server, found on the network by scanning for them, handed to people by policy |
-| Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share, published applications, and downloadable connection files. The broker owns 3389; a host sharing its machine moves to 3390 |
+| Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share, published applications, and downloadable connection files. An optional standby broker and one DNS name published across both, so replacing the machine behind it touches nobody's connection file. The broker owns 3389; a host sharing its machine moves to 3390 |
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
 | Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
-| Machine management | Installed software, local accounts to add and remove, sign-in history, recent logs, updates, restart — on the computer object itself, starting within a second rather than at the next check-in |
+| Machine management | Installed software, local accounts to add and remove, sign-in history, recent logs, updates, restart, a remote agent update, a shell that runs as root and keeps its working directory, and a file browser that shows and changes owner, group and mode — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, and re-issues the console's own certificate |
 | Passwords | Domain policy, per-group and per-OU policies, helpdesk resets, and self-service change gated by policy |
 | Pictures | A person's picture set on their account and shown by every machine they sign in to, at the login screen and in the desktop |
@@ -140,7 +158,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them |
-| Operations | Health dashboard on Overview, replication, and domain backups taken by the controller's own agent |
+| Operations | Health dashboard on Overview, replication, domain backups taken by the controller's own agent, and a configuration export: every object, zone and setting in one readable file, importable into a new domain from the console or from `setup.sh --import` |
 | Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one, keeping the security identifier it had |
 | Audit | Every change with actor, outcome and before-and-after state |
 | Clients | One `.deb`: `odm-client-install`, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |
@@ -176,7 +194,7 @@ gave it. Nothing connects inward to a member server.
 ```
 api/          Control plane and database migrations
 agent/        Policy agent for domain members
-client-join/  Join library, odm-client-install, desktop join app
+client-join/  Join library and odm-client-install
 web/          Console, including the operator wiki under web/src/wiki
 deploy/       Provisioning, role installers, systemd units, sudoers
 packaging/    The odm-client Debian package
@@ -217,7 +235,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.8.0   # -> dist/odm-client_0.8.0_amd64.deb
+bash packaging/deb/build-in-container.sh 0.8.1   # -> dist/odm-client_0.8.1_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

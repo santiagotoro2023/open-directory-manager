@@ -362,6 +362,85 @@ async def browse_computer(
         raise objects.ObjectError(f"{row['hostname']} sent something unreadable back") from exc
 
 
+class Permissions(BaseModel):
+    node: Annotated[str, Field(min_length=1, max_length=253)]
+    path: Annotated[str, Field(min_length=2, max_length=1024, pattern=r"^/[^\x00]*$")]
+    # Empty leaves that half alone, which is how "change the group and not the
+    # owner" is said. A name here reaches chown as root on the machine, so the
+    # shape is checked on both sides.
+    owner: Annotated[str, Field(default="", max_length=128, pattern=r"^[A-Za-z0-9._$@ -]*$")] = ""
+    group: Annotated[str, Field(default="", max_length=128, pattern=r"^[A-Za-z0-9._$@ -]*$")] = ""
+    mode: Annotated[str, Field(default="", max_length=4, pattern=r"^(0?[0-7]{3})?$")] = ""
+    recursive: bool = False
+
+
+@router.post("/computer/permissions", dependencies=[Depends(requires("computer.manage"))])
+async def set_permissions(
+    body: Permissions,
+    request: Request,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Change who a file or folder on a machine belongs to.
+
+    The point of browsing a machine's files from here is to find the one whose
+    rights are wrong. Being told to open a terminal to fix it makes the
+    browsing pointless, and the console is already root on that machine by
+    every other route — so this adds no power, only a way to use one.
+    """
+    row = await pool.fetchrow(
+        "SELECT computer_dn, hostname FROM computer_fact WHERE lower(hostname) = lower($1)",
+        body.node,
+    )
+    if row is None:
+        raise objects.NotFound(f"{body.node} has not reported to the console yet")
+    authz.require("computer.manage", row["computer_dn"])
+    if not (body.owner or body.group or body.mode):
+        raise objects.ObjectError("nothing to change")
+
+    try:
+        answer = await tasks.run_now(
+            pool,
+            node_fqdn=row["hostname"],
+            kind="set-permissions",
+            payload={
+                "path": body.path,
+                "owner": body.owner,
+                "group": body.group,
+                "mode": body.mode,
+                "recursive": body.recursive,
+            },
+            requested_by=session.principal,
+            timeout=300,
+        )
+    except tasks.TaskFailed as exc:
+        raise objects.ObjectError(str(exc)) from exc
+
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="computer.permissions",
+            outcome="success",
+            object_type="computer",
+            object_dn=row["computer_dn"],
+            detail=f"{row['hostname']}:{body.path}",
+            after={
+                "owner": body.owner,
+                "group": body.group,
+                "mode": body.mode,
+                "recursive": body.recursive,
+            },
+        )
+    try:
+        return json.loads(answer)
+    except ValueError as exc:
+        raise objects.ObjectError(f"{row['hostname']} sent something unreadable back") from exc
+
+
 class ShellCommand(BaseModel):
     dn: Annotated[str, Field(min_length=3, max_length=1024)]
     # One command line, run by the machine's own shell. Not validated into a
@@ -370,6 +449,28 @@ class ShellCommand(BaseModel):
     # right to call it and the record of who did.
     command: Annotated[str, Field(min_length=1, max_length=4096)]
     timeout_seconds: Annotated[int, Field(default=60, ge=1, le=600)] = 60
+    # Where the last command left off. Carried by the console rather than kept
+    # on the machine: each command is its own process, and a working directory
+    # remembered on one side of a restart and not the other is worse than none.
+    cwd: Annotated[str, Field(default="/", max_length=1024, pattern=r"^/[^\x00]*$")] = "/"
+
+
+def _shell_answer(text: str) -> tuple[str, str, str]:
+    """Split what the agent sent into output, working directory and reason.
+
+    The agent answers with one line of JSON; a failed command adds its reason
+    after it. An agent too old to know about the working directory sends plain
+    text, which is still the output — the console then keeps the directory it
+    had, which is what it did before there was one.
+    """
+    head, _, rest = (text or "").partition("\n")
+    try:
+        answer = json.loads(head)
+    except ValueError:
+        return text or "", "", ""
+    if not isinstance(answer, dict):
+        return text or "", "", ""
+    return str(answer.get("output", "")), str(answer.get("cwd", "")), rest.strip()
 
 
 @router.post("/computer/shell", dependencies=[Depends(requires("computer.shell"))])
@@ -400,18 +501,29 @@ async def run_shell(
             "this machine has not reported yet, so there is nowhere to send the command"
         )
 
-    output, failed = "", ""
+    output, cwd, failed = "", body.cwd, ""
     try:
-        output = await tasks.run_now(
+        answer = await tasks.run_now(
             pool,
             node_fqdn=fact["hostname"],
             kind="shell-run",
-            payload={"command": body.command, "timeout_seconds": body.timeout_seconds},
+            payload={
+                "command": body.command,
+                "timeout_seconds": body.timeout_seconds,
+                "cwd": body.cwd,
+            },
             requested_by=session.principal,
             timeout=body.timeout_seconds + 30,
         )
+        output, ended, _ = _shell_answer(answer)
+        cwd = ended or body.cwd
     except tasks.TaskFailed as exc:
-        failed = str(exc)
+        # A command that exits non-zero still printed something, and that is
+        # usually the answer. The output and the directory it ended in are
+        # kept; the reason is what the console shows beside them.
+        output, ended, reason = _shell_answer(str(exc))
+        cwd = ended or body.cwd
+        failed = reason or str(exc)
 
     async with pool.acquire() as conn:
         await audit.record(
@@ -424,11 +536,17 @@ async def run_shell(
             object_type="computer",
             object_dn=body.dn,
             detail=f"{fact['hostname']}: {body.command}",
-            after={"output": (failed or output)[-8000:]},
+            after={"output": (output or failed)[-8000:], "cwd": cwd, "failed": failed},
         )
-    if failed:
-        raise objects.ObjectError(failed)
-    return {"node": fact["hostname"], "output": output}
+    return {
+        "node": fact["hostname"],
+        "output": output,
+        "cwd": cwd,
+        # Not an error status: a non-zero exit is an ordinary answer at a
+        # prompt, and losing the output with it would make the shell useless
+        # for exactly the commands somebody runs to find out what is wrong.
+        "failed": failed,
+    }
 
 
 @router.get("/computer/localadmin",

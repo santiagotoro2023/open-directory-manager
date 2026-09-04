@@ -66,6 +66,8 @@ type Settings struct {
 	CertificateEnrolment []CertificateEnrolment `json:"certificate_enrolment,omitempty"`
 	Printers             []Printer              `json:"printers,omitempty"`
 	RemoteDesktopFiles   []RemoteDesktopFile    `json:"remote_desktop_files,omitempty"`
+	DefaultApplications  []DefaultApplication   `json:"default_applications,omitempty"`
+	Dash                 []DashLayout           `json:"dash,omitempty"`
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
 	LocalPasswordPolicy  *LocalPasswordPolicy   `json:"local_password_policy,omitempty"`
@@ -145,6 +147,33 @@ type RemoteDesktopFile struct {
 	Collection   string `json:"collection"`
 	Application  string `json:"application"`
 	FullScreen   bool   `json:"full_screen"`
+	ForPrincipal string `json:"for_principal"`
+}
+
+// DefaultApplication is which program opens a kind of file.
+//
+// A machine setting: the association lives in the machine's own XDG
+// configuration, and a file type that opens one program for one person and
+// another for the next is a support call rather than a policy.
+type DefaultApplication struct {
+	// The MIME type, e.g. application/x-rdp.
+	MimeType string `json:"mime_type"`
+	// The desktop entry that opens it, e.g. org.remmina.Remmina.desktop.
+	Application string `json:"application"`
+	// File name extensions this type covers, comma separated and without the
+	// dot. Only needed for a type the machine does not already know — .rdp
+	// is not in shared-mime-info, so nothing could be the default for it.
+	Extensions string `json:"extensions"`
+}
+
+// DashLayout is what is pinned to the desktop's dash, and in what order.
+//
+// A user setting, so one function group can have a different set from
+// another, exactly as a drive map does.
+type DashLayout struct {
+	Name string `json:"name"`
+	// Desktop entries in the order they should appear, comma separated.
+	Applications string `json:"applications"`
 	ForPrincipal string `json:"for_principal"`
 }
 

@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.8.0"
+const version = "0.8.1"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -197,6 +197,16 @@ func runProfile(args []string) int {
 		fileNames(document.Settings.RemoteDesktopFiles, *username), rdp)...)
 	problems = append(problems, rdp...)
 
+	// And what is pinned to the dash, which is a user setting for the same
+	// reason: one function group's layout is not another's.
+	dash := apply.DeployDash(ctx, document.Settings.Dash, *username, env)
+	for _, problem := range dash {
+		fmt.Fprintln(os.Stderr, "odm-agent: dash:", problem)
+	}
+	results = append(results, sessionResults("dash",
+		dashNames(document.Settings.Dash, *username), dash)...)
+	problems = append(problems, dash...)
+
 	if err := apply.ApplyPhoto(document.User.Photo, *username, env); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent: picture:", err)
 	}
@@ -269,6 +279,17 @@ func fileNames(files []policy.RemoteDesktopFile, user string) []string {
 	for _, file := range files {
 		if apply.AppliesTo(file.ForPrincipal, user) {
 			names = append(names, file.Name)
+		}
+	}
+	return names
+}
+
+// dashNames is the layout this person actually got, for the report.
+func dashNames(layouts []policy.DashLayout, user string) []string {
+	var names []string
+	for _, layout := range layouts {
+		if apply.AppliesTo(layout.ForPrincipal, user) {
+			names = append(names, layout.Name)
 		}
 	}
 	return names

@@ -86,6 +86,8 @@ export interface PolicySettings {
   packages?: Record<string, unknown>[];
   trusted_certificates?: Record<string, unknown>[];
   remote_desktop_files?: Record<string, unknown>[];
+  default_applications?: Record<string, unknown>[];
+  dash?: Record<string, unknown>[];
   admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
   wallpaper?: {
@@ -633,6 +635,14 @@ export interface RdCollection {
   name: string;
   description: string;
   broker_fqdn: string;
+  /** A second machine carrying the same routing. Empty for no standby. */
+  broker_secondary_fqdn: string;
+  /** The name in connection files, instead of a broker's own. */
+  external_fqdn: string;
+  /** Whether ODM keeps that name's records in the domain's DNS. */
+  external_dns: boolean;
+  /** What a client is told to connect to: the external name, or the broker. */
+  connection_address: string;
   kind: "desktop" | "remoteapp";
   app_path: string;
   app_name: string;
@@ -648,6 +658,20 @@ export interface RdCollection {
   state: "pending" | "applying" | "active" | "failed";
   last_error: string | null;
   updated_at: string;
+}
+
+export interface DomainImportSummary {
+  taken_at?: string;
+  from_version?: string;
+  from_domain?: string;
+  organizational_units: number;
+  groups: number;
+  users: number;
+  computers: number;
+  dns_zones: number;
+  dns_records: number;
+  tables: Record<string, number>;
+  withheld: string[];
 }
 
 export interface RdSession {
@@ -737,6 +761,10 @@ export interface DirectoryListing {
     directory?: boolean;
     size?: number;
     modified?: string;
+    owner?: string;
+    group?: string;
+    /** Octal, as the machine reports it: 0750. */
+    mode?: string;
   }[];
   truncated: boolean;
 }
@@ -1349,10 +1377,16 @@ export const api = {
 
     sessions: () => request<{ sessions: RdSession[] }>("/rd/sessions"),
 
-    create: (body: Partial<RdCollection>) => request<RdCollection>("/rd", json(body)),
+    // notes is what publishing the external name had to say — a zone created,
+    // a record moved, or the reason neither happened.
+    create: (body: Partial<RdCollection>) =>
+      request<RdCollection & { notes?: string[] }>("/rd", json(body)),
 
     update: (body: { id: string } & Partial<RdCollection>) =>
-      request<RdCollection>("/rd", { method: "PATCH", body: JSON.stringify(body) }),
+      request<RdCollection & { notes?: string[] }>("/rd", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
 
     remove: (id: string) => request<void>(`/rd${qs({ id })}`, { method: "DELETE" }),
 
@@ -1478,12 +1512,23 @@ export const api = {
         json({ dn, action, package: pkg, local_user: localUser, version }),
       ),
 
+    /** Change who a file or folder on a machine belongs to. Answers with the
+     *  listing it now has, so the console shows the result. */
+    setPermissions: (body: {
+      node: string;
+      path: string;
+      owner?: string;
+      group?: string;
+      mode?: string;
+      recursive?: boolean;
+    }) => request<DirectoryListing>("/servers/computer/permissions", json(body)),
+
     /** Run one command on a machine and read what it printed. Root on that
      *  machine, its own right, and every call is in the audit log. */
-    shell: (dn: string, command: string, timeoutSeconds = 60) =>
-      request<{ node: string; output: string }>(
+    shell: (dn: string, command: string, cwd = "/", timeoutSeconds = 60) =>
+      request<{ node: string; output: string; cwd: string; failed: string }>(
         "/servers/computer/shell",
-        json({ dn, command, timeout_seconds: timeoutSeconds }),
+        json({ dn, command, cwd, timeout_seconds: timeoutSeconds }),
       ),
   },
 
@@ -1617,6 +1662,27 @@ export const api = {
       }>("/backups"),
 
     takeBackup: () => request<{ id: string; state: string }>("/backups", json({})),
+
+    /** Everything the domain is configured to be, as one file the browser
+        downloads. Not JSON the console renders: it is meant to be kept. */
+    exportUrl: () => "/api/v1/domain/export",
+
+    /** Read an export. Without apply it only says what importing would do. */
+    importDomain: (body: string, apply: boolean) =>
+      request<{
+        applied: boolean;
+        summary: DomainImportSummary;
+        result?: {
+          directory: Record<string, number>;
+          dns: { zones: number; records: number };
+          tables: Record<string, number>;
+          problems: string[];
+        };
+      }>(`/domain/import${qs({ apply: apply ? "true" : undefined })}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      }),
   },
 
   join: {

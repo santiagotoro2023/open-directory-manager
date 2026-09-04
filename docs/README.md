@@ -15,6 +15,7 @@ repository itself.
 | [../branding/BRAND.md](../branding/BRAND.md) | Logo usage, palette, typography |
 | `web/src/wiki/` | The operator wiki, served inside the console under **Wiki** |
 | [../README.md](../README.md) | Overview and quickstart |
+| [proposals.md](proposals.md) | Proposed work, awaiting sign-off |
 
 ## Build status against CLAUDE.md §7
 
@@ -32,7 +33,7 @@ repository itself.
 Beyond the phases, from CLAUDE.md §4: a certificate-authority role with
 trust distribution and console certificate rollover, software deployment as
 a policy category, a PXE client-enrolment role, and the domain-join client
-in both its command-line and desktop forms.
+as a single command-line tool.
 
 Phase 1 lays groundwork for later phases in the database schema (RBAC and
 delegation, recycle bin, role registry, GPO links) so those phases add code,

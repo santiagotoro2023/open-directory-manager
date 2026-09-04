@@ -38,6 +38,7 @@ SERVICE_USER="odm"
 SKIP_DC="no"
 SKIP_CONSOLE="no"
 ASSUME_YES="no"
+IMPORT_FILE=""
 
 STEP=0
 STEPS=9
@@ -59,6 +60,9 @@ the command line is asked for.
   --skip-dc                this machine is not the domain controller
   --skip-console           do not build the console here
   --service-user <name>    account the control plane runs as (default: odm)
+  --import <file>          after the console is up, make this domain the one
+                           in an export taken from another (Overview →
+                           Configuration → Download the configuration)
   --yes                    accept the summary without pausing
   --uninstall              remove everything a previous run of this script
                            (and any role installed afterwards) put on this
@@ -78,11 +82,17 @@ while [[ $# -gt 0 ]]; do
         --skip-dc) SKIP_DC="yes"; shift ;;
         --skip-console) SKIP_CONSOLE="yes"; shift ;;
         --service-user) SERVICE_USER="${2:?}"; shift 2 ;;
+        --import) IMPORT_FILE="${2:?}"; shift 2 ;;
         --yes) ASSUME_YES="yes"; shift ;;
         -h|--help) usage ;;
         *) echo "unknown argument: $1" >&2; usage ;;
     esac
 done
+
+if [[ -n "$IMPORT_FILE" && ! -r "$IMPORT_FILE" ]]; then
+    echo "cannot read $IMPORT_FILE" >&2
+    exit 1
+fi
 
 # ------------------------------------------------------------------ output --
 
@@ -792,6 +802,31 @@ else
     echo
     printf '      Follow it with: journalctl -u odm-api -f\n'
     printf '      Restart after a fix with: systemctl restart odm-api\n'
+fi
+
+# --------------------------------------------------------------- import ----
+
+# Make this domain the one in an export taken from another.
+#
+# Through the console's own API rather than by writing to the database and the
+# directory directly: the import replaces ODM's store and creates every object
+# in the file, and doing that behind the running control plane would mean two
+# things writing the same rows. It signs in the way any operator does, with
+# the domain administrator password already chosen above.
+if [[ -n "$IMPORT_FILE" && "$READY" == "yes" ]]; then
+    echo
+    say "Importing $IMPORT_FILE"
+    # The password reaches python on stdin, never in an argv: a machine's
+    # process list is readable by anybody signed in to it.
+    if printf '%s' "$ADMIN_PASSWORD" | ODM_IMPORT_FILE="$IMPORT_FILE" \
+            ODM_IMPORT_URL="https://$CONSOLE_FQDN:$PORT" ODM_IMPORT_REALM="$REALM" \
+            python3 "$HERE/import-configuration.py"; then
+        ok "Imported $IMPORT_FILE"
+        note "Accounts came back disabled and without a password: an export never carries one."
+    else
+        warn "The import did not finish. Import it from the console instead:"
+        warn "  Overview → Configuration → Import"
+    fi
 fi
 
 # The console answering on 127.0.0.1 proves nothing to a client, which has to

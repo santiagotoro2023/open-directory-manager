@@ -44,13 +44,23 @@ cat > /etc/xrdp/startwm.sh <<'WM'
 # The collection writes /etc/odm/rd-session.sh when it wants something other
 # than a full desktop — a published application, for instance. Without it,
 # this is an ordinary XFCE session.
+#
+# Started through /etc/X11/Xsession rather than directly. Xsession is what
+# sets up a Debian graphical session — XDG_CONFIG_DIRS, XDG_DATA_DIRS, the
+# D-Bus session bus, the keyring — and running startxfce4 without it produced
+#
+#   Unable to load a failsafe session
+#   Unable to determine failsafe session name
+#
+# on every connection: xfce4-session could not read its own defaults out of
+# /etc/xdg because nothing had told it where /etc/xdg was.
 if [ -r /etc/profile ]; then
     . /etc/profile
 fi
 if [ -x /etc/odm/rd-session.sh ]; then
-    exec /etc/odm/rd-session.sh
+    exec /etc/X11/Xsession /etc/odm/rd-session.sh
 fi
-exec startxfce4
+exec /etc/X11/Xsession startxfce4
 WM
 chmod 0755 /etc/xrdp/startwm.sh
 

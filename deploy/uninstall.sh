@@ -63,9 +63,11 @@ usage() {
 usage: uninstall.sh [options]
 
 Removes everything Open Directory Manager installed on this machine: the
-control plane, the console, the policy agent, every server role it finds
-installed, the ODM database role and, if this machine is a domain
-controller, the domain itself (Samba's directory, Kerberos, DNS — every user,
+control plane, the console, the policy agent, everything the agent applied
+from policy (browser policy, dconf databases, sudoers, cron, drive maps,
+file-type defaults, trust anchors), every server role it finds installed,
+the ODM database role and, if this machine is a domain controller, the
+domain itself (Samba's directory, Kerberos, DNS — every user,
 group, computer and GPO in it). Backups install scripts made before editing a
 file in place (*.pre-odm.*) are restored.
 
@@ -231,7 +233,7 @@ BANNER
 
 say "${B}Found on this machine:${R}"
 [[ "$HAS_API" == "yes" ]] && say "  • Control plane and console ($([[ -d /opt/odm ]] && echo /opt/odm || echo "no venv found"))"
-[[ "$HAS_AGENT" == "yes" ]] && say "  • Policy agent"
+[[ "$HAS_AGENT" == "yes" ]] && say "  • Policy agent, and the settings it applied from policy"
 if [[ "$IS_DC" == "yes" ]]; then
     say "  • ${RED}A provisioned domain controller — its directory, GPOs and DNS zones${R}"
 fi
@@ -361,8 +363,97 @@ teardown_session_host() {
     maybe systemctl disable --now xrdp xrdp-sesman
     restore_backup /etc/xrdp/sesman.ini
     run rm -f /etc/xrdp/startwm.sh /etc/xrdp/cert.pem /etc/xrdp/key.pem /etc/X11/Xwrapper.config
+
+    # The PAM line first, and whether or not xrdp is being purged: it names a
+    # script that is about to be removed, and "session required" with a
+    # missing program refuses every sign-in through xrdp. Leaving it behind
+    # would take remote desktop down on a machine somebody kept xrdp on.
+    if [[ -f /etc/pam.d/xrdp-sesman ]]; then
+        run sed -i '\#/etc/odm/rd-profile.sh#d' /etc/pam.d/xrdp-sesman
+        run sed -i '/Managed by Open Directory Manager/d' /etc/pam.d/xrdp-sesman
+    fi
+
+    # Anybody still signed in has a profile disk mounted over their home and
+    # the share it came from mounted under /run. Both go, so the loop devices
+    # are released and the empty homes do not look like local accounts.
+    shopt -s nullglob
+    local home
+    for home in /home/*; do
+        mountpoint -q "$home" 2>/dev/null || continue
+        maybe umount "$home"
+        maybe umount -l "$home"
+        maybe rmdir "$home"
+    done
+    shopt -u nullglob
+    mountpoint -q /run/odm/profiles 2>/dev/null && maybe umount -l /run/odm/profiles
+
     [[ "$PURGE_PACKAGES" == "yes" ]] && PURGE_LIST+=(xrdp xorgxrdp xfce4 xfce4-goodies xfce4-terminal)
     ok "Remote desktop session host role removed"
+}
+
+# Everything the policy agent wrote on this machine that is not under
+# /etc/odm or /var/lib/odm.
+#
+# These are not a role: any machine carrying the agent can have them, put
+# there by whichever policy objects reached it. Left behind they are a
+# desktop that still has a locked background, a browser that still has managed
+# policy, and a login screen still showing a banner for a domain that is gone.
+teardown_policy_artefacts() {
+    [[ "$HAS_AGENT" == "yes" ]] || return 0
+    say "Settings the agent applied"
+
+    # Browsers. Each vendor's documented managed-policy location.
+    run rm -f /etc/chromium/policies/managed/odm.json \
+              /etc/opt/chrome/policies/managed/odm.json \
+              /etc/firefox/policies/policies.json
+
+    # Desktop and login screen, in every database the agent writes to.
+    run rm -f /etc/dconf/db/odm.d/00-odm-desktop \
+              /etc/dconf/db/odm.d/locks/odm-desktop \
+              /etc/dconf/db/gdm.d/00-odm-login-screen \
+              /etc/dconf/profile/gdm \
+              /usr/share/gdm/dconf/95-odm-login-screen
+    if [[ -f /etc/dconf/profile/user ]] \
+            && grep -q '^system-db:odm$' /etc/dconf/profile/user 2>/dev/null; then
+        run rm -f /etc/dconf/profile/user
+    fi
+    maybe rmdir /etc/dconf/db/odm.d/locks /etc/dconf/db/odm.d
+    maybe dconf update
+    [[ -x /usr/share/gdm/generate-config ]] && maybe /usr/share/gdm/generate-config
+
+    # Which program opens which kind of file.
+    run rm -f /etc/xdg/mimeapps.list /usr/share/mime/packages/odm-file-types.xml
+    command -v update-mime-database >/dev/null 2>&1 && maybe update-mime-database /usr/share/mime
+
+    # Access control, scheduled work, deployed scripts and trust anchors.
+    shopt -s nullglob
+    local leftovers=(/etc/sudoers.d/odm-* /etc/security/odm-access-* /etc/cron.d/odm-*
+                     /usr/local/share/ca-certificates/odm-* /etc/ssh/sshd_config.d/50-odm.conf
+                     /etc/apt/apt.conf.d/20odm-auto-upgrades
+                     /etc/apt/apt.conf.d/51odm-unattended-upgrades
+                     /etc/pwquality.conf.d/50-odm.conf /etc/security/pwquality.conf.d/50-odm.conf
+                     /etc/systemd/system/odm-firewall.service
+                     /etc/systemd/system/odm-scripts.service)
+    shopt -u nullglob
+    if [[ ${#leftovers[@]} -gt 0 ]]; then
+        maybe systemctl disable --now odm-firewall odm-scripts
+        run rm -f "${leftovers[@]}"
+        command -v update-ca-certificates >/dev/null 2>&1 && maybe update-ca-certificates --fresh
+    fi
+
+    # Drive maps are systemd mount units, named after where they mount.
+    shopt -s nullglob
+    local mounts=(/etc/systemd/system/*.automount /etc/systemd/system/*.mount)
+    shopt -u nullglob
+    local unit
+    for unit in "${mounts[@]}"; do
+        grep -q "Open Directory Manager" "$unit" 2>/dev/null || continue
+        maybe systemctl disable --now "$(basename "$unit")"
+        run rm -f "$unit"
+    done
+    maybe systemctl daemon-reload
+
+    ok "Applied settings removed"
 }
 
 teardown_vpn() {
@@ -403,6 +494,7 @@ teardown_session_host
 teardown_vpn
 teardown_certificate_authority
 teardown_pxe
+teardown_policy_artefacts
 
 # -------------------------------------------------------------- core ODM --
 

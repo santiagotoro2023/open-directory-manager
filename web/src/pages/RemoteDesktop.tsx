@@ -122,7 +122,12 @@ export function RemoteDesktop() {
             {collections.map((collection) => (
               <tr key={collection.id} onClick={() => setEditing(collection)}>
                 <td>{collection.name}</td>
-                <td className="mono">{collection.broker_fqdn}</td>
+                <td className="mono">
+                  {collection.connection_address}
+                  {collection.broker_secondary_fqdn && (
+                    <span className="muted"> + standby</span>
+                  )}
+                </td>
                 <td>
                   {collection.kind === "remoteapp"
                     ? `${collection.app_name || collection.app_path}`
@@ -319,6 +324,9 @@ function CollectionDialog({
   const [name, setName] = useState(collection?.name ?? "");
   const [description, setDescription] = useState(collection?.description ?? "");
   const [broker, setBroker] = useState(collection?.broker_fqdn ?? "");
+  const [standby, setStandby] = useState(collection?.broker_secondary_fqdn ?? "");
+  const [external, setExternal] = useState(collection?.external_fqdn ?? "");
+  const [externalDns, setExternalDns] = useState(collection?.external_dns ?? true);
   const [kind, setKind] = useState<"desktop" | "remoteapp">(collection?.kind ?? "desktop");
   const [appPath, setAppPath] = useState(collection?.app_path ?? "");
   const [appName, setAppName] = useState(collection?.app_name ?? "");
@@ -379,6 +387,52 @@ function CollectionDialog({
               <Field label="Description">
                 <input value={description} onChange={(e) => setDescription(e.target.value)} />
               </Field>
+              <div className="field-grid">
+                <Field
+                  label="Standby broker"
+                  hint="Optional. Carries the same routing, so either machine can front the collection."
+                >
+                  <PickerField
+                    kind="computer"
+                    as="host"
+                    ariaLabel="Standby broker"
+                    value={standby}
+                    placeholder="No standby"
+                    onChange={setStandby}
+                  />
+                </Field>
+                <Field
+                  label="Connect to"
+                  hint="Optional. The name in everybody's connection file, instead of a broker's own."
+                >
+                  <input
+                    value={external}
+                    placeholder="remote.example.org"
+                    onChange={(e) => setExternal(e.target.value)}
+                  />
+                </Field>
+              </div>
+              {external !== "" && (
+                <Field label="This name is published">
+                  <Select
+                    value={externalDns ? "odm" : "elsewhere"}
+                    onChange={(e) => setExternalDns(e.target.value === "odm")}
+                  >
+                    <option value="odm">
+                      In this domain&rsquo;s DNS, by ODM &mdash; the zone is created if it is missing
+                    </option>
+                    <option value="elsewhere">Somewhere else &mdash; do not touch DNS</option>
+                  </Select>
+                </Field>
+              )}
+              {external !== "" && externalDns && (
+                <p className="muted">
+                  {external} is pointed at {standby ? "both brokers" : "the broker"}. A client that
+                  cannot reach the first address tries the next, which is how an RDP client has
+                  always found a second server &mdash; so replacing the machine behind the name
+                  never touches anybody&rsquo;s connection file.
+                </p>
+              )}
             </>
           ),
         },
@@ -560,6 +614,9 @@ function CollectionDialog({
           name,
           description,
           broker_fqdn: broker,
+          broker_secondary_fqdn: standby,
+          external_fqdn: external,
+          external_dns: externalDns,
           kind,
           app_path: appPath,
           app_name: appName,
@@ -574,11 +631,15 @@ function CollectionDialog({
         };
         try {
           if (editing) {
-            await api.rd.update({ id: collection.id, ...body });
-            onSaved(`Applying ${name} to its broker and hosts.`);
+            const saved = await api.rd.update({ id: collection.id, ...body });
+            onSaved(
+              [`Applying ${name} to its brokers and hosts.`, ...(saved.notes ?? [])].join(" "),
+            );
           } else {
-            await api.rd.create(body);
-            onSaved(`${name} created. Add session hosts to it.`);
+            const saved = await api.rd.create(body);
+            onSaved(
+              [`${name} created. Add session hosts to it.`, ...(saved.notes ?? [])].join(" "),
+            );
           }
         } catch (err) {
           setError(err instanceof ApiError ? err.message : String(err));

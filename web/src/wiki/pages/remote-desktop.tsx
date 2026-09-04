@@ -66,6 +66,11 @@ export function Content() {
             <strong>Connection file</strong> on the collection hands you a <C>.rdp</C> for one
             person, which opens in any RDP client.
           </li>
+          <li>
+            Optional, on the first step of the collection: a <strong>standby broker</strong>, and a{" "}
+            <strong>Connect to</strong> name such as <C>remote.example.org</C> that ODM publishes
+            in this domain&rsquo;s DNS pointing at both.
+          </li>
         </Steps>
 
         <Where>Remote Desktop, once a broker exists.</Where>
@@ -111,6 +116,66 @@ export function Content() {
             That is also why a host may serve exactly one collection. Two would share a desktop and
             a profile share while claiming to be separate.
           </p>
+        </Section>
+
+        <Section title="A standby broker, and one name for both">
+          <p>
+            A collection may name a second broker. Both carry the same routing to the same session
+            hosts and are configured together on every change, so the standby is never a machine
+            whose configuration is first written the day the primary has already gone.
+          </p>
+          <p>
+            <strong>Connect to</strong> is the name that goes in connection files instead of a
+            broker&rsquo;s own host name. ODM publishes it in this domain&rsquo;s DNS pointing at
+            every broker in the collection, creating the zone if it is missing. A client that
+            cannot reach the first address tries the next.
+          </p>
+          <Example title="A collection reached at one name">
+            <Code>{`Broker           rd1.corp.example.internal
+Standby broker   rd2.corp.example.internal
+Connect to       remote.example.org
+This name is     published in this domain's DNS, by ODM`}</Code>
+            <p>
+              ODM creates the zone <C>example.org</C> if this domain does not serve it, then keeps{" "}
+              <C>remote</C> pointing at both brokers. Every connection file, and every{" "}
+              <strong>Remote desktop files</strong> policy entry made from the collection, says{" "}
+              <C>remote.example.org</C> &mdash; so replacing either machine never touches anybody's
+              connection file.
+            </p>
+          </Example>
+          <Reference
+            headers={["Setting", "What it does"]}
+            rows={[
+              [
+                "Standby broker",
+                "A second machine fronting the collection. Optional; empty is a collection whose broker is the one machine whose loss takes it away.",
+              ],
+              [
+                "Connect to",
+                "The name clients are given. Empty means the primary broker's own host name.",
+              ],
+              [
+                "Published in this domain's DNS",
+                "ODM keeps an A record per broker under that name, and removes them when the collection is deleted.",
+              ],
+              [
+                "Published somewhere else",
+                "ODM writes no records. For a name served by a public zone or a load balancer, where records here would be wrong rather than helpful.",
+              ],
+            ]}
+          />
+          <Note>
+            Failover is the client trying the next address it was given, not a health check.
+            Whichever broker answers first serves the session; a broker that accepts a connection
+            and then fails is not detected. Where that matters, put a floating address in front of
+            the pair and give the external name that address instead.
+          </Note>
+          <Note>
+            Both brokers keep their own affinity table. Somebody reconnecting through the standby
+            after using the primary lands on a host by load rather than by where their session is,
+            so a session left on another host is not resumed until its disconnected timeout ends
+            it.
+          </Note>
         </Section>
 
         <Section title="How the broker sends somebody to the same host">

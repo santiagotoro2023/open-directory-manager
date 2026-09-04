@@ -70,6 +70,11 @@ PERMISSIONS: tuple[str, ...] = (
     "replication.read",
     "backup.read",
     "backup.write",
+    # The whole domain's configuration, out and back in. Its own pair:
+    # the export is every setting in one file, which is exactly what an
+    # auditor should be able to read and what nobody else should.
+    "domain.export",
+    "domain.import",
     "audit.read",
     "rbac.write",
     "ca.read",

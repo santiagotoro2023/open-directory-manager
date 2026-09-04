@@ -111,6 +111,8 @@ func RunWithProgress(
 		output, err = browse(ctx, task.Payload, env)
 	case "make-directory":
 		output, err = makeDirectory(ctx, task.Payload, env)
+	case "set-permissions":
+		output, err = setPermissions(ctx, task.Payload, env)
 	case "local-user-add":
 		output, err = addLocalUser(ctx, task.Payload, env)
 	case "local-user-remove":
@@ -160,6 +162,10 @@ func timeoutFor(kind string) time.Duration {
 	case "browse", "make-directory":
 		// A click in a dialog. Nobody waits five minutes for one.
 		return 30 * time.Second
+	case "set-permissions":
+		// The same, except a recursive chown of a large tree, which is why it
+		// is given longer than a listing.
+		return 5 * time.Minute
 	case "printer-discover":
 		// A network sweep, which the agent bounds at twenty seconds.
 		return 60 * time.Second

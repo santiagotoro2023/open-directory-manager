@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"odm.example.org/agent/internal/apply"
@@ -50,6 +55,12 @@ func browse(_ context.Context, payload map[string]any, env apply.Env) (string, e
 		Directory bool   `json:"directory"`
 		Size      int64  `json:"size,omitempty"`
 		Modified  string `json:"modified,omitempty"`
+		// Who it belongs to and what they may do with it. Names where the
+		// machine can resolve them, because a numeric id means nothing to
+		// somebody reading a console on another machine.
+		Owner string `json:"owner,omitempty"`
+		Group string `json:"group,omitempty"`
+		Mode  string `json:"mode,omitempty"`
 	}
 	// Directories only unless the caller asks for the files as well: choosing
 	// where a share lives is a folder question, and looking at what is on a
@@ -73,6 +84,8 @@ func browse(_ context.Context, payload map[string]any, env apply.Env) (string, e
 				record.Size = info.Size()
 			}
 			record.Modified = info.ModTime().UTC().Format(time.RFC3339)
+			record.Mode = fmt.Sprintf("%04o", info.Mode().Perm())
+			record.Owner, record.Group = ownership(info)
 		}
 		entries = append(entries, record)
 	}
@@ -104,6 +117,121 @@ func browse(_ context.Context, payload map[string]any, env apply.Env) (string, e
 	}
 	return string(body), nil
 }
+
+// ownership is who a file belongs to, by name where the machine knows one.
+//
+// Cached because a directory of five hundred files is five hundred lookups
+// otherwise, and on a domain member each one can be an LDAP round trip.
+func ownership(info os.FileInfo) (string, string) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", ""
+	}
+	return nameOf(&userNames, strconv.FormatUint(uint64(stat.Uid), 10), func(id string) string {
+			if found, err := user.LookupId(id); err == nil {
+				return found.Username
+			}
+			return id
+		}),
+		nameOf(&groupNames, strconv.FormatUint(uint64(stat.Gid), 10), func(id string) string {
+			if found, err := user.LookupGroupId(id); err == nil {
+				return found.Name
+			}
+			return id
+		})
+}
+
+var (
+	userNames  sync.Map
+	groupNames sync.Map
+)
+
+func nameOf(cache *sync.Map, id string, lookup func(string) string) string {
+	if cached, ok := cache.Load(id); ok {
+		return cached.(string)
+	}
+	name := lookup(id)
+	cache.Store(id, name)
+	return name
+}
+
+// setPermissions changes who a path belongs to and what they may do with it.
+//
+// The whole point of browsing a machine's files from the console is to find
+// the one whose rights are wrong; being told to open a terminal to fix it
+// makes the browsing pointless. Root on the machine already, so this adds no
+// power the console did not have — it makes an existing one usable.
+func setPermissions(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	path, err := absolute(str(payload["path"]))
+	if err != nil {
+		return "", err
+	}
+	if path == "/" {
+		return "", fmt.Errorf("/ is not something to change the ownership of")
+	}
+	full := env.Path(path)
+	if _, err := os.Stat(full); err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+
+	owner := strings.TrimSpace(str(payload["owner"]))
+	group := strings.TrimSpace(str(payload["group"]))
+	mode := strings.TrimSpace(str(payload["mode"]))
+	recursive := boolean(payload["recursive"], false)
+
+	// Second pair of eyes on values that reach an argv as root. The control
+	// plane checks them too; this process does not have to trust it.
+	if owner != "" && !safeOwner.MatchString(owner) {
+		return "", fmt.Errorf("invalid owner %q", owner)
+	}
+	if group != "" && !safeOwner.MatchString(group) {
+		return "", fmt.Errorf("invalid group %q", group)
+	}
+	if mode != "" && !safeMode.MatchString(mode) {
+		return "", fmt.Errorf("mode must be octal, for example 0750")
+	}
+	if owner == "" && group == "" && mode == "" {
+		return "", fmt.Errorf("nothing to change")
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+
+	// chown and chmod rather than the syscalls: a name has to be resolved
+	// through NSS to reach domain accounts, and these already do it the way
+	// the rest of the machine does.
+	if owner != "" || group != "" {
+		args := []string{}
+		if recursive {
+			args = append(args, "-R")
+		}
+		args = append(args, owner+":"+group, full)
+		if out, err := env.Run.Run(ctx, "chown", args...); err != nil {
+			return out, fmt.Errorf("chown: %w", err)
+		}
+	}
+	if mode != "" {
+		args := []string{}
+		if recursive {
+			args = append(args, "-R")
+		}
+		args = append(args, mode, full)
+		if out, err := env.Run.Run(ctx, "chmod", args...); err != nil {
+			return out, fmt.Errorf("chmod: %w", err)
+		}
+	}
+	// The listing it now has, so the console shows the result rather than
+	// asking for it again.
+	return browse(ctx, map[string]any{"path": filepath.Dir(path), "files": true}, env)
+}
+
+var (
+	// A user or group name, or a numeric id. Empty is allowed by the caller
+	// above, which is how "change the group and leave the owner alone" is
+	// said to chown.
+	safeOwner = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._$@ -]{0,127}$`)
+	safeMode  = regexp.MustCompile(`^0?[0-7]{3}$`)
+)
 
 // makeDirectory creates a folder the operator asked for while browsing, so a
 // share can be put somewhere that does not exist yet without a terminal.
