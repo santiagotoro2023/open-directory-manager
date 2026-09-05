@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -70,7 +71,9 @@ func TestAPlaceIsWrittenAsTheFileManagerReadsIt(t *testing.T) {
 func TestOnlyTheBookmarksThisPolicyWroteAreRewritten(t *testing.T) {
 	// A bookmark somebody added themselves is theirs.
 	env, _ := testEnv(t)
-	who := account{uid: 1000, gid: 1000, home: env.Path("/home/ada")}
+	// This process's own ids: writeAs chowns what it writes, and a test that
+	// is not root cannot give a file away — which is what CI is.
+	who := account{uid: os.Getuid(), gid: os.Getgid(), home: env.Path("/home/ada")}
 	if err := makeUnder(who, who.home+"/.config/gtk-3.0"); err != nil {
 		t.Fatal(err)
 	}
