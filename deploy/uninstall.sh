@@ -51,7 +51,7 @@ UNKNOWN_ROLES=()
 # matches deploy/install-*-role.sh is a role this script does not yet know
 # how to remove — see the header comment.
 KNOWN_ROLES=(dhcp file-server print-server radius remote-desktop-broker
-             session-host vpn certificate-authority pxe)
+             session-host vpn certificate-authority pxe time)
 role_known() {
     local slug="$1" k
     for k in "${KNOWN_ROLES[@]}"; do [[ "$k" == "$slug" ]] && return 0; done
@@ -217,6 +217,7 @@ ROLE_SESSION_HOST="no"
 ROLE_VPN="no";         [[ -f /etc/wireguard/odm-external-interface ]] && ROLE_VPN="yes"
 ROLE_CA="no";          [[ -d /var/lib/odm/ca ]] && ROLE_CA="yes"
 ROLE_PXE="no";         [[ -f /etc/dnsmasq.d/odm-pxe.conf || -d /srv/odm-preseed ]] && ROLE_PXE="yes"
+ROLE_TIME="no";        [[ -f /etc/odm/time-server ]] && ROLE_TIME="yes"
 
 # ------------------------------------------------------------- reporting ---
 
@@ -247,11 +248,13 @@ fi
 [[ "$ROLE_VPN" == "yes" ]] && say "  • VPN role (WireGuard)"
 [[ "$ROLE_CA" == "yes" ]] && say "  • Certificate-authority role"
 [[ "$ROLE_PXE" == "yes" ]] && say "  • PXE role (dnsmasq, nginx)"
+[[ "$ROLE_TIME" == "yes" ]] && say "  • Time role (chrony)"
 
 if [[ "$HAS_API" == "no" && "$HAS_AGENT" == "no" && "$IS_DC" == "no" && "$HAS_POSTGRES_DB" == "no" \
         && "$ROLE_DHCP" == "no" && "$ROLE_FILE_SERVER" == "no" && "$ROLE_PRINT" == "no" \
         && "$ROLE_RADIUS" == "no" && "$ROLE_RD_BROKER" == "no" && "$ROLE_SESSION_HOST" == "no" \
-        && "$ROLE_VPN" == "no" && "$ROLE_CA" == "no" && "$ROLE_PXE" == "no" ]]; then
+        && "$ROLE_VPN" == "no" && "$ROLE_CA" == "no" && "$ROLE_PXE" == "no" \
+        && "$ROLE_TIME" == "no" ]]; then
     say "  (nothing — this machine looks clean already)"
 fi
 echo
@@ -472,6 +475,18 @@ teardown_certificate_authority() {
     [[ "$ROLE_CA" == "yes" ]] && ok "Certificate-authority role removed"
 }
 
+teardown_time() {
+    [[ "$ROLE_TIME" == "yes" ]] || return 0
+    say "Time role"
+    run rm -f /etc/chrony/conf.d/odm-time.conf /etc/odm/time-server
+    # chrony itself is left running on its own configuration: a machine with
+    # no time source is a machine that stops being able to sign in, which is
+    # not what uninstalling ODM should do.
+    maybe systemctl try-restart chrony
+    [[ "$PURGE_PACKAGES" == "yes" ]] && PURGE_LIST+=(chrony)
+    ok "Time role removed"
+}
+
 teardown_pxe() {
     [[ "$ROLE_PXE" == "yes" ]] || return 0
     say "PXE role"
@@ -494,6 +509,7 @@ teardown_session_host
 teardown_vpn
 teardown_certificate_authority
 teardown_pxe
+teardown_time
 teardown_policy_artefacts
 
 # -------------------------------------------------------------- core ODM --

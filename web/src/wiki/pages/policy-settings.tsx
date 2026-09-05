@@ -7,6 +7,7 @@ import {
   Quickstart,
   Reference,
   Section,
+  Steps,
   Where,
 } from "../components";
 import type { WikiPageMeta } from "../types";
@@ -158,6 +159,36 @@ export function Content() {
                 "Dash and taskbar",
                 "name and principal",
                 "What is pinned to the dash, and in what order, for a user or group.",
+              ],
+              ["Kernel parameters", "parameter", "A value in /etc/sysctl.d, applied without a restart."],
+              [
+                "Shortcuts and bookmarks",
+                "name and principal",
+                "A desktop icon, a menu entry, or a place in the file manager.",
+              ],
+              ["Fonts", "file name", "A font installed for everybody on the machine."],
+              ["Power and suspend", "single value", "logind and the desktop's power settings."],
+              ["Screen lock", "single value", "When an idle screen locks itself."],
+              [
+                "Removable storage",
+                "single value",
+                "Whether a plugged-in disk can be used, read, or not opened.",
+              ],
+              ["Desktop theme", "single value", "Theme, icons, cursor and interface fonts."],
+              [
+                "Second factor",
+                "single value",
+                "A code as well as a password, checked by pam_oath against the console's own enrolment.",
+              ],
+              [
+                "Software control",
+                "single value",
+                "Which packages may be installed. New ones only from the list; upgrades always.",
+              ],
+              [
+                "First sign-in",
+                "single value",
+                "The distribution's welcome tour, and a message of the day.",
               ],
               ["Firewall rules", "name", "Rules in a dedicated nftables table."],
               ["Drive maps", "mount point", "A mounted SMB share, machine-wide or per user."],
@@ -766,6 +797,244 @@ For user or group %Finance`}</Code>
             layout is applied at sign-in; a person may rearrange the dash during the session and
             gets the layout back the next time they sign in.
           </Note>
+        </Section>
+
+        <Section title="Power and suspend">
+          <p>
+            When the screen turns off, when the machine suspends, and what the lid and the power
+            button do. Written to both <C>systemd-logind</C> and the desktop&rsquo;s own settings,
+            so a laptop closed at the login screen &mdash; where there is no session to hold a
+            setting &mdash; behaves the same way as one closed by somebody signed in.
+          </p>
+          <Reference
+            headers={["Field", "Notes"]}
+            rows={[
+              ["Screen off on mains / on battery", "Minutes of inactivity. 0 never."],
+              [
+                "Suspend on mains / on battery",
+                "Minutes of inactivity. 0 never, which is the usual answer for a desktop.",
+              ],
+              ["Closing the lid", "Suspends, hibernates, locks, or does nothing."],
+              ["The power button", "The same, plus shutting down."],
+              [
+                "Let people change these",
+                "Off locks the keys in dconf, so the settings panel shows them and will not change them.",
+              ],
+            ]}
+          />
+          <Note>
+            Where this and Screen lock both set a screen-off time, this one wins: two policies
+            writing one key is a disagreement the machine cannot resolve, so only one writes it.
+          </Note>
+        </Section>
+
+        <Section title="Screen lock">
+          <p>
+            When an idle screen locks itself, how long the grace period is before it does, and
+            whether the lock screen shows what notifications say.
+          </p>
+          <Reference
+            headers={["Field", "Notes"]}
+            rows={[
+              ["Lock after idle", "Minutes. 0 never. Ignored where Power and suspend sets one."],
+              [
+                "Grace period",
+                "Seconds between the screen blanking and the lock engaging, for somebody who moves the mouse straight back.",
+              ],
+              ["Lock when the screen turns off", "Off leaves the screen blank but unlocked."],
+              ["Lock when the machine suspends", "The one that matters on a laptop."],
+              ["Show what notifications say", "Off shows that there is one, not what it says."],
+            ]}
+          />
+        </Section>
+
+        <Section title="Removable storage">
+          <p>
+            What may be done with a disk somebody plugs in. Enforced through <C>udisks</C>, which
+            is what every desktop file manager mounts with, and through a udev rule for the
+            read-only case &mdash; the kernel is told the device is read-only before anything
+            mounts it, so every mount of it is read-only however it is made.
+          </p>
+          <Reference
+            headers={["Setting", "What happens"]}
+            rows={[
+              ["Can be used normally", "Nothing is enforced. Removing the setting does the same."],
+              ["Can be read, not written", "It mounts, and writes to it fail."],
+              ["Cannot be opened at all", "The desktop does not offer to mount it."],
+              [
+                "Except for",
+                "Users and groups the rule does not apply to, in the usual %group form.",
+              ],
+            ]}
+          />
+          <Note>
+            This stops the desktop mounting it. Somebody who already has root on the machine can
+            still mount by hand &mdash; that is a sudo rule to look at, not something a udisks
+            policy can decide.
+          </Note>
+        </Section>
+
+        <Section title="Kernel parameters">
+          <p>
+            Kernel settings as <C>sysctl</C> names them, written to{" "}
+            <C>/etc/sysctl.d/50-odm.conf</C> and applied with <C>sysctl --system</C> so they take
+            effect without a restart and survive one. The parameter field offers the ones a
+            hardening baseline usually sets.
+          </p>
+          <Example title="A small hardening set">
+            <Code>{`net.ipv4.conf.all.rp_filter          1
+net.ipv4.conf.all.accept_redirects   0
+net.ipv4.tcp_syncookies              1
+kernel.kptr_restrict                 2
+kernel.dmesg_restrict                1
+fs.protected_hardlinks               1
+fs.protected_symlinks                1`}</Code>
+          </Example>
+        </Section>
+
+        <Section title="Shortcuts and bookmarks">
+          <p>
+            An icon on somebody&rsquo;s desktop, an entry in their menu, or a place in their file
+            manager&rsquo;s sidebar. Written in the session, like a drive map, because all three
+            land in a home directory and are decided by who is signing in.
+          </p>
+          <Reference
+            headers={["Kind", "Opens", "Where it appears"]}
+            rows={[
+              ["Link", "A URL — https://, smb://, mailto:", "Desktop, menu, or both"],
+              ["Application", "The absolute path of a program", "Desktop, menu, or both"],
+              [
+                "Place",
+                "A path or a URI such as smb://fs01/shared",
+                "The file manager's sidebar, in Files, Thunar and Nemo alike",
+              ],
+            ]}
+          />
+          <Note>
+            A place is written into the GTK bookmarks file, and only the lines ODM put there are
+            rewritten &mdash; a bookmark somebody added themselves stays.
+          </Note>
+        </Section>
+
+        <Section title="Fonts">
+          <p>
+            Font files installed for everybody on the machine, under{" "}
+            <C>/usr/local/share/fonts/odm</C>, with the font cache rebuilt so applications can see
+            them. A font removed from the policy is removed from the machine.
+          </p>
+        </Section>
+
+        <Section title="Desktop theme">
+          <p>
+            Theme, icons, cursor, the three interface fonts and whether the desktop is light or
+            dark. Anything left empty is left as the machine has it.
+          </p>
+          <Note>
+            A name here has to be something the machine actually has. Deploy fonts under Fonts and
+            themes as a package under Software deployment; naming one that is not installed writes
+            the setting and changes nothing visible.
+          </Note>
+        </Section>
+
+        <Section title="Second factor">
+          <p>
+            A code as well as a password, at the machine rather than only at the console. It is
+            the same enrolment: one QR code, scanned into any authenticator app or password
+            manager, and the same six-digit code works in both places.
+          </p>
+          <Steps>
+            <li>
+              Add the setting and choose where it is asked for: at the machine, over SSH, running{" "}
+              <C>sudo</C>, over remote desktop.
+            </li>
+            <li>
+              Leave <strong>Only for</strong> empty for everybody the policy reaches, or name the
+              groups it applies to while you roll it out.
+            </li>
+            <li>
+              Set a grace period. Somebody who has not enrolled yet is still let in for that long,
+              and is walked through setting one up when they sign in.
+            </li>
+          </Steps>
+          <Reference
+            headers={["Field", "Notes"]}
+            rows={[
+              [
+                "Walk people through setting one up",
+                "On a text login or over SSH they are asked there and then. In a graphical session a terminal opens as the desktop starts.",
+              ],
+              [
+                "Grace period",
+                "Days. 0 refuses anybody who has not enrolled from the first sign-in, which locks out everybody who has not.",
+              ],
+              [
+                "Only for / Except for",
+                "Users and groups. A machine is only ever given the enrolments of the people its own policy names.",
+              ],
+            ]}
+          />
+          <Note>
+            Recovery codes work at the console, not at a machine&rsquo;s login screen: the module
+            on the machine checks codes, not the console&rsquo;s recovery list. Somebody who has
+            lost their device signs in to the console with a recovery code and re-enrols, or an
+            administrator removes their enrolment under the user object.
+          </Note>
+          <Note>
+            The machines carrying this hold the enrolments of the people who sign in to them, in a
+            root-only file, which is the same trust boundary as their Kerberos keytab. A member
+            server somebody has root on gives those up; a machine the policy does not name is
+            given none at all.
+          </Note>
+        </Section>
+
+        <Section title="Software control">
+          <p>
+            Which packages may be installed. A package that is not on the list is refused wherever
+            it is installed from &mdash; <C>apt</C>, <C>aptitude</C>, the desktop&rsquo;s own
+            installer &mdash; because the check is a <C>dpkg</C> hook, which is where all of them
+            end up.
+          </p>
+          <p>
+            Upgrading something already installed is always allowed. Security updates, unattended
+            upgrades and the packages ODM deploys by policy keep working without every one of them
+            having to be on the list.
+          </p>
+          <Example title="A desktop that may install a browser and an office suite">
+            <Code>{`firefox-esr
+libreoffice-*
+remmina`}</Code>
+            <p>
+              A trailing <C>*</C> matches a family. What somebody sees when they try something
+              else is the refusal plus whatever you put in the message.
+            </p>
+          </Example>
+          <Note>
+            Flatpak and Snap do not go through dpkg at all, so they are blocked separately through
+            polkit. Both are on by default.
+          </Note>
+        </Section>
+
+        <Section title="First sign-in">
+          <p>
+            What somebody is shown the first time they sign in. A managed desktop has already been
+            set up by whoever manages it, so the distribution&rsquo;s welcome tour asks people to
+            choose things that are not theirs to choose &mdash; and it is the first thing every
+            one of them asks about.
+          </p>
+          <Reference
+            headers={["Field", "Notes"]}
+            rows={[
+              [
+                "Skip the first-login setup tour",
+                "Hides gnome-initial-setup's autostart entry in /etc, so a package upgrade does not bring it back.",
+              ],
+              [
+                "Skip the what's-new dialog",
+                "The shell's own welcome dialog after a GNOME upgrade.",
+              ],
+              ["Message of the day", "Written to /etc/motd, shown on a text login."],
+            ]}
+          />
         </Section>
 
         <Section title="Agent updates">

@@ -9,7 +9,14 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { ApiError, api, type Gpo, type GpoLink, type PolicySettings } from "../api";
+import {
+  ApiError,
+  api,
+  type Gpo,
+  type GpoLink,
+  type GpoRevision,
+  type PolicySettings,
+} from "../api";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { PasswordPolicy } from "../components/PasswordPolicy";
@@ -22,7 +29,7 @@ import { TemplateManager } from "../components/TemplateManager";
 import { FileInput } from "../components/FileInput";
 import Select from "../components/Select"
 
-type Tab = "settings" | "links" | "scope";
+type Tab = "settings" | "links" | "scope" | "history";
 
 type PageTab = "objects" | "passwords";
 
@@ -379,7 +386,7 @@ function GpoDetail({
       )}
 
       <nav className="tabs" aria-label="Group policy sections">
-        {(["settings", "links", "scope"] as Tab[]).map((current) => (
+        {(["settings", "links", "scope", "history"] as Tab[]).map((current) => (
           <button
             key={current}
             type="button"
@@ -387,7 +394,13 @@ function GpoDetail({
             aria-current={tab === current ? "true" : undefined}
             onClick={() => setTab(current)}
           >
-            {current === "settings" ? "Settings" : current === "links" ? "Links" : "Scope"}
+            {current === "settings"
+              ? "Settings"
+              : current === "links"
+                ? "Links"
+                : current === "scope"
+                  ? "Scope"
+                  : "History"}
           </button>
         ))}
       </nav>
@@ -400,6 +413,8 @@ function GpoDetail({
       {saved && <p className="muted">Saved. Agents pick this up on their next refresh.</p>}
 
       {tab === "settings" && <SettingsEditor settings={settings} onChange={setSettings} />}
+
+      {tab === "history" && <HistoryTab gpo={gpo} onRolledBack={onReload} />}
 
       {tab === "links" && (
         <>
@@ -812,5 +827,122 @@ function LinkScope({ settings }: { settings: PolicySettings }) {
       {halves.map((half) => `${half} Configuration`).join(" and ")} — this applies to {reaches} in
       each container it is linked to.
     </p>
+  );
+}
+
+
+/**
+ * What this policy object used to be, and putting it back.
+ *
+ * Every save keeps the state before it, so a change that turns out to be
+ * wrong is one button rather than an operator's memory. Going back is
+ * recorded as a change of its own, so the history reads as what happened
+ * rather than as a gap.
+ */
+function HistoryTab({ gpo, onRolledBack }: { gpo: Gpo; onRolledBack: () => void }) {
+  const [revisions, setRevisions] = useState<GpoRevision[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [going, setGoing] = useState<GpoRevision | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setRevisions((await api.policy.revisions(gpo.guid)).revisions);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [gpo.guid]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <>
+      <InfoPanel page="group-policy" anchor="history-and-going-back">
+        Every save keeps what was there before it. Going back is itself a change, so it can be
+        undone the same way.
+      </InfoPanel>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col" style={{ width: "200px" }}>
+              Changed
+            </th>
+            <th scope="col" style={{ width: "220px" }}>
+              By
+            </th>
+            <th scope="col">What changed</th>
+            <th scope="col" style={{ width: "150px" }}>
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {revisions.map((revision) => (
+            <tr key={revision.id}>
+              <td>{new Date(revision.changed_at).toLocaleString()}</td>
+              <td>{revision.changed_by ?? "—"}</td>
+              <td>{revision.summary || "—"}</td>
+              <td>
+                <button type="button" className="ghost" onClick={() => setGoing(revision)}>
+                  Go back to this
+                </button>
+              </td>
+            </tr>
+          ))}
+          {loading ? (
+            <LoadingRow colSpan={4} />
+          ) : (
+            revisions.length === 0 && (
+              <tr>
+                <td colSpan={4} className="empty">
+                  Nothing yet. The first change to this object appears here.
+                </td>
+              </tr>
+            )
+          )}
+        </tbody>
+      </table>
+
+      {going && (
+        <Modal
+          title="Go back to this version?"
+          submitLabel="Go back"
+          onClose={() => setGoing(null)}
+          onSubmit={async () => {
+            try {
+              await api.policy.rollback(going.id);
+              setGoing(null);
+              onRolledBack();
+              void load();
+            } catch (err) {
+              setError(err instanceof ApiError ? err.message : String(err));
+              setGoing(null);
+            }
+          }}
+        >
+          <p>
+            This puts <strong>{gpo.display_name}</strong> back to how it was before the change of{" "}
+            {new Date(going.changed_at).toLocaleString()}. Every machine the object is linked to
+            picks the older settings up at its next refresh.
+          </p>
+          <p className="muted">
+            Recorded as a change of its own, so this is undoable the same way.
+          </p>
+        </Modal>
+      )}
+    </>
   );
 }

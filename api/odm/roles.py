@@ -282,6 +282,38 @@ REGISTRY: dict[str, Role] = {
             "land, under Client Enrolment."
         ),
     ),
+    "time": Role(
+        name="time",
+        title="Time",
+        summary=(
+            "chrony, serving the domain. Kerberos gives up on a clock more than "
+            "five minutes out, so every sign-in depends on this being right."
+        ),
+        packages=("chrony",),
+        arguments=(
+            Argument(
+                name="upstream",
+                label="Where this machine gets the time",
+                help="Space separated. Empty uses Debian's own pool.",
+                placeholder="0.debian.pool.ntp.org 1.debian.pool.ntp.org",
+                optional=True,
+                configuration=True,
+            ),
+            Argument(
+                name="allow",
+                label="Networks that may ask it for the time",
+                help="Space separated, in CIDR. Empty serves the networks this machine is on.",
+                placeholder="10.0.0.0/8",
+                optional=True,
+                configuration=True,
+            ),
+        ),
+        ui_section="controllers",
+        notes=(
+            "A domain-joined machine already asks its controller for the time, so "
+            "installing this on the controllers is usually all there is to do."
+        ),
+    ),
     "print-server": Role(
         name="print-server",
         title="Print server",

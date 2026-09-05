@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import db, objects, rsop, sysvol, tasks
+from . import db, objects, policy, rsop, sysvol, tasks
 from .config import Settings, get_settings
 from .policy_schema import PolicySettings, Targeting
 from .routes_directory import _audit_context, _bound
@@ -392,6 +392,9 @@ async def update_gpo(
         before = await pool.fetchrow("SELECT * FROM gpo WHERE guid = $1", body.guid)
         if before is None:
             raise objects.NotFound("no such group policy object")
+        # Kept before the change, not after: what a rollback wants is the
+        # thing that was working a moment ago.
+        await _record_revision(pool, before, session.principal, _changed(body))
 
         row = await pool.fetchrow(
             """
@@ -764,6 +767,20 @@ async def bootstrap(
         return {"created": created}
 
 
+def _changed(body: Any) -> str:
+    """What the operator changed, in the words of the fields they touched."""
+    names = {
+        "display_name": "name",
+        "description": "description",
+        "enabled": "enabled",
+        "settings": "settings",
+        "security_filter": "security filtering",
+        "targeting": "targeting",
+    }
+    touched = [label for field, label in names.items() if getattr(body, field, None) is not None]
+    return ", ".join(touched) or "no change"
+
+
 # -------------------------------------------------------------------- RSoP ---
 
 
@@ -777,6 +794,220 @@ async def effective(
     """What this object would receive right now — the RSoP preview."""
     async with _bound(settings, write=False) as conn:
         return await rsop.build(pool, settings, conn, dn)
+
+
+class ProposedLink(BaseModel):
+    gpo_guid: Annotated[str, Field(min_length=36, max_length=36)]
+    target_dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    link_order: Annotated[int, Field(ge=1, le=1000)] = 1
+    enforced: bool = False
+    enabled: bool = True
+
+
+class ModelRequest(BaseModel):
+    """A question of the form "what would this machine get if…"."""
+
+    dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    add: Annotated[list[ProposedLink], Field(default_factory=list, max_length=32)]
+    # Links to take out of the answer, as "<gpo guid>:<target dn>".
+    remove: Annotated[
+        list[Annotated[str, Field(max_length=1200)]], Field(default_factory=list, max_length=32)
+    ]
+    # What the machine would say about itself. Left empty, the last thing it
+    # reported is used, which is what the plain preview does.
+    os: Annotated[str, Field(default="", max_length=64)] = ""
+    ip: Annotated[
+        list[Annotated[str, Field(max_length=64)]], Field(default_factory=list, max_length=8)
+    ]
+
+
+@router.post("/model", dependencies=[Depends(requires("policy.model"))])
+async def model(
+    body: ModelRequest,
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """What this object gets now, and what it would get after a change.
+
+    Both answers come out of the same resolver the agent's does, with the
+    proposed links added to the second one — so what the preview says is what
+    the machine will do, rather than a second implementation that can drift
+    away from it.
+    """
+    drop = set()
+    for entry in body.remove:
+        guid, _, target = entry.partition(":")
+        if guid and target:
+            drop.add((guid, target.lower()))
+
+    add = [
+        policy.Link(
+            gpo_guid=link.gpo_guid,
+            target_dn=link.target_dn,
+            link_order=link.link_order,
+            enforced=link.enforced,
+            enabled=link.enabled,
+        )
+        for link in body.add
+    ]
+
+    async with _bound(settings, write=False) as conn:
+        now = await rsop.build(
+            pool, settings, conn, body.dn, os_id=body.os, ip_addresses=tuple(body.ip)
+        )
+        proposed = await rsop.build(
+            pool,
+            settings,
+            conn,
+            body.dn,
+            os_id=body.os,
+            ip_addresses=tuple(body.ip),
+            add_links=add,
+            drop_links=drop,
+        )
+    return {
+        "now": now,
+        "proposed": proposed,
+        "changes": policy.differences(now, proposed),
+    }
+
+
+# --------------------------------------------------------------- revisions ---
+
+
+@router.get("/gpo/revisions", dependencies=[Depends(requires("gpo.revision.read"))])
+async def gpo_revisions(
+    guid: uuid.UUID,
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> dict[str, Any]:
+    """What this policy object used to be, newest first.
+
+    Each row is the state *before* one change, which is what going back to it
+    would restore.
+    """
+    rows = await pool.fetch(
+        """
+        SELECT id, display_name, description, enabled, settings, summary,
+               changed_by, changed_at
+        FROM gpo_revision WHERE gpo_guid = $1
+        ORDER BY changed_at DESC LIMIT $2
+        """,
+        guid,
+        limit,
+    )
+    return {
+        "revisions": [
+            {
+                "id": str(row["id"]),
+                "display_name": row["display_name"],
+                "description": row["description"],
+                "enabled": row["enabled"],
+                "settings": json.loads(row["settings"]),
+                "summary": row["summary"],
+                "changed_by": row["changed_by"],
+                "changed_at": row["changed_at"],
+            }
+            for row in rows
+        ]
+    }
+
+
+class RollbackRequest(BaseModel):
+    revision_id: Annotated[str, Field(min_length=36, max_length=36)]
+
+
+@router.post("/gpo/rollback", dependencies=[Depends(requires("gpo.rollback"))])
+async def rollback_gpo(
+    body: RollbackRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Put a policy object back the way it was before one change.
+
+    Recorded as a change of its own, so going back is itself undoable and the
+    history reads as what happened rather than as a gap.
+    """
+    revision = await pool.fetchrow(
+        "SELECT * FROM gpo_revision WHERE id = $1::uuid", body.revision_id
+    )
+    if revision is None:
+        raise objects.NotFound("no such revision")
+
+    async with _audit_context(
+        request, session, pool, "gpo.rollback",
+        object_type="gpo", object_dn=str(revision["gpo_guid"]),
+    ) as entry:
+        before = await pool.fetchrow(
+            "SELECT * FROM gpo WHERE guid = $1", revision["gpo_guid"]
+        )
+        if before is None:
+            raise objects.NotFound("that policy object no longer exists")
+        await _record_revision(
+            pool, before, session.principal,
+            f"before going back to {revision['changed_at']:%Y-%m-%d %H:%M}",
+        )
+        row = await pool.fetchrow(
+            """
+            UPDATE gpo SET
+                display_name    = $2,
+                description     = $3,
+                enabled         = $4,
+                settings        = $5::jsonb,
+                security_filter = $6::jsonb,
+                targeting       = $7::jsonb,
+                version         = version + 1,
+                updated_at      = now()
+            WHERE guid = $1
+            RETURNING *
+            """,
+            revision["gpo_guid"],
+            revision["display_name"],
+            revision["description"],
+            revision["enabled"],
+            revision["settings"],
+            revision["security_filter"],
+            revision["targeting"],
+        )
+        if sysvol.enabled(settings):
+            async with _bound(settings, write=True) as conn:
+                await run_in_threadpool(
+                    sysvol.bump_version, conn, settings, str(row["guid"]), row["version"]
+                )
+        entry.before = _gpo_json(before)
+        entry.after = _gpo_json(row)
+        await tasks.push_policy(pool, session.principal)
+        return _gpo_json(row)
+
+
+async def _record_revision(
+    pool: asyncpg.Pool, row: asyncpg.Record, actor: str, summary: str
+) -> None:
+    """Keep the state a policy object was in before it is changed.
+
+    Before rather than after: what a rollback wants is the thing that worked,
+    and the thing that worked is what was there a moment ago.
+    """
+    await pool.execute(
+        """
+        INSERT INTO gpo_revision (gpo_guid, display_name, description, enabled,
+                                  settings, targeting, security_filter, summary, changed_by)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9)
+        """,
+        row["guid"],
+        row["display_name"],
+        row["description"],
+        row["enabled"],
+        row["settings"],
+        row["targeting"],
+        row["security_filter"],
+        summary,
+        actor,
+    )
 
 
 @router.get("/reports", dependencies=[Depends(requires("gpo.read"))])

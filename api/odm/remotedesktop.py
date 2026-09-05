@@ -211,7 +211,11 @@ def external_records(
     )
 
 
-def broker_task(row: dict[str, Any], hosts: list[str]) -> dict[str, Any]:
+def broker_task(
+    row: dict[str, Any],
+    hosts: list[str],
+    host_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """What a broker is told: the collection, and where to send people.
 
     The affinity window is the collection's own disconnected timeout, not a
@@ -221,11 +225,28 @@ def broker_task(row: dict[str, Any], hosts: list[str]) -> dict[str, Any]:
     the logon rather than start a second session.
     """
     fronting = brokers(row)
+    # Which hosts are taking new sessions. A drained host keeps the sessions
+    # it has and is given none it does not, so a machine can be patched
+    # without turning everybody on it out.
+    draining = {
+        str(entry.get("node_fqdn", "")).lower(): bool(entry.get("accepts_new", True))
+        for entry in host_rows or []
+    }
     return {
         "collection": row["name"],
         # Each host with the port its xrdp is on, so a host that shares a
         # machine with the broker is reached where it actually listens.
-        "hosts": [{"host": host, "port": host_port(host, *fronting)} for host in hosts],
+        "hosts": [
+            {
+                "host": host,
+                "port": host_port(host, *fronting),
+                "accepts_new": draining.get(host.lower(), True),
+            }
+            for host in hosts
+        ],
+        # The brokers, so two of them can keep one table of who is on which
+        # host between them rather than each keeping its own.
+        "brokers": fronting if row.get("shared_state", True) else [],
         "balance_method": row.get("balance_method") or "leastconn",
         "affinity_minutes": affinity_minutes(
             row.get("disconnected_minutes") or 0, row.get("idle_minutes") or 0

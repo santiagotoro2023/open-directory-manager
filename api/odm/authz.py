@@ -75,6 +75,23 @@ PERMISSIONS: tuple[str, ...] = (
     # auditor should be able to read and what nobody else should.
     "domain.export",
     "domain.import",
+    # What a machine would get if a policy object were linked somewhere, and
+    # what it got last time. Reading, not changing: an auditor asking "why
+    # does that laptop behave like that" needs neither.
+    "policy.model",
+    "gpo.revision.read",
+    "gpo.rollback",
+    # A group whose membership is a query rather than a list.
+    "group.query.write",
+    # Whether a machine's disks are encrypted, and the recovery key for one.
+    # Two rights: seeing that a laptop is encrypted is an inventory question,
+    # and reading the key that unlocks it is not.
+    "computer.encryption.read",
+    "computer.encryption.escrow",
+    # Withdrawing a certificate the domain issued.
+    "ca.revoke",
+    # The domain measured against a security checklist.
+    "domain.baseline",
     "audit.read",
     "rbac.write",
     "ca.read",

@@ -12,6 +12,8 @@ import {
 import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
 import { BulkImport, CreateDialog } from "../components/CreateDialog";
 import { useContextMenu, type MenuItem } from "../components/ContextMenu";
+import { Field, Modal } from "../components/Modal";
+import { PickerField } from "../components/Picker";
 import { EnrolmentTokens } from "../components/EnrolmentTokens";
 import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
 import { isDisabled } from "../components/objectDialogs";
@@ -107,6 +109,12 @@ export function Directory() {
   const navigate = useNavigate();
   const [renaming, setRenaming] = useState<DirectoryObject | null>(null);
   const { bind, menu } = useContextMenu();
+  // Objects picked for one change applied to all of them. Creating from CSV
+  // has always been possible; changing what already exists has not, and doing
+  // it one at a time is what makes a department move an afternoon's work.
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadTree = useCallback(async () => {
     const tree = await api.directory.tree();
@@ -332,10 +340,40 @@ export function Directory() {
             {error}
           </p>
         )}
+        {notice && <p className="muted">{notice}</p>}
+
+        {chosen.size > 0 && (
+          <div className="actions-row">
+            <strong>{chosen.size} selected</strong>
+            <button type="button" className="primary" onClick={() => setBulk(true)}>
+              Change all of them…
+            </button>
+            <button type="button" className="ghost" onClick={() => setChosen(new Set())}>
+              Clear
+            </button>
+          </div>
+        )}
 
         <table className="data">
           <thead>
             <tr>
+              <th scope="col" style={{ width: "36px" }}>
+                <input
+                  type="checkbox"
+                  aria-label="Select everything listed"
+                  checked={chosen.size > 0 && chosen.size === objects.length}
+                  ref={(box) => {
+                    if (box) box.indeterminate = chosen.size > 0 && chosen.size < objects.length;
+                  }}
+                  onChange={(event) =>
+                    setChosen(
+                      event.target.checked
+                        ? new Set(objects.map((object) => object.distinguishedName))
+                        : new Set(),
+                    )
+                  }
+                />
+              </th>
               <th scope="col">Name</th>
               <th scope="col">Type</th>
               <th scope="col">Account name</th>
@@ -376,6 +414,19 @@ export function Directory() {
                     { label: "Delete", danger: true, onSelect: () => open(object) },
                   ])}
                 >
+                  <td onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${label(object)}`}
+                      checked={chosen.has(object.distinguishedName)}
+                      onChange={(event) => {
+                        const next = new Set(chosen);
+                        if (event.target.checked) next.add(object.distinguishedName);
+                        else next.delete(object.distinguishedName);
+                        setChosen(next);
+                      }}
+                    />
+                  </td>
                   <td>
                     <Icon size={15} aria-hidden="true" />
                     {label(object)}
@@ -395,7 +446,7 @@ export function Directory() {
             })}
             {!loading && objects.length === 0 && (
               <tr>
-                <td colSpan={4} className="empty">
+                <td colSpan={5} className="empty">
                   Nothing here yet.
                 </td>
               </tr>
@@ -420,6 +471,19 @@ export function Directory() {
       {enrolling && <EnrolmentTokens container={container} onClose={() => setEnrolling(false)} />}
 
       {menu}
+
+      {bulk && (
+        <BulkDialog
+          dns={[...chosen]}
+          onClose={() => setBulk(false)}
+          onDone={(message) => {
+            setBulk(false);
+            setChosen(new Set());
+            setNotice(message);
+            void refresh();
+          }}
+        />
+      )}
 
       {linking && (
         <LinkPolicyDialog
@@ -572,5 +636,144 @@ function TreeNode({
         </div>
       )}
     </div>
+  );
+}
+
+
+/**
+ * One change, applied to everything selected.
+ *
+ * Each object is its own success or failure: one that cannot be changed —
+ * protected, gone, outside the caller's scope — is reported by name and the
+ * rest still happen. Stopping at the first failure in a run of five hundred
+ * leaves nobody able to say what did and did not.
+ */
+function BulkDialog({
+  dns,
+  onClose,
+  onDone,
+}: {
+  dns: string[];
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const [field, setField] = useState("department");
+  const [value, setValue] = useState("");
+  const [addGroup, setAddGroup] = useState("");
+  const [removeGroup, setRemoveGroup] = useState("");
+  const [moveTo, setMoveTo] = useState("");
+  const [enabled, setEnabled] = useState<"" | "yes" | "no">("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [problems, setProblems] = useState<{ dn: string; reason: string }[]>([]);
+
+  const nothing = !value && !addGroup && !removeGroup && !moveTo && !enabled;
+
+  return (
+    <Modal
+      title={`Change ${dns.length} object${dns.length === 1 ? "" : "s"}`}
+      submitLabel={busy ? "Applying…" : "Apply"}
+      onClose={onClose}
+      onSubmit={async () => {
+        if (nothing || busy) return;
+        setBusy(true);
+        setError(null);
+        try {
+          const result = await api.directory.bulk({
+            dns,
+            changes: value ? { [field]: value } : {},
+            add_groups: addGroup ? [addGroup] : [],
+            remove_groups: removeGroup ? [removeGroup] : [],
+            move_to: moveTo || null,
+            enabled: enabled === "" ? null : enabled === "yes",
+          });
+          if (result.problems.length > 0) {
+            setProblems(result.problems);
+            setBusy(false);
+            return;
+          }
+          onDone(`${result.changed.length} object(s) changed.`);
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+          setBusy(false);
+        }
+      }}
+    >
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      {problems.length > 0 && (
+        <>
+          <p className="alert" role="alert">
+            {problems.length} object(s) were refused. Everything else was changed.
+          </p>
+          <pre className="command-output">
+            {problems.map((problem) => `${problem.dn}\n  ${problem.reason}`).join("\n")}
+          </pre>
+        </>
+      )}
+
+      <p className="muted">
+        Leave anything empty to leave it alone. A value set here replaces what each object has;
+        an empty one does not clear it.
+      </p>
+
+      <div className="field-grid">
+        <Field label="Set">
+          <Select value={field} onChange={(e) => setField(e.target.value)}>
+            <option value="department">Department</option>
+            <option value="title">Title</option>
+            <option value="company">Company</option>
+            <option value="physicalDeliveryOfficeName">Office</option>
+            <option value="description">Description</option>
+          </Select>
+        </Field>
+        <Field label="To">
+          <input value={value} onChange={(e) => setValue(e.target.value)} />
+        </Field>
+      </div>
+
+      <div className="field-grid">
+        <Field label="Add to group">
+          <PickerField
+            kind="group"
+            as="dn"
+            ariaLabel="Add to group"
+            value={addGroup}
+            onChange={setAddGroup}
+          />
+        </Field>
+        <Field label="Remove from group">
+          <PickerField
+            kind="group"
+            as="dn"
+            ariaLabel="Remove from group"
+            value={removeGroup}
+            onChange={setRemoveGroup}
+          />
+        </Field>
+      </div>
+
+      <div className="field-grid">
+        <Field label="Move to">
+          <PickerField
+            kind="ou"
+            as="dn"
+            ariaLabel="Move to"
+            value={moveTo}
+            onChange={setMoveTo}
+          />
+        </Field>
+        <Field label="Account state">
+          <Select value={enabled} onChange={(e) => setEnabled(e.target.value as "" | "yes" | "no")}>
+            <option value="">Leave as it is</option>
+            <option value="yes">Enable</option>
+            <option value="no">Disable</option>
+          </Select>
+        </Field>
+      </div>
+    </Modal>
   );
 }

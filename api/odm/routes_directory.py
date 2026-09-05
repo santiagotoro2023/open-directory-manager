@@ -12,6 +12,9 @@ later (CLAUDE.md §7.2).
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Annotated, Any, Literal
@@ -21,15 +24,18 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
-from . import audit, db, directory, objects, policy_schema
+from . import audit, db, directory, dynamicgroups, objects, policy_schema
+from .authz import Denied
 from .config import Settings, get_settings
-from .security import Authz, authorization, client_ip, get_pool, require_admin
+from .security import Authz, authorization, client_ip, get_pool, require_admin, requires
 from .sessions import Session
 
 router = APIRouter(prefix="/api/v1/directory", tags=["directory"])
 
 # Delegation is per object type: a helpdesk role that may reset passwords is
 # not thereby allowed to rewrite an organizational unit.
+_log = logging.getLogger("odm.directory")
+
 WRITE_PERMISSION = {
     "user": "user.write",
     "group": "group.write",
@@ -655,3 +661,314 @@ async def delete_object(
                 session.principal,
                 timedelta(days=settings.retention_days),
             )
+
+
+# ---------------------------------------------------------------- in bulk ---
+
+
+class BulkRequest(BaseModel):
+    """One change, applied to a selection of objects.
+
+    Creating from CSV has always been possible; changing objects that already
+    exist has not, and doing it one at a time is what makes a department move
+    or a title change an afternoon's work.
+    """
+
+    dns: Annotated[list[Dn], Field(min_length=1, max_length=500)]
+    # Attributes to set on every one of them. An empty value clears it, as it
+    # does on a single object.
+    changes: Annotated[
+        dict[str, Annotated[str | None, Field(max_length=1024)]], Field(default_factory=dict)
+    ]
+    add_groups: Annotated[list[Dn], Field(default_factory=list, max_length=32)]
+    remove_groups: Annotated[list[Dn], Field(default_factory=list, max_length=32)]
+    move_to: Dn | None = None
+    # Whether to enable or disable each account. Left unset, neither.
+    enabled: bool | None = None
+
+
+@router.post("/objects/bulk")
+async def bulk_change(
+    body: BulkRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Apply one change to every object named.
+
+    Each object is its own success or failure. One that cannot be changed —
+    protected, gone, outside the caller's scope — is reported by name and the
+    rest still happen, because stopping at the first failure in a run of five
+    hundred leaves nobody able to say what did and did not.
+    """
+    for group in body.add_groups + body.remove_groups:
+        authz.require("group.member.write", group)
+    if body.move_to is not None:
+        authz.require("object.move", body.move_to)
+
+    changed: list[str] = []
+    problems: list[dict[str, str]] = []
+
+    async with _bound(settings, write=True) as conn:
+        for dn in body.dns:
+            try:
+                before = await run_in_threadpool(objects.get, conn, settings, dn)
+                authz.require(WRITE_PERMISSION.get(before.get("objectType"), "*"), dn)
+                current = dn
+                if body.changes:
+                    await run_in_threadpool(
+                        objects.update, conn, settings, current, body.changes
+                    )
+                if body.enabled is not None:
+                    await run_in_threadpool(
+                        objects.set_enabled, conn, settings, current, enabled=body.enabled
+                    )
+                for group in body.add_groups:
+                    await run_in_threadpool(
+                        objects.edit_members, conn, settings, group, add=[current], remove=[]
+                    )
+                for group in body.remove_groups:
+                    await run_in_threadpool(
+                        objects.edit_members, conn, settings, group, add=[], remove=[current]
+                    )
+                if body.move_to is not None:
+                    authz.require("object.move", current)
+                    current = await run_in_threadpool(
+                        objects.move, conn, settings, current, body.move_to, None
+                    )
+                changed.append(current)
+            except (
+                objects.ObjectError,
+                objects.NotFound,
+                objects.ProtectedObject,
+                Denied,
+            ) as exc:
+                problems.append({"dn": dn, "reason": str(exc)})
+
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="object.bulk",
+            outcome="success" if not problems else "partial",
+            object_type="directory",
+            detail=f"{len(changed)} changed, {len(problems)} refused",
+            after={
+                "changes": body.changes,
+                "add_groups": body.add_groups,
+                "remove_groups": body.remove_groups,
+                "move_to": body.move_to,
+                "enabled": body.enabled,
+                "changed": changed[:200],
+                "problems": problems[:200],
+            },
+        )
+    return {"changed": changed, "problems": problems}
+
+
+# --------------------------------------------------------- dynamic groups ---
+
+
+class GroupQueryRequest(BaseModel):
+    group_dn: Dn
+    scope_dn: Annotated[str, Field(default="", max_length=1024)] = ""
+    object_type: Literal["user", "computer"] = "user"
+    conditions: Annotated[
+        list[dict[str, Annotated[str, Field(max_length=256)]]],
+        Field(default_factory=list, max_length=16),
+    ]
+    match_all: bool = True
+    enabled: bool = True
+
+
+@router.get("/groups/queries", dependencies=[Depends(requires("directory.read"))])
+async def list_group_queries(
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Every group whose membership is a query, and how the last run went."""
+    rows = await pool.fetch("SELECT * FROM group_query ORDER BY group_dn")
+    return {
+        "queries": [_query_json(row) for row in rows],
+        "attributes": [
+            {"key": key, "label": label} for key, label in dynamicgroups.ATTRIBUTES.items()
+        ],
+        "operators": list(dynamicgroups.OPERATORS),
+    }
+
+
+def _query_json(row: asyncpg.Record) -> dict[str, Any]:
+    conditions = json.loads(row["conditions"])
+    return {
+        "group_dn": row["group_dn"],
+        "scope_dn": row["scope_dn"],
+        "object_type": row["object_type"],
+        "conditions": conditions,
+        "match_all": row["match_all"],
+        "enabled": row["enabled"],
+        "summary": dynamicgroups.describe(conditions, row["match_all"]),
+        "member_count": row["member_count"],
+        "last_run_at": row["last_run_at"],
+        "last_error": row["last_error"],
+    }
+
+
+@router.put("/groups/query", dependencies=[Depends(requires("group.query.write"))])
+async def save_group_query(
+    body: GroupQueryRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Make a group's membership a question, and answer it now.
+
+    Run immediately rather than at the next tick: an operator who has just
+    written a query wants to see who it matches while they can still correct
+    it.
+    """
+    authz.require("group.member.write", body.group_dn)
+    try:
+        conditions = dynamicgroups.validate(list(body.conditions))
+    except dynamicgroups.QueryError as exc:
+        raise objects.ObjectError(str(exc)) from exc
+
+    async with _bound(settings, write=False) as conn:
+        group = await run_in_threadpool(objects.get, conn, settings, body.group_dn)
+    if group.get("objectType") != "group":
+        raise objects.ObjectError("only a group's membership can be a query")
+
+    async with _audit_context(
+        request, session, pool, "group.query.write",
+        object_type="group", object_dn=body.group_dn,
+    ) as entry:
+        row = await pool.fetchrow(
+            """
+            INSERT INTO group_query (group_dn, scope_dn, object_type, conditions,
+                                     match_all, enabled, created_by)
+            VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
+            ON CONFLICT (group_dn) DO UPDATE SET
+                scope_dn = excluded.scope_dn,
+                object_type = excluded.object_type,
+                conditions = excluded.conditions,
+                match_all = excluded.match_all,
+                enabled = excluded.enabled,
+                updated_at = now()
+            RETURNING *
+            """,
+            body.group_dn,
+            body.scope_dn,
+            body.object_type,
+            json.dumps(conditions),
+            body.match_all,
+            body.enabled,
+            session.principal,
+        )
+        entry.after = _query_json(row)
+
+    result = await run_group_query(pool, settings, body.group_dn)
+    return {**_query_json(row), **result}
+
+
+@router.delete("/groups/query", status_code=204,
+               dependencies=[Depends(requires("group.query.write"))])
+async def delete_group_query(
+    request: Request,
+    group_dn: Annotated[str, Query(min_length=3, max_length=1024)],
+    session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> None:
+    """Stop maintaining a group's membership. Who is in it now stays in it."""
+    authz.require("group.member.write", group_dn)
+    async with _audit_context(
+        request, session, pool, "group.query.delete",
+        object_type="group", object_dn=group_dn,
+    ):
+        await pool.execute("DELETE FROM group_query WHERE group_dn = $1", group_dn)
+
+
+async def run_group_query(
+    pool: asyncpg.Pool, settings: Settings, group_dn: str
+) -> dict[str, Any]:
+    """Make one group's membership match its query.
+
+    The query is the membership, not an addition to it: somebody put in the
+    group by hand is taken out again at the next run. That is what "a group
+    whose membership is a query" means, and the alternative — two sources of
+    truth for one list — is how a group ends up with members nobody can
+    explain.
+    """
+    row = await pool.fetchrow("SELECT * FROM group_query WHERE group_dn = $1", group_dn)
+    if row is None or not row["enabled"]:
+        return {"added": 0, "removed": 0}
+
+    conditions = json.loads(row["conditions"])
+    try:
+        ldap_filter = dynamicgroups.build_filter(
+            row["object_type"], conditions, row["match_all"]
+        )
+        async with _bound(settings, write=True) as conn:
+            found = await run_in_threadpool(
+                objects.search_filter,
+                conn,
+                settings,
+                ldap_filter,
+                row["scope_dn"] or None,
+            )
+            group = await run_in_threadpool(objects.get, conn, settings, group_dn)
+            current = [str(dn) for dn in group.get("member") or []]
+            add, remove = dynamicgroups.membership_change(current, found)
+            if add or remove:
+                await run_in_threadpool(
+                    objects.edit_members, conn, settings, group_dn, add=add, remove=remove
+                )
+    except (
+        dynamicgroups.QueryError,
+        objects.ObjectError,
+        objects.NotFound,
+        directory.DirectoryError,
+    ) as exc:
+        await pool.execute(
+            "UPDATE group_query SET last_run_at = now(), last_error = $2 WHERE group_dn = $1",
+            group_dn,
+            str(exc),
+        )
+        return {"added": 0, "removed": 0, "error": str(exc)}
+
+    await pool.execute(
+        """
+        UPDATE group_query
+        SET last_run_at = now(), last_error = NULL, member_count = $2
+        WHERE group_dn = $1
+        """,
+        group_dn,
+        len(found),
+    )
+    return {"added": len(add), "removed": len(remove), "member_count": len(found)}
+
+
+async def group_query_loop(pool: asyncpg.Pool, settings: Settings) -> None:
+    """Keep every dynamic group's membership true, on a quarter-hour tick.
+
+    The same interval an agent polls on, because that is how long a change in
+    the directory already takes to reach a machine: a membership that lags by
+    less than that changes nothing anybody can see.
+    """
+    while True:
+        await asyncio.sleep(15 * 60)
+        try:
+            rows = await pool.fetch(
+                "SELECT group_dn FROM group_query WHERE enabled ORDER BY group_dn"
+            )
+            for row in rows:
+                await run_group_query(pool, settings, row["group_dn"])
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - a loop that dies stops maintaining every group
+            _log.exception("running the group queries")

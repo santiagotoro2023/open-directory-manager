@@ -43,6 +43,9 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "printers": ("name", "for_principal"),
     "remote_desktop_files": ("name", "for_principal"),
     "default_applications": ("mime_type",),
+    "sysctl": ("key",),
+    "shortcuts": ("name", "for_principal"),
+    "fonts": ("name",),
     "dash": ("name", "for_principal"),
     "certificate_enrolment": ("profile", "path"),
     "admx": ("policy_id",),
@@ -59,6 +62,13 @@ DICT_CATEGORIES = (
     "always_on_vpn",
     "password_self_service",
     "local_password_policy",
+    "power",
+    "screen_lock",
+    "removable_storage",
+    "desktop_theme",
+    "second_factor",
+    "first_run",
+    "software_control",
 )
 
 CATEGORIES = (*LIST_KEYS, *DICT_CATEGORIES)
@@ -330,3 +340,37 @@ def serial(document: dict[str, Any]) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
+
+
+def differences(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
+    """What changes between two effective policies, category by category.
+
+    Category-level rather than field-level on purpose: an operator modelling a
+    link wants to know that drive maps and the screen lock would change, not
+    that one boolean inside them did. The two documents are on the page beside
+    this if they want the detail.
+    """
+    left = before.get("settings") or {}
+    right = after.get("settings") or {}
+    changes = []
+    for category in sorted(set(left) | set(right)):
+        was, now = left.get(category), right.get(category)
+        if was == now:
+            continue
+        changes.append(
+            {
+                "category": category,
+                "state": "added" if was is None else "removed" if now is None else "changed",
+                "before_count": _count(was),
+                "after_count": _count(now),
+            }
+        )
+    return changes
+
+
+def _count(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, list):
+        return len(value)
+    return 1

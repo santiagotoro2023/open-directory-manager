@@ -15,7 +15,6 @@ repository itself.
 | [../branding/BRAND.md](../branding/BRAND.md) | Logo usage, palette, typography |
 | `web/src/wiki/` | The operator wiki, served inside the console under **Wiki** |
 | [../README.md](../README.md) | Overview and quickstart |
-| [proposals.md](proposals.md) | Proposed work, awaiting sign-off |
 
 ## Build status against CLAUDE.md §7
 

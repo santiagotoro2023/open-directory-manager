@@ -63,17 +63,52 @@ _PROTECTED_RDNS = (
     "cn=managed service accounts",
     "ou=domain controllers",
 )
-_PROTECTED_NAMES = {
-    "administrator",
-    "domain admins",
-    "domain users",
-    "domain computers",
-    "domain controllers",
-    "enterprise admins",
-    "schema admins",
-    "guest",
-    "krbtgt",
-}
+# The relative identifiers the directory gives its own accounts and groups.
+#
+# Identity, not name. These used to be matched by name alone, anywhere in the
+# tree, so an ordinary organizational unit somebody called "Domain
+# Controllers" — a perfectly reasonable name for one — could not be renamed,
+# moved or deleted, with no way round it from the console. A name is not an
+# identity: the built-in objects are the ones carrying these identifiers, and
+# nothing else is, whatever it is called.
+# And the names those objects have, in the two containers the directory keeps
+# them in and nowhere else. A second account or group of the same name cannot
+# exist — the directory requires account names to be unique across the domain
+# — so a match here is the built-in one. Scoped to those containers so that an
+# organizational unit somebody makes elsewhere is not caught by its name.
+_PROTECTED_BUILTIN_CONTAINERS = (",cn=users", ",cn=builtin")
+_PROTECTED_NAMES = frozenset(
+    {
+        "administrator",
+        "guest",
+        "krbtgt",
+        "domain admins",
+        "domain users",
+        "domain guests",
+        "domain computers",
+        "domain controllers",
+        "enterprise admins",
+        "schema admins",
+        "group policy creator owners",
+    }
+)
+
+_PROTECTED_RIDS = frozenset(
+    {
+        500,  # Administrator
+        501,  # Guest
+        502,  # krbtgt
+        512,  # Domain Admins
+        513,  # Domain Users
+        514,  # Domain Guests
+        515,  # Domain Computers
+        516,  # Domain Controllers
+        518,  # Schema Admins
+        519,  # Enterprise Admins
+        520,  # Group Policy Creator Owners
+        521,  # Read-only Domain Controllers
+    }
+)
 
 
 class ObjectError(Exception):
@@ -233,9 +268,30 @@ def assert_mutable(settings: Settings, dn: str, entry: dict | None = None) -> No
     relative = canonical[: -(len(base) + 1)]
     if relative in _PROTECTED_RDNS or relative.endswith(",cn=builtin"):
         raise ProtectedObject("built-in containers and groups are protected")
-    name = (entry or {}).get("sAMAccountName") or rdn_value(canonical)
-    if str(name).lower() in _PROTECTED_NAMES or str(name).lower() == settings.admin_group.lower():
-        raise ProtectedObject(f"{name} is a protected built-in object")
+
+    if relative.endswith(_PROTECTED_BUILTIN_CONTAINERS) and (
+        rdn_value(relative).lower() in _PROTECTED_NAMES
+    ):
+        raise ProtectedObject(f"{rdn_value(canonical)} is a built-in object of the directory")
+
+    # Its identifier, which only the directory's own objects carry. An object
+    # named after one of them is not one of them.
+    rid = str((entry or {}).get("objectSid") or "").rsplit("-", 1)[-1]
+    if rid.isdigit() and int(rid) in _PROTECTED_RIDS:
+        name = (entry or {}).get("sAMAccountName") or rdn_value(canonical)
+        raise ProtectedObject(f"{name} is a built-in object of the directory")
+
+    # And the group the console authenticates against, whatever it is called:
+    # deleting it locks every operator out of the console, including whoever
+    # would have to put it back. An account name, never the relative name — an
+    # organizational unit has no account name, and matching its own name here
+    # is what protected objects that were never built-in.
+    account = str((entry or {}).get("sAMAccountName") or "")
+    if account and account.lower() == settings.admin_group.lower():
+        raise ProtectedObject(
+            f"{account} is the group this console signs operators in with; "
+            "point ODM at another group before removing it"
+        )
 
 
 def _check(conn: Connection, action: str) -> None:
@@ -362,6 +418,54 @@ IN_CHAIN = "1.2.840.113556.1.4.1941"
 
 # A group can hold thousands of accounts, and a membership panel is a panel.
 MEMBER_LIMIT = 500
+
+
+def search_filter(
+    conn: Connection, settings: Settings, ldap_filter: str, container: str | None = None
+) -> list[str]:
+    """Distinguished names matching a filter, for a group whose membership is
+    a query.
+
+    The filter is built from named conditions rather than typed, so what
+    reaches here is ODM's own construction with every value escaped — see
+    dynamicgroups.
+    """
+    base = normalize_dn(settings, container) if container else safe_dn(settings.base_dn)
+    found = _search(conn, base, ldap_filter, ["distinguishedName"], scope=SUBTREE, limit=5000)
+    return [raw["dn"] for raw in found]
+
+
+def account_names_in(conn: Connection, settings: Settings, group: str) -> set[str]:
+    """Every account in a group, at any depth, by account name.
+
+    The directory walks the nesting itself, which is both faster and more
+    correct than following member lists from here: a group three levels down
+    is found the way the domain finds it when it decides access.
+    """
+    base = safe_dn(settings.base_dn)
+    found = _search(
+        conn,
+        base,
+        f"(&(objectClass=group)(sAMAccountName={escape_filter_chars(group)}))",
+        ["distinguishedName"],
+        limit=2,
+    )
+    if not found:
+        return set()
+    needle = escape_filter_chars(found[0]["dn"])
+    members = _search(
+        conn,
+        base,
+        f"(&(objectCategory=person)(objectClass=user)(memberOf:{IN_CHAIN}:={needle}))",
+        ["sAMAccountName"],
+        scope=SUBTREE,
+        limit=5000,
+    )
+    return {
+        str(raw["attributes"]["sAMAccountName"]).lower()
+        for raw in members
+        if raw["attributes"].get("sAMAccountName")
+    }
 
 
 def membership(conn: Connection, settings: Settings, dn: str) -> dict[str, Any]:
@@ -704,7 +808,9 @@ def move(
     conn: Connection, settings: Settings, dn: str, target: str, new_name: str | None = None
 ) -> str:
     canonical = normalize_dn(settings, dn)
-    assert_mutable(settings, canonical)
+    # With the object in hand, so what is protected is decided by what it is
+    # rather than by what it is called.
+    assert_mutable(settings, canonical, get(conn, settings, canonical))
     destination = normalize_dn(settings, target)
     if destination.lower() == canonical.lower() or destination.lower().endswith(
         "," + canonical.lower()

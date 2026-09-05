@@ -306,7 +306,7 @@ async def delete_profile(
     return Response(status_code=204)
 
 
-@router.post("/revoke", status_code=204, dependencies=[Depends(requires("ca.issue"))])
+@router.post("/revoke", status_code=204, dependencies=[Depends(requires("ca.revoke"))])
 async def revoke(
     body: RevokeRequest,
     request: Request,

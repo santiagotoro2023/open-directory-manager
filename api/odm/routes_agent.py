@@ -23,7 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
-from . import agentupdate, audit, ca, objects, routes_dc, rsop, sites, tasks
+from . import agentupdate, audit, ca, objects, routes_dc, rsop, sites, tasks, totp
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -120,6 +120,192 @@ async def agent_policy(
             "size": offer.size,
         }
     return document
+
+
+@router.get("/second-factor")
+async def agent_second_factor(
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """The second-factor enrolments this machine may hold.
+
+    One line per account in the format pam_oath reads, so the module on the
+    machine can ask for a code and check it without the machine ever talking
+    to the console at the moment somebody signs in — which is the moment the
+    console may be the thing that is unreachable.
+
+    Only the accounts the machine's own policy names. A machine is given the
+    secrets of the people who sign in to it and nobody else's, and it is
+    given none at all unless a policy object linked to it turns the second
+    factor on.
+    """
+    async with _bound(settings, write=False) as conn:
+        document = await rsop.build(pool, settings, conn, machine.dn)
+        factor = (document.get("settings") or {}).get("second_factor") or {}
+        if not factor.get("enabled"):
+            # Not an error: a machine that asks and is told nothing writes an
+            # empty file, which is what "nobody here has one" looks like.
+            return {"users": []}
+        wanted = await run_in_threadpool(
+            totp.entitled_principals,
+            conn,
+            settings,
+            require=factor.get("require_principals") or [],
+            exempt=factor.get("exempt_principals") or [],
+        )
+
+    rows = await pool.fetch(
+        "SELECT principal, secret FROM totp_enrolment WHERE confirmed_at IS NOT NULL"
+    )
+    return {"users": totp.oath_users(rows, wanted)}
+
+
+class MachineEnrolRequest(BaseModel):
+    username: Annotated[str, Field(min_length=1, max_length=256)]
+    code: Annotated[str, Field(default="", max_length=32)] = ""
+
+
+async def _may_enrol(
+    machine: Machine, pool: asyncpg.Pool, settings: Settings, username: str
+) -> dict[str, Any]:
+    """Whether this machine may set a second factor up for this person.
+
+    Three things have to hold, and all three are decided here rather than on
+    the machine: a policy object linked to that machine asks for a second
+    factor and for people to be able to set one up themselves; the account is
+    one that policy covers; and the account exists in the directory. A member
+    server is not trusted to answer any of them.
+    """
+    account = username.split("@")[0].split("\\")[-1]
+    async with _bound(settings, write=False) as conn:
+        document = await rsop.build(pool, settings, conn, machine.dn)
+        factor = (document.get("settings") or {}).get("second_factor") or {}
+        if not factor.get("enabled") or not factor.get("self_enrol", True):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "no policy on this machine asks people to set up a second factor",
+            )
+        wanted = await run_in_threadpool(
+            totp.entitled_principals,
+            conn,
+            settings,
+            require=factor.get("require_principals") or [],
+            exempt=factor.get("exempt_principals") or [],
+        )
+        if wanted is not None and account.lower() not in wanted:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, f"{account} is not covered by that policy"
+            )
+        try:
+            user = await run_in_threadpool(objects.find_user, conn, settings, account)
+        except objects.NotFound as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no account named {account}") from exc
+
+    sid = str(user.get("objectSid") or "")
+    if not sid:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "that account has no identifier")
+    return {"sid": sid, "principal": account}
+
+
+@router.post("/second-factor/enrol")
+async def agent_begin_second_factor(
+    body: MachineEnrolRequest,
+    request: Request,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """A secret for somebody setting a second factor up at the machine.
+
+    The person is at a machine they have just authenticated to, being asked
+    for something they do not yet have. Sending them to the console instead
+    would mean an administrator's tool and a support ticket for what every
+    other service does in thirty seconds.
+
+    Calling this twice hands back the same unconfirmed secret rather than a
+    new one, so somebody who scanned the code and then closed the window can
+    carry on where they stopped. An account that already has a confirmed
+    second factor is told so and given nothing.
+    """
+    who = await _may_enrol(machine, pool, settings, body.username)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT secret, confirmed_at FROM totp_enrolment WHERE principal_sid = $1",
+            who["sid"],
+        )
+        if row is not None and row["confirmed_at"]:
+            return {"already_enrolled": True}
+        secret = row["secret"] if row is not None else totp.generate_secret()
+        await conn.execute(
+            """
+            INSERT INTO totp_enrolment (principal_sid, principal, secret, enrolled_by)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (principal_sid) DO UPDATE
+                SET secret = excluded.secret, updated_at = now()
+            """,
+            who["sid"],
+            who["principal"],
+            secret,
+            f"self, at {machine.hostname}",
+        )
+    return {
+        "already_enrolled": False,
+        "secret": secret,
+        "uri": totp.provisioning_uri(secret, who["principal"], settings.domain),
+        "digits": totp.DIGITS,
+        "period": totp.PERIOD,
+    }
+
+
+@router.post("/second-factor/confirm")
+async def agent_confirm_second_factor(
+    body: MachineEnrolRequest,
+    request: Request,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Finish it, by proving the device actually has the secret."""
+    who = await _may_enrol(machine, pool, settings, body.username)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM totp_enrolment WHERE principal_sid = $1", who["sid"]
+        )
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing to confirm")
+        if row["confirmed_at"]:
+            return {"recovery_codes": []}
+        try:
+            step = totp.verify(row["secret"], body.code, last_step=row["last_step"])
+        except totp.TotpError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+        codes = totp.generate_recovery_codes()
+        await conn.execute(
+            """
+            UPDATE totp_enrolment
+            SET confirmed_at = now(), last_step = $2, recovery_codes = $3, updated_at = now()
+            WHERE principal_sid = $1
+            """,
+            who["sid"],
+            step,
+            codes,
+        )
+        await audit.record(
+            conn,
+            actor=who["principal"],
+            actor_sid=who["sid"],
+            source_ip=request.client.host if request.client else None,
+            action="auth.second_factor.enrol",
+            outcome="success",
+            object_type="session",
+            object_dn=machine.dn,
+            detail=f"enrolled at {machine.hostname}",
+        )
+    return {"recovery_codes": codes}
 
 
 @router.get("/binary")
@@ -493,6 +679,19 @@ class PrintDevice(BaseModel):
     description: Annotated[str, Field(max_length=256)] = ""
 
 
+class ReportedVolume(BaseModel):
+    """One block device, and what the machine says about its encryption."""
+
+    device: Annotated[str, Field(max_length=128)]
+    format: Annotated[str, Field(default="", max_length=32)] = ""
+    holder: Annotated[str, Field(default="", max_length=128)] = ""
+    mount_point: Annotated[str, Field(default="", max_length=512)] = ""
+    size_bytes: Annotated[int, Field(default=0, ge=0)] = 0
+    encrypted: bool = False
+    at_boot: bool = False
+    free_key_slots: Annotated[int, Field(default=0, ge=0, le=64)] = 0
+
+
 class Inventory(BaseModel):
     operating_system: Annotated[str, Field(max_length=128)] = ""
     kernel: Annotated[str, Field(max_length=128)] = ""
@@ -515,6 +714,8 @@ class Inventory(BaseModel):
     # account of its own replication, which is exactly whose account it should
     # be, and the console only reads it for controllers.
     replication: Annotated[str, Field(max_length=32768)] = ""
+    # Which of this machine's disks are encrypted.
+    volumes: Annotated[list[ReportedVolume], Field(default_factory=list, max_length=64)]
 
 
 @router.post("/inventory", status_code=204)
@@ -532,12 +733,12 @@ async def agent_inventory(
                 local_users, sessions, pending_updates, security_updates,
                 updates, updates_checked_at, packages, package_count,
                 addresses, site_name, print_devices, replication,
-                replication_at, reported_at
+                replication_at, volumes, reported_at
             )
             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
                     CASE WHEN $11 THEN now() ELSE NULL END, $12::jsonb, $13,
                     $14::jsonb, $15, $16::jsonb, nullif($17, ''),
-                    CASE WHEN $17 <> '' THEN now() ELSE NULL END, now())
+                    CASE WHEN $17 <> '' THEN now() ELSE NULL END, $18::jsonb, now())
             ON CONFLICT (computer_dn) DO UPDATE SET
                 hostname           = excluded.hostname,
                 operating_system   = excluded.operating_system,
@@ -562,6 +763,7 @@ async def agent_inventory(
                                               computer_fact.replication),
                 replication_at     = COALESCE(excluded.replication_at,
                                               computer_fact.replication_at),
+                volumes            = excluded.volumes,
                 reported_at        = now()
             """,
             machine.dn,
@@ -590,6 +792,7 @@ async def agent_inventory(
             ),
             json.dumps([device.model_dump() for device in body.print_devices]),
             body.replication,
+            json.dumps([volume.model_dump() for volume in body.volumes]),
         )
 
         # A session host's logged-on users are the session directory. Derived

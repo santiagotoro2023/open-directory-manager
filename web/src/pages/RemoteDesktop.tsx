@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { ApiError, api, type RdCollection, type RdSession } from "../api";
+import { ApiError, api, type ProfileDisk, type RdCollection, type RdSession } from "../api";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { ChoiceList } from "../components/ChoiceList";
 import { Field, Modal } from "../components/Modal";
 import { Wizard } from "../components/Wizard";
 import { PickerDialog, PickerField } from "../components/Picker";
+import { useContextMenu } from "../components/ContextMenu";
 import { SharePicker } from "../components/ResourcePicker";
 import Select from "../components/Select"
 
-type Tab = "broker" | "hosts" | "sessions";
+type Tab = "broker" | "hosts" | "sessions" | "profiles";
 
 const STATE_BADGE: Record<string, string> = {
   active: "success",
@@ -37,6 +38,27 @@ export function RemoteDesktop() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const { bind, menu } = useContextMenu();
+
+  /** Stop or resume sending new sessions to one host.
+   *
+   * Drained rather than removed: removing it would send everybody still on it
+   * somewhere else at their next reconnect, which is what draining exists to
+   * avoid. */
+  async function drain(collection: RdCollection, host: string, accepts: boolean) {
+    setError(null);
+    try {
+      const result = await api.rd.drain(collection.id, host, accepts);
+      setNotice(
+        accepts
+          ? `${host} is taking new sessions again.`
+          : `${host} is draining. ${result.sessions} session(s) still on it; it can be patched once they are gone.`,
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }
 
   const load = useCallback(async () => {
     setError(null);
@@ -58,6 +80,7 @@ export function RemoteDesktop() {
 
   return (
     <main className="content">
+      {menu}
       <div className="page-header">
         <h1>Remote Desktop</h1>
         <span className="spacer" />
@@ -81,6 +104,7 @@ export function RemoteDesktop() {
             ["broker", "Broker"],
             ["hosts", "Session hosts"],
             ["sessions", "Sessions"],
+            ["profiles", "Profile disks"],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -174,16 +198,56 @@ export function RemoteDesktop() {
               <h3 className="section-title">{collection.name}</h3>
               <table className="data compact">
                 <tbody>
-                  {collection.hosts.map((host) => (
-                    <tr key={host}>
-                      <td className="mono">{host}</td>
+                  {collection.host_state.map((host) => (
+                    <tr
+                      key={host.node_fqdn}
+                      {...bind([
+                        { label: host.node_fqdn, heading: true },
+                        {
+                          label: host.accepts_new
+                            ? "Stop new sessions (drain)"
+                            : "Take new sessions again",
+                          onSelect: () => void drain(collection, host.node_fqdn, !host.accepts_new),
+                        },
+                        { separator: true },
+                        {
+                          label: `Remove from ${collection.name}`,
+                          danger: true,
+                          onSelect: async () => {
+                            await api.rd
+                              .removeHost(collection.id, host.node_fqdn)
+                              .catch(() => undefined);
+                            void load();
+                          },
+                        },
+                      ])}
+                    >
+                      <td className="mono">{host.node_fqdn}</td>
+                      <td style={{ width: "190px" }}>
+                        {host.accepts_new ? (
+                          <span className="badge success">Taking new sessions</span>
+                        ) : (
+                          <span className="badge">Draining</span>
+                        )}
+                      </td>
+                      <td style={{ width: "150px" }}>
+                        <button
+                          type="button"
+                          className="button-link"
+                          onClick={() => void drain(collection, host.node_fqdn, !host.accepts_new)}
+                        >
+                          {host.accepts_new ? "Drain" : "Resume"}
+                        </button>
+                      </td>
                       <td style={{ width: "60px" }}>
                         <button
                           type="button"
                           className="icon"
-                          aria-label={`Remove ${host} from ${collection.name}`}
+                          aria-label={`Remove ${host.node_fqdn} from ${collection.name}`}
                           onClick={async () => {
-                            await api.rd.removeHost(collection.id, host).catch(() => undefined);
+                            await api.rd
+                              .removeHost(collection.id, host.node_fqdn)
+                              .catch(() => undefined);
                             void load();
                           }}
                         >
@@ -222,6 +286,8 @@ export function RemoteDesktop() {
           </table>
         </>
       )}
+
+      {tab === "profiles" && <ProfileDisks collections={collections} />}
 
       {tab === "sessions" && (
         <table className="data">
@@ -690,4 +756,229 @@ function ConnectionDialog({
       </p>
     </Modal>
   );
+}
+
+
+/**
+ * The profile disks on a collection's share.
+ *
+ * A disk that has filled up is a person whose desktop will not start, and
+ * finding that out otherwise means signing in to a session host and running
+ * du. Asked of a host rather than of the file server, because the host is what
+ * has the share mounted with the credentials that can read it.
+ */
+function ProfileDisks({ collections }: { collections: RdCollection[] }) {
+  const hosts = collections.flatMap((collection) => collection.hosts);
+  const [node, setNode] = useState(hosts[0] ?? "");
+  const [store, setStore] = useState("");
+  const [disks, setDisks] = useState<ProfileDisk[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [managing, setManaging] = useState<ProfileDisk | null>(null);
+
+  const load = useCallback(async () => {
+    if (!node) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.rd.profiles(node);
+      setStore(result.store);
+      setDisks(result.disks);
+    } catch (err) {
+      setDisks([]);
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [node]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (hosts.length === 0) {
+    return <p className="empty">No session host is in a collection, so there is no share to read.</p>;
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <Field label="Read the share from">
+          <Select value={node} onChange={(e) => setNode(e.target.value)}>
+            {hosts.map((host) => (
+              <option key={host} value={host}>
+                {host}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <span className="spacer" />
+        <button type="button" className="ghost" onClick={() => void load()}>
+          <RefreshCw size={15} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
+      {store && <p className="mono muted">{store}</p>}
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && <p className="muted">{notice}</p>}
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col">Person</th>
+            <th scope="col" style={{ width: "140px" }}>
+              Used
+            </th>
+            <th scope="col" style={{ width: "140px" }}>
+              May grow to
+            </th>
+            <th scope="col" style={{ width: "140px" }}>
+              In use
+            </th>
+            <th scope="col" style={{ width: "180px" }}>
+              Last changed
+            </th>
+            <th scope="col" style={{ width: "110px" }}>
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {disks.map((disk) => (
+            <tr key={disk.user}>
+              <td>{disk.user}</td>
+              <td className="mono">{bytes(disk.used_bytes)}</td>
+              <td className="mono">{bytes(disk.size_bytes)}</td>
+              <td>{disk.in_use ? <span className="badge">Signed in</span> : "—"}</td>
+              <td>{disk.modified ? new Date(disk.modified).toLocaleString() : "—"}</td>
+              <td>
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={disk.in_use}
+                  onClick={() => setManaging(disk)}
+                >
+                  Manage…
+                </button>
+              </td>
+            </tr>
+          ))}
+          {loading ? (
+            <LoadingRow colSpan={6} />
+          ) : (
+            disks.length === 0 && (
+              <tr>
+                <td colSpan={6} className="empty">
+                  No profile disks on this share yet. One is made the first time somebody signs in.
+                </td>
+              </tr>
+            )
+          )}
+        </tbody>
+      </table>
+
+      {managing && (
+        <ProfileDiskDialog
+          node={node}
+          disk={managing}
+          onClose={() => setManaging(null)}
+          onDone={(message) => {
+            setManaging(null);
+            setNotice(message);
+            void load();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function ProfileDiskDialog({
+  node,
+  disk,
+  onClose,
+  onDone,
+}: {
+  node: string;
+  disk: ProfileDisk;
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const [action, setAction] = useState<"grow" | "reset">("grow");
+  const [sizeGb, setSizeGb] = useState(Math.max(1, Math.ceil(disk.size_bytes / 1024 ** 3) + 5));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title={`${disk.user}'s profile disk`}
+      submitLabel={busy ? "Working…" : action === "grow" ? "Grow it" : "Set it aside"}
+      onClose={onClose}
+      onSubmit={async () => {
+        if (busy) return;
+        setBusy(true);
+        setError(null);
+        try {
+          const result = await api.rd.manageProfile({
+            node_fqdn: node,
+            user: disk.user,
+            action,
+            size_gb: action === "grow" ? sizeGb : undefined,
+          });
+          onDone(result.result);
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+          setBusy(false);
+        }
+      }}
+    >
+      <p className="mono muted">{disk.path}</p>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      <Field label="What to do">
+        <Select value={action} onChange={(e) => setAction(e.target.value as "grow" | "reset")}>
+          <option value="grow">Let it grow further</option>
+          <option value="reset">Set it aside and build a new one</option>
+        </Select>
+      </Field>
+      {action === "grow" ? (
+        <Field label="May grow to (GB)" hint="A profile disk is never made smaller">
+          <input
+            type="number"
+            min={1}
+            max={2048}
+            value={sizeGb}
+            onChange={(e) => setSizeGb(Number(e.target.value))}
+          />
+        </Field>
+      ) : (
+        <p className="alert" role="alert">
+          The disk is renamed, never deleted — a profile that will not mount still holds
+          somebody&rsquo;s work. Their next sign-in builds a new one beside it, and they start
+          with an empty desktop.
+        </p>
+      )}
+    </Modal>
+  );
+}
+
+/** A size somebody reads rather than counts. */
+function bytes(value: number): string {
+  const units = ["B", "kB", "MB", "GB", "TB"];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${unit === 0 ? size : size.toFixed(1)} ${units[unit]}`;
 }

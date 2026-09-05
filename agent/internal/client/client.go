@@ -284,6 +284,103 @@ func (c *Client) tasks(ctx context.Context, wait time.Duration) ([]tasks.Task, e
 	return body.Tasks, nil
 }
 
+// SecondFactorUsers asks for the enrolments this machine is entitled to hold.
+//
+// One line per account, in the format pam_oath reads. The control plane
+// decides which accounts a machine may see; the machine proves which machine
+// it is with the identity domain join gave it, the same as every other call
+// here.
+func (c *Client) SecondFactorUsers(ctx context.Context) ([]string, error) {
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, c.base+"/api/v1/agent/second-factor", nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("second factor: %s", why(response))
+	}
+	var body struct {
+		Users []string `json:"users"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode second factor: %w", err)
+	}
+	return body.Users, nil
+}
+
+// SecondFactorStart is what the control plane hands back when somebody begins
+// setting up a second factor at a machine.
+type SecondFactorStart struct {
+	AlreadyEnrolled bool   `json:"already_enrolled"`
+	Secret          string `json:"secret"`
+	URI             string `json:"uri"`
+}
+
+// SecondFactorDone is what it hands back once a code has proved the device
+// works.
+type SecondFactorDone struct {
+	RecoveryCodes []string `json:"recovery_codes"`
+}
+
+// BeginSecondFactor asks for a secret for the person signing in here.
+//
+// The control plane decides whether this machine may ask for one at all, and
+// for whom. Calling it twice for the same person hands back the same
+// unconfirmed secret rather than a new one, so a session that was interrupted
+// can be picked up where it stopped.
+func (c *Client) BeginSecondFactor(ctx context.Context, username string) (
+	SecondFactorStart, error,
+) {
+	var start SecondFactorStart
+	err := c.postJSON(ctx, "/api/v1/agent/second-factor/enrol",
+		map[string]string{"username": username}, &start)
+	return start, err
+}
+
+// ConfirmSecondFactor proves the device works and finishes the enrolment.
+func (c *Client) ConfirmSecondFactor(ctx context.Context, username, code string) (
+	SecondFactorDone, error,
+) {
+	var done SecondFactorDone
+	err := c.postJSON(ctx, "/api/v1/agent/second-factor/confirm",
+		map[string]string{"username": username, "code": code}, &done)
+	return done, err
+}
+
+// postJSON sends an object and reads one back, which is what most of the
+// calls above do by hand.
+func (c *Client) postJSON(ctx context.Context, path string, body, into any) error {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+path, bytes.NewReader(raw),
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s", why(response))
+	}
+	if into == nil {
+		return nil
+	}
+	return json.NewDecoder(response.Body).Decode(into)
+}
+
 // TaskResult records how a task went. Reported even on failure, so a stuck
 // install shows a reason in the console rather than staying "installing".
 // TaskProgress reports what a long task has printed so far, so the console can

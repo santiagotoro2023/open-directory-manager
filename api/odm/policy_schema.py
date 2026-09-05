@@ -32,6 +32,10 @@ _MIME_PART = r"[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,63}"
 MIME_RE = re.compile(rf"^{_MIME_PART}/{_MIME_PART}$")
 DESKTOP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,119}\.desktop$")
 EXTENSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,15}$")
+# A kernel parameter, a font file, and a package name that may end in a *.
+SYSCTL_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_*-]+)+$")
+FONT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,120}\.(ttf|otf|ttc|woff2)$", re.I)
+PACKAGE_GLOB_RE = re.compile(r"^[a-z0-9][a-z0-9+._-]{0,126}\*?$")
 
 Name = Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -586,6 +590,263 @@ class DashLayout(Strict):
         return ", ".join(cleaned)
 
 
+class PowerSettings(Strict):
+    """When a machine turns its screen off, when it suspends, and what the lid
+    and the power button do.
+
+    A machine setting: it is a property of the hardware in front of somebody,
+    not of who they are, and a laptop that suspends mid-presentation is the
+    same support call whoever is signed in.
+    """
+
+    # Minutes. 0 is never, as it is everywhere else in the policy.
+    screen_off_ac_minutes: Annotated[int, Field(ge=0, le=1440)] = 10
+    screen_off_battery_minutes: Annotated[int, Field(ge=0, le=1440)] = 5
+    suspend_ac_minutes: Annotated[int, Field(ge=0, le=1440)] = 0
+    suspend_battery_minutes: Annotated[int, Field(ge=0, le=1440)] = 30
+    lid_close_action: Literal["suspend", "hibernate", "lock", "ignore"] = "suspend"
+    power_button_action: Literal["suspend", "hibernate", "poweroff", "lock", "ignore"] = "suspend"
+    # Whether somebody signed in may then change any of it.
+    allow_user_change: bool = False
+
+
+class ScreenLock(Strict):
+    """When the screen locks itself, and whether it may be turned off."""
+
+    # Minutes of inactivity before the screen blanks. 0 never blanks, which
+    # also means it never locks on idle.
+    idle_minutes: Annotated[int, Field(ge=0, le=1440)] = 10
+    # Seconds after blanking before the lock actually engages, which is the
+    # grace period somebody who moves the mouse straight back relies on.
+    lock_delay_seconds: Annotated[int, Field(ge=0, le=3600)] = 0
+    lock_enabled: bool = True
+    lock_on_suspend: bool = True
+    # Whether the lock screen shows the contents of notifications.
+    show_notifications: bool = False
+    allow_user_change: bool = False
+
+
+class RemovableStorage(Strict):
+    """What may be done with a disk somebody plugs in.
+
+    Enforced through udisks, which is what every desktop file manager mounts
+    with, and through udev for the read-only case.
+    """
+
+    mode: Literal["allow", "read_only", "block"] = "allow"
+    # Accounts and groups this does not apply to, in the usual %group form.
+    exempt_principals: Annotated[
+        list[Annotated[str, Field(max_length=128)]], Field(default_factory=list, max_length=32)
+    ]
+    message: Annotated[str, Field(max_length=256)] = ""
+
+    @field_validator("exempt_principals")
+    @classmethod
+    def _exempt(cls, value: list[str]) -> list[str]:
+        for principal in value:
+            if not PRINCIPAL_RE.match(principal):
+                raise ValueError(f"{principal!r} is not a user or %group")
+        return value
+
+
+class SysctlSetting(Strict):
+    """One kernel parameter, as sysctl names it."""
+
+    key: Annotated[str, Field(min_length=3, max_length=128)]
+    value: Annotated[str, Field(min_length=1, max_length=128)]
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, value: str) -> str:
+        if not SYSCTL_RE.match(value):
+            raise ValueError("must be a sysctl name, for example net.ipv4.ip_forward")
+        return value
+
+    @field_validator("value")
+    @classmethod
+    def _value(cls, value: str) -> str:
+        # It lands in a configuration file one setting per line.
+        if any(character in value for character in "\n\r"):
+            raise ValueError("a value cannot span lines")
+        return value
+
+
+class Shortcut(Strict):
+    """An icon on somebody's desktop, an entry in their menu, or a place in
+    their file manager."""
+
+    name: Name
+    kind: Literal["application", "link", "place"] = "link"
+    # A command for an application, a URL for a link, a path or URI for a place.
+    target: Annotated[str, Field(min_length=1, max_length=1024)]
+    icon: Annotated[str, Field(max_length=128)] = ""
+    where: Literal["desktop", "menu", "both"] = "desktop"
+    for_principal: Annotated[str, Field(max_length=128)] = ""
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
+
+    @field_validator("target")
+    @classmethod
+    def _target(cls, value: str) -> str:
+        # It is written into a desktop entry, one key per line.
+        if any(character in value for character in "\n\r"):
+            raise ValueError("a target cannot span lines")
+        return value
+
+    @model_validator(mode="after")
+    def _shape(self) -> Shortcut:
+        if self.kind == "link" and not self.target.startswith(
+            ("http://", "https://", "smb://", "ftp://", "sftp://", "mailto:")
+        ):
+            raise ValueError("a link needs a URL, for example https://intranet.example.org")
+        if self.kind == "application" and not self.target.startswith("/"):
+            raise ValueError("an application needs the absolute path of the program to run")
+        if self.kind == "place" and not (
+            self.target.startswith("/") or "://" in self.target
+        ):
+            raise ValueError("a place needs a path or a URI, for example smb://fs01/shared")
+        if self.kind == "place" and self.where != "desktop":
+            # A place lives in the file manager's sidebar; there is nowhere
+            # else for it to be.
+            self.where = "desktop"
+        return self
+
+
+class Font(Strict):
+    """A font file installed on the machine for everybody."""
+
+    name: Annotated[str, Field(min_length=1, max_length=128)]
+    # The file itself, base64, so the machines it is for receive it rather
+    # than being pointed at a path nobody put it at.
+    content: Annotated[str, Field(max_length=8_000_000)]
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if not FONT_RE.match(value):
+            raise ValueError("must be a font file name ending in .ttf, .otf, .ttc or .woff2")
+        return value
+
+    @field_validator("content")
+    @classmethod
+    def _content(cls, value: str) -> str:
+        try:
+            base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("the font must be base64") from exc
+        return value
+
+
+class DesktopTheme(Strict):
+    """How the desktop looks: theme, icons, cursor and the interface font."""
+
+    gtk_theme: Annotated[str, Field(max_length=64)] = ""
+    icon_theme: Annotated[str, Field(max_length=64)] = ""
+    cursor_theme: Annotated[str, Field(max_length=64)] = ""
+    # As GTK writes it: a family, a style and a size — "Inter 11".
+    interface_font: Annotated[str, Field(max_length=64)] = ""
+    document_font: Annotated[str, Field(max_length=64)] = ""
+    monospace_font: Annotated[str, Field(max_length=64)] = ""
+    colour_scheme: Literal["", "default", "prefer-dark", "prefer-light"] = ""
+    allow_user_change: bool = True
+
+    @model_validator(mode="after")
+    def _names(self) -> DesktopTheme:
+        for value in (
+            self.gtk_theme,
+            self.icon_theme,
+            self.cursor_theme,
+            self.interface_font,
+            self.document_font,
+            self.monospace_font,
+        ):
+            # These are written into a dconf keyfile as quoted strings.
+            if any(character in value for character in "\n\r'"):
+                raise ValueError("a theme or font name cannot contain newlines or apostrophes")
+        return self
+
+
+class SecondFactor(Strict):
+    """A second factor at the machine, not only at the console.
+
+    The code is checked by the control plane against the enrolment somebody
+    already made for the console, so one enrolment covers both and no secret
+    is ever written to a machine.
+    """
+
+    enabled: bool = True
+    # Whether somebody with no second factor is walked through setting one up
+    # at the machine, rather than being sent to an administrator. On by
+    # default: the alternative is a person who cannot sign in and a ticket.
+    self_enrol: bool = True
+    # Which ways in ask for it.
+    services: Annotated[
+        list[Literal["login", "ssh", "sudo", "remote-desktop"]],
+        Field(default_factory=lambda: ["login", "ssh"], max_length=4),
+    ]
+    # Who has to have one. Empty is everybody the policy reaches.
+    require_principals: Annotated[
+        list[Annotated[str, Field(max_length=128)]], Field(default_factory=list, max_length=64)
+    ]
+    exempt_principals: Annotated[
+        list[Annotated[str, Field(max_length=128)]], Field(default_factory=list, max_length=64)
+    ]
+    # Somebody who has not enrolled yet is let in for this long after the
+    # setting first reaches them. 0 refuses them from the first sign-in.
+    grace_days: Annotated[int, Field(ge=0, le=365)] = 14
+
+    @field_validator("require_principals", "exempt_principals")
+    @classmethod
+    def _principals(cls, value: list[str]) -> list[str]:
+        for principal in value:
+            if not PRINCIPAL_RE.match(principal):
+                raise ValueError(f"{principal!r} is not a user or %group")
+        return value
+
+
+class FirstRun(Strict):
+    """What a person is shown the first time they sign in to a machine.
+
+    A managed desktop has already been set up by whoever manages it, so the
+    distribution's own welcome tour is asking somebody to choose things that
+    are not theirs to choose.
+    """
+
+    disable_tour: bool = True
+    disable_welcome_dialog: bool = True
+    # A message of the day, for the estates that want one. Empty writes none.
+    message: Annotated[str, Field(max_length=2048)] = ""
+
+
+class SoftwareControl(Strict):
+    """Which software may be installed on the machine.
+
+    New packages are refused unless they are on the list. Upgrading something
+    already installed is always allowed, so security updates and the packages
+    ODM deploys keep working.
+    """
+
+    enabled: bool = True
+    # Package names. A trailing * matches a prefix, which is how a family of
+    # packages is named without listing every one of them.
+    allowed: Annotated[
+        list[Annotated[str, Field(max_length=128)]], Field(default_factory=list, max_length=500)
+    ]
+    block_flatpak: bool = True
+    block_snap: bool = True
+    message: Annotated[str, Field(max_length=256)] = ""
+
+    @field_validator("allowed")
+    @classmethod
+    def _allowed(cls, value: list[str]) -> list[str]:
+        for name in value:
+            if not PACKAGE_GLOB_RE.match(name):
+                raise ValueError(f"{name!r} is not a package name")
+        return value
+
+
 class AlwaysOnVpn(Strict):
     """Hold a tunnel up on this machine whatever the person using it does."""
 
@@ -781,6 +1042,16 @@ class PolicySettings(Strict):
     default_applications: Annotated[
         list[DefaultApplication], Field(default_factory=list, max_length=200)
     ]
+    sysctl: Annotated[list[SysctlSetting], Field(default_factory=list, max_length=200)]
+    shortcuts: Annotated[list[Shortcut], Field(default_factory=list, max_length=100)]
+    fonts: Annotated[list[Font], Field(default_factory=list, max_length=50)]
+    power: PowerSettings | None = None
+    screen_lock: ScreenLock | None = None
+    removable_storage: RemovableStorage | None = None
+    desktop_theme: DesktopTheme | None = None
+    second_factor: SecondFactor | None = None
+    first_run: FirstRun | None = None
+    software_control: SoftwareControl | None = None
     dash: Annotated[list[DashLayout], Field(default_factory=list, max_length=50)]
     always_on_vpn: AlwaysOnVpn | None = None
     local_administrator: LocalAdministrator | None = None

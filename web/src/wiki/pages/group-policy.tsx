@@ -340,6 +340,37 @@ export function Content() {
             not see them.
           </Note>
         </Section>
+        <Section title="History and going back">
+          <p>
+            Every save of a policy object keeps the state it was in before it. The{" "}
+            <strong>History</strong> tab lists them newest first, with who changed what, and one
+            button puts the object back to any of them.
+          </p>
+          <p>
+            Going back is recorded as a change of its own, so it appears in the history like any
+            other and can be undone the same way. Machines the object is linked to pick the older
+            settings up at their next refresh, exactly as they would a new change.
+          </p>
+          <Note>
+            Links are not part of a revision. Where an object applies is a property of the
+            organizational units it is linked to, not of the object, so going back changes what it
+            sets and not where it reaches.
+          </Note>
+        </Section>
+
+        <Section title="Modelling a change before making it">
+          <p>
+            On a computer or a user object, <strong>Policy</strong> answers what it gets now.
+            Modelling answers what it would get if a policy object were linked somewhere &mdash;
+            or if an existing link were taken away &mdash; before anything is changed.
+          </p>
+          <p>
+            Both answers come out of the same resolver the agent&rsquo;s does, with the proposed
+            links added to the second one. What the preview says is what the machine will do,
+            rather than a second implementation that can drift away from it.
+          </p>
+        </Section>
+
       </Details>
     </>
   );

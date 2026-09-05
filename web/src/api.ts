@@ -88,6 +88,61 @@ export interface PolicySettings {
   remote_desktop_files?: Record<string, unknown>[];
   default_applications?: Record<string, unknown>[];
   dash?: Record<string, unknown>[];
+  sysctl?: Record<string, unknown>[];
+  shortcuts?: Record<string, unknown>[];
+  fonts?: Record<string, unknown>[];
+  power?: {
+    screen_off_ac_minutes: number;
+    screen_off_battery_minutes: number;
+    suspend_ac_minutes: number;
+    suspend_battery_minutes: number;
+    lid_close_action: string;
+    power_button_action: string;
+    allow_user_change: boolean;
+  };
+  screen_lock?: {
+    idle_minutes: number;
+    lock_delay_seconds: number;
+    lock_enabled: boolean;
+    lock_on_suspend: boolean;
+    show_notifications: boolean;
+    allow_user_change: boolean;
+  };
+  removable_storage?: {
+    mode: "allow" | "read_only" | "block";
+    exempt_principals: string[];
+    message: string;
+  };
+  desktop_theme?: {
+    gtk_theme: string;
+    icon_theme: string;
+    cursor_theme: string;
+    interface_font: string;
+    document_font: string;
+    monospace_font: string;
+    colour_scheme: string;
+    allow_user_change: boolean;
+  };
+  second_factor?: {
+    enabled: boolean;
+    self_enrol: boolean;
+    services: string[];
+    require_principals: string[];
+    exempt_principals: string[];
+    grace_days: number;
+  };
+  first_run?: {
+    disable_tour: boolean;
+    disable_welcome_dialog: boolean;
+    message: string;
+  };
+  software_control?: {
+    enabled: boolean;
+    allowed: string[];
+    block_flatpak: boolean;
+    block_snap: boolean;
+    message: string;
+  };
   admx?: AdmxSelection[];
   browser?: { chromium?: Record<string, unknown>; firefox?: Record<string, unknown> };
   wallpaper?: {
@@ -655,6 +710,14 @@ export interface RdCollection {
   balance_method: "leastconn" | "roundrobin" | "first";
   principals: string[];
   hosts: string[];
+  /** The same hosts, with whether each is taking new sessions. */
+  host_state: {
+    node_fqdn: string;
+    accepts_new: boolean;
+    drained_at?: string | null;
+    drained_by?: string | null;
+  }[];
+  shared_state: boolean;
   state: "pending" | "applying" | "active" | "failed";
   last_error: string | null;
   updated_at: string;
@@ -672,6 +735,66 @@ export interface DomainImportSummary {
   dns_records: number;
   tables: Record<string, number>;
   withheld: string[];
+}
+
+export interface DiskVolume {
+  device: string;
+  format?: string;
+  holder?: string;
+  mount_point?: string;
+  size_bytes?: number;
+  encrypted: boolean;
+  at_boot: boolean;
+  free_key_slots?: number;
+  recovery_key: {
+    source: string;
+    escrowed_at: string;
+    revealed_at: string | null;
+    revealed_by: string | null;
+  } | null;
+}
+
+export interface ProfileDisk {
+  user: string;
+  path: string;
+  used_bytes: number;
+  size_bytes: number;
+  in_use: boolean;
+  modified?: string;
+}
+
+export interface GroupQuery {
+  group_dn: string;
+  scope_dn: string;
+  object_type: "user" | "computer";
+  conditions: { attribute: string; operator: string; value: string }[];
+  match_all: boolean;
+  enabled: boolean;
+  summary: string;
+  member_count: number;
+  last_run_at: string | null;
+  last_error: string | null;
+}
+
+export interface GpoRevision {
+  id: string;
+  display_name: string;
+  description: string;
+  enabled: boolean;
+  settings: PolicySettings;
+  summary: string;
+  changed_by: string | null;
+  changed_at: string;
+}
+
+export interface BaselineCheck {
+  key: string;
+  title: string;
+  severity: "critical" | "warning" | "advisory" | "ok" | "unknown";
+  finding: string;
+  where: string;
+  count: number;
+  detail: string[];
 }
 
 export interface RdSession {
@@ -985,6 +1108,44 @@ export const api = {
   },
 
   directory: {
+    /** One change, applied to a selection of objects. */
+    bulk: (body: {
+      dns: string[];
+      changes?: Record<string, string | null>;
+      add_groups?: string[];
+      remove_groups?: string[];
+      move_to?: string | null;
+      enabled?: boolean | null;
+    }) =>
+      request<{ changed: string[]; problems: { dn: string; reason: string }[] }>(
+        "/directory/objects/bulk",
+        json(body),
+      ),
+
+    /** Groups whose membership is a query rather than a list. */
+    groupQueries: () =>
+      request<{
+        queries: GroupQuery[];
+        attributes: { key: string; label: string }[];
+        operators: string[];
+      }>("/directory/groups/queries"),
+
+    saveGroupQuery: (body: {
+      group_dn: string;
+      scope_dn?: string;
+      object_type: "user" | "computer";
+      conditions: { attribute: string; operator: string; value: string }[];
+      match_all: boolean;
+      enabled: boolean;
+    }) =>
+      request<GroupQuery & { added?: number; removed?: number; error?: string }>(
+        "/directory/groups/query",
+        { method: "PUT", body: JSON.stringify(body) },
+      ),
+
+    removeGroupQuery: (group_dn: string) =>
+      request<void>(`/directory/groups/query${qs({ group_dn })}`, { method: "DELETE" }),
+
     tree: () =>
       request<{
         base_dn: string;
@@ -1060,6 +1221,36 @@ export const api = {
 
   policy: {
     list: () => request<{ gpos: Gpo[] }>("/policy/gpos"),
+
+    /** What this object gets now, and what it would get after a change. */
+    model: (body: {
+      dn: string;
+      add?: {
+        gpo_guid: string;
+        target_dn: string;
+        link_order?: number;
+        enforced?: boolean;
+        enabled?: boolean;
+      }[];
+      remove?: string[];
+    }) =>
+      request<{
+        now: EffectivePolicy;
+        proposed: EffectivePolicy;
+        changes: {
+          category: string;
+          state: "added" | "removed" | "changed";
+          before_count: number;
+          after_count: number;
+        }[];
+      }>("/policy/model", json(body)),
+
+    /** What a policy object used to be, and putting it back. */
+    revisions: (guid: string) =>
+      request<{ revisions: GpoRevision[] }>(`/policy/gpo/revisions${qs({ guid })}`),
+
+    rollback: (revision_id: string) =>
+      request<Gpo>("/policy/gpo/rollback", json({ revision_id })),
 
     get: (guid: string) => request<Gpo>(`/policy/gpo${qs({ guid })}`),
 
@@ -1398,6 +1589,24 @@ export const api = {
 
     // A file the browser downloads rather than JSON the console renders.
     connectionUrl: (id: string, username: string) => `/api/v1/rd/rdp${qs({ id, username })}`,
+
+    /** Stop or resume sending new sessions to one host. */
+    drain: (collection_id: string, node_fqdn: string, accepts_new: boolean) =>
+      request<{ node_fqdn: string; accepts_new: boolean; sessions: number }>("/rd/hosts/drain", {
+        method: "PATCH",
+        body: JSON.stringify({ collection_id, node_fqdn, accepts_new }),
+      }),
+
+    /** The profile disks on the share one session host mounts. */
+    profiles: (node: string) =>
+      request<{ store: string; disks: ProfileDisk[] }>(`/rd/profiles${qs({ node })}`),
+
+    manageProfile: (body: {
+      node_fqdn: string;
+      user: string;
+      action: "grow" | "reset";
+      size_gb?: number;
+    }) => request<{ result: string }>("/rd/profiles", json(body)),
   },
 
   printers: {
@@ -1510,6 +1719,28 @@ export const api = {
       request<{ task: string; node: string }>(
         "/servers/computer/action",
         json({ dn, action, package: pkg, local_user: localUser, version }),
+      ),
+
+    /** Which of a machine's disks are encrypted, and which have a key here. */
+    encryption: (dn: string) =>
+      request<{
+        volumes: DiskVolume[];
+        reported_at: string | null;
+        orphaned: { device: string; escrowed_at: string }[];
+      }>(`/servers/computer/encryption${qs({ dn })}`),
+
+    /** Add a recovery passphrase to a disk and keep it here. The disk's
+     *  current passphrase is needed to open a key slot at all. */
+    escrowKey: (dn: string, device: string, passphrase: string) =>
+      request<{ device: string; escrowed: boolean }>(
+        "/servers/computer/encryption/escrow",
+        json({ dn, device, passphrase }),
+      ),
+
+    /** The recovery passphrase for one volume. Every read is audited. */
+    recoveryKey: (dn: string, device: string) =>
+      request<{ device: string; passphrase: string; escrowed_at: string; source: string }>(
+        `/servers/computer/encryption/key${qs({ dn, device })}`,
       ),
 
     /** Change who a file or folder on a machine belongs to. Answers with the
@@ -1662,6 +1893,14 @@ export const api = {
       }>("/backups"),
 
     takeBackup: () => request<{ id: string; state: string }>("/backups", json({})),
+
+    /** The domain measured against a security checklist. */
+    baseline: () =>
+      request<{
+        taken_at: string;
+        score: Record<string, number>;
+        checks: BaselineCheck[];
+      }>("/domain/baseline"),
 
     /** Everything the domain is configured to be, as one file the browser
         downloads. Not JSON the console renders: it is meant to be kept. */

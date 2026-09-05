@@ -23,6 +23,11 @@ PUBLIC = {
     ("POST", "/api/v1/auth/negotiate"),  # authenticates a Kerberos ticket
     ("POST", "/api/v1/join/redeem"),     # authenticated by the enrolment token
     ("GET", "/api/v1/healthz"),          # liveness probe
+    # The certificate revocation list. Public because the certificates this
+    # domain issues point at it: a client checking whether one has been
+    # withdrawn has no session and cannot be given one, and the list says
+    # only which certificates are no longer valid.
+    ("GET", "/crl/odm.crl"),
 }
 
 

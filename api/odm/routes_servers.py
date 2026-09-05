@@ -729,3 +729,192 @@ async def run_bulk_action(
         )
 
     return {"queued": queued, "skipped": skipped}
+
+
+# ------------------------------------------------------- disk encryption ---
+
+
+@router.get("/computer/encryption",
+            dependencies=[Depends(requires("computer.encryption.read"))])
+async def disk_encryption(
+    dn: Annotated[str, Query(min_length=3, max_length=1024)],
+    authz: Authz = Depends(authorization),
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Which of this machine's disks are encrypted, and which have a key here.
+
+    The recovery keys themselves are not in this answer. Seeing that a laptop
+    is encrypted is an inventory question; reading the passphrase that unlocks
+    it is not, and they are separate rights for that reason.
+    """
+    authz.require("computer.encryption.read", dn)
+    row = await pool.fetchrow(
+        "SELECT volumes, reported_at FROM computer_fact WHERE computer_dn = $1", dn
+    )
+    keys = await pool.fetch(
+        """
+        SELECT device, source, escrowed_at, revealed_at, revealed_by
+        FROM disk_recovery_key WHERE computer_dn = $1
+        """,
+        dn,
+    )
+    escrowed = {row["device"]: dict(row) for row in keys}
+    volumes = json.loads(row["volumes"]) if row else []
+    for volume in volumes:
+        key = escrowed.get(volume.get("device"))
+        volume["recovery_key"] = None if key is None else {
+            "source": key["source"],
+            "escrowed_at": key["escrowed_at"],
+            "revealed_at": key["revealed_at"],
+            "revealed_by": key["revealed_by"],
+        }
+    return {
+        "volumes": volumes,
+        "reported_at": row["reported_at"] if row else None,
+        # Keys for devices the machine no longer reports — a disk that was
+        # replaced. Kept rather than deleted: the old disk still exists
+        # somewhere until somebody destroys it.
+        "orphaned": [
+            {"device": device, "escrowed_at": key["escrowed_at"]}
+            for device, key in escrowed.items()
+            if not any(volume.get("device") == device for volume in volumes)
+        ],
+    }
+
+
+class EscrowRequest(BaseModel):
+    dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    device: Annotated[str, Field(min_length=5, max_length=128, pattern=r"^/dev/[A-Za-z0-9/_-]+$")]
+    # The passphrase the disk already has. Used once on the machine to open a
+    # key slot, never stored, never logged.
+    passphrase: Annotated[str, Field(min_length=1, max_length=512)]
+
+
+@router.post("/computer/encryption/escrow",
+             dependencies=[Depends(requires("computer.encryption.escrow"))])
+async def escrow_recovery_key(
+    body: EscrowRequest,
+    request: Request,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Add a recovery passphrase to a disk and keep it here.
+
+    The machine generates the new passphrase and adds it to a spare key slot;
+    the existing one is needed to open a slot at all and is used on the
+    machine without ever being written down. What comes back is the recovery
+    passphrase, which is what somebody types at a machine that will not boot.
+    """
+    authz.require("computer.encryption.escrow", body.dn)
+    fact = await pool.fetchrow(HOSTNAME_BY_DN, body.dn)
+    if fact is None:
+        raise objects.NotFound("this machine has not reported yet")
+
+    try:
+        answer = await tasks.run_now(
+            pool,
+            node_fqdn=fact["hostname"],
+            kind="disk-escrow",
+            payload={"device": body.device, "passphrase": body.passphrase},
+            requested_by=session.principal,
+            timeout=300,
+        )
+    except tasks.TaskFailed as exc:
+        raise objects.ObjectError(str(exc)) from exc
+
+    try:
+        result = json.loads(answer)
+    except ValueError as exc:
+        raise objects.ObjectError(
+            f"{fact['hostname']} sent something unreadable back"
+        ) from exc
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO disk_recovery_key (computer_dn, device, passphrase, source, escrowed_by)
+            VALUES ($1, $2, $3, 'escrow', $4)
+            ON CONFLICT (computer_dn, device) DO UPDATE SET
+                passphrase = excluded.passphrase, source = 'escrow',
+                escrowed_by = excluded.escrowed_by, escrowed_at = now(),
+                revealed_at = NULL, revealed_by = NULL
+            """,
+            body.dn,
+            body.device,
+            result["passphrase"],
+            session.principal,
+        )
+        if result.get("volumes"):
+            await conn.execute(
+                "UPDATE computer_fact SET volumes = $2::jsonb WHERE computer_dn = $1",
+                body.dn,
+                json.dumps(result["volumes"]),
+            )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="computer.encryption.escrow",
+            outcome="success",
+            object_type="computer",
+            object_dn=body.dn,
+            # Never the passphrase, on either side of it.
+            detail=f"a recovery key was added to {body.device} on {fact['hostname']}",
+        )
+    return {"device": body.device, "escrowed": True}
+
+
+@router.get("/computer/encryption/key",
+            dependencies=[Depends(requires("computer.encryption.escrow"))])
+async def reveal_recovery_key(
+    request: Request,
+    dn: Annotated[str, Query(min_length=3, max_length=1024)],
+    device: Annotated[str, Query(min_length=5, max_length=128)],
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """The recovery passphrase for one volume.
+
+    Reading it is the whole point of escrowing it, and it is also the thing
+    that should never happen quietly: every reveal is recorded against the
+    machine with who asked and when, the same as the local-administrator
+    password.
+    """
+    authz.require("computer.encryption.escrow", dn)
+    row = await pool.fetchrow(
+        "SELECT * FROM disk_recovery_key WHERE computer_dn = $1 AND device = $2", dn, device
+    )
+    if row is None:
+        raise objects.NotFound("no recovery key is held for that volume")
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE disk_recovery_key SET revealed_at = now(), revealed_by = $3
+            WHERE computer_dn = $1 AND device = $2
+            """,
+            dn,
+            device,
+            session.principal,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="computer.encryption.reveal",
+            outcome="success",
+            object_type="computer",
+            object_dn=dn,
+            detail=f"the recovery key for {device} was read",
+        )
+    return {
+        "device": device,
+        "passphrase": row["passphrase"],
+        "escrowed_at": row["escrowed_at"],
+        "source": row["source"],
+    }

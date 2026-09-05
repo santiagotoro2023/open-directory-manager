@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { ApiError, api, type AgentReport, type EffectivePolicy } from "../api";
-import { Modal } from "./Modal";
+import { useEffect, useMemo, useState } from "react";
+import { ApiError, api, type AgentReport, type EffectivePolicy, type Gpo } from "../api";
+import { Field, Modal } from "./Modal";
+import Select from "./Select";
 
 /**
  * Resultant Set of Policy: what the API resolves for this object, and what
@@ -83,6 +84,8 @@ export function RsopDialog({
 
       <h3>Effective settings</h3>
       <pre>{JSON.stringify(policy?.settings ?? {}, null, 2)}</pre>
+
+      <ModelChange dn={dn} />
 
       {!isComputer && account && (
         <>
@@ -182,5 +185,163 @@ export function RsopDialog({
     >
       {body}
     </Modal>
+  );
+}
+
+
+/**
+ * What this object would get if a policy object were linked somewhere.
+ *
+ * Both answers come out of the resolver the agent's own answer does, with the
+ * proposed link added to the second one — so what this says is what the
+ * machine will do, rather than a second implementation that can drift away
+ * from it.
+ */
+function ModelChange({ dn }: { dn: string }) {
+  const [open, setOpen] = useState(false);
+  const [gpos, setGpos] = useState<Gpo[]>([]);
+  const [guid, setGuid] = useState("");
+  const [target, setTarget] = useState("");
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.policy.model>> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open || gpos.length > 0) return;
+    api.policy
+      .list()
+      .then((answer) => setGpos(answer.gpos))
+      .catch(() => setGpos([]));
+  }, [open, gpos.length]);
+
+  // The containers this object sits under. A link anywhere else could not
+  // reach it, so offering them would only invite a preview that says nothing
+  // changed for a reason nobody could see.
+  const chain = useMemo(() => {
+    const parts = dn.split(",");
+    const found: string[] = [];
+    for (let index = 1; index < parts.length; index += 1) {
+      found.push(parts.slice(index).join(","));
+    }
+    return found;
+  }, [dn]);
+
+  if (!open) {
+    return (
+      <div className="actions-row">
+        <button type="button" className="ghost" onClick={() => setOpen(true)}>
+          Model a change…
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <h3>What would change</h3>
+      <p className="muted">
+        Pick a policy object and where it would be linked. Nothing is changed &mdash; this only
+        resolves the answer twice.
+      </p>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="field-grid">
+        <Field label="If this were linked">
+          <Select value={guid} onChange={(event) => setGuid(event.target.value)}>
+            <option value="">Choose a policy object</option>
+            {gpos.map((gpo) => (
+              <option key={gpo.guid} value={gpo.guid}>
+                {gpo.display_name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="To">
+          <Select value={target} onChange={(event) => setTarget(event.target.value)}>
+            <option value="">Choose a container</option>
+            {chain.map((container) => (
+              <option key={container} value={container}>
+                {container}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <div className="actions-row">
+        <button
+          type="button"
+          className="primary"
+          disabled={!guid || !target || busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              setResult(
+                await api.policy.model({
+                  dn,
+                  add: [{ gpo_guid: guid, target_dn: target }],
+                }),
+              );
+            } catch (err) {
+              setError(err instanceof ApiError ? err.message : String(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Resolving…" : "Show me"}
+        </button>
+        <button type="button" className="ghost" onClick={() => setOpen(false)}>
+          Close
+        </button>
+      </div>
+
+      {result && (
+        <>
+          {result.changes.length === 0 ? (
+            <p className="muted">
+              Nothing would change. The object is already applied here, filtered out, or sets
+              nothing this object does not already get.
+            </p>
+          ) : (
+            <table className="data compact">
+              <thead>
+                <tr>
+                  <th scope="col">Setting</th>
+                  <th scope="col" style={{ width: "120px" }}>
+                    Change
+                  </th>
+                  <th scope="col" style={{ width: "160px" }}>
+                    Entries
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.changes.map((change) => (
+                  <tr key={change.category}>
+                    <td className="mono">{change.category}</td>
+                    <td>
+                      <span
+                        className={`badge ${change.state === "removed" ? "failure" : "success"}`}
+                      >
+                        {change.state}
+                      </span>
+                    </td>
+                    <td className="mono">
+                      {change.before_count} &rarr; {change.after_count}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <h3>It would then receive</h3>
+          <pre>{JSON.stringify(result.proposed.settings ?? {}, null, 2)}</pre>
+        </>
+      )}
+    </>
   );
 }

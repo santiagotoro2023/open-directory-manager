@@ -236,6 +236,47 @@ This name is     published in this domain's DNS, by ODM`}</Code>
           </Note>
         </Section>
 
+        <Section title="Draining a host">
+          <p>
+            Right-click a host under <strong>Session hosts</strong> &rarr;{" "}
+            <strong>Stop new sessions</strong>. It keeps the sessions it has and is given no new
+            ones; the console says how many are still on it, which is what decides when it can be
+            patched. <strong>Take new sessions again</strong> puts it back.
+          </p>
+          <Note>
+            Drained rather than removed from the collection. Removing it would send everybody
+            still on it somewhere else at their next reconnect, which is exactly what draining
+            exists to avoid.
+          </Note>
+        </Section>
+
+        <Section title="Managing profile disks">
+          <p>
+            <strong>Profile disks</strong> lists what is on the collection&rsquo;s share: whose
+            disk each is, what it occupies now, how far it may grow, and whether somebody is
+            signed in with it. Asked of a session host rather than of the file server, because the
+            host is what has the share mounted with the credentials that can read it.
+          </p>
+          <Reference
+            headers={["Action", "What happens"]}
+            rows={[
+              [
+                "Let it grow further",
+                "The image is extended and the filesystem in it is checked and grown. A profile disk is never made smaller: what is past the new end would go with it.",
+              ],
+              [
+                "Set it aside",
+                "The image is renamed, never deleted. Their next sign-in builds a new one beside it, and the old one is still there to recover from.",
+              ],
+            ]}
+          />
+          <Note>
+            Neither is possible while the person is signed in. Growing a mounted image corrupts
+            it, and moving one out from under a session loses the work in it, so the host refuses
+            rather than trying.
+          </Note>
+        </Section>
+
         <Section title="Profile disks">
           <p>
             Each person gets one disk image on the profile share, named for their account and

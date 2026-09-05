@@ -385,12 +385,30 @@ func applyRemoteDesktopBroker(
 	if err != nil {
 		return "", err
 	}
+	peers, err := peerNames(payload["brokers"])
+	if err != nil {
+		return "", err
+	}
 	balance := balanceMethod(payload["balance_method"])
 	affinity := intOf(payload["affinity_minutes"], 8*60)
 
 	var config strings.Builder
 	config.WriteString(apply.Header)
 	config.WriteString("# Collection: " + name + "\n\n")
+
+	// Two brokers keeping one table between them. Without it each keeps its
+	// own, and somebody reconnecting through the standby is sent to a host by
+	// load rather than to the one still holding their session — which refuses
+	// the logon, because their profile disk is mounted on the other host.
+	shared := ""
+	if len(peers) > 1 {
+		config.WriteString("peers odm_rd\n")
+		for _, peer := range peers {
+			fmt.Fprintf(&config, "    peer %s %s:%d\n", peer.Name, peer.Host, peerPort)
+		}
+		config.WriteString("\n")
+		shared = " peers odm_rd"
+	}
 
 	if len(hosts) == 0 {
 		config.WriteString("# No session hosts in this collection; nothing is served.\n")
@@ -417,14 +435,25 @@ backend odm_rd_hosts
     # The window is the collection's own disconnected timeout. An entry that
     # expired first would send somebody to a host that cannot mount their
     # profile, because the host still holding the session still has it.
-    stick-table type string len 64 size 10k expire %dm
+    stick-table type string len 64 size 10k expire %dm%s
     stick on req.rdp_cookie(mstshash)
     tcp-request inspect-delay 5s
     tcp-request content accept if RDP_COOKIE
-`, balance, affinity))
+`, balance, affinity, shared))
 		for index, host := range hosts {
+			// A drained host keeps the sessions it has and takes no new ones.
+			// Weight zero is how that is said in a configuration file: the
+			// load balancer skips it, and a stick-table entry still sends
+			// somebody back to it. Removing it from the collection instead
+			// would send everybody still on it elsewhere at their next
+			// reconnect, which is the opposite of draining.
+			weight := ""
+			if !host.AcceptsNew {
+				weight = " weight 0"
+			}
 			config.WriteString(fmt.Sprintf(
-				"    server host%d %s:%d check inter 10s\n", index+1, host.Name, host.Port))
+				"    server host%d %s:%d check inter 10s%s\n",
+				index+1, host.Name, host.Port, weight))
 		}
 	}
 
@@ -527,6 +556,45 @@ func intOf(value any, fallback int) int {
 type brokerHost struct {
 	Name string
 	Port int
+	// Whether it is taking new sessions. A host being patched is drained
+	// rather than removed, so the people still on it keep their sessions.
+	AcceptsNew bool
+}
+
+// Where two brokers talk to each other about who is on which host. Its own
+// port, because the one clients use carries RDP and nothing else.
+const peerPort = 10389
+
+type brokerPeer struct {
+	Name string
+	Host string
+}
+
+// peerNames is the brokers fronting this collection, named as haproxy needs
+// them: a peers section identifies the local node by matching a peer name
+// against the machine's own host name, so the short name is what goes here.
+func peerNames(value any) ([]brokerPeer, error) {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil, nil
+	}
+	peers := make([]brokerPeer, 0, len(raw))
+	for _, item := range raw {
+		host := str(item)
+		if entry, ok := item.(map[string]any); ok {
+			host = str(entry["host"])
+		}
+		if !safeHostName.MatchString(host) {
+			return nil, fmt.Errorf("invalid broker name %q", host)
+		}
+		peers = append(peers, brokerPeer{Name: shortName(host), Host: host})
+	}
+	return peers, nil
+}
+
+func shortName(host string) string {
+	name, _, _ := strings.Cut(host, ".")
+	return name
 }
 
 func brokerHosts(value any) ([]brokerHost, error) {
@@ -548,7 +616,11 @@ func brokerHosts(value any) ([]brokerHost, error) {
 		if port < 1 || port > 65535 {
 			return nil, fmt.Errorf("invalid port %d for %s", port, name)
 		}
-		hosts = append(hosts, brokerHost{Name: name, Port: port})
+		accepts := true
+		if value, ok := entry["accepts_new"].(bool); ok {
+			accepts = value
+		}
+		hosts = append(hosts, brokerHost{Name: name, Port: port, AcceptsNew: accepts})
 	}
 	return hosts, nil
 }

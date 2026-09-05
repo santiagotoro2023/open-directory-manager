@@ -44,6 +44,55 @@ def test_ordinary_objects_are_mutable():
     objects.assert_mutable(get_settings(), f"CN=ada,OU=Example Corp,{BASE_DN}")
 
 
+@pytest.mark.parametrize(
+    "dn",
+    [
+        # A name is not an identity. Every one of these is an ordinary object
+        # somebody made, in a place the directory keeps nothing of its own,
+        # and every one of them used to be unrenameable, unmovable and
+        # undeletable purely for what it was called.
+        f"OU=Domain Controllers,OU=Example Corp,{BASE_DN}",
+        f"OU=Domain Admins,{BASE_DN}",
+        f"CN=Guest,OU=Example Corp,{BASE_DN}",
+        f"OU=Users,OU=Example Corp,{BASE_DN}",
+    ],
+)
+def test_an_object_named_after_a_built_in_one_is_still_an_ordinary_object(dn):
+    objects.assert_mutable(get_settings(), dn)
+
+
+def test_the_directorys_own_objects_are_refused_wherever_they_are():
+    """Identified by the identifier the directory gave them, so moving one
+    somewhere else does not make it editable."""
+    moved = {
+        "distinguishedName": f"CN=Domain Admins,OU=Example Corp,{BASE_DN}",
+        "sAMAccountName": "Domain Admins",
+        "objectSid": "S-1-5-21-1004336348-1177238915-682003330-512",
+    }
+    with pytest.raises(ProtectedObject):
+        objects.assert_mutable(get_settings(), moved["distinguishedName"], moved)
+
+    ordinary = {
+        "distinguishedName": f"CN=Finance,OU=Example Corp,{BASE_DN}",
+        "sAMAccountName": "Finance",
+        "objectSid": "S-1-5-21-1004336348-1177238915-682003330-1108",
+    }
+    objects.assert_mutable(get_settings(), ordinary["distinguishedName"], ordinary)
+
+
+def test_the_group_the_console_signs_in_with_is_protected_by_its_account_name():
+    settings = get_settings()
+    gate = {
+        "distinguishedName": f"CN=X,OU=Example Corp,{BASE_DN}",
+        "sAMAccountName": settings.admin_group,
+    }
+    with pytest.raises(ProtectedObject):
+        objects.assert_mutable(settings, gate["distinguishedName"], gate)
+    # An organizational unit of that name has no account name, so it is not it.
+    unit = f"OU={settings.admin_group},OU=Example Corp,{BASE_DN}"
+    objects.assert_mutable(settings, unit, {"ou": settings.admin_group})
+
+
 def test_group_scopes_are_the_real_directory_values():
     assert objects.GROUP_SCOPES["global"] == -2147483646
     assert objects.GROUP_SCOPES["domain-local"] == -2147483644

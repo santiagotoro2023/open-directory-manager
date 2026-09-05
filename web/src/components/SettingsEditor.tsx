@@ -96,6 +96,8 @@ const TARGETABLE = new Set([
   "packages",
   "default_applications",
   "dash",
+  "sysctl",
+  "shortcuts",
 ]);
 
 /** Which halves of Group Policy this object actually configures.
@@ -601,6 +603,83 @@ export const CATEGORIES: CategorySpec[] = [
     blank: { name: "", applications: "", for_principal: "" },
   },
   {
+    key: "sysctl",
+    title: "Kernel parameters",
+    half: "Computer",
+    identity: "key",
+    help:
+      "Kernel settings, as sysctl names them. Written to /etc/sysctl.d and applied " +
+      "without a restart.",
+    doc: "kernel-parameters",
+    fields: [
+      {
+        key: "key",
+        label: "Parameter",
+        width: "320px",
+        placeholder: "net.ipv4.conf.all.rp_filter",
+        suggestions: [
+          { value: "net.ipv4.conf.all.rp_filter", label: "Reject spoofed source addresses" },
+          { value: "net.ipv4.conf.all.accept_redirects", label: "Ignore ICMP redirects" },
+          { value: "net.ipv4.conf.all.send_redirects", label: "Do not send ICMP redirects" },
+          { value: "net.ipv4.tcp_syncookies", label: "SYN cookies" },
+          { value: "kernel.randomize_va_space", label: "Address space randomisation" },
+          { value: "kernel.kptr_restrict", label: "Hide kernel pointers" },
+          { value: "kernel.dmesg_restrict", label: "Restrict the kernel log" },
+          { value: "fs.protected_hardlinks", label: "Protect hard links" },
+          { value: "fs.protected_symlinks", label: "Protect symbolic links" },
+          { value: "net.ipv4.ip_forward", label: "Route between interfaces" },
+          { value: "vm.swappiness", label: "How readily it swaps" },
+        ],
+      },
+      { key: "value", label: "Value", width: "160px", placeholder: "1" },
+    ],
+    blank: { key: "", value: "" },
+  },
+  {
+    key: "shortcuts",
+    title: "Shortcuts and bookmarks",
+    half: "User",
+    identity: "name",
+    help:
+      "An icon on the desktop, an entry in the menu, or a place in the file " +
+      "manager's sidebar, for the people this entry names.",
+    doc: "shortcuts-and-bookmarks",
+    fields: [
+      { key: "name", label: "Name", width: "180px", placeholder: "Intranet" },
+      {
+        key: "kind",
+        label: "Kind",
+        kind: "select",
+        options: ["link", "application", "place"],
+        width: "140px",
+        hint: "A link opens a URL, an application runs a program, a place appears in the file manager",
+      },
+      {
+        key: "target",
+        label: "Opens",
+        placeholder: "https://intranet.example.org",
+        hint: "A URL for a link, an absolute path for an application, a path or smb:// for a place",
+      },
+      { key: "icon", label: "Icon", width: "150px", placeholder: "web-browser" },
+      {
+        key: "where",
+        label: "Shown in",
+        kind: "select",
+        options: ["desktop", "menu", "both"],
+        width: "130px",
+      },
+      {
+        key: "for_principal",
+        label: "For user or group",
+        width: "170px",
+        placeholder: "%Finance",
+        picker: "principal",
+        pickerValue: "principal",
+      },
+    ],
+    blank: { name: "", kind: "link", target: "", icon: "", where: "desktop", for_principal: "" },
+  },
+  {
     key: "printers",
     title: "Printers",
     half: "User",
@@ -779,6 +858,71 @@ const SPECIAL: SpecialSpec[] = [
     doc: "agent-updates",
   },
   {
+    key: "power",
+    title: "Power and suspend",
+    half: "Computer",
+    help:
+      "When the screen turns off, when the machine suspends, and what the lid and " +
+      "the power button do. Enforced by logind as well as the desktop, so a laptop " +
+      "closed at the login screen behaves the same way.",
+    doc: "power-and-suspend",
+  },
+  {
+    key: "screen_lock",
+    title: "Screen lock",
+    half: "Computer",
+    help:
+      "When an idle screen locks itself, how long the grace period is, and whether " +
+      "somebody may turn it off.",
+    doc: "screen-lock",
+  },
+  {
+    key: "removable_storage",
+    title: "Removable storage",
+    half: "Computer",
+    help:
+      "What may be done with a disk somebody plugs in: nothing, read it, or use it. " +
+      "Named groups can be exempted.",
+    doc: "removable-storage",
+  },
+  {
+    key: "desktop_theme",
+    title: "Desktop theme",
+    half: "Computer",
+    help:
+      "Theme, icons, cursor and the interface fonts. Deploy the fonts themselves " +
+      "under Fonts, or name ones the machine already has.",
+    doc: "desktop-theme",
+  },
+  {
+    key: "second_factor",
+    title: "Second factor",
+    half: "Computer",
+    help:
+      "A code as well as a password, at the machine. The same enrolment as the " +
+      "console's, so one QR code covers both, and people who have not enrolled are " +
+      "walked through it when they sign in.",
+    doc: "second-factor",
+  },
+  {
+    key: "software_control",
+    title: "Software control",
+    half: "Computer",
+    help:
+      "Which packages may be installed. Anything not on the list is refused; " +
+      "upgrading what is already installed is always allowed.",
+    doc: "software-control",
+  },
+  {
+    key: "first_run",
+    title: "First sign-in",
+    half: "Computer",
+    help:
+      "What somebody is shown the first time they sign in — the distribution's " +
+      "welcome tour, and a message of the day if you want one.",
+    doc: "first-sign-in",
+  },
+  {
     key: "local_password_policy",
     title: "Local password policy",
     half: "Computer",
@@ -842,6 +986,13 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
   if (key === "local_password_policy") return settings.local_password_policy ? 1 : 0;
   if (key === "roaming_profile") return settings.roaming_profile ? 1 : 0;
+  if (key === "power") return settings.power ? 1 : 0;
+  if (key === "screen_lock") return settings.screen_lock ? 1 : 0;
+  if (key === "removable_storage") return settings.removable_storage ? 1 : 0;
+  if (key === "desktop_theme") return settings.desktop_theme ? 1 : 0;
+  if (key === "second_factor") return settings.second_factor ? 1 : 0;
+  if (key === "software_control") return settings.software_control ? 1 : 0;
+  if (key === "first_run") return settings.first_run ? 1 : 0;
   if (key === "wallpaper") return settings.wallpaper?.uri || settings.wallpaper?.image ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
@@ -957,6 +1108,23 @@ export function SettingsEditor({
           {selected === "roaming_profile" && (
             <RoamingProfileEditor settings={settings} onChange={onChange} />
           )}
+          {selected === "power" && <PowerEditor settings={settings} onChange={onChange} />}
+          {selected === "screen_lock" && (
+            <ScreenLockEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "removable_storage" && (
+            <RemovableStorageEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "desktop_theme" && (
+            <DesktopThemeEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "second_factor" && (
+            <SecondFactorEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "software_control" && (
+            <SoftwareControlEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "first_run" && <FirstRunEditor settings={settings} onChange={onChange} />}
           {selected === "wallpaper" && <WallpaperEditor settings={settings} onChange={onChange} />}
           {selected === "browser" && <BrowserEditor settings={settings} onChange={onChange} />}
           {selected === "admx" && (
@@ -2764,6 +2932,702 @@ function RoamingProfileEditor({
             share that cannot be reached leaves that session with a local home rather than
             refusing the sign-in.
           </p>
+        </>
+      )}
+    </>
+  );
+}
+
+
+/* ------------------------------------------------------ the new settings --
+ *
+ * Each is one object rather than a list, so each gets an editor rather than a
+ * table. They share the shape of the ones above: a heading, an empty state
+ * that adds the setting, and fields once it is there.
+ */
+
+const MINUTES_NEVER = "0 never";
+
+function PowerEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.power;
+  function set(changes: Partial<NonNullable<PolicySettings["power"]>>) {
+    onChange({
+      ...settings,
+      power: {
+        screen_off_ac_minutes: 10,
+        screen_off_battery_minutes: 5,
+        suspend_ac_minutes: 0,
+        suspend_battery_minutes: 30,
+        lid_close_action: "suspend",
+        power_button_action: "suspend",
+        allow_user_change: false,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("power")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, power: undefined })} />
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <div className="field-grid">
+            <label className="field">
+              <span>Screen off on mains (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.screen_off_ac_minutes}
+                onChange={(e) => set({ screen_off_ac_minutes: Number(e.target.value) })}
+              />
+              <small>{MINUTES_NEVER}</small>
+            </label>
+            <label className="field">
+              <span>Screen off on battery (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.screen_off_battery_minutes}
+                onChange={(e) => set({ screen_off_battery_minutes: Number(e.target.value) })}
+              />
+              <small>{MINUTES_NEVER}</small>
+            </label>
+            <label className="field">
+              <span>Suspend on mains (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.suspend_ac_minutes}
+                onChange={(e) => set({ suspend_ac_minutes: Number(e.target.value) })}
+              />
+              <small>{MINUTES_NEVER}. A desktop usually never.</small>
+            </label>
+            <label className="field">
+              <span>Suspend on battery (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.suspend_battery_minutes}
+                onChange={(e) => set({ suspend_battery_minutes: Number(e.target.value) })}
+              />
+              <small>{MINUTES_NEVER}</small>
+            </label>
+            <label className="field">
+              <span>Closing the lid</span>
+              <Select
+                value={current.lid_close_action}
+                onChange={(e) => set({ lid_close_action: e.target.value })}
+              >
+                <option value="suspend">Suspends</option>
+                <option value="hibernate">Hibernates</option>
+                <option value="lock">Locks the screen</option>
+                <option value="ignore">Does nothing</option>
+              </Select>
+            </label>
+            <label className="field">
+              <span>The power button</span>
+              <Select
+                value={current.power_button_action}
+                onChange={(e) => set({ power_button_action: e.target.value })}
+              >
+                <option value="suspend">Suspends</option>
+                <option value="hibernate">Hibernates</option>
+                <option value="poweroff">Shuts down</option>
+                <option value="lock">Locks the screen</option>
+                <option value="ignore">Does nothing</option>
+              </Select>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.allow_user_change}
+              onChange={(e) => set({ allow_user_change: e.target.checked })}
+            />
+            Let people change these in their own settings
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function ScreenLockEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.screen_lock;
+  function set(changes: Partial<NonNullable<PolicySettings["screen_lock"]>>) {
+    onChange({
+      ...settings,
+      screen_lock: {
+        idle_minutes: 10,
+        lock_delay_seconds: 0,
+        lock_enabled: true,
+        lock_on_suspend: true,
+        show_notifications: false,
+        allow_user_change: false,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("screen_lock")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, screen_lock: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <div className="field-grid">
+            <label className="field">
+              <span>Lock after idle (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.idle_minutes}
+                onChange={(e) => set({ idle_minutes: Number(e.target.value) })}
+              />
+              <small>
+                {MINUTES_NEVER}. Ignored where Power and suspend also sets a screen-off time,
+                which wins.
+              </small>
+            </label>
+            <label className="field">
+              <span>Grace period (seconds)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.lock_delay_seconds}
+                onChange={(e) => set({ lock_delay_seconds: Number(e.target.value) })}
+              />
+              <small>How long after the screen blanks before it actually locks.</small>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.lock_enabled}
+              onChange={(e) => set({ lock_enabled: e.target.checked })}
+            />
+            Lock the screen when it turns off
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.lock_on_suspend}
+              onChange={(e) => set({ lock_on_suspend: e.target.checked })}
+            />
+            Lock when the machine suspends
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.show_notifications}
+              onChange={(e) => set({ show_notifications: e.target.checked })}
+            />
+            Show what notifications say on the lock screen
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.allow_user_change}
+              onChange={(e) => set({ allow_user_change: e.target.checked })}
+            />
+            Let people change these in their own settings
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function RemovableStorageEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.removable_storage;
+  function set(changes: Partial<NonNullable<PolicySettings["removable_storage"]>>) {
+    onChange({
+      ...settings,
+      removable_storage: {
+        mode: "read_only",
+        exempt_principals: [],
+        message: "",
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("removable_storage")}
+        actions={
+          current && (
+            <RemoveSetting
+              onRemove={() => onChange({ ...settings, removable_storage: undefined })}
+            />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <label className="field">
+            <span>A disk somebody plugs in</span>
+            <Select
+              value={current.mode}
+              onChange={(e) =>
+                set({ mode: e.target.value as "allow" | "read_only" | "block" })
+              }
+            >
+              <option value="allow">Can be used normally</option>
+              <option value="read_only">Can be read, not written</option>
+              <option value="block">Cannot be opened at all</option>
+            </Select>
+            <small>
+              Enforced through udisks, which is what every file manager mounts with. Somebody who
+              already has root on the machine can still mount by hand — that is a sudo rule to
+              look at.
+            </small>
+          </label>
+          {current.mode !== "allow" && (
+            <div className="field">
+              <span>Except for</span>
+              <ChoiceList
+                kind="principal"
+                values={current.exempt_principals}
+                onChange={(exempt_principals) => set({ exempt_principals })}
+                addLabel="Add a user or group…"
+                emptyLabel="Nobody. The rule applies to everybody on the machine."
+              />
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function DesktopThemeEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.desktop_theme;
+  function set(changes: Partial<NonNullable<PolicySettings["desktop_theme"]>>) {
+    onChange({
+      ...settings,
+      desktop_theme: {
+        gtk_theme: "",
+        icon_theme: "",
+        cursor_theme: "",
+        interface_font: "",
+        document_font: "",
+        monospace_font: "",
+        colour_scheme: "",
+        allow_user_change: true,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  const fields: [keyof NonNullable<PolicySettings["desktop_theme"]>, string, string][] = [
+    ["gtk_theme", "Theme", "Adwaita"],
+    ["icon_theme", "Icons", "Adwaita"],
+    ["cursor_theme", "Cursor", "Adwaita"],
+    ["interface_font", "Interface font", "Cantarell 11"],
+    ["document_font", "Document font", "Cantarell 11"],
+    ["monospace_font", "Monospace font", "Source Code Pro 10"],
+  ];
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("desktop_theme")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, desktop_theme: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <p className="muted">
+            Anything left empty is left as the machine has it. A name here has to be a theme or a
+            font the machine actually has — deploy fonts under Fonts, and themes as a package
+            under Software deployment.
+          </p>
+          <div className="field-grid">
+            {fields.map(([key, label, placeholder]) => (
+              <label className="field" key={key}>
+                <span>{label}</span>
+                <input
+                  value={String(current[key] ?? "")}
+                  placeholder={placeholder}
+                  onChange={(e) => set({ [key]: e.target.value })}
+                />
+              </label>
+            ))}
+            <label className="field">
+              <span>Light or dark</span>
+              <Select
+                value={current.colour_scheme}
+                onChange={(e) => set({ colour_scheme: e.target.value })}
+              >
+                <option value="">Leave as it is</option>
+                <option value="default">Light</option>
+                <option value="prefer-dark">Dark</option>
+                <option value="prefer-light">Light, explicitly</option>
+              </Select>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.allow_user_change}
+              onChange={(e) => set({ allow_user_change: e.target.checked })}
+            />
+            Let people change these in their own settings
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+const FACTOR_SERVICES: [string, string][] = [
+  ["login", "At the machine, on screen"],
+  ["ssh", "Over SSH"],
+  ["sudo", "Running sudo"],
+  ["remote-desktop", "Over remote desktop"],
+];
+
+function SecondFactorEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.second_factor;
+  function set(changes: Partial<NonNullable<PolicySettings["second_factor"]>>) {
+    onChange({
+      ...settings,
+      second_factor: {
+        enabled: true,
+        self_enrol: true,
+        services: ["login", "ssh"],
+        require_principals: [],
+        exempt_principals: [],
+        grace_days: 14,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  function toggle(service: string, on: boolean) {
+    const services = new Set(current?.services ?? []);
+    if (on) services.add(service);
+    else services.delete(service);
+    set({ services: [...services] });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("second_factor")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, second_factor: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <p className="muted">
+            The same enrolment as the console&rsquo;s: one QR code, scanned into any authenticator
+            or password manager, and the same six-digit code works in both places. The machines
+            never hold anybody&rsquo;s secret until the policy names them.
+          </p>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.enabled}
+              onChange={(e) => set({ enabled: e.target.checked })}
+            />
+            Ask for a second factor
+          </label>
+          <div className="field">
+            <span>Asked for</span>
+            {FACTOR_SERVICES.map(([key, label]) => (
+              <label className="checkbox" key={key}>
+                <input
+                  type="checkbox"
+                  checked={current.services.includes(key)}
+                  onChange={(e) => toggle(key, e.target.checked)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.self_enrol}
+              onChange={(e) => set({ self_enrol: e.target.checked })}
+            />
+            Walk people through setting one up when they sign in
+          </label>
+          <label className="field">
+            <span>Grace period (days)</span>
+            <input
+              type="number"
+              min={0}
+              max={365}
+              value={current.grace_days}
+              onChange={(e) => set({ grace_days: Number(e.target.value) })}
+            />
+            <small>
+              How long somebody who has not enrolled yet is still let in. 0 refuses them from the
+              first sign-in, which locks out anybody who has not enrolled.
+            </small>
+          </label>
+          <div className="field">
+            <span>Only for</span>
+            <ChoiceList
+              kind="principal"
+              values={current.require_principals}
+              onChange={(require_principals) => set({ require_principals })}
+              addLabel="Add a user or group…"
+              emptyLabel="Everybody this policy reaches."
+            />
+          </div>
+          <div className="field">
+            <span>Except for</span>
+            <ChoiceList
+              kind="principal"
+              values={current.exempt_principals}
+              onChange={(exempt_principals) => set({ exempt_principals })}
+              addLabel="Add a user or group…"
+              emptyLabel="Nobody is exempt."
+            />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function SoftwareControlEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.software_control;
+  function set(changes: Partial<NonNullable<PolicySettings["software_control"]>>) {
+    onChange({
+      ...settings,
+      software_control: {
+        enabled: true,
+        allowed: [],
+        block_flatpak: true,
+        block_snap: true,
+        message: "",
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("software_control")}
+        actions={
+          current && (
+            <RemoveSetting
+              onRemove={() => onChange({ ...settings, software_control: undefined })}
+            />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <p className="muted">
+            A package not on the list is refused wherever it is installed from &mdash; apt,
+            aptitude, the desktop&rsquo;s own installer. Upgrading something already installed is
+            always allowed, so security updates and the packages ODM deploys keep working.
+          </p>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.enabled}
+              onChange={(e) => set({ enabled: e.target.checked })}
+            />
+            Refuse anything that is not on the list
+          </label>
+          <label className="field">
+            <span>Allowed packages</span>
+            <textarea
+              rows={8}
+              className="mono"
+              value={current.allowed.join("\n")}
+              placeholder={"firefox-esr\nlibreoffice-*\nremmina"}
+              onChange={(e) =>
+                set({
+                  allowed: e.target.value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+            <small>
+              One per line, as apt names them. A trailing <code>*</code> matches a family, so{" "}
+              <code>libreoffice-*</code> covers all of it.
+            </small>
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.block_flatpak}
+              onChange={(e) => set({ block_flatpak: e.target.checked })}
+            />
+            Also refuse Flatpak installs
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.block_snap}
+              onChange={(e) => set({ block_snap: e.target.checked })}
+            />
+            Also refuse Snap installs
+          </label>
+          <label className="field">
+            <span>What a person is told</span>
+            <input
+              value={current.message}
+              placeholder="Ask the service desk."
+              onChange={(e) => set({ message: e.target.value })}
+            />
+            <small>Printed under the refusal, so nobody has to guess what to do next.</small>
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function FirstRunEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.first_run;
+  function set(changes: Partial<NonNullable<PolicySettings["first_run"]>>) {
+    onChange({
+      ...settings,
+      first_run: {
+        disable_tour: true,
+        disable_welcome_dialog: true,
+        message: "",
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("first_run")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, first_run: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <p className="muted">
+            A managed desktop has already been set up by whoever manages it, so the
+            distribution&rsquo;s welcome tour asks people to choose things that are not theirs to
+            choose.
+          </p>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.disable_tour}
+              onChange={(e) => set({ disable_tour: e.target.checked })}
+            />
+            Skip the first-login setup tour
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.disable_welcome_dialog}
+              onChange={(e) => set({ disable_welcome_dialog: e.target.checked })}
+            />
+            Skip the &ldquo;what&rsquo;s new&rdquo; dialog after an upgrade
+          </label>
+          <label className="field">
+            <span>Message of the day</span>
+            <textarea
+              rows={4}
+              value={current.message}
+              placeholder="This machine is managed by Example Corp."
+              onChange={(e) => set({ message: e.target.value })}
+            />
+            <small>Shown on a text login. Empty writes none.</small>
+          </label>
         </>
       )}
     </>

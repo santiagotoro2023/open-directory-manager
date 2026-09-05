@@ -70,7 +70,10 @@ type Report struct {
 	Events          []Event     `json:"events"`
 	Addresses       []string    `json:"addresses"`
 	Logs            []LogEntry  `json:"logs"`
-	LogCursor       string      `json:"log_cursor"`
+	// Which of this machine's disks are encrypted, and whether a recovery
+	// key could be escrowed for one that is.
+	Volumes   []Volume `json:"volumes,omitempty"`
+	LogCursor string   `json:"log_cursor"`
 	// Printers this machine can see, when it is a print server. Reported with
 	// everything else so choosing one in the console is instant, rather than
 	// a request that waits for the machine's next check-in.
@@ -185,6 +188,7 @@ func Collect(ctx context.Context, env apply.Env) Report {
 
 		report.PrintDevices = printDevices(ctx, env, 10)
 		report.Replication = replicationState(ctx, env)
+		report.Volumes = Encryption(ctx, env)
 
 		previous := strings.TrimSpace(readFile(env, CursorPath))
 		report.Logs, report.LogCursor = CollectLogs(ctx, env, previous, LogUnits, 200)

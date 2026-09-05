@@ -156,6 +156,45 @@ export function Content() {
           </p>
         </Section>
 
+        <Section title="Disk encryption">
+          <p>
+            The <strong>Machine</strong> tab lists this machine&rsquo;s block devices and says
+            which are encrypted, in what format, and whether they are unlocked at boot. It comes
+            from the machine&rsquo;s own check-in, so it is what the disks actually are rather
+            than what anybody recorded.
+          </p>
+          <p>
+            A recovery key can be escrowed for an encrypted volume: the machine generates a
+            passphrase, puts it in a spare LUKS key slot, and the console keeps it.{" "}
+            <C>cryptsetup</C> needs an existing passphrase before it will add another, so somebody
+            supplies the current one once &mdash; it is used on the machine and never stored,
+            logged or changed.
+          </p>
+          <Reference
+            headers={["Right", "What it allows"]}
+            rows={[
+              [
+                "computer.encryption.read",
+                "Seeing which disks are encrypted. An inventory question, held by the read-only role.",
+              ],
+              [
+                "computer.encryption.escrow",
+                "Adding a recovery key, and reading one. The passphrase that opens the machine.",
+              ],
+            ]}
+          />
+          <Note>
+            Every reveal is written to the audit log with who asked and when, the same as the
+            local-administrator password. A recovery key ODM cannot read is one that does not help
+            at three in the morning, which is the only time one is wanted.
+          </Note>
+          <Note>
+            Machines installed by the client-enrolment role escrow a key at install and never need
+            the existing passphrase. Keys are kept for a device the machine has stopped reporting
+            &mdash; a disk that was replaced still exists until somebody destroys it.
+          </Note>
+        </Section>
+
         <Section title="A machine that never reports">
           <Reference
             headers={["Check", "How"]}

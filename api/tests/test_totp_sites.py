@@ -189,3 +189,46 @@ def test_entry_targeting_uses_the_same_rules_as_the_policy_object():
     assert applies is True
     applies, _ = policy.targeting_matches({"ip_ranges": ["10.20.0.0/24"]}, target())
     assert applies is True
+
+
+# ------------------------------ a second factor at the machine, not the console
+
+
+def test_a_machine_is_handed_the_enrolments_in_the_format_pam_oath_reads():
+    """One line per account: the method, the name, the module's own state and
+    the secret in hex. The same secret the console checks, so somebody enrols
+    once and both ask for the same code."""
+    rows = [
+        {"principal": "ada@corp.example.internal", "secret": "JBSWY3DPEHPK3PXP"},
+        {"principal": "CORP\\\\bob", "secret": "JBSWY3DPEHPK3PXP"},
+    ]
+    lines = totp.oath_users(rows, None)
+    assert lines == [
+        "HOTP/T30/6 ada - 48656c6c6f21deadbeef",
+        "HOTP/T30/6 bob - 48656c6c6f21deadbeef",
+    ]
+
+
+def test_a_machine_is_never_handed_the_secret_of_somebody_who_does_not_sign_in_to_it():
+    rows = [
+        {"principal": "ada", "secret": "JBSWY3DPEHPK3PXP"},
+        {"principal": "bob", "secret": "JBSWY3DPEHPK3PXP"},
+    ]
+    assert [line.split()[1] for line in totp.oath_users(rows, {"ada"})] == ["ada"]
+    assert totp.oath_users(rows, set()) == []
+
+
+def test_a_secret_that_is_not_readable_is_left_out_rather_than_breaking_the_file():
+    """One unreadable row must not take the whole file with it: pam_oath with
+    a broken users file refuses every sign-in."""
+    rows = [
+        {"principal": "ada", "secret": "not base32 at all!!"},
+        {"principal": "bob", "secret": "JBSWY3DPEHPK3PXP"},
+    ]
+    assert [line.split()[1] for line in totp.oath_users(rows, None)] == ["bob"]
+
+
+def test_everybody_except_the_exempt_is_a_set_that_contains_anything_it_excludes():
+    everybody = totp._AllExcept({"ada"})
+    assert "bob" in everybody
+    assert "ada" not in everybody

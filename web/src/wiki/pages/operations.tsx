@@ -174,6 +174,34 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
           </p>
         </Section>
 
+        <Section title="Security baseline">
+          <p>
+            <strong>Overview</strong> &rarr; <strong>Security baseline</strong> measures the
+            domain against a checklist. Every check reads something ODM already holds and answers
+            one question an auditor asks; nothing here changes anything, and each finding says
+            where in the console it is fixed.
+          </p>
+          <Reference
+            headers={["Check", "What it looks at"]}
+            rows={[
+              ["Dormant accounts", "Enabled accounts nobody has signed in with for 90 days."],
+              ["Passwords that never expire", "Enabled accounts exempt from password expiry."],
+              ["Domain administrators", "How many accounts can administer the whole domain."],
+              ["Second factor on administrators", "Which of them sign in with a password alone."],
+              ["Password policy", "Minimum length, complexity and lockout."],
+              ["Machines reporting", "Machines that have not checked in for a day."],
+              ["Disk encryption", "Machines reporting no encrypted volume."],
+              ["Domain backups", "How long since one completed."],
+              ["Certificates expiring", "Certificates due to expire within a month."],
+              ["Delegated administration", "Delegations that apply to the whole domain."],
+            ]}
+          />
+          <Note>
+            A row with a count opens to show which objects it is about. The read-only role can see
+            this page, so an auditor can take the report without being able to change anything.
+          </Note>
+        </Section>
+
         <Section title="Configuration export">
           <p>
             <strong>Overview</strong> → <strong>Configuration</strong> →{" "}

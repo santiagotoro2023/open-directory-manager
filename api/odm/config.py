@@ -130,6 +130,12 @@ class Settings(BaseSettings):
     # Where the built console lives. Set, the control plane serves it, so the
     # console and the API share an origin without a proxy in front.
     console_dir: Path | None = None
+    # Where clients reach this console, for the URLs that have to be written
+    # into something rather than followed from a page — a certificate's
+    # revocation list, for one. Derived from the domain and the well-known
+    # name setup.sh publishes, which is what every joined machine already
+    # looks for.
+    console_url: str = ""
     allowed_origins: list[str] = Field(
         default_factory=list,
         description="Exact origins allowed to call the API (the UI's own origin)",
@@ -168,6 +174,9 @@ class Settings(BaseSettings):
     def _defaults(self) -> Settings:
         if not self.base_dn:
             self.base_dn = derive_base_dn(self.domain)
+        if not self.console_url:
+            self.console_url = f"https://odm.{self.domain}:8443"
+        self.console_url = self.console_url.rstrip("/")
         return self
 
 

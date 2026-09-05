@@ -24,6 +24,8 @@ import {
   type ComputerDetail,
   type DirectoryListing,
   type DirectoryObject,
+  type DiskVolume,
+  type GroupQuery,
   type LogGroup,
   type NewLocalUser,
 } from "../api";
@@ -459,6 +461,7 @@ function LocalAdministratorPanel({ dn }: { dn: string }) {
 
 function MembersTab({ object, onChanged }: { object: DirectoryObject; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
+  const [querying, setQuerying] = useState(false);
   // Remounts the table after an edit, so the list is what the directory holds
   // rather than what it held when the tab opened.
   const [revision, setRevision] = useState(0);
@@ -469,7 +472,22 @@ function MembersTab({ object, onChanged }: { object: DirectoryObject; onChanged:
         <button type="button" className="primary" onClick={() => setEditing(true)}>
           Edit members
         </button>
+        <button type="button" className="ghost" onClick={() => setQuerying(true)}>
+          Membership by query…
+        </button>
       </div>
+
+      <DynamicMembership
+        key={`query-${revision}`}
+        groupDn={String(object.distinguishedName)}
+        open={querying}
+        onClose={() => setQuerying(false)}
+        onChanged={() => {
+          setQuerying(false);
+          setRevision((was) => was + 1);
+          onChanged();
+        }}
+      />
 
       <MembershipTable
         key={revision}
@@ -825,6 +843,8 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
           Install updates
         </button>
       </div>
+
+      <EncryptionPanel dn={dn} />
 
       <h3 className="section-title">Agent</h3>
       <dl className="definition">
@@ -1579,4 +1599,468 @@ function size(bytes: number): string {
     unit += 1;
   }
   return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
+}
+
+
+/**
+ * Which of this machine's disks are encrypted, and the key that unlocks one.
+ *
+ * Two rights, deliberately: seeing that a laptop is encrypted is an inventory
+ * question anybody managing machines should be able to answer, and reading the
+ * passphrase that opens it is not. Every reveal is in the audit log with who
+ * asked.
+ */
+function EncryptionPanel({ dn }: { dn: string }) {
+  const [state, setState] = useState<Awaited<
+    ReturnType<typeof api.servers.encryption>
+  > | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [escrowing, setEscrowing] = useState<DiskVolume | null>(null);
+  const [revealed, setRevealed] = useState<{ device: string; passphrase: string } | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setState(await api.servers.encryption(dn));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }, [dn]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (error) {
+    return (
+      <>
+        <h3 className="section-title">Disk encryption</h3>
+        <p className="muted">{error}</p>
+      </>
+    );
+  }
+  if (!state) return null;
+
+  return (
+    <>
+      <h3 className="section-title">Disk encryption</h3>
+      {state.volumes.length === 0 ? (
+        <p className="muted">
+          This machine has not reported its disks yet. It sends this on its next check-in.
+        </p>
+      ) : (
+        <table className="data">
+          <thead>
+            <tr>
+              <th scope="col">Device</th>
+              <th scope="col" style={{ width: "150px" }}>
+                Encryption
+              </th>
+              <th scope="col" style={{ width: "160px" }}>
+                Mounted at
+              </th>
+              <th scope="col" style={{ width: "110px" }}>
+                Size
+              </th>
+              <th scope="col" style={{ width: "230px" }}>
+                Recovery key
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {state.volumes.map((volume) => (
+              <tr key={volume.device}>
+                <td className="mono">{volume.device}</td>
+                <td>
+                  <span className={`badge ${volume.encrypted ? "success" : "failure"}`}>
+                    {volume.encrypted ? volume.format || "encrypted" : "not encrypted"}
+                  </span>
+                  {volume.encrypted && volume.at_boot && (
+                    <p className="stat-note">Unlocked at boot</p>
+                  )}
+                </td>
+                <td className="mono">{volume.mount_point || "—"}</td>
+                <td className="mono">{volume.size_bytes ? size(volume.size_bytes) : "—"}</td>
+                <td>
+                  {!volume.encrypted ? (
+                    <span className="muted">—</span>
+                  ) : volume.recovery_key ? (
+                    <>
+                      <button
+                        type="button"
+                        className="button-link"
+                        onClick={async () => {
+                          try {
+                            const key = await api.servers.recoveryKey(dn, volume.device);
+                            setRevealed({ device: key.device, passphrase: key.passphrase });
+                          } catch (err) {
+                            setError(err instanceof ApiError ? err.message : String(err));
+                          }
+                        }}
+                      >
+                        Reveal
+                      </button>
+                      <p className="stat-note">
+                        Escrowed {new Date(volume.recovery_key.escrowed_at).toLocaleDateString()}
+                        {volume.recovery_key.source === "install" ? ", at install" : ""}
+                      </p>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="ghost"
+                      disabled={volume.free_key_slots === 0}
+                      onClick={() => setEscrowing(volume)}
+                    >
+                      {volume.free_key_slots === 0 ? "No free key slot" : "Escrow a key…"}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {state.orphaned.length > 0 && (
+        <p className="muted">
+          Keys are also held for {state.orphaned.map((entry) => entry.device).join(", ")}, which
+          this machine no longer reports. Kept until somebody destroys the disk.
+        </p>
+      )}
+
+      {escrowing && (
+        <EscrowDialog
+          dn={dn}
+          volume={escrowing}
+          onClose={() => setEscrowing(null)}
+          onDone={() => {
+            setEscrowing(null);
+            void load();
+          }}
+        />
+      )}
+
+      {revealed && (
+        <Modal
+          title={`Recovery key for ${revealed.device}`}
+          submitLabel="Done"
+          onClose={() => setRevealed(null)}
+          onSubmit={() => setRevealed(null)}
+        >
+          <p className="muted">
+            Type this at the machine when it asks for a passphrase. Reading it has been recorded
+            against this computer.
+          </p>
+          <pre className="command-output">{revealed.passphrase}</pre>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/**
+ * Adding a recovery key to a disk that is already encrypted.
+ *
+ * cryptsetup needs an existing passphrase before it will add another, and
+ * there is no way round that: a machine that could add a key slot to its own
+ * disk unprompted would be a machine anybody with the console could unlock.
+ * The existing passphrase is used on the machine and never stored.
+ */
+function EscrowDialog({
+  dn,
+  volume,
+  onClose,
+  onDone,
+}: {
+  dn: string;
+  volume: DiskVolume;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [passphrase, setPassphrase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title={`Escrow a recovery key for ${volume.device}`}
+      submitLabel={busy ? "Adding…" : "Add the key"}
+      onClose={onClose}
+      onSubmit={async () => {
+        if (!passphrase || busy) return;
+        setBusy(true);
+        setError(null);
+        try {
+          await api.servers.escrowKey(dn, volume.device, passphrase);
+          onDone();
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+          setBusy(false);
+        }
+      }}
+    >
+      <p className="muted">
+        The machine generates a recovery passphrase and puts it in a spare key slot. The
+        passphrase below is used once, on the machine, to open a slot — it is not stored, not
+        logged, and not changed.
+      </p>
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      <Field label={`Current passphrase for ${volume.device}`}>
+        <input
+          type="password"
+          value={passphrase}
+          required
+          autoFocus
+          autoComplete="off"
+          onChange={(event) => setPassphrase(event.target.value)}
+        />
+      </Field>
+      <p className="muted">
+        {volume.free_key_slots ?? 0} key slot(s) free. Machines installed by the enrolment role
+        escrow a key at install and never need this.
+      </p>
+    </Modal>
+  );
+}
+
+
+/**
+ * A group whose membership is a query rather than a list.
+ *
+ * The query is built out of named conditions rather than typed as a filter: a
+ * filter typed by hand is one nobody reviews, and one that is subtly wrong
+ * quietly empties a group a sudo rule or a share depends on.
+ *
+ * The query is the membership, not an addition to it — somebody put in the
+ * group by hand is taken out again at the next run. That is what "membership
+ * is a query" means, and two sources of truth for one list is how a group ends
+ * up with members nobody can explain.
+ */
+function DynamicMembership({
+  groupDn,
+  open,
+  onClose,
+  onChanged,
+}: {
+  groupDn: string;
+  open: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [query, setQuery] = useState<GroupQuery | null>(null);
+  const [attributes, setAttributes] = useState<{ key: string; label: string }[]>([]);
+  const [operators, setOperators] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const result = await api.directory.groupQueries();
+      setAttributes(result.attributes);
+      setOperators(result.operators);
+      setQuery(
+        result.queries.find((entry) => entry.group_dn.toLowerCase() === groupDn.toLowerCase()) ??
+          null,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    }
+  }, [groupDn]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const [draft, setDraft] = useState<GroupQuery["conditions"]>([]);
+  const [objectType, setObjectType] = useState<"user" | "computer">("user");
+  const [matchAll, setMatchAll] = useState(true);
+  const [scope, setScope] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setDraft(query?.conditions ?? [{ attribute: "department", operator: "is", value: "" }]);
+    setObjectType(query?.object_type ?? "user");
+    setMatchAll(query?.match_all ?? true);
+    setScope(query?.scope_dn ?? "");
+  }, [open, query]);
+
+  return (
+    <>
+      {query && (
+        <p className="muted">
+          Membership is a query: <strong>{query.summary}</strong>. {query.member_count} match
+          {query.member_count === 1 ? "es" : ""} it
+          {query.last_run_at ? `, last checked ${new Date(query.last_run_at).toLocaleString()}` : ""}.
+          {query.last_error && <span className="alert"> {query.last_error}</span>}
+        </p>
+      )}
+
+      {open && (
+        <Modal
+          title="Membership by query"
+          submitLabel={busy ? "Saving…" : "Save and run"}
+          onClose={onClose}
+          onSubmit={async () => {
+            if (busy) return;
+            setBusy(true);
+            setError(null);
+            try {
+              const saved = await api.directory.saveGroupQuery({
+                group_dn: groupDn,
+                scope_dn: scope,
+                object_type: objectType,
+                conditions: draft.filter((condition) => condition.attribute),
+                match_all: matchAll,
+                enabled: true,
+              });
+              if (saved.error) {
+                setError(saved.error);
+                setBusy(false);
+                return;
+              }
+              onChanged();
+            } catch (err) {
+              setError(err instanceof ApiError ? err.message : String(err));
+              setBusy(false);
+            }
+          }}
+        >
+          {error && (
+            <p className="alert" role="alert">
+              {error}
+            </p>
+          )}
+          <p className="muted">
+            The query is the membership. Anybody matching it is put in the group; anybody in the
+            group who does not match is taken out, including somebody added by hand.
+          </p>
+
+          <div className="field-grid">
+            <Field label="Members are">
+              <Select
+                value={objectType}
+                onChange={(e) => setObjectType(e.target.value as "user" | "computer")}
+              >
+                <option value="user">Users</option>
+                <option value="computer">Computers</option>
+              </Select>
+            </Field>
+            <Field label="Matching">
+              <Select
+                value={matchAll ? "all" : "any"}
+                onChange={(e) => setMatchAll(e.target.value === "all")}
+              >
+                <option value="all">Every condition</option>
+                <option value="any">Any condition</option>
+              </Select>
+            </Field>
+            <Field label="Looking in" hint="Empty searches the whole domain">
+              <PickerField
+                kind="ou"
+                as="dn"
+                ariaLabel="Looking in"
+                value={scope}
+                onChange={setScope}
+              />
+            </Field>
+          </div>
+
+          {draft.map((condition, index) => (
+            <div className="field-grid" key={index}>
+              <Field label={index === 0 ? "Where" : matchAll ? "and" : "or"}>
+                <Select
+                  value={condition.attribute}
+                  onChange={(e) =>
+                    setDraft(
+                      draft.map((entry, at) =>
+                        at === index ? { ...entry, attribute: e.target.value } : entry,
+                      ),
+                    )
+                  }
+                >
+                  {attributes.map((attribute) => (
+                    <option key={attribute.key} value={attribute.key}>
+                      {attribute.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="">
+                <Select
+                  value={condition.operator}
+                  onChange={(e) =>
+                    setDraft(
+                      draft.map((entry, at) =>
+                        at === index ? { ...entry, operator: e.target.value } : entry,
+                      ),
+                    )
+                  }
+                >
+                  {operators.map((operator) => (
+                    <option key={operator} value={operator}>
+                      {operator}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="">
+                <input
+                  value={condition.value}
+                  disabled={condition.operator.endsWith("set")}
+                  placeholder="Finance"
+                  onChange={(e) =>
+                    setDraft(
+                      draft.map((entry, at) =>
+                        at === index ? { ...entry, value: e.target.value } : entry,
+                      ),
+                    )
+                  }
+                />
+              </Field>
+              <Field label="">
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setDraft(draft.filter((_, at) => at !== index))}
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                  Remove
+                </button>
+              </Field>
+            </div>
+          ))}
+
+          <div className="actions-row">
+            <button
+              type="button"
+              className="ghost"
+              onClick={() =>
+                setDraft([...draft, { attribute: "department", operator: "is", value: "" }])
+              }
+            >
+              <Plus size={15} aria-hidden="true" />
+              Add a condition
+            </button>
+            {query && (
+              <button
+                type="button"
+                className="ghost"
+                onClick={async () => {
+                  await api.directory.removeGroupQuery(groupDn).catch(() => undefined);
+                  onChanged();
+                }}
+              >
+                Stop maintaining it
+              </button>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
 }

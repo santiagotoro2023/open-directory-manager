@@ -69,7 +69,11 @@ class HostIn(BaseModel):
     node_fqdn: Annotated[str, Field(min_length=1, max_length=253)]
 
 
-def _collection_json(row: asyncpg.Record, hosts: list[str]) -> dict[str, Any]:
+def _collection_json(
+    row: asyncpg.Record,
+    hosts: list[str],
+    host_state: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return {
         "id": str(row["id"]),
         "name": row["name"],
@@ -94,7 +98,11 @@ def _collection_json(row: asyncpg.Record, hosts: list[str]) -> dict[str, Any]:
         "balance_method": row["balance_method"],
         "principals": json.loads(row["principals"]),
         "hosts": hosts,
+        # The same hosts with whether each is taking new sessions, so the
+        # console can show a drained one as drained rather than as missing.
+        "host_state": host_state or [{"node_fqdn": host, "accepts_new": True} for host in hosts],
         "state": row["state"],
+        "shared_state": row["shared_state"],
         "last_error": row["last_error"],
         "updated_at": row["updated_at"],
     }
@@ -106,6 +114,18 @@ async def _hosts_of(conn: asyncpg.Connection, collection_id: Any) -> list[str]:
         collection_id,
     )
     return [row["node_fqdn"] for row in rows]
+
+
+async def _host_rows(conn: asyncpg.Connection, collection_id: Any) -> list[dict[str, Any]]:
+    """Each host with whether it is taking new sessions."""
+    rows = await conn.fetch(
+        """
+        SELECT node_fqdn, accepts_new, drained_at, drained_by
+        FROM rd_collection_host WHERE collection_id = $1 ORDER BY node_fqdn
+        """,
+        collection_id,
+    )
+    return [dict(row) for row in rows]
 
 
 async def _dispatch(
@@ -144,7 +164,7 @@ async def _dispatch(
         )
     # Every broker gets the same routing. A standby that is configured only
     # when the primary has already gone is a standby nobody has ever tested.
-    payload = remotedesktop.broker_task(dict(row), hosts)
+    payload = remotedesktop.broker_task(dict(row), hosts, await _host_rows(conn, row["id"]))
     for broker in remotedesktop.brokers(dict(row)):
         await tasks.enqueue(
             conn,
@@ -250,7 +270,12 @@ async def list_collections(
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM rd_collection ORDER BY name")
         collections = [
-            _collection_json(row, await _hosts_of(conn, row["id"])) for row in rows
+            _collection_json(
+                row,
+                await _hosts_of(conn, row["id"]),
+                await _host_rows(conn, row["id"]),
+            )
+            for row in rows
         ]
         # Hosts carrying the role that are not in any collection: they serve
         # nobody, and that is worth seeing rather than discovering later.
@@ -690,3 +715,152 @@ async def connection_file(
         media_type="application/x-rdp",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ------------------------------------------------------------- draining ---
+
+
+class DrainRequest(BaseModel):
+    collection_id: Annotated[str, Field(min_length=36, max_length=36)]
+    node_fqdn: Annotated[str, Field(min_length=1, max_length=253)]
+    accepts_new: bool
+
+
+@router.patch("/hosts/drain", dependencies=[Depends(requires("rd.write"))])
+async def drain_host(
+    body: DrainRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Stop or resume sending new sessions to one host.
+
+    A host being patched is drained rather than taken out of the collection:
+    removing it would send everybody still on it somewhere else at their next
+    reconnect, which is exactly what draining exists to avoid. The people on
+    it keep their sessions until they sign out; nobody new lands there.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM rd_collection WHERE id = $1::uuid", body.collection_id
+        )
+        if row is None:
+            raise objects.NotFound("no such collection")
+        updated = await conn.execute(
+            """
+            UPDATE rd_collection_host
+            SET accepts_new = $3,
+                drained_at = CASE WHEN $3 THEN NULL ELSE now() END,
+                drained_by = CASE WHEN $3 THEN NULL ELSE $4 END
+            WHERE collection_id = $1::uuid AND lower(node_fqdn) = lower($2)
+            """,
+            body.collection_id,
+            body.node_fqdn,
+            body.accepts_new,
+            session.principal,
+        )
+        if updated.endswith(" 0"):
+            raise objects.NotFound(f"{body.node_fqdn} is not in that collection")
+
+        await _dispatch(conn, row, session.principal, settings)
+        still_on = await conn.fetchval(
+            "SELECT count(*) FROM rd_session WHERE lower(node_fqdn) = lower($1)",
+            body.node_fqdn,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="rd.host.drain" if not body.accepts_new else "rd.host.resume",
+            outcome="success",
+            object_type="rd_collection",
+            object_dn=row["name"],
+            after={"node_fqdn": body.node_fqdn, "accepts_new": body.accepts_new},
+        )
+    return {
+        "node_fqdn": body.node_fqdn,
+        "accepts_new": body.accepts_new,
+        # What is still on it, which is what decides when it can be patched.
+        "sessions": still_on or 0,
+    }
+
+
+# --------------------------------------------------------- profile disks ---
+
+
+@router.get("/profiles", dependencies=[Depends(requires("rd.read"))])
+async def list_profile_disks(
+    node: Annotated[str, Query(min_length=1, max_length=253)],
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """The profile disks on the share one session host mounts.
+
+    Asked of a host rather than of the file server, because the host is what
+    has the share mounted with the credentials that can read it — and because
+    a disk that is in use is in use on a host.
+    """
+    try:
+        answer = await tasks.run_now(
+            pool,
+            node_fqdn=node,
+            kind="rd-profile-list",
+            payload={},
+            requested_by=session.principal,
+            timeout=60,
+        )
+    except tasks.TaskFailed as exc:
+        raise objects.ObjectError(str(exc)) from exc
+    try:
+        return json.loads(answer)
+    except ValueError as exc:
+        raise objects.ObjectError(f"{node} sent something unreadable back") from exc
+
+
+class ProfileDiskRequest(BaseModel):
+    node_fqdn: Annotated[str, Field(min_length=1, max_length=253)]
+    user: Annotated[str, Field(min_length=1, max_length=64)]
+    action: Literal["grow", "reset"]
+    size_gb: Annotated[int, Field(ge=1, le=2048)] = 0
+
+
+@router.post("/profiles", dependencies=[Depends(requires("rd.write"))])
+async def manage_profile_disk(
+    body: ProfileDiskRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Make one profile disk bigger, or set a broken one aside.
+
+    Neither while the person is signed in: growing a mounted image corrupts
+    it, and moving one out from under a session loses what is in it. The host
+    refuses in that case rather than trying.
+    """
+    try:
+        answer = await tasks.run_now(
+            pool,
+            node_fqdn=body.node_fqdn,
+            kind="rd-profile-manage",
+            payload={"user": body.user, "action": body.action, "size_gb": body.size_gb},
+            requested_by=session.principal,
+            timeout=1200,
+        )
+    except tasks.TaskFailed as exc:
+        raise objects.ObjectError(str(exc)) from exc
+
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action=f"rd.profile.{body.action}",
+            outcome="success",
+            object_type="rd_profile",
+            object_dn=body.user,
+            detail=f"{body.node_fqdn}: {answer}",
+        )
+    return {"result": answer}

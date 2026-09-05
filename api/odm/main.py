@@ -13,7 +13,8 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -87,6 +88,9 @@ async def lifespan(app: FastAPI):
     background = [
         asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool)),
         asyncio.create_task(routes_operations.backup_loop(app.state.pool, settings)),
+        # A group whose membership is a query is only true if something keeps
+        # answering the question.
+        asyncio.create_task(routes_directory.group_query_loop(app.state.pool, settings)),
     ]
     try:
         yield
@@ -169,6 +173,33 @@ def create_app() -> FastAPI:
     app.include_router(routes_operations.router)
     app.include_router(routes_join.router)
     app.include_router(routes_audit.router)
+
+    # The revocation list, where the certificates this domain issues say it
+    # is. Unauthenticated on purpose: a client checking whether a certificate
+    # is still good has no session and cannot be given one, and the list says
+    # only which certificates have been withdrawn — which is exactly what it
+    # is published for.
+    @app.get(ca.CRL_PATH, include_in_schema=False)
+    async def revocation_list() -> Response:
+        pool = app.state.pool
+        rows = await pool.fetch(
+            "SELECT serial, revoked_at FROM ca_certificate WHERE revoked_at IS NOT NULL"
+        )
+        try:
+            der = await run_in_threadpool(
+                ca.crl_der, settings, [(row["serial"], row["revoked_at"]) for row in rows]
+            )
+        except ca.CaNotInitialised:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "this domain has no certificate authority"
+            ) from None
+        return Response(
+            content=der,
+            media_type="application/pkix-crl",
+            # A week, matching the list's own next-update: a client that
+            # refetches more often than that learns nothing new.
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     # Directory failures map to HTTP once, here, instead of a try/except in
     # every route.

@@ -146,3 +146,80 @@ func TestTheHookSaysWhyItDidNothing(t *testing.T) {
 		t.Errorf("the hook can still exit silently:\n%s", script)
 	}
 }
+
+// A host being patched is drained rather than removed: removing it would send
+// everybody still on it somewhere else at their next reconnect, which is
+// exactly what draining exists to avoid.
+func TestADrainedHostKeepsItsSessionsAndTakesNoNewOnes(t *testing.T) {
+	runner := &recordingRunner{}
+	env := apply.NewEnv(t.TempDir())
+	env.Run = runner
+	if err := os.MkdirAll(env.Path("/etc/haproxy/conf.d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// The configuration is written before haproxy is asked to load it, and
+	// nothing is listening in a test, so what is being checked is the file.
+	_, _ = applyRemoteDesktopBroker(context.Background(), map[string]any{
+		"collection": "Desks",
+		"hosts": []any{
+			map[string]any{"host": "host1.example.org", "port": float64(3389), "accepts_new": true},
+			map[string]any{"host": "host2.example.org", "port": float64(3389), "accepts_new": false},
+		},
+	}, env)
+	config := readFile(t, env, rdBrokerConfig)
+	if !strings.Contains(config, "server host2 host2.example.org:3389 check inter 10s weight 0") {
+		t.Errorf("the drained host is not drained:\n%s", config)
+	}
+	if strings.Contains(config, "server host1 host1.example.org:3389 check inter 10s weight 0") {
+		t.Errorf("a host that is taking sessions was drained:\n%s", config)
+	}
+}
+
+// Two brokers keeping one table between them, so somebody reconnecting
+// through the standby is still sent to the host holding their session.
+func TestTwoBrokersShareOneAffinityTable(t *testing.T) {
+	runner := &recordingRunner{}
+	env := apply.NewEnv(t.TempDir())
+	env.Run = runner
+	if err := os.MkdirAll(env.Path("/etc/haproxy/conf.d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = applyRemoteDesktopBroker(context.Background(), map[string]any{
+		"collection": "Desks",
+		"hosts":      []any{map[string]any{"host": "host1.example.org", "port": float64(3389)}},
+		"brokers":    []any{"rd1.example.org", "rd2.example.org"},
+	}, env)
+	config := readFile(t, env, rdBrokerConfig)
+	for _, want := range []string{
+		"peers odm_rd",
+		"peer rd1 rd1.example.org:10389",
+		"peer rd2 rd2.example.org:10389",
+		"peers odm_rd\n    stick on",
+	} {
+		if !strings.Contains(config, want) {
+			t.Errorf("missing %q:\n%s", want, config)
+		}
+	}
+
+	// One broker keeps its own table; a peers section of one is a section
+	// haproxy refuses to start with.
+	_, _ = applyRemoteDesktopBroker(context.Background(), map[string]any{
+		"collection": "Desks",
+		"hosts":      []any{map[string]any{"host": "host1.example.org", "port": float64(3389)}},
+		"brokers":    []any{"rd1.example.org"},
+	}, env)
+	if strings.Contains(readFile(t, env, rdBrokerConfig), "peers odm_rd") {
+		t.Error("a single broker was given a peers section")
+	}
+}
+
+func readFile(t *testing.T, env apply.Env, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(env.Path(path))
+	if err != nil {
+		t.Fatalf("reading %s: %v", path, err)
+	}
+	return string(body)
+}

@@ -113,6 +113,12 @@ func RunWithProgress(
 		output, err = makeDirectory(ctx, task.Payload, env)
 	case "set-permissions":
 		output, err = setPermissions(ctx, task.Payload, env)
+	case "disk-escrow":
+		output, err = escrowRecoveryKey(ctx, task.Payload, env)
+	case "rd-profile-list":
+		output, err = listProfileDisks(ctx, task.Payload, env)
+	case "rd-profile-manage":
+		output, err = manageProfileDisk(ctx, task.Payload, env)
 	case "local-user-add":
 		output, err = addLocalUser(ctx, task.Payload, env)
 	case "local-user-remove":
@@ -166,6 +172,14 @@ func timeoutFor(kind string) time.Duration {
 		// The same, except a recursive chown of a large tree, which is why it
 		// is given longer than a listing.
 		return 5 * time.Minute
+	case "disk-escrow":
+		// Adding a key slot derives a key, which is deliberately slow.
+		return 5 * time.Minute
+	case "rd-profile-list":
+		return 60 * time.Second
+	case "rd-profile-manage":
+		// Checking and growing a filesystem, on a share, over the network.
+		return 20 * time.Minute
 	case "printer-discover":
 		// A network sweep, which the agent bounds at twenty seconds.
 		return 60 * time.Second

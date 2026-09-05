@@ -1,5 +1,6 @@
 import {
   C,
+  Code,
   Details,
   Example,
   Note,
@@ -361,6 +362,62 @@ export function Content() {
             domain head is rejected.
           </p>
         </Section>
+        <Section title="Changing many objects at once">
+          <p>
+            Tick the objects in the list and <strong>Change all of them</strong>. One change is
+            applied to every one: an attribute set, a group joined or left, a move to another
+            organizational unit, an account enabled or disabled.
+          </p>
+          <p>
+            Each object is its own success or failure. One that cannot be changed &mdash;
+            protected, gone, outside your scope &mdash; is reported by name and the rest still
+            happen; stopping at the first failure in a run of five hundred leaves nobody able to
+            say what did and did not.
+          </p>
+          <Note>
+            Leave a field empty to leave it alone. A value replaces what each object has; an empty
+            one does not clear it. The whole run is one entry in the audit log, with what was
+            asked for and what was refused.
+          </Note>
+        </Section>
+
+        <Section title="Groups whose membership is a query">
+          <p>
+            On a group, <strong>Members</strong> &rarr; <strong>Membership by query</strong> makes
+            the membership a question instead of a list: everybody in an organizational unit,
+            everybody with a title, every machine running a release. It is recomputed every
+            quarter of an hour and whenever the query is saved.
+          </p>
+          <Example title="Everybody in Finance with a senior title">
+            <Code>{`Members are        Users
+Matching           Every condition
+Looking in         OU=Staff,DC=corp,DC=example,DC=internal
+
+Where  Department  is           Finance
+and    Title       starts with  Senior`}</Code>
+          </Example>
+          <Reference
+            headers={["Comparison", "Matches"]}
+            rows={[
+              ["is / is not", "Exactly that value, or anything but it"],
+              ["starts with", "Values beginning with it"],
+              ["contains", "Values with it anywhere"],
+              ["is set / is not set", "Whether the attribute has any value at all"],
+            ]}
+          />
+          <Note>
+            The query <em>is</em> the membership. Somebody put in the group by hand is taken out
+            again at the next run &mdash; two sources of truth for one list is how a group ends up
+            with members nobody can explain. <strong>Stop maintaining it</strong> leaves the
+            membership exactly as it is and stops answering the question.
+          </Note>
+          <Note>
+            The conditions are named rather than typed as an LDAP filter, and every value is
+            escaped on the way in. A filter typed by hand is one nobody reviews, and one that is
+            subtly wrong quietly empties a group a sudo rule or a share depends on.
+          </Note>
+        </Section>
+
       </Details>
     </>
   );

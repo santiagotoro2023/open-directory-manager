@@ -285,6 +285,11 @@ def issue(
             x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()),
             critical=False,
         )
+        # Where to find out whether this certificate has been withdrawn.
+        # Without it a revocation is bookkeeping: nothing checking the
+        # certificate has any way to learn about it, and the certificate keeps
+        # working until it expires.
+        .add_extension(crl_distribution_points(settings), critical=False)
     )
     certificate = builder.sign(ca_key, hashes.SHA256())
 
@@ -302,6 +307,29 @@ def issue(
             serialization.PrivateFormat.PKCS8,
             serialization.NoEncryption(),
         ).decode("ascii"),
+    )
+
+
+# Where the list of withdrawn certificates is published. A fixed path on the
+# console, served without authentication: a client checking a certificate has
+# no session and cannot be asked for one.
+CRL_PATH = "/crl/odm.crl"
+
+
+def crl_url(settings: Settings) -> str:
+    return f"{settings.console_url}{CRL_PATH}"
+
+
+def crl_distribution_points(settings: Settings) -> x509.CRLDistributionPoints:
+    return x509.CRLDistributionPoints(
+        [
+            x509.DistributionPoint(
+                full_name=[x509.UniformResourceIdentifier(crl_url(settings))],
+                relative_name=None,
+                reasons=None,
+                crl_issuer=None,
+            )
+        ]
     )
 
 
@@ -325,6 +353,26 @@ def build_crl(settings: Settings, revoked: list[tuple[str, dt.datetime]]) -> str
     return builder.sign(ca_key, hashes.SHA256()).public_bytes(
         serialization.Encoding.PEM
     ).decode("ascii")
+
+
+def crl_der(settings: Settings, revoked: list[tuple[str, dt.datetime]]) -> bytes:
+    """The same list in the encoding clients actually fetch."""
+    ca_key, ca_cert = _load(settings)
+    now = dt.datetime.now(dt.UTC)
+    builder = (
+        x509.CertificateRevocationListBuilder()
+        .issuer_name(ca_cert.subject)
+        .last_update(now)
+        .next_update(now + dt.timedelta(days=7))
+    )
+    for serial, when in revoked:
+        builder = builder.add_revoked_certificate(
+            x509.RevokedCertificateBuilder()
+            .serial_number(int(serial, 16))
+            .revocation_date(when)
+            .build()
+        )
+    return builder.sign(ca_key, hashes.SHA256()).public_bytes(serialization.Encoding.DER)
 
 
 # ------------------------------------------------------------ trust anchors ---

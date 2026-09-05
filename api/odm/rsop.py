@@ -137,8 +137,26 @@ async def build(
     *,
     os_id: str = "",
     ip_addresses: tuple[str, ...] = (),
+    add_links: list[policy.Link] | None = None,
+    drop_links: set[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """The effective policy for one object.
+
+    add_links and drop_links are for modelling a change before it is made:
+    links that do not exist yet, and links that do but are being considered
+    for removal. Both are resolved through exactly the same code the agent's
+    answer goes through, because a preview resolved a second way is a preview
+    that can disagree with the machine.
+    """
     gpos, links, blocked = await load_inputs(pool)
+    if drop_links:
+        links = [
+            link
+            for link in links
+            if (link.gpo_guid, link.target_dn.lower()) not in drop_links
+        ]
+    if add_links:
+        links = links + list(add_links)
     # An agent says what it is when it asks; the console preview has to look it
     # up, or it resolves with no operating system and no address and hides
     # every entry targeted at one — showing an operator a resultant set that

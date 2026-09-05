@@ -4,13 +4,14 @@ import {
   ApiError,
   api,
   type BackupRecord,
+  type BaselineCheck,
   type DomainImportSummary,
   type HealthReport,
   type SessionInfo,
 } from "../api";
 import { FileInput } from "../components/FileInput";
 
-type Tab = "health" | "replication" | "backups" | "configuration";
+type Tab = "health" | "replication" | "backups" | "baseline" | "configuration";
 
 /** What a row in the services table is saying, at a glance. */
 type State = "ok" | "attention" | "off";
@@ -273,7 +274,8 @@ export function Overview({ session }: { session: SessionInfo }) {
       </div>
 
       <nav className="tabs" aria-label="Operations views">
-        {(["health", "replication", "backups", "configuration"] as Tab[]).map((current) => (
+        {(["health", "replication", "backups", "baseline", "configuration"] as Tab[]).map(
+          (current) => (
           <button
             key={current}
             type="button"
@@ -287,9 +289,12 @@ export function Overview({ session }: { session: SessionInfo }) {
                 ? "Replication"
                 : current === "backups"
                   ? "Backups"
-                  : "Configuration"}
-          </button>
-        ))}
+                  : current === "baseline"
+                    ? "Security baseline"
+                    : "Configuration"}
+            </button>
+          ),
+        )}
       </nav>
 
       {error && (
@@ -426,6 +431,8 @@ export function Overview({ session }: { session: SessionInfo }) {
           )}
         </>
       )}
+      {tab === "baseline" && <BaselineTab />}
+
       {tab === "configuration" && <ConfigurationTab />}
     </main>
   );
@@ -596,6 +603,123 @@ function ConfigurationTab() {
           )}
         </>
       )}
+    </>
+  );
+}
+
+const SEVERITY_LABEL: Record<BaselineCheck["severity"], string> = {
+  critical: "Needs attention now",
+  warning: "Worth looking at",
+  advisory: "Worth knowing",
+  ok: "Fine",
+  unknown: "Could not be checked",
+};
+
+const SEVERITY_BADGE: Record<BaselineCheck["severity"], string> = {
+  critical: "failure",
+  warning: "failure",
+  advisory: "",
+  ok: "success",
+  unknown: "",
+};
+
+/**
+ * The domain measured against a security checklist.
+ *
+ * Every check reads something ODM already holds and answers one question an
+ * auditor asks. Nothing here changes anything, and each finding says where in
+ * the console it is fixed: a report nobody can act on is a complaint.
+ */
+function BaselineTab() {
+  const [report, setReport] = useState<Awaited<
+    ReturnType<typeof api.operations.baseline>
+  > | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setReport(await api.operations.baseline());
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (error) {
+    return (
+      <p className="alert" role="alert">
+        {error}
+      </p>
+    );
+  }
+  if (loading || !report) return <p className="muted">Checking…</p>;
+
+  return (
+    <>
+      <p className="muted">
+        Taken {new Date(report.taken_at).toLocaleString()} ·{" "}
+        {report.score.critical ?? 0} needing attention, {report.score.warning ?? 0} worth looking
+        at, {report.score.ok ?? 0} fine. Nothing here changes anything.
+      </p>
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col" style={{ width: "260px" }}>
+              Check
+            </th>
+            <th scope="col" style={{ width: "190px" }}>
+              Verdict
+            </th>
+            <th scope="col">Finding</th>
+            <th scope="col" style={{ width: "150px" }}>
+              Where
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {report.checks.map((check) => (
+            <tr
+              key={check.key}
+              onClick={() =>
+                setOpen((was) => {
+                  const next = new Set(was);
+                  if (next.has(check.key)) next.delete(check.key);
+                  else next.add(check.key);
+                  return next;
+                })
+              }
+              style={check.detail.length > 0 ? { cursor: "pointer" } : undefined}
+            >
+              <td>{check.title}</td>
+              <td>
+                <span className={`badge ${SEVERITY_BADGE[check.severity]}`}>
+                  {SEVERITY_LABEL[check.severity]}
+                </span>
+              </td>
+              <td>
+                {check.finding}
+                {check.detail.length > 0 && open.has(check.key) && (
+                  <pre className="command-output">{check.detail.join("\n")}</pre>
+                )}
+                {check.detail.length > 0 && !open.has(check.key) && (
+                  <p className="stat-note">Click to see which.</p>
+                )}
+              </td>
+              <td className="muted">{check.where}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </>
   );
 }

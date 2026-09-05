@@ -9,11 +9,14 @@ hand it to anything that can read a user object.
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import secrets
 import struct
 import time
+from collections.abc import Iterable
+from typing import Any
 from urllib.parse import quote
 
 # The values every authenticator assumes when a URI does not say otherwise.
@@ -103,3 +106,78 @@ def matches_recovery(codes: list[str], candidate: str) -> str | None:
         if hmac.compare_digest(code, candidate):
             found = code
     return found
+
+
+# ------------------------------------------------ a second factor at the machine
+
+
+def oath_users(rows: Iterable[Any], wanted: set[str] | None) -> list[str]:
+    """The enrolments a machine may hold, in the format pam_oath reads.
+
+    One line per account: the method, the account name, a placeholder for the
+    module's own state, and the secret in hex. The secret is the same one the
+    console checks, so somebody enrols once and both ask for the same code.
+
+    wanted is the set of account names the machine's policy entitles it to,
+    lowercased; None is every confirmed enrolment. A machine is never handed
+    the secret of somebody who does not sign in to it.
+    """
+    lines = []
+    for row in rows:
+        principal = str(row["principal"])
+        account = principal.split("@")[0].split("\\")[-1].lower()
+        if wanted is not None and account not in wanted:
+            continue
+        try:
+            raw = base64.b32decode(_padded(str(row["secret"])), casefold=True)
+        except (binascii.Error, ValueError):
+            continue
+        # HOTP/T30/6 is what RFC 6238 with a thirty-second step and six digits
+        # is called in this file format.
+        lines.append(f"HOTP/T30/6 {account} - {raw.hex()}")
+    return lines
+
+
+def _padded(secret: str) -> str:
+    """base32 without its padding, as every authenticator writes it."""
+    return secret + "=" * (-len(secret) % 8)
+
+
+def entitled_principals(
+    conn: Any,
+    settings: Any,
+    *,
+    require: list[str],
+    exempt: list[str],
+) -> set[str] | None:
+    """Which account names a machine's second-factor policy covers.
+
+    Empty "require" is everybody the policy reaches, which cannot be
+    enumerated from here — the machine is handed every confirmed enrolment
+    minus the exemptions. A "require" list narrows it to those accounts and
+    the members of those groups, which is what an operator rolling a second
+    factor out to one department actually wants.
+    """
+    excluded = {name.lstrip("%").lower() for name in exempt}
+
+    if not require:
+        return None if not excluded else _AllExcept(excluded)
+
+    from . import objects as _objects  # local: this module is imported by it
+
+    wanted: set[str] = set()
+    for principal in require:
+        name = principal.lstrip("%")
+        if principal.startswith("%"):
+            wanted |= _objects.account_names_in(conn, settings, name)
+        else:
+            wanted.add(name.lower())
+    return wanted - excluded
+
+
+class _AllExcept(set):
+    """Everybody but these. Behaves as a set that contains anything it was not
+    told to exclude, so callers can treat it like the explicit set."""
+
+    def __contains__(self, item: object) -> bool:
+        return not super().__contains__(item)

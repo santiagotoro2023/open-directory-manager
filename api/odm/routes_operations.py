@@ -18,12 +18,14 @@ from . import (
     agents,
     audit,
     backup,
+    baseline,
     ca,
     dns,
     domainexport,
     kea,
     objects,
     replication,
+    routes_password,
     tasks,
 )
 from .config import Settings, get_settings
@@ -625,4 +627,161 @@ async def _apply_import(
         "dns": {"zones": zones, "records": records},
         "tables": {name: count for name, count in tables.items() if count},
         "problems": problems[:200],
+    }
+
+
+# ------------------------------------------------------ security baseline ---
+
+# How long an enabled account may go unused before it is worth asking about.
+STALE_ACCOUNT_DAYS = 90
+# How long a machine may go without reporting before its policy is stale.
+STALE_AGENT_HOURS = 24
+
+
+@router.get("/domain/baseline", dependencies=[Depends(requires("domain.baseline"))])
+async def security_baseline(
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """The domain measured against a security checklist.
+
+    Every check reads something ODM already holds and answers one question an
+    auditor asks. Nothing here changes anything, and each finding says where
+    in the console it is fixed — a report nobody can act on is a complaint.
+    """
+    now = baseline.now_utc()
+    checks: list[baseline.Check] = []
+
+    async with _bound(settings, write=False) as conn:
+        users, _ = await run_in_threadpool(
+            objects.search,
+            conn,
+            settings,
+            object_type="user",
+            container=None,
+            query=None,
+            scope="subtree",
+            limit=5000,
+        )
+        admins = await run_in_threadpool(
+            objects.account_names_in, conn, settings, settings.admin_group
+        )
+        try:
+            policy_rows = await run_in_threadpool(routes_password.read_policy, settings)
+        except Exception:  # noqa: BLE001 - a domain whose policy cannot be read is a finding
+            policy_rows = {}
+
+    described = [
+        {
+            "name": str(user.get("sAMAccountName") or user.get("cn") or ""),
+            "disabled": bool(int(user.get("userAccountControl") or 0) & 0x0002),
+            "password_never_expires": bool(int(user.get("userAccountControl") or 0) & 0x10000),
+            "last_logon": _as_datetime(user.get("lastLogonTimestamp")),
+        }
+        for user in users
+    ]
+
+    checks.append(baseline.stale_accounts(described, STALE_ACCOUNT_DAYS, now))
+    checks.append(baseline.passwords_never_expire(described))
+    checks.append(baseline.privileged_accounts(sorted(admins)))
+    checks.append(baseline.password_policy(_normalised_policy(policy_rows)))
+
+    enrolled = {
+        str(row["principal"]).split("@")[0].lower()
+        for row in await pool.fetch(
+            "SELECT principal FROM totp_enrolment WHERE confirmed_at IS NOT NULL"
+        )
+    }
+    checks.append(baseline.second_factor(sorted(admins), enrolled))
+
+    machines = await pool.fetch("SELECT hostname, volumes, reported_at FROM computer_fact")
+    stale = sum(
+        1
+        for row in machines
+        if row["reported_at"] is None
+        or (now - row["reported_at"]).total_seconds() > STALE_AGENT_HOURS * 3600
+    )
+    checks.append(baseline.agents_reporting(len(machines), stale, STALE_AGENT_HOURS))
+    checks.append(
+        baseline.encryption(
+            [
+                {"hostname": row["hostname"], "volumes": json.loads(row["volumes"] or "[]")}
+                for row in machines
+            ]
+        )
+    )
+
+    last_backup = await pool.fetchval(
+        "SELECT max(finished_at) FROM domain_backup WHERE state = 'complete'"
+    )
+    checks.append(baseline.backups(last_backup, now))
+
+    expiring = await pool.fetch(
+        """
+        SELECT subject FROM ca_certificate
+        WHERE revoked_at IS NULL AND not_after < now() + interval '30 days'
+          AND not_after > now()
+        """
+    )
+    checks.append(baseline.certificate_expiry([dict(row) for row in expiring]))
+
+    assignments = await pool.fetch(
+        "SELECT principal_name, role_name, scope_dn FROM rbac_assignment"
+    )
+
+    checks.append(
+        baseline.delegation(
+            [
+                {
+                    "principal": row["principal_name"],
+                    "role_name": row["role_name"],
+                    "scope_dn": row["scope_dn"],
+                }
+                for row in assignments
+            ]
+        )
+    )
+
+    order = {name: index for index, name in enumerate(baseline.SEVERITIES)}
+    checks.sort(key=lambda check: (order.get(check.severity, 99), check.title))
+    return {
+        "taken_at": now,
+        "score": baseline.score(checks),
+        "checks": [check.as_json() for check in checks],
+    }
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
+def _normalised_policy(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """samba-tool's labels, as the checks want to read them."""
+    if not raw:
+        return None
+
+    def number(label: str) -> int:
+        for key, value in raw.items():
+            if label.lower() in key.lower():
+                digits = "".join(character for character in str(value) if character.isdigit())
+                return int(digits) if digits else 0
+        return 0
+
+    complexity = ""
+    for key, value in raw.items():
+        if "complexity" in key.lower():
+            complexity = str(value).strip().lower()
+    return {
+        "min_length": number("Minimum password length"),
+        "complexity": complexity in ("on", "true", "yes"),
+        "lockout_threshold": number("Account lockout threshold"),
     }

@@ -68,6 +68,16 @@ type Settings struct {
 	RemoteDesktopFiles   []RemoteDesktopFile    `json:"remote_desktop_files,omitempty"`
 	DefaultApplications  []DefaultApplication   `json:"default_applications,omitempty"`
 	Dash                 []DashLayout           `json:"dash,omitempty"`
+	Sysctl               []SysctlSetting        `json:"sysctl,omitempty"`
+	Shortcuts            []Shortcut             `json:"shortcuts,omitempty"`
+	Fonts                []Font                 `json:"fonts,omitempty"`
+	Power                *PowerSettings         `json:"power,omitempty"`
+	ScreenLock           *ScreenLock            `json:"screen_lock,omitempty"`
+	RemovableStorage     *RemovableStorage      `json:"removable_storage,omitempty"`
+	DesktopTheme         *DesktopTheme          `json:"desktop_theme,omitempty"`
+	SecondFactor         *SecondFactor          `json:"second_factor,omitempty"`
+	FirstRun             *FirstRun              `json:"first_run,omitempty"`
+	SoftwareControl      *SoftwareControl       `json:"software_control,omitempty"`
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
 	LocalPasswordPolicy  *LocalPasswordPolicy   `json:"local_password_policy,omitempty"`
@@ -175,6 +185,95 @@ type DashLayout struct {
 	// Desktop entries in the order they should appear, comma separated.
 	Applications string `json:"applications"`
 	ForPrincipal string `json:"for_principal"`
+}
+
+// PowerSettings is when the machine turns its screen off and suspends.
+type PowerSettings struct {
+	ScreenOffACMinutes      int    `json:"screen_off_ac_minutes"`
+	ScreenOffBatteryMinutes int    `json:"screen_off_battery_minutes"`
+	SuspendACMinutes        int    `json:"suspend_ac_minutes"`
+	SuspendBatteryMinutes   int    `json:"suspend_battery_minutes"`
+	LidCloseAction          string `json:"lid_close_action"`
+	PowerButtonAction       string `json:"power_button_action"`
+	AllowUserChange         bool   `json:"allow_user_change"`
+}
+
+// ScreenLock is when the screen locks itself.
+type ScreenLock struct {
+	IdleMinutes       int  `json:"idle_minutes"`
+	LockDelaySeconds  int  `json:"lock_delay_seconds"`
+	LockEnabled       bool `json:"lock_enabled"`
+	LockOnSuspend     bool `json:"lock_on_suspend"`
+	ShowNotifications bool `json:"show_notifications"`
+	AllowUserChange   bool `json:"allow_user_change"`
+}
+
+// RemovableStorage is what may be done with a disk somebody plugs in.
+type RemovableStorage struct {
+	Mode             string   `json:"mode"` // allow | read_only | block
+	ExemptPrincipals []string `json:"exempt_principals"`
+	Message          string   `json:"message"`
+}
+
+// SysctlSetting is one kernel parameter.
+type SysctlSetting struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// Shortcut is an icon on a desktop, an entry in a menu, or a place in a file
+// manager.
+type Shortcut struct {
+	Name         string `json:"name"`
+	Kind         string `json:"kind"` // application | link | place
+	Target       string `json:"target"`
+	Icon         string `json:"icon"`
+	Where        string `json:"where"` // desktop | menu | both
+	ForPrincipal string `json:"for_principal"`
+}
+
+// Font is a font file installed for everybody on the machine.
+type Font struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// DesktopTheme is how the desktop looks.
+type DesktopTheme struct {
+	GtkTheme        string `json:"gtk_theme"`
+	IconTheme       string `json:"icon_theme"`
+	CursorTheme     string `json:"cursor_theme"`
+	InterfaceFont   string `json:"interface_font"`
+	DocumentFont    string `json:"document_font"`
+	MonospaceFont   string `json:"monospace_font"`
+	ColourScheme    string `json:"colour_scheme"`
+	AllowUserChange bool   `json:"allow_user_change"`
+}
+
+// SecondFactor is a code asked for at the machine as well as at the console.
+// FirstRun is what somebody is shown the first time they sign in.
+type FirstRun struct {
+	DisableTour          bool   `json:"disable_tour"`
+	DisableWelcomeDialog bool   `json:"disable_welcome_dialog"`
+	Message              string `json:"message"`
+}
+
+type SecondFactor struct {
+	Enabled           bool     `json:"enabled"`
+	SelfEnrol         bool     `json:"self_enrol"`
+	Services          []string `json:"services"`
+	RequirePrincipals []string `json:"require_principals"`
+	ExemptPrincipals  []string `json:"exempt_principals"`
+	GraceDays         int      `json:"grace_days"`
+}
+
+// SoftwareControl is which packages may be installed.
+type SoftwareControl struct {
+	Enabled      bool     `json:"enabled"`
+	Allowed      []string `json:"allowed"`
+	BlockFlatpak bool     `json:"block_flatpak"`
+	BlockSnap    bool     `json:"block_snap"`
+	Message      string   `json:"message"`
 }
 
 type SudoRule struct {

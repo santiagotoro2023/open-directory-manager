@@ -267,6 +267,42 @@ export function Content() {
             30 days, and the authority&rsquo;s own expiry date.
           </p>
         </Section>
+        <Section title="Withdrawing a certificate">
+          <p>
+            Revoking a certificate records it as withdrawn and puts its serial on the
+            domain&rsquo;s revocation list. Every certificate this authority issues carries a
+            distribution point naming where that list is, so a client checking the certificate can
+            find out.
+          </p>
+          <Reference
+            headers={["Where", "What"]}
+            rows={[
+              [
+                "The list itself",
+                "https://<console>/crl/odm.crl, in the DER encoding clients fetch. Served without authentication: something checking a certificate has no session and cannot be given one.",
+              ],
+              [
+                "In each certificate",
+                "A CRL distribution point pointing at that URL, added at issue.",
+              ],
+              [
+                "The address used",
+                "ODM_CONSOLE_URL in the secrets file, which defaults to the well-known name setup publishes.",
+              ],
+            ]}
+          />
+          <Note>
+            Revoking is its own right, <C>ca.revoke</C>, separate from issuing. The list says only
+            which certificates are no longer valid, which is exactly what it is published for.
+          </Note>
+          <Note>
+            The list is valid for a week and re-signed on every fetch, so a revocation is visible
+            to anything that refetches. Certificates issued before this version have no
+            distribution point in them and are not checked against it; reissue them to change
+            that.
+          </Note>
+        </Section>
+
       </Details>
     </>
   );

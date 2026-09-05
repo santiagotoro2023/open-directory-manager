@@ -77,6 +77,11 @@ export function Content() {
                 "Share name, share path, optionally a group allowed to use it.",
               ],
               [
+                "Time",
+                "chrony, serving the domain. Kerberos gives up on a clock more than five minutes out, so every sign-in depends on it.",
+                "Optionally an upstream source and the networks that may ask.",
+              ],
+              [
                 "Print server",
                 "CUPS printers, published to the domain and handed out by policy.",
                 "Nothing. The printers are added under Printers.",
@@ -196,6 +201,33 @@ export function Content() {
             to. Create a multi-use enrolment token under <strong>Directory</strong> first. The join
             binary is published by the installer, which refuses to run without it rather than
             leaving machines that install and never join.
+          </Note>
+        </Section>
+
+        <Section title="Time">
+          <p>
+            The one role whose absence is felt everywhere else. Kerberos refuses a ticket whose
+            timestamp is more than five minutes out, so a machine with a drifting clock stops
+            being able to sign in, mount a share or apply policy &mdash; and says none of that in
+            a way anybody reads as a clock problem.
+          </p>
+          <p>
+            Installing it on the domain controllers is usually all there is to do: a domain-joined
+            machine already asks its controller for the time. Left empty, the upstream is
+            Debian&rsquo;s own pool and the networks allowed to ask are the ones the machine is
+            on.
+          </p>
+          <Reference
+            headers={["Command", "Answers"]}
+            rows={[
+              [<C key="a">chronyc sources</C>, "Where this machine gets the time, and how far out it is"],
+              [<C key="b">chronyc clients</C>, "Who is asking it for the time"],
+            ]}
+          />
+          <Note>
+            Uninstalling the role removes ODM&rsquo;s configuration and leaves chrony running on
+            its own. A machine with no time source is a machine that stops being able to sign in,
+            which is not what uninstalling ODM should do.
           </Note>
         </Section>
 

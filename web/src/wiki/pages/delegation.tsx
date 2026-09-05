@@ -204,6 +204,24 @@ export function Content() {
             membership changes take effect without touching the assignment, and nesting is followed.
           </p>
         </Section>
+        <Section title="Read-only access">
+          <p>
+            The <strong>read-only</strong> role sees everything in the console and changes
+            nothing: the directory, policy objects, DNS, DHCP, shares, printers, collections,
+            certificates, the audit log, the health dashboard and the security baseline &mdash;
+            all readable, none writable.
+          </p>
+          <p>
+            Assign it to a group the way any role is assigned, and scope it to part of the
+            directory or to the whole domain. It is what to give an auditor, somebody being
+            trained, or a monitoring account that only has to look.
+          </p>
+          <Note>
+            Reading a recovery key or a local-administrator password is not part of it. Those are
+            the credentials that open a machine, and they are their own rights.
+          </Note>
+        </Section>
+
       </Details>
     </>
   );

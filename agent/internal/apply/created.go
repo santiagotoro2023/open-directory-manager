@@ -41,6 +41,8 @@ type created struct {
 	// The dash layout written into somebody's home, by full path, for the
 	// same reason.
 	Dash []string `json:"dash,omitempty"`
+	// Desktop and menu entries, likewise.
+	Shortcuts []string `json:"shortcuts,omitempty"`
 }
 
 func createdPath(env Env) string {
@@ -76,6 +78,7 @@ func saveCreated(env Env, state created) {
 	sort.Strings(state.DriveMaps)
 	sort.Strings(state.RemoteDesktopFiles)
 	sort.Strings(state.Dash)
+	sort.Strings(state.Shortcuts)
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return

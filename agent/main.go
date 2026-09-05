@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.8.1"
+const version = "0.8.2"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -69,6 +69,8 @@ func main() {
 		os.Exit(runCheck(os.Args[2:]))
 	case "trust":
 		os.Exit(runTrust(os.Args[2:]))
+	case "enrol-factor":
+		os.Exit(runEnrolFactor(os.Args[2:]))
 	case "--version", "-v", "version":
 		fmt.Println("odm-agent", version)
 	default:
@@ -84,6 +86,7 @@ func usage() {
   trust <certificate>             trust the console's certificate and check
   daemon                          apply on the policy's refresh interval
   profile --user NAME [--release] attach that person's roaming profile
+  enrol-factor --user NAME        set up a second factor for that account
   --version                       print the version
 
   --force is the equivalent of gpupdate /force: apply even when the policy
@@ -282,6 +285,27 @@ func fileNames(files []policy.RemoteDesktopFile, user string) []string {
 		}
 	}
 	return names
+}
+
+// fetchSecondFactor asks the control plane which enrolments this machine may
+// hold and writes them where the PAM module reads them.
+func fetchSecondFactor(
+	ctx context.Context, settings policy.Settings, api *client.Client, env apply.Env,
+) []policy.Result {
+	if settings.SecondFactor == nil || !settings.SecondFactor.Enabled {
+		return nil
+	}
+	lines, err := api.SecondFactorUsers(ctx)
+	if err != nil {
+		// Left as it was rather than emptied. An empty file is a machine
+		// where nobody has a second factor, which with the module in the
+		// stack is a machine nobody can sign in to.
+		return []policy.Result{policy.Fail("second_factor:enrolments", err)}
+	}
+	if err := apply.WriteOathUsers(env, lines); err != nil {
+		return []policy.Result{policy.Fail("second_factor:enrolments", err)}
+	}
+	return []policy.Result{policy.Ok("second_factor:enrolments")}
 }
 
 // dashNames is the layout this person actually got, for the report.
@@ -489,6 +513,11 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	// what comes back.
 	if username == "" {
 		results = append(results, enrol.Apply(ctx, document.Settings, env, api)...)
+		// The enrolments the second factor checks against. Fetched rather
+		// than applied, because they are not policy: they are the people the
+		// policy names, and they change when somebody enrols rather than when
+		// an operator saves a policy object.
+		results = append(results, fetchSecondFactor(ctx, document.Settings, api, env)...)
 	}
 	failed := 0
 	for _, result := range results {
