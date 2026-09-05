@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"odm.example.org/agent/internal/policy"
 )
@@ -32,6 +34,14 @@ const (
 	// does the same thing in a graphical session.
 	enrolHelper    = "/usr/lib/odm/enrol-factor"
 	enrolAutostart = "/etc/xdg/autostart/odm-enrol-factor.desktop"
+	// What decides, for this account, whether a code is asked for at all.
+	// Without it pam_oath is unconditional, and unconditional means anybody
+	// with no enrolment is refused before they are even asked for a password
+	// — including root, on every way in at once.
+	factorGuard = "/usr/lib/odm/second-factor-required"
+	// When the setting first reached this machine, which is what a grace
+	// period is counted from. Written once and left alone.
+	factorSince = "/var/lib/odm/second-factor-since"
 )
 
 // Where each way in is decided. A separate file per service, because "at the
@@ -43,13 +53,27 @@ var secondFactorServices = map[string][]string{
 	"remote-desktop": {"/etc/pam.d/xrdp-sesman"},
 }
 
-// The line itself. requisite rather than required: there is no point asking
-// for a password after the second factor has already been refused, and
-// "required" would do exactly that.
+// The two lines, in the order PAM reads them.
+//
+// The guard runs first and decides whether this account is asked at all: it
+// exits 0 to say "not this one", and success=1 jumps over pam_oath. Anything
+// else falls through to it. Without the guard pam_oath is unconditional, and
+// unconditional refuses everybody who has not enrolled — before the password
+// prompt, on every service at once, root included.
+//
+// requisite on pam_oath rather than required: once the code is wrong there is
+// nothing further to ask.
+const guardLine = "auth [success=1 default=ignore] pam_exec.so quiet " + factorGuard
+
 const oathLine = "auth requisite pam_oath.so usersfile=" + oathUsersFile +
 	" window=2 digits=6"
 
 const oathMarker = "pam_oath.so"
+
+// Where the lines go: after the password has been checked, not before it.
+// Asked first, the code is demanded of somebody who then fails the password,
+// and the prompt order reads backwards to everybody using it.
+const afterPassword = "@include common-auth"
 
 // Where the module lives on the two architectures Debian builds for. Checked
 // before its name is written into a PAM stack: a stack naming a module that
@@ -80,31 +104,18 @@ const enrolLine = "session optional pam_exec.so " + enrolHelper
 const enrolMarker = enrolHelper
 
 func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy.Result {
+	// A setting removed from a policy object arrives here as nothing at all.
+	// Returning early on that left the lines on the machine for ever, so
+	// taking the setting away was the one thing that could not undo it.
 	if s.SecondFactor == nil {
-		return nil
+		return removeSecondFactor(env, false)
 	}
 	factor := *s.SecondFactor
 
 	if !factor.Enabled {
 		// Taken back everywhere it was put, or a policy switched off leaves a
 		// machine nobody without a phone can sign in to.
-		var results []policy.Result
-		for _, paths := range secondFactorServices {
-			for _, path := range paths {
-				if err := removeOathLine(env, path); err != nil {
-					results = append(results, policy.Fail("second_factor", err))
-				}
-			}
-		}
-		_ = os.Remove(env.Path(oathUsersFile))
-		_ = os.Remove(env.Path(secondFactorPam))
-		if err := writeEnrolment(env, false); err != nil {
-			results = append(results, policy.Fail("second_factor:enrolment", err))
-		}
-		if len(results) == 0 {
-			results = append(results, policy.Ok("second_factor"))
-		}
-		return results
+		return removeSecondFactor(env, true)
 	}
 
 	// The module has to be there before its name goes into a PAM stack. It
@@ -121,14 +132,29 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 		}}
 	}
 
-	// Who it applies to, for the agent's own use when it fetches the
-	// enrolments and for an operator reading the machine.
+	// When this machine first heard of the setting, which is what a grace
+	// period counts from. Written once: rewritten on every refresh it would
+	// restart the clock every quarter of an hour and the grace would never
+	// end.
+	if _, err := os.Stat(env.Path(factorSince)); os.IsNotExist(err) {
+		_ = os.MkdirAll(filepath.Dir(env.Path(factorSince)), 0o755)
+		_ = os.WriteFile(env.Path(factorSince),
+			[]byte(fmt.Sprintf("%d\n", time.Now().Unix())), 0o644)
+	}
+
+	// Who it applies to. Read by the guard at every sign-in, so what the
+	// policy says about grace, "only for" and "except for" is what the
+	// machine actually does rather than a description of it.
 	conf := Header +
 		"SERVICES=" + strings.Join(factor.Services, ",") + "\n" +
 		"REQUIRE=" + strings.Join(factor.RequirePrincipals, ",") + "\n" +
 		"EXEMPT=" + strings.Join(factor.ExemptPrincipals, ",") + "\n" +
 		fmt.Sprintf("GRACE_DAYS=%d\n", factor.GraceDays)
 	if err := env.WriteFile(secondFactorPam, conf, 0o600, "root", "root"); err != nil {
+		return []policy.Result{policy.Fail("second_factor", err)}
+	}
+
+	if err := env.WriteFile(factorGuard, guardScript(), 0o755, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("second_factor", err)}
 	}
 
@@ -206,7 +232,27 @@ func addOathLine(env Env, path string) error {
 		return nil
 	}
 	managed := "# " + strings.TrimSuffix(strings.TrimPrefix(Header, "# "), "\n") + "\n"
-	updated := managed + oathLine + "\n" + string(body)
+	block := managed + guardLine + "\n" + oathLine + "\n"
+
+	// After the password has been checked. Put first, the code is demanded of
+	// somebody who then fails the password, and — with nothing in front of it
+	// deciding whether to ask at all — of everybody who has not enrolled.
+	lines := strings.Split(string(body), "\n")
+	inserted := false
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), afterPassword) {
+			lines = append(lines[:index+1],
+				append([]string{strings.TrimRight(block, "\n")}, lines[index+1:]...)...)
+			inserted = true
+			break
+		}
+	}
+	updated := strings.Join(lines, "\n")
+	if !inserted {
+		// A stack that does not include the common one. The guard still
+		// decides, so this is safe wherever it lands.
+		updated = block + string(body)
+	}
 	// A text login gets the enrolment walkthrough too, at the end of the
 	// stack where a session line belongs.
 	if enrolOnTty(path) {
@@ -230,12 +276,14 @@ func removeOathLine(env Env, path string) error {
 		return err
 	}
 	if !strings.Contains(string(body), oathMarker) &&
-		!strings.Contains(string(body), enrolMarker) {
+		!strings.Contains(string(body), enrolMarker) &&
+		!strings.Contains(string(body), factorGuard) {
 		return nil
 	}
 	var kept []string
 	for _, line := range strings.Split(string(body), "\n") {
-		if strings.Contains(line, oathMarker) || strings.Contains(line, enrolMarker) {
+		if strings.Contains(line, oathMarker) || strings.Contains(line, enrolMarker) ||
+			strings.Contains(line, factorGuard) {
 			continue
 		}
 		if strings.Contains(line, "Managed by Open Directory Manager") {
@@ -292,4 +340,123 @@ exit 0
 		"X-GNOME-Autostart-enabled=true\n" +
 		"# " + strings.TrimSuffix(strings.TrimPrefix(Header, "# "), "\n") + "\n"
 	return env.WriteFile(enrolAutostart, entry, 0o644, "root", "root")
+}
+
+// guardScript decides, for one account at one sign-in, whether a code is
+// asked for. It exits 0 to say "not this one", which is the status the PAM
+// line jumps over pam_oath on.
+//
+// Everything it refuses to ask is a decision the policy already made and the
+// machine was not reading: the grace period, "only for" and "except for" were
+// written into a file and never consulted, so pam_oath asked everybody and
+// refused everybody who had not enrolled — before the password prompt, on
+// every service at once.
+func guardScript() string {
+	return "#!/bin/sh\n" + Header + `
+# Exit 0: do not ask this account for a code.
+# Exit 1: ask.
+#
+# PAM runs this with almost no environment, and a guard that cannot run must
+# not lock anybody out, so every uncertain answer here is "do not ask".
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+set -u
+
+USER_NAME="${PAM_USER:-}"
+[ -n "$USER_NAME" ] || exit 0
+
+# Never a local account. root and the machine's own service accounts have to
+# keep working, or a machine whose control plane is unreachable is a machine
+# nobody can repair.
+USER_ID="$(id -u "$USER_NAME" 2>/dev/null || echo 0)"
+case "$USER_ID" in ''|*[!0-9]*) exit 0 ;; esac
+[ "$USER_ID" -ge 1000 ] || exit 0
+
+[ -r ` + secondFactorPam + ` ] || exit 0
+. ` + secondFactorPam + `
+
+SHORT="$(printf '%s' "$USER_NAME" | sed 's/@.*//; s/.*\\\\//' | tr 'A-Z' 'a-z')"
+GROUPS_OF="$(id -nG "$USER_NAME" 2>/dev/null | tr 'A-Z' 'a-z')"
+
+# named <list> — whether this account, or a group it is in, is in the list.
+named() {
+    for entry in $(printf '%s' "$1" | tr ',' ' '); do
+        candidate="$(printf '%s' "$entry" | sed 's/^%//' | tr 'A-Z' 'a-z')"
+        [ -z "$candidate" ] && continue
+        [ "$candidate" = "$SHORT" ] && return 0
+        for group in $GROUPS_OF; do
+            [ "$candidate" = "$group" ] && return 0
+        done
+    done
+    return 1
+}
+
+# Exempt: never asked.
+named "${EXEMPT:-}" && exit 0
+# Only for: everybody else is not asked.
+if [ -n "${REQUIRE:-}" ]; then
+    named "$REQUIRE" || exit 0
+fi
+
+# Enrolled: asked.
+if [ -r ` + oathUsersFile + ` ] && \
+        awk -v u="$SHORT" '$2 == u {found=1} END {exit !found}' ` + oathUsersFile + `; then
+    exit 1
+fi
+
+# Not enrolled. Within the grace period they are let in and walked through
+# setting one up; past it they are asked, which pam_oath then refuses — which
+# is what a grace period ending means.
+GRACE="${GRACE_DAYS:-0}"
+[ "$GRACE" -gt 0 ] 2>/dev/null || exit 1
+SINCE="$(cat ` + factorSince + ` 2>/dev/null || echo 0)"
+case "$SINCE" in ''|*[!0-9]*) exit 1 ;; esac
+NOW="$(date +%s)"
+if [ "$((NOW - SINCE))" -lt "$((GRACE * 86400))" ]; then
+    logger -t odm-second-factor "$SHORT has not enrolled; within the grace period"
+    exit 0
+fi
+exit 1
+`
+}
+
+// removeSecondFactor takes every line, file and prompt back off the machine.
+//
+// Reported only when something was actually there: a machine that never had
+// the setting should not grow a row in its resultant set for a setting nobody
+// configured.
+func removeSecondFactor(env Env, configured bool) []policy.Result {
+	var results []policy.Result
+	removed := false
+	for _, paths := range secondFactorServices {
+		for _, path := range paths {
+			had, err := oathLinePresent(env, path)
+			if err == nil && had {
+				removed = true
+			}
+			if err := removeOathLine(env, path); err != nil {
+				results = append(results, policy.Fail("second_factor", err))
+			}
+		}
+	}
+	for _, path := range []string{oathUsersFile, secondFactorPam, factorGuard} {
+		if err := os.Remove(env.Path(path)); err == nil {
+			removed = true
+		}
+	}
+	if err := writeEnrolment(env, false); err != nil {
+		results = append(results, policy.Fail("second_factor:enrolment", err))
+	}
+	if len(results) == 0 && (configured || removed) {
+		results = append(results, policy.Ok("second_factor"))
+	}
+	return results
+}
+
+func oathLinePresent(env Env, path string) (bool, error) {
+	body, err := os.ReadFile(env.Path(path))
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(string(body), oathMarker), nil
 }

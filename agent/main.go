@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.8.3"
+const version = "0.8.4"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -200,6 +200,16 @@ func runProfile(args []string) int {
 		fileNames(document.Settings.RemoteDesktopFiles, *username), rdp)...)
 	problems = append(problems, rdp...)
 
+	// Icons, menu entries and the places in this person's file manager, for
+	// the same reason: all three land in a home directory.
+	shortcuts := apply.DeployShortcuts(ctx, document.Settings.Shortcuts, *username, env)
+	for _, problem := range shortcuts {
+		fmt.Fprintln(os.Stderr, "odm-agent: shortcut:", problem)
+	}
+	results = append(results, sessionResults("shortcuts",
+		shortcutNames(document.Settings.Shortcuts, *username), shortcuts)...)
+	problems = append(problems, shortcuts...)
+
 	// And what is pinned to the dash, which is a user setting for the same
 	// reason: one function group's layout is not another's.
 	dash := apply.DeployDash(ctx, document.Settings.Dash, *username, env)
@@ -306,6 +316,17 @@ func fetchSecondFactor(
 		return []policy.Result{policy.Fail("second_factor:enrolments", err)}
 	}
 	return []policy.Result{policy.Ok("second_factor:enrolments")}
+}
+
+// shortcutNames is what this person actually got, for the report.
+func shortcutNames(shortcuts []policy.Shortcut, user string) []string {
+	var names []string
+	for _, shortcut := range shortcuts {
+		if apply.AppliesTo(shortcut.ForPrincipal, user) {
+			names = append(names, shortcut.Name)
+		}
+	}
+	return names
 }
 
 // dashNames is the layout this person actually got, for the report.

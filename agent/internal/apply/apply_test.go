@@ -1546,3 +1546,58 @@ auth [success=1 default=ignore] pam_winbind.so
 		t.Errorf("commands ran: %v", runner.commands)
 	}
 }
+
+// pam_mkhomedir creates a home directory and fills it from /etc/skel. Run
+// before ODM's hook it does that on the local disk, ODM mounts the person's
+// profile over the top, and every machine they touch keeps a local copy of
+// skel — revealed again the moment the profile is detached, which is why the
+// home directory could never be removed.
+func TestTheSessionHookIsPlacedBeforeTheOneThatMakesHomeDirectories(t *testing.T) {
+	env, _ := testEnv(t)
+	stack := "" +
+		"session\toptional\tpam_umask.so\n" +
+		"session\trequired\tpam_mkhomedir.so umask=0077 skel=/etc/skel\n" +
+		"session\trequired\tpam_unix.so\n" +
+		"session\toptional\tpam_systemd.so\n"
+	if err := env.WriteFile("/etc/pam.d/common-session", stack, 0o644, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.ReplaceBlock(
+		"/etc/pam.d/common-session", "session optional pam_exec.so /usr/lib/odm/pam-session-hook\n", 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	body := read(t, env, "/etc/pam.d/common-session")
+	hook := strings.Index(body, "pam-session-hook")
+	mkhome := strings.Index(body, "pam_mkhomedir.so")
+	if hook < 0 || mkhome < 0 {
+		t.Fatalf("one of them is missing:\n%s", body)
+	}
+	if hook > mkhome {
+		t.Errorf("the hook runs after the home directory is made:\n%s", body)
+	}
+	// And nothing else moved.
+	for _, want := range []string{"pam_umask.so", "pam_unix.so", "pam_systemd.so"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s was lost:\n%s", want, body)
+		}
+	}
+	if strings.Index(body, "pam_umask.so") > hook {
+		t.Errorf("the block jumped above a line it did not have to:\n%s", body)
+	}
+}
+
+func TestABlockStillGoesAtTheEndWhenNothingHasToComeAfterIt(t *testing.T) {
+	env, _ := testEnv(t)
+	if err := env.WriteFile("/etc/pam.d/sshd", "session required pam_unix.so\n", 0o644, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.ReplaceBlock("/etc/pam.d/sshd", "session optional pam_exec.so /x\n", 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body := read(t, env, "/etc/pam.d/sshd")
+	if strings.Index(body, "pam_unix.so") > strings.Index(body, "pam_exec.so") {
+		t.Errorf("the block did not go at the end:\n%s", body)
+	}
+}

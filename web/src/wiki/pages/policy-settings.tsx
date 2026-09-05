@@ -536,6 +536,13 @@ for           %Engineers      (optional)`}</Code>
             Off unless a policy says otherwise, so a machine outside it keeps ordinary local home
             directories.
           </p>
+          <Note>
+            Nothing is left on the machine afterwards. The profile is attached before the machine
+            would otherwise create a local home, so what fills that home lands on the profile
+            rather than on the disk, and at sign-out the profile is detached and the empty mount
+            point removed. A home that still holds files &mdash; one whose profile never attached
+            &mdash; is left exactly as it is.
+          </Note>
           <p>
             It is the same mechanism a remote desktop collection uses for its user profile disks,
             down to the layout: both take <C>%username%</C> after the share and name the disk after
@@ -992,6 +999,13 @@ fs.protected_symlinks                1`}</Code>
             given none at all.
           </Note>
           <Note>
+            Nobody is refused for not having enrolled yet. A guard runs in front of the check and
+            decides whether this account is asked at all &mdash; it never asks a local account,
+            never asks somebody the policy exempts or does not name, and lets somebody who has not
+            enrolled through for as long as the grace period lasts. The grace is counted from when
+            the setting first reached that machine.
+          </Note>
+          <Note>
             <C>libpam-oath</C> and <C>qrencode</C> come with the client package, so a
             domain-joined machine has both. A machine joined before they did is told so rather
             than configured: a PAM stack naming a module that is not installed refuses every
@@ -1021,6 +1035,17 @@ remmina`}</Code>
               else is the refusal plus whatever you put in the message.
             </p>
           </Example>
+          <Note>
+            What an allowed package needs is allowed with it. Installing one package installs its
+            dependencies in the same transaction, and refusing those would refuse the package that
+            was actually asked for &mdash; so the machine works out what each allowed package
+            drags in and permits that too.
+          </Note>
+          <Note>
+            Anything <strong>Software deployment</strong> installs is allowed automatically. A
+            domain that says &ldquo;install this&rdquo; and &ldquo;you may not install that&rdquo;
+            about one package is a contradiction, and the machine would resolve it by refusing.
+          </Note>
           <Note>
             Flatpak and Snap do not go through dpkg at all, so they are blocked separately through
             polkit. Both are on by default.

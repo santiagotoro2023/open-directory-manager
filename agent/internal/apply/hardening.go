@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,14 +19,15 @@ import (
 // take effect.
 
 const (
-	sysctlPath      = "/etc/sysctl.d/50-odm.conf"
-	removableUdev   = "/etc/udev/rules.d/99-odm-removable.rules"
-	removablePolkit = "/etc/polkit-1/rules.d/50-odm-removable.rules"
-	fontDir         = "/usr/local/share/fonts/odm"
-	aptAllowlist    = "/etc/apt/apt.conf.d/50-odm-software-control"
-	aptAllowScript  = "/usr/lib/odm/apt-allowlist"
-	aptAllowNames   = "/etc/odm/allowed-software"
-	softwarePolkit  = "/etc/polkit-1/rules.d/50-odm-software.rules"
+	sysctlPath       = "/etc/sysctl.d/50-odm.conf"
+	removableUdev    = "/etc/udev/rules.d/99-odm-removable.rules"
+	removablePolkit  = "/etc/polkit-1/rules.d/50-odm-removable.rules"
+	fontDir          = "/usr/local/share/fonts/odm"
+	aptAllowlist     = "/etc/apt/apt.conf.d/50-odm-software-control"
+	aptAllowScript   = "/usr/lib/odm/apt-allowlist"
+	aptAllowNames    = "/etc/odm/allowed-software"
+	aptAllowResolved = "/etc/odm/allowed-software.resolved"
+	softwarePolkit   = "/etc/polkit-1/rules.d/50-odm-software.rules"
 )
 
 func applySysctl(ctx context.Context, s policy.Settings, env Env) []policy.Result {
@@ -244,7 +246,9 @@ func applyFonts(ctx context.Context, s policy.Settings, env Env) []policy.Result
 func applySoftwareControl(ctx context.Context, s policy.Settings, env Env) []policy.Result {
 	if s.SoftwareControl == nil || !s.SoftwareControl.Enabled {
 		removed := false
-		for _, path := range []string{aptAllowlist, aptAllowScript, aptAllowNames, softwarePolkit} {
+		for _, path := range []string{
+			aptAllowlist, aptAllowScript, aptAllowNames, aptAllowResolved, softwarePolkit,
+		} {
 			if err := os.Remove(env.Path(path)); err == nil {
 				removed = true
 			}
@@ -258,13 +262,24 @@ func applySoftwareControl(ctx context.Context, s policy.Settings, env Env) []pol
 
 	// The list itself, one name per line, so the hook does not have to parse
 	// anything and the operator can read what a machine was told.
-	names := make([]string, 0, len(control.Allowed))
+	names := make([]string, 0, len(control.Allowed)+len(s.Packages))
 	for _, name := range control.Allowed {
 		if safePackageGlob(name) {
 			names = append(names, name)
 		}
 	}
+	// And whatever the policy itself deploys. A domain that says "install
+	// this" and "you may not install that" about the same package is a
+	// contradiction, and the machine resolved it by refusing — so software
+	// deployment stopped working the moment an allowlist was turned on,
+	// which is not something an operator would think to connect.
+	for _, wanted := range s.Packages {
+		if wanted.State != "absent" && safePackageGlob(wanted.Name) {
+			names = append(names, wanted.Name)
+		}
+	}
 	sort.Strings(names)
+	names = slices.Compact(names)
 	if err := env.WriteFile(
 		aptAllowNames, Header+strings.Join(names, "\n")+"\n", 0o644, "root", "root",
 	); err != nil {
@@ -284,7 +299,17 @@ func applySoftwareControl(ctx context.Context, s policy.Settings, env Env) []pol
 		return []policy.Result{policy.Fail("software_control", err)}
 	}
 
-	results := []policy.Result{policy.Ok("software_control")}
+	results := []policy.Result{}
+	// What those packages need, so installing one of them actually works.
+	if err := resolveAllowed(ctx, env, names); err != nil {
+		results = append(results, policy.Result{
+			Setting: "software_control:dependencies",
+			Status:  "skipped",
+			Reason: "what the allowed packages need could not be worked out (" + err.Error() +
+				"), so only the names themselves are allowed until the next refresh",
+		})
+	}
+	results = append(results, policy.Ok("software_control"))
 	if err := env.WriteFile(
 		softwarePolkit, softwarePolkitRule(control), 0o644, "root", "root",
 	); err != nil {
@@ -292,7 +317,6 @@ func applySoftwareControl(ctx context.Context, s policy.Settings, env Env) []pol
 	} else {
 		results = append(results, policy.Ok("software_control:desktop"))
 	}
-	_ = ctx
 	return results
 }
 
@@ -336,43 +360,60 @@ func allowlistScript(message string) string {
 	return "#!/bin/sh\n" + Header + `
 # Refuse a package that is not on this machine's allowed list.
 #
-# dpkg hands us one line per package on standard input, after a version
-# header and a blank line: "name version-old version-new file". A package
-# whose old version is "-" is being installed for the first time; anything
-# else is an upgrade, and upgrades are always allowed.
+# dpkg hands us a block of settings, a blank line, and then one line per
+# package in the form
+#
+#   <name> <old version> <direction> <new version> <file>
+#
+# where the old version is "-" for something not installed yet, and the file
+# is **CONFIGURE** on the second pass over the same packages. Both matter: read
+# as four fields the direction is mistaken for the new version, and counting
+# the configure pass reports every refused package twice.
 
-LIST=/etc/odm/allowed-software
+LIST=` + aptAllowNames + `
+RESOLVED=` + aptAllowResolved + `
 [ -r "$LIST" ] || exit 0
 
-# Past the version header.
+# Past the settings block.
 while read -r line; do
     [ -z "$line" ] && break
 done
 
+# allowed <name> — against the operator's list and the dependencies of what is
+# on it. A trailing * matches a prefix.
+allowed() {
+    for file in "$LIST" "$RESOLVED"; do
+        [ -r "$file" ] || continue
+        while IFS= read -r pattern; do
+            case "$pattern" in ''|'#'*) continue ;; esac
+            case "$pattern" in
+                *'*')
+                    prefix="${pattern%\*}"
+                    case "$1" in "$prefix"*) return 0 ;; esac
+                    ;;
+                *)
+                    [ "$1" = "$pattern" ] && return 0
+                    ;;
+            esac
+        done < "$file"
+    done
+    return 1
+}
+
 REFUSED=""
-while read -r name old new file; do
+while read -r name old direction new file; do
     [ -n "$name" ] || continue
-    # An upgrade of something already here.
+    # The configure pass is the same packages again.
+    [ "$file" = "**CONFIGURE**" ] && continue
+    # An upgrade, a downgrade or a reinstall of something already here.
     [ "$old" = "-" ] || continue
-    # Configuring a package that is already unpacked, not a new one.
-    [ "$new" = "-" ] && continue
 
-    allowed=no
-    while IFS= read -r pattern; do
-        case "$pattern" in ''|'#'*) continue ;; esac
-        case "$pattern" in
-            *'*')
-                prefix="${pattern%\*}"
-                case "$name" in "$prefix"*) allowed=yes ;; esac
-                ;;
-            *)
-                [ "$name" = "$pattern" ] && allowed=yes
-                ;;
+    if ! allowed "$name"; then
+        case " $REFUSED " in
+            *" $name "*) ;;
+            *) REFUSED="$REFUSED $name" ;;
         esac
-        [ "$allowed" = yes ] && break
-    done < "$LIST"
-
-    [ "$allowed" = yes ] || REFUSED="$REFUSED $name"
+    fi
 done
 
 if [ -n "$REFUSED" ]; then
@@ -383,6 +424,61 @@ if [ -n "$REFUSED" ]; then
 fi
 exit 0
 `
+}
+
+// resolveAllowed writes the packages an allowed one drags in with it.
+//
+// A list of names alone is a list nothing can be installed from: apt installs
+// a package with its dependencies in one transaction, and on a strict list
+// every one of those dependencies is a package nobody named. Refusing them
+// refuses the package that was actually asked for — which is what made the
+// setting look like it simply did not work.
+//
+// Resolved on the machine, because what a package depends on is a property of
+// the release that machine is on rather than of the policy.
+func resolveAllowed(ctx context.Context, env Env, names []string) error {
+	exact := make([]string, 0, len(names))
+	for _, name := range names {
+		if !strings.HasSuffix(name, "*") {
+			exact = append(exact, name)
+		}
+	}
+	if len(exact) == 0 || env.Run == nil {
+		return env.WriteFile(aptAllowResolved, Header, 0o644, "root", "root")
+	}
+
+	// Recommends and suggests deliberately left out: they are what a package
+	// would like, not what it needs, and pulling them in would widen the list
+	// well past what anybody agreed to.
+	args := []string{
+		"--no-recommends", "--no-suggests", "--no-conflicts", "--no-breaks",
+		"--no-replaces", "--no-enhances", "depends", "--recurse",
+	}
+	out, err := env.Run.Run(ctx, "apt-cache", append(args, exact...)...)
+	if err != nil {
+		return fmt.Errorf("resolving what the allowed packages need: %w", err)
+	}
+
+	found := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		// A dependency is indented; a package being described is not. A name
+		// in angle brackets is a virtual package, which nothing installs.
+		if line == "" || line[0] == ' ' || line[0] == '|' || line[0] == '<' {
+			continue
+		}
+		name := strings.TrimSpace(line)
+		if safePackageGlob(name) {
+			found[name] = true
+		}
+	}
+	resolved := make([]string, 0, len(found))
+	for name := range found {
+		resolved = append(resolved, name)
+	}
+	sort.Strings(resolved)
+	return env.WriteFile(aptAllowResolved,
+		Header+"# What the allowed packages need. Worked out on this machine.\n"+
+			strings.Join(resolved, "\n")+"\n", 0o644, "root", "root")
 }
 
 // softwarePolkitRule stops the desktop's own installers, which do not go

@@ -38,6 +38,10 @@ var appliers = []applier{
 	// be mounted at all.
 	{"kerberos", applyCcache},
 	{"drive_maps", applyDriveMaps},
+	// Before anything is installed: the allowlist is what decides whether an
+	// install is allowed to happen, and written after the install it is a
+	// rule that takes effect one refresh late.
+	{"software_control", applySoftwareControl},
 	{"packages", applyPackages},
 	{"updates", applyUpdates},
 	{"trusted_certificates", applyTrustedCertificates},
@@ -50,7 +54,6 @@ var appliers = []applier{
 	{"fonts", applyFonts},
 	{"session", applySession},
 	{"removable_storage", applyRemovableStorage},
-	{"software_control", applySoftwareControl},
 	{"second_factor", applySecondFactor},
 	{"first_run", applyFirstRun},
 	{"always_on_vpn", applyAlwaysOnVpn},

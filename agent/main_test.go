@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,5 +79,29 @@ func write(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Every applier that writes into a home directory has to be called from the
+// session path, and one of them was not: Shortcuts had a schema, an applier,
+// an editor and a wiki section, and did nothing at all, because nothing ever
+// called it. A test of the applier does not catch that; a test of the wiring
+// does.
+func TestEverySessionApplierIsActuallyCalled(t *testing.T) {
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+	for _, deployer := range []string{
+		"apply.MountDriveMaps",
+		"apply.DeployRemoteDesktopFiles",
+		"apply.DeployShortcuts",
+		"apply.DeployDash",
+		"apply.ApplyPhoto",
+	} {
+		if !strings.Contains(body, deployer+"(") {
+			t.Errorf("%s is never called, so the setting it applies does nothing", deployer)
+		}
 	}
 }

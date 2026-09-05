@@ -119,6 +119,65 @@ func TestSoftwareControlAllowsEveryUpgradeAndOnlyListedNewPackages(t *testing.T)
 	if !strings.Contains(script, `[ "$old" = "-" ] || continue`) {
 		t.Errorf("upgrades are not allowed through:\n%s", script)
 	}
+	// dpkg's version 2 format is five fields, not four. Read as four the
+	// direction is mistaken for the new version, and the configure pass —
+	// which lists every package a second time — is counted as a second
+	// install, so every refusal was reported twice.
+	if !strings.Contains(script, "read -r name old direction new file") {
+		t.Errorf("the hook does not read dpkg's five fields:\n%s", script)
+	}
+	if !strings.Contains(script, `"$file" = "**CONFIGURE**"`) {
+		t.Errorf("the hook counts the configure pass as an install:\n%s", script)
+	}
+}
+
+// A list of names alone is a list nothing can be installed from: apt installs
+// a package with its dependencies in one transaction, and refusing those
+// refuses the package that was actually asked for.
+func TestWhatAnAllowedPackageNeedsIsAllowedWithIt(t *testing.T) {
+	env, runner := testEnv(t)
+	runner.output["apt-cache"] = strings.Join([]string{
+		"remmina",
+		"  Depends: remmina-common",
+		"  Depends: libayatana-appindicator3-1",
+		"remmina-common",
+		"  Depends: <libc6>",
+		"libayatana-appindicator3-1",
+		"|libayatana-ido3-0.4-0",
+		"<virtual-package>",
+	}, "\n")
+
+	applySoftwareControl(context.Background(), policy.Settings{
+		SoftwareControl: &policy.SoftwareControl{
+			Enabled: true, Allowed: []string{"remmina", "libreoffice-*"},
+		},
+	}, env)
+
+	resolved := read(t, env, aptAllowResolved)
+	for _, want := range []string{"remmina", "remmina-common", "libayatana-appindicator3-1"} {
+		if !strings.Contains(resolved, want) {
+			t.Errorf("%s is not allowed with what asked for it:\n%s", want, resolved)
+		}
+	}
+	// A virtual package is not something that installs, and a pattern cannot
+	// be resolved at all.
+	if strings.Contains(resolved, "virtual-package") || strings.Contains(resolved, "<") {
+		t.Errorf("a virtual package reached the list:\n%s", resolved)
+	}
+	// apt-cache is asked about the names, never the patterns.
+	if !runner.ran("apt-cache", "remmina") {
+		t.Error("the dependencies were never resolved")
+	}
+	for _, command := range runner.commands {
+		if command[0] == "apt-cache" && strings.Contains(strings.Join(command, " "), "libreoffice-*") {
+			t.Error("a pattern was handed to apt-cache, which cannot resolve one")
+		}
+	}
+	// And the hook reads both files.
+	script := read(t, env, aptAllowScript)
+	if !strings.Contains(script, aptAllowResolved) {
+		t.Errorf("the hook does not consult what the allowed packages need:\n%s", script)
+	}
 }
 
 func TestTurningSoftwareControlOffRemovesTheHook(t *testing.T) {
@@ -171,4 +230,31 @@ func TestAMessageCannotEndTheShellCommandItIsPrintedIn(t *testing.T) {
 func readIfPresent(env Env, path string) (string, error) {
 	body, err := os.ReadFile(env.Path(path))
 	return string(body), err
+}
+
+// A domain that says "install this" and "you may not install that" about the
+// same package is a contradiction, and the machine resolved it by refusing —
+// so software deployment stopped working the moment an allowlist was turned
+// on, which is not something an operator would think to connect.
+func TestWhatThePolicyDeploysIsAllowedByIt(t *testing.T) {
+	env, _ := testEnv(t)
+	applySoftwareControl(context.Background(), policy.Settings{
+		SoftwareControl: &policy.SoftwareControl{Enabled: true, Allowed: []string{"remmina"}},
+		Packages: []policy.Package{
+			{Name: "sl", State: "present"},
+			{Name: "figlet", State: "latest"},
+			{Name: "cowsay", State: "absent"},
+		},
+	}, env)
+
+	names := read(t, env, aptAllowNames)
+	for _, want := range []string{"remmina", "sl", "figlet"} {
+		if !strings.Contains(names, want+"\n") {
+			t.Errorf("%s is deployed by policy and not allowed by it:\n%s", want, names)
+		}
+	}
+	// One the policy removes is not one it installs.
+	if strings.Contains(names, "cowsay") {
+		t.Errorf("a package the policy removes was allowed:\n%s", names)
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"odm.example.org/agent/internal/policy"
 )
@@ -109,13 +110,49 @@ func ReleaseProfile(ctx context.Context, user string, env Env) {
 	// desktop wrote during the session, and a page still in memory when the
 	// loop device goes is a setting somebody chose and did not keep.
 	_, _ = env.Run.Run(ctx, "sync", "-f", account.home)
-	_, _ = env.Run.Run(ctx, "umount", account.home)
+
+	// The session manager closes the PAM session before the last of the
+	// person's processes has gone, so a plain umount answers "target is busy"
+	// and the disk stays attached until the machine is restarted. Tried a few
+	// times over a couple of seconds first, because the processes are on their
+	// way out and usually beat that; detached lazily if they do not, which
+	// takes the mount out of the namespace now and releases the loop device
+	// when the last reference goes.
+	detached := false
+	for attempt := range releaseAttempts {
+		if _, err := env.Run.Run(ctx, "umount", account.home); err == nil {
+			detached = true
+			break
+		}
+		if attempt < releaseAttempts-1 {
+			time.Sleep(releaseWait)
+		}
+	}
+	if !detached {
+		if _, err := env.Run.Run(ctx, "umount", "-l", account.home); err != nil {
+			// Said out loud. Discarded, this was a profile that quietly
+			// stayed mounted and a home directory somebody found afterwards.
+			_, _ = env.Run.Run(ctx, "logger", "-t", "odm-profile",
+				user+"'s profile disk could not be detached")
+		}
+	}
+	// And the mount point with it. rmdir removes an empty directory and
+	// nothing else, so a home still holding files — one whose disk never
+	// attached — is left exactly as it is.
+	_ = os.Remove(account.home)
+
 	// The share itself only when nobody else is on it. Another session on this
 	// machine still needs it.
 	if !anyProfileMounted(account.home) {
 		_, _ = env.Run.Run(ctx, "umount", ProfileStore)
 	}
 }
+
+// How hard the unmount tries before giving up and detaching lazily.
+const (
+	releaseAttempts = 5
+	releaseWait     = 400 * time.Millisecond
+)
 
 // ensureHome makes somebody's home directory theirs, creating it if it is not
 // there. Run before a profile is attached and after: a home the agent made as
