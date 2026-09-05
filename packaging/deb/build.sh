@@ -61,6 +61,13 @@ DEPENDS="$DEPENDS, cifs-utils, keyutils"
 # nothing has to be carried to the machine by hand. Without it a join has no
 # way to give the agent a trust anchor and says so.
 DEPENDS="$DEPENDS, smbclient"
+# What the second factor needs to exist before a policy can ask for it.
+# pam_oath is the module that prompts for the code; a PAM stack naming a
+# module that is not installed refuses every sign-in through that service, so
+# this is not something to install on demand. qrencode draws the enrolment
+# code in the terminal — without it somebody enrolling gets the secret as text
+# and has to type it, which works and is worse.
+DEPENDS="$DEPENDS, libpam-oath, qrencode"
 # The libraries odm-client-install and odm-agent actually need, read out of
 # the binaries rather than listed by hand: a change to what one of them links
 # against is a change dpkg-shlibdeps notices and this list would not.

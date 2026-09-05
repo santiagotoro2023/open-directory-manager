@@ -11,8 +11,29 @@ import (
 
 func withPam(t *testing.T, env Env, services ...string) {
 	t.Helper()
+	// The module has to be on the machine before its name may be written into
+	// a stack, so a test machine has one.
+	write(t, env, oathModulePaths[0], "")
 	for _, service := range services {
 		write(t, env, "/etc/pam.d/"+service, "@include common-auth\n")
+	}
+}
+
+func TestNothingIsWrittenOnAMachineWithoutTheModule(t *testing.T) {
+	// A PAM stack naming a module that is not installed refuses every sign-in
+	// through that service, which is worse than not asking for a code.
+	env, _ := testEnv(t)
+	write(t, env, "/etc/pam.d/login", "@include common-auth\n")
+
+	results := applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, Services: []string{"login"}},
+	}, env)
+
+	if len(results) != 1 || results[0].Status != "skipped" {
+		t.Fatalf("the setting was applied anyway: %+v", results)
+	}
+	if strings.Contains(read(t, env, "/etc/pam.d/login"), "pam_oath.so") {
+		t.Error("a module that is not installed was written into the stack")
 	}
 }
 

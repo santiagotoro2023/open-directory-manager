@@ -289,6 +289,22 @@ systemctl status odm-agent`}</Code>
             security identifier, so a machine restored this way must be re-joined.
           </Note>
         </Section>
+        <Section title="What the package installs">
+          <p>
+            The client package brings what the appliers need, so a joined machine works without
+            anything else being installed by hand: <C>sssd-ad</C>, <C>krb5-user</C> and{" "}
+            <C>adcli</C> for the join itself, <C>cifs-utils</C> and <C>keyutils</C> for drive maps
+            and profile disks, <C>smbclient</C> to read the console&rsquo;s certificate out of
+            SYSVOL during the join, and <C>libpam-oath</C> with <C>qrencode</C> for the second
+            factor.
+          </p>
+          <Note>
+            A machine joined before a version that added one of these does not get it from a
+            policy refresh. <C>apt install --reinstall odm-client</C> brings the machine up to
+            what the current package depends on.
+          </Note>
+        </Section>
+
       </Details>
     </>
   );

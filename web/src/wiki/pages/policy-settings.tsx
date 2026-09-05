@@ -922,6 +922,12 @@ fs.protected_symlinks                1`}</Code>
             <C>/usr/local/share/fonts/odm</C>, with the font cache rebuilt so applications can see
             them. A font removed from the policy is removed from the machine.
           </p>
+          <p>
+            The file travels in the policy document itself, so the machines it is for receive it
+            rather than being pointed at a path nobody put it at. Add a <C>.ttf</C>, <C>.otf</C>,{" "}
+            <C>.ttc</C> or <C>.woff2</C> of up to 5 MB; name one under{" "}
+            <strong>Desktop theme</strong> to make it the interface font.
+          </p>
         </Section>
 
         <Section title="Desktop theme">
@@ -984,6 +990,13 @@ fs.protected_symlinks                1`}</Code>
             root-only file, which is the same trust boundary as their Kerberos keytab. A member
             server somebody has root on gives those up; a machine the policy does not name is
             given none at all.
+          </Note>
+          <Note>
+            <C>libpam-oath</C> and <C>qrencode</C> come with the client package, so a
+            domain-joined machine has both. A machine joined before they did is told so rather
+            than configured: a PAM stack naming a module that is not installed refuses every
+            sign-in through that service, so the agent reports the setting as skipped and changes
+            nothing. <C>apt install --reinstall odm-client</C> puts them there.
           </Note>
         </Section>
 

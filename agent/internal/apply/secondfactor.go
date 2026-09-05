@@ -51,6 +51,28 @@ const oathLine = "auth requisite pam_oath.so usersfile=" + oathUsersFile +
 
 const oathMarker = "pam_oath.so"
 
+// Where the module lives on the two architectures Debian builds for. Checked
+// before its name is written into a PAM stack: a stack naming a module that
+// is not installed refuses every sign-in through that service, so an agent on
+// a machine without it must refuse the setting rather than apply it.
+var oathModulePaths = []string{
+	"/lib/x86_64-linux-gnu/security/pam_oath.so",
+	"/lib/aarch64-linux-gnu/security/pam_oath.so",
+	"/usr/lib/x86_64-linux-gnu/security/pam_oath.so",
+	"/usr/lib/aarch64-linux-gnu/security/pam_oath.so",
+	"/lib/security/pam_oath.so",
+	"/usr/lib/security/pam_oath.so",
+}
+
+func oathInstalled(env Env) bool {
+	for _, path := range oathModulePaths {
+		if _, err := os.Stat(env.Path(path)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // And the session line that walks somebody through setting one up. Optional,
 // so a machine that cannot reach the console still lets people in.
 const enrolLine = "session optional pam_exec.so " + enrolHelper
@@ -83,6 +105,20 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 			results = append(results, policy.Ok("second_factor"))
 		}
 		return results
+	}
+
+	// The module has to be there before its name goes into a PAM stack. It
+	// ships with the client package, so this is a machine that predates the
+	// setting or one where somebody removed it — either way, writing the line
+	// would lock everybody out rather than ask them for a code.
+	if !oathInstalled(env) {
+		return []policy.Result{{
+			Setting: "second_factor",
+			Status:  "skipped",
+			Reason: "pam_oath is not installed on this machine, and a PAM stack naming a " +
+				"module that is not there refuses every sign-in. Install libpam-oath, or " +
+				"reinstall the odm-client package, which now depends on it.",
+		}}
 	}
 
 	// Who it applies to, for the agent's own use when it fetches the

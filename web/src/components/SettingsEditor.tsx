@@ -886,6 +886,15 @@ const SPECIAL: SpecialSpec[] = [
     doc: "removable-storage",
   },
   {
+    key: "fonts",
+    title: "Fonts",
+    half: "Computer",
+    help:
+      "Font files installed for everybody on the machine. A font removed here is " +
+      "removed from the machine.",
+    doc: "fonts",
+  },
+  {
     key: "desktop_theme",
     title: "Desktop theme",
     half: "Computer",
@@ -993,6 +1002,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "second_factor") return settings.second_factor ? 1 : 0;
   if (key === "software_control") return settings.software_control ? 1 : 0;
   if (key === "first_run") return settings.first_run ? 1 : 0;
+  if (key === "fonts") return settings.fonts?.length ?? 0;
   if (key === "wallpaper") return settings.wallpaper?.uri || settings.wallpaper?.image ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
@@ -1125,6 +1135,7 @@ export function SettingsEditor({
             <SoftwareControlEditor settings={settings} onChange={onChange} />
           )}
           {selected === "first_run" && <FirstRunEditor settings={settings} onChange={onChange} />}
+          {selected === "fonts" && <FontsEditor settings={settings} onChange={onChange} />}
           {selected === "wallpaper" && <WallpaperEditor settings={settings} onChange={onChange} />}
           {selected === "browser" && <BrowserEditor settings={settings} onChange={onChange} />}
           {selected === "admx" && (
@@ -3630,6 +3641,116 @@ function FirstRunEditor({
           </label>
         </>
       )}
+    </>
+  );
+}
+
+
+/**
+ * Fonts installed for everybody on the machine.
+ *
+ * A list rather than one value, and files rather than names, so it needs its
+ * own editor: the file travels in the policy document itself, the way a
+ * background picture does, so the machines it is for receive it rather than
+ * being pointed at a path nobody put it at.
+ */
+function FontsEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const fonts = (settings.fonts ?? []) as { name: string; content: string }[];
+  const [error, setError] = useState<string | null>(null);
+
+  async function add(file: File) {
+    setError(null);
+    if (!/\.(ttf|otf|ttc|woff2)$/i.test(file.name)) {
+      setError(`${file.name} is not a font file. Add a .ttf, .otf, .ttc or .woff2.`);
+      return;
+    }
+    // The document carries the file, so an oversized one is a policy nothing
+    // can fetch rather than a slow one.
+    if (file.size > 5_000_000) {
+      setError(`${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. Fonts up to 5 MB.`);
+      return;
+    }
+    const content = await readBase64(file);
+    const name = safeFileName(file.name);
+    onChange({
+      ...settings,
+      fonts: [...fonts.filter((font) => font.name !== name), { name, content }],
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading meta={specialFor("fonts")} />
+      <p className="muted">
+        Installed under <code>/usr/local/share/fonts/odm</code>, with the font cache rebuilt so
+        applications can see them. Name one under <strong>Desktop theme</strong> to make it the
+        interface font.
+      </p>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <FileInput
+        accept=".ttf,.otf,.ttc,.woff2,font/*"
+        placeholder="No font chosen"
+        onChoose={(file) => void add(file)}
+      />
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col">File</th>
+            <th scope="col" style={{ width: "130px" }}>
+              Size
+            </th>
+            <th scope="col" style={{ width: "110px" }}>
+              <span className="sr-only">Remove</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {fonts.map((font) => (
+            <tr key={font.name}>
+              <td className="mono">{font.name}</td>
+              <td className="mono">
+                {/* base64 carries three bytes in four characters. */}
+                {Math.round((font.content.length * 3) / 4 / 1024).toLocaleString()} kB
+              </td>
+              <td>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    onChange({
+                      ...settings,
+                      fonts: fonts.filter((entry) => entry.name !== font.name),
+                    })
+                  }
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                  Remove
+                </button>
+              </td>
+            </tr>
+          ))}
+          {fonts.length === 0 && (
+            <tr>
+              <td colSpan={3} className="empty">
+                No fonts yet. A machine keeps whatever it already has.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </>
   );
 }
