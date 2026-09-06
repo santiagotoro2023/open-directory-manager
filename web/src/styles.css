@@ -2578,6 +2578,14 @@ tr.detail-row td {
   white-space: nowrap;
 }
 
+/* On the line you type into, it sits beside the field rather than above its
+   top edge: the row stretches its items, so the prompt was pinned to the top
+   of a box as tall as the input and read as misaligned with the text in it. */
+.picker-field .shell-prompt {
+  align-self: center;
+  margin: 0;
+}
+
 /* A membership row: the object's name, its distinguished name under it, and
    the chevron that walks one level further up or down the nesting. */
 table.data td > .dn {

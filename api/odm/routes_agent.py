@@ -795,6 +795,20 @@ async def agent_inventory(
             json.dumps([volume.model_dump() for volume in body.volumes]),
         )
 
+        # The same machine under the name it used to have. Moving a machine to
+        # another organizational unit changes its distinguished name, and the
+        # row it wrote under the old one stayed behind for ever — one machine
+        # as two, and a lookup by host name free to pick the stale one.
+        if machine.hostname:
+            await conn.execute(
+                """
+                DELETE FROM computer_fact
+                WHERE lower(hostname) = lower($1) AND computer_dn <> $2
+                """,
+                machine.hostname,
+                machine.dn,
+            )
+
         # A session host's logged-on users are the session directory. Derived
         # from what every machine already reports rather than a second report
         # only these machines make: the console needs to know who is on which

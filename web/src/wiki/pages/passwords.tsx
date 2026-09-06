@@ -20,13 +20,14 @@ export function Content() {
         </p>
 
         <Example title="Change what a password has to be">
-          <strong>Overview</strong> → <strong>Password policy</strong>. Set what you want to change
-          and leave the rest empty. It applies to the next password set, not to existing ones.
+          <strong>Group Policy</strong> → a policy object linked at the domain root →{" "}
+          <strong>Computer</strong> → <strong>Password policy</strong>. It applies to the next
+          password set, not to the ones already in use.
         </Example>
 
         <Example title="Require more of some accounts than others">
-          <strong>Overview</strong> → <strong>Password policy</strong> → <strong>New policy</strong>
-          . Name the groups it is for, or the organizational units whose users it should cover.
+          The same setting, in an object of its own, naming the groups it is for. That is a
+          fine-grained password policy, and it overrides the domain&rsquo;s for those people.
         </Example>
 
         <Example title="Let people change their own">
@@ -45,10 +46,28 @@ export function Content() {
           <C>user.password.reset</C>, which helpdesk holds.
         </Example>
 
-        <Where>Overview → Password policy for the rule; the top bar for your own.</Where>
+        <Where>
+          Group Policy → Computer → Password policy for the rule; the top bar for your own.
+        </Where>
       </Quickstart>
 
       <Details>
+        <Section title="Where the rule is set">
+          <p>
+            It is a policy-object setting like every other, with one difference worth knowing:
+            no machine applies it. The directory enforces password rules itself, on every change,
+            wherever it is made — so the console writes the setting to the domain when the object
+            or its links change, and an agent never sees it.
+          </p>
+          <Note>
+            With no group named it is the domain&rsquo;s own policy, and the object has to be
+            linked at the domain root: that is where Active Directory holds this, and an account
+            policy linked to an organizational unit reaches nothing. Naming groups makes it a
+            fine-grained policy for their members instead, which applies wherever the object is
+            linked, because it is the membership that decides who it is for.
+          </Note>
+        </Section>
+
         <Section title="What each setting does">
           <Reference
             headers={["Setting", "Effect"]}
@@ -73,17 +92,20 @@ export function Content() {
 
         <Section title="Policies for particular people">
           <p>
-            The domain policy is the floor. A policy here overrides it for the accounts it reaches —
-            longer passwords for administrators, say — and where two reach the same account, the
-            lower precedence wins.
+            The domain policy is the floor. A policy object that names groups overrides it for
+            their members — longer passwords for administrators, say — and where two reach the
+            same account, the lower precedence wins.
           </p>
           <Note>
             Active Directory applies these to users and groups, <em>never</em> to a container. That
-            is true in Samba too, and not a limitation of ODM. Naming an organizational unit
-            therefore resolves it to the users beneath it and applies the policy to each — and
-            re-resolves whenever the policy is saved and on <strong>Re-apply now</strong>, so
-            somebody created afterwards is picked up rather than quietly missed.
+            is true in Samba too, and not a limitation of ODM: naming groups is how it is said, and
+            membership is then what decides who the policy is for, so somebody added to the group
+            afterwards is covered without anything being re-applied.
           </Note>
+          <p>
+            Removing the setting from the object, or deleting the object, removes what it wrote.
+            A password settings object created by hand in the directory is left alone.
+          </p>
         </Section>
 
         <Section title="A second factor">
@@ -138,7 +160,7 @@ export function Content() {
             headers={["Action", "Needs"]}
             rows={[
               ["Read the policy", "Any signed-in administrator."],
-              ["Change the policy", "Membership of the domain administrators group."],
+              ["Change the policy", <C key="p">gpo.write</C>, ],
               ["Reset somebody else's password", <C key="a">user.password.reset</C>],
               ["Change your own", "Nothing but the current password, where policy allows it."],
             ]}

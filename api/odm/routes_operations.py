@@ -24,8 +24,8 @@ from . import (
     domainexport,
     kea,
     objects,
+    password_policy,
     replication,
-    routes_password,
     tasks,
 )
 from .config import Settings, get_settings
@@ -668,7 +668,7 @@ async def security_baseline(
             objects.account_names_in, conn, settings, settings.admin_group
         )
         try:
-            policy_rows = await run_in_threadpool(routes_password.read_policy, settings)
+            policy_rows = await run_in_threadpool(password_policy.read_domain, settings)
         except Exception:  # noqa: BLE001 - a domain whose policy cannot be read is a finding
             policy_rows = {}
 

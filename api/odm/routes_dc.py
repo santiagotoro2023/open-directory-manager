@@ -75,7 +75,7 @@ async def list_controllers(
         "controllers": [
             {
                 **controller,
-                **agents.describe(contact.get(controller["distinguished_name"].lower())),
+                **agents.describe(agents.for_dn(contact, controller["distinguished_name"])),
             }
             for controller in controllers
         ],

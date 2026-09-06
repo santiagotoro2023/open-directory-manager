@@ -105,3 +105,26 @@ func TestEverySessionApplierIsActuallyCalled(t *testing.T) {
 		}
 	}
 }
+
+func TestAFailedRunIsTriedAgainSoon(t *testing.T) {
+	// A controller whose console was still starting waited a quarter of an
+	// hour before saying anything about itself, and the console said it had
+	// never been heard from.
+	interval := 15 * time.Minute
+	if got := afterFailures(interval, 0); got != interval {
+		t.Fatalf("a run that worked should wait the interval, got %s", got)
+	}
+	if got := afterFailures(interval, 1); got != 30*time.Second {
+		t.Fatalf("first failure should retry soon, got %s", got)
+	}
+	if got := afterFailures(interval, 2); got != time.Minute {
+		t.Fatalf("second failure should back off, got %s", got)
+	}
+	// However long it goes on, never longer than the ordinary interval.
+	if got := afterFailures(interval, 40); got != interval {
+		t.Fatalf("backoff should stop at the interval, got %s", got)
+	}
+	if got := afterFailures(time.Minute, 5); got != time.Minute {
+		t.Fatalf("backoff should never exceed a short interval, got %s", got)
+	}
+}

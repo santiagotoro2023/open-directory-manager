@@ -1113,11 +1113,56 @@ remmina`}</Code>
           </Note>
         </Section>
 
+        <Section title="Password policy">
+          <p>
+            What a password in the domain has to be. The one setting no machine applies: the
+            directory enforces it on every password change, wherever it is made, so the console
+            writes it to the domain rather than handing it to an agent.
+          </p>
+          <Reference
+            headers={["Setting", "Effect"]}
+            rows={[
+              [
+                "Require complexity",
+                "A password must mix character classes and must not contain the account name.",
+              ],
+              ["Minimum length", "Shortest a password may be."],
+              ["Passwords remembered", "How many previous ones cannot be used again."],
+              [
+                "Minimum age",
+                "How long before it can be changed again — this is what stops somebody cycling straight back to the password they had.",
+              ],
+              ["Maximum age", "How long before it must be changed. 0 means it never expires."],
+              ["Lock out after", "Failed attempts before the account locks. 0 is never."],
+              ["Locked out for", "How long a lockout lasts."],
+              ["Reset the count after", "How long a run of failed attempts is remembered."],
+              [
+                "Who it applies to",
+                "No group is the domain's own policy, and then the object has to be linked at the domain root — that is where Active Directory holds this, and linked anywhere else there is nothing for it to reach. Naming groups makes it a fine-grained password policy for their members.",
+              ],
+              [
+                "Precedence",
+                "Only for a policy that names groups. Where two reach the same person, lower wins — the directory's rule, not one invented here.",
+              ],
+            ]}
+          />
+          <Note>
+            Fine-grained policies apply to users and groups, <em>never</em> to a container — true in
+            Active Directory and in Samba, not a limitation here. A policy object that names groups
+            is written as a password settings object applied to them, and it goes when the object
+            stops asking for it or is deleted.
+          </Note>
+          <p>
+            It applies to the next password set, not to the ones already in use: nobody&rsquo;s
+            password is invalidated by a rule arriving.
+          </p>
+        </Section>
+
         <Section title="Local password policy">
           <p>
             Rules for accounts that live on the machine: what a new local password must be, and how
             long one lasts. Domain accounts are not covered — their rules are the domain&rsquo;s
-            own, under Group Policy &rarr; Domain password policy.
+            own, under Password policy above.
           </p>
           <Reference
             headers={["Setting", "Recommended", "Written as"]}
@@ -1170,8 +1215,8 @@ remmina`}</Code>
           </p>
           <Note>
             These rules do not replace the domain&rsquo;s own password policy — they are checked in
-            addition to it. Set the domain policy under Directory → the domain → Password policy,
-            and keep this one no weaker.
+            addition to it. Set the domain policy under Computer → Password policy, linked at the
+            domain root, and keep this one no weaker.
           </Note>
         </Section>
 

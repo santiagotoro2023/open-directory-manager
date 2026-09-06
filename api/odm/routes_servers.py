@@ -107,7 +107,7 @@ async def list_servers(
             {
                 **machine,
                 "roles": by_node.get(machine["fqdn"].lower(), []),
-                **agents.describe(contact.get(machine["distinguished_name"].lower())),
+                **agents.describe(agents.for_dn(contact, machine["distinguished_name"])),
                 "pending_tasks": waiting.get(machine["fqdn"].lower(), 0),
             }
             for machine in machines

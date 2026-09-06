@@ -133,6 +133,65 @@ def test_reconcile_does_nothing_when_they_already_agree():
     assert change == {"add": [], "remove": []}
 
 
+def carrier(guid, name, document, target_dn="DC=corp,DC=example,DC=org"):
+    return {"guid": guid, "display_name": name, "document": document, "target_dn": target_dn}
+
+
+def test_the_domains_rules_come_from_the_object_linked_at_its_root():
+    """An account policy linked to an organizational unit reaches nothing —
+    that is Active Directory's rule, not one invented here — and the rows
+    arrive in precedence order, so the first one that qualifies wins.
+    """
+    domain, fine = password_policy.choose(
+        [
+            carrier("1", "Site policy", {"minimum_length": 8}, "OU=Site,DC=corp,DC=example,DC=org"),
+            carrier("2", "Default Domain Policy", {"minimum_length": 14}),
+            carrier("3", "Older", {"minimum_length": 6}),
+        ],
+        "DC=corp,DC=example,DC=org",
+    )
+    assert domain == {"minimum_length": 14}
+    assert fine == {}
+
+
+def test_naming_groups_makes_it_theirs_rather_than_the_domains():
+    document = {"minimum_length": 20, "groups": ["Domain Admins"]}
+    domain, fine = password_policy.choose(
+        [carrier("7", "Admins", document)], "DC=corp,DC=example,DC=org"
+    )
+    # Linked at the root and still not the domain's own policy: it says who it
+    # is for, and that is who it reaches.
+    assert domain is None
+    assert fine == {"7": ("Admins", document)}
+
+
+def test_who_a_policy_reaches_is_read_from_what_samba_tool_prints():
+    """The heading is "PSO applies directly to 1 groups/users:", so a parser
+    looking for a line starting with "applies to" read every policy as
+    reaching nobody — and then applied it again on every pass.
+    """
+    printed = (
+        "Password information for PSO 'Admins'\n"
+        "\n"
+        "Precedence (lowest is best): 10\n"
+        "Minimum password length: 20\n"
+        "\n"
+        "PSO applies directly to 1 groups/users:\n"
+        "  CN=Domain Admins,CN=Users,DC=corp,DC=example,DC=org\n"
+    )
+    assert password_policy.parse_applied(printed) == [
+        "CN=Domain Admins,CN=Users,DC=corp,DC=example,DC=org"
+    ]
+    assert password_policy.group_name("CN=Domain Admins,CN=Users,DC=corp,DC=example,DC=org") == (
+        "Domain Admins"
+    )
+
+
+def test_a_name_the_directory_would_refuse_is_still_a_policy():
+    assert password_policy.object_name("Payroll (2026)", "abcdef1234") == "Payroll -2026-"
+    assert password_policy.object_name("!!!", "abcdef1234") == "odm-abcdef12"
+
+
 # ------------------------------------------------------- per-entry targeting --
 
 

@@ -932,6 +932,16 @@ const SPECIAL: SpecialSpec[] = [
     doc: "first-sign-in",
   },
   {
+    key: "password_policy",
+    title: "Password policy",
+    half: "Computer",
+    help:
+      "What a password in the domain has to be. Linked at the domain root it is the " +
+      "domain's own policy; naming groups makes it a fine-grained policy for their " +
+      "members. The directory enforces it, so no machine has to.",
+    doc: "password-policy",
+  },
+  {
     key: "local_password_policy",
     title: "Local password policy",
     half: "Computer",
@@ -994,6 +1004,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "agent_update") return settings.agent_update ? 1 : 0;
   if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
   if (key === "local_password_policy") return settings.local_password_policy ? 1 : 0;
+  if (key === "password_policy") return settings.password_policy ? 1 : 0;
   if (key === "roaming_profile") return settings.roaming_profile ? 1 : 0;
   if (key === "power") return settings.power ? 1 : 0;
   if (key === "screen_lock") return settings.screen_lock ? 1 : 0;
@@ -1114,6 +1125,9 @@ export function SettingsEditor({
           )}
           {selected === "local_password_policy" && (
             <LocalPasswordEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "password_policy" && (
+            <PasswordPolicyEditor settings={settings} onChange={onChange} />
           )}
           {selected === "roaming_profile" && (
             <RoamingProfileEditor settings={settings} onChange={onChange} />
@@ -2007,6 +2021,191 @@ function AgentUpdateEditor({
   );
 }
 
+function PasswordPolicyEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.password_policy;
+  const [held, setHeld] = useState<Record<string, string>>({});
+
+  // What the directory holds now, which is not necessarily what this object
+  // says: another object may be linked above it, and a domain provisioned
+  // before anybody wrote a policy has Samba's own defaults.
+  useEffect(() => {
+    api.password
+      .policy()
+      .then((result) => setHeld(result.policy))
+      .catch(() => setHeld({}));
+  }, []);
+
+  function set(changes: Partial<NonNullable<PolicySettings["password_policy"]>>) {
+    onChange({
+      ...settings,
+      password_policy: {
+        complexity: true,
+        minimum_length: 12,
+        history: 5,
+        minimum_age_days: 0,
+        maximum_age_days: 0,
+        lockout_threshold: 0,
+        lockout_minutes: 30,
+        reset_lockout_minutes: 30,
+        groups: [],
+        precedence: 100,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  const groups = current?.groups ?? [];
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("password_policy")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, password_policy: undefined })} />
+          )
+        }
+      />
+      <p className="muted">
+        The directory enforces this on every password change, wherever it is made, so no machine
+        applies it. With no group named it is the domain&rsquo;s own policy and the object has to
+        be linked at the domain root; naming groups makes it a fine-grained password policy for
+        their members instead.
+      </p>
+
+      {Object.keys(held).length > 0 && (
+        <>
+          <h3 className="section-title">As the directory holds it</h3>
+          <table className="data">
+            <tbody>
+              {Object.entries(held).map(([label, value]) => (
+                <tr key={label}>
+                  <th scope="row">{label}</th>
+                  <td className="mono">{value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {!current ? (
+        <EmptySetting
+          message="Not configured, so the domain keeps the rules it has."
+          onAdd={() => set({})}
+        />
+      ) : (
+        <>
+          <div className="field-grid">
+            <Field label="Minimum length">
+              <input
+                type="number"
+                min={1}
+                max={255}
+                value={current.minimum_length}
+                onChange={(e) => set({ minimum_length: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Passwords remembered" hint="Cannot be reused">
+              <input
+                type="number"
+                min={0}
+                max={24}
+                value={current.history ?? 0}
+                onChange={(e) => set({ history: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Minimum age (days)" hint="Before it can be changed again">
+              <input
+                type="number"
+                min={0}
+                max={999}
+                value={current.minimum_age_days ?? 0}
+                onChange={(e) => set({ minimum_age_days: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Maximum age (days)" hint="0 means it never expires">
+              <input
+                type="number"
+                min={0}
+                max={999}
+                value={current.maximum_age_days ?? 0}
+                onChange={(e) => set({ maximum_age_days: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Lock out after" hint="Failed attempts; 0 is never">
+              <input
+                type="number"
+                min={0}
+                max={999}
+                value={current.lockout_threshold ?? 0}
+                onChange={(e) => set({ lockout_threshold: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Locked out for (minutes)">
+              <input
+                type="number"
+                min={0}
+                max={99999}
+                value={current.lockout_minutes ?? 0}
+                onChange={(e) => set({ lockout_minutes: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Reset the count after (minutes)">
+              <input
+                type="number"
+                min={0}
+                max={99999}
+                value={current.reset_lockout_minutes ?? 0}
+                onChange={(e) => set({ reset_lockout_minutes: Number(e.target.value) })}
+              />
+            </Field>
+          </div>
+
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.complexity !== false}
+              onChange={(e) => set({ complexity: e.target.checked })}
+            />
+            Require complexity
+          </label>
+
+          <h3 className="section-title">Who it applies to</h3>
+          <ChoiceList
+            kind="group"
+            values={groups}
+            onChange={(next) => set({ groups: next })}
+            addLabel="Add a group…"
+            emptyLabel="Every account in the domain, when this object is linked at the domain root."
+          />
+          {groups.length > 0 && (
+            <Field
+              label="Precedence"
+              hint="Where two of these reach the same person, lower wins"
+            >
+              <input
+                type="number"
+                min={1}
+                max={10000}
+                value={current.precedence ?? 100}
+                onChange={(e) => set({ precedence: Number(e.target.value) })}
+              />
+            </Field>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 function LocalPasswordEditor({
   settings,
   onChange,
@@ -2049,8 +2248,8 @@ function LocalPasswordEditor({
       />
       <p className="muted">
         Applies to accounts that live on the machine — a local administrator, an engineer&rsquo;s
-        own account on a server. Domain accounts are governed by the domain&rsquo;s password policy
-        under Delegation.
+        own account on a server. Domain accounts are governed by the domain&rsquo;s own rules,
+        under Password policy.
       </p>
 
       {!current ? (
@@ -2149,8 +2348,7 @@ function SelfServiceEditor({
       />
       <p className="muted">
         Checked before the directory is asked, in addition to the domain&rsquo;s own password
-        policy under Delegation &rarr; Password policy. Changing a password always needs the
-        current one.
+        policy — the Password policy setting. Changing a password always needs the current one.
       </p>
 
       {!current ? (

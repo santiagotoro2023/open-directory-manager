@@ -183,6 +183,18 @@ export interface PolicySettings {
     require_digit?: boolean;
     require_symbol?: boolean;
   };
+  password_policy?: {
+    complexity?: boolean;
+    minimum_length: number;
+    history?: number;
+    minimum_age_days?: number;
+    maximum_age_days?: number;
+    lockout_threshold?: number;
+    lockout_minutes?: number;
+    reset_lockout_minutes?: number;
+    groups?: string[];
+    precedence?: number;
+  };
   local_password_policy?: {
     minimum_length: number;
     require_uppercase?: boolean;
@@ -463,40 +475,6 @@ export interface Site {
   subnets?: { cidr: string; description: string }[];
   controllers?: { controller_dn: string; hostname: string }[];
   machines?: number;
-}
-
-export interface PasswordPolicy {
-  id: string;
-  name: string;
-  description: string;
-  precedence: number;
-  complexity: boolean;
-  min_length: number;
-  history: number;
-  min_age_days: number;
-  max_age_days: number;
-  lockout_threshold: number;
-  lockout_minutes: number;
-  group_dns: string[];
-  container_dns: string[];
-  applied_to: string[];
-  state: string;
-  last_error: string | null;
-}
-
-export interface NewPasswordPolicy {
-  name: string;
-  description?: string;
-  precedence?: number;
-  complexity?: boolean;
-  min_length?: number;
-  history?: number;
-  min_age_days?: number;
-  max_age_days?: number;
-  lockout_threshold?: number;
-  lockout_minutes?: number;
-  group_dns?: string[];
-  container_dns?: string[];
 }
 
 export interface ItemTargeting {
@@ -1538,12 +1516,6 @@ export const api = {
   password: {
     policy: () => request<{ policy: Record<string, string> }>("/password/policy"),
 
-    updatePolicy: (body: Record<string, string | number>) =>
-      request<{ policy: Record<string, string> }>("/password/policy", {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      }),
-
     selfService: () =>
       request<{ enabled: boolean; minimum_length?: number; detail?: string }>(
         "/password/self-service",
@@ -1551,16 +1523,6 @@ export const api = {
 
     change: (current_password: string, new_password: string) =>
       request<void>("/password/change", json({ current_password, new_password })),
-
-    policies: () => request<{ policies: PasswordPolicy[] }>("/password/policies"),
-
-    createPolicy: (body: NewPasswordPolicy) =>
-      request<PasswordPolicy>("/password/policies", json(body)),
-
-    syncPolicies: () => request<{ synced: unknown[] }>("/password/policies/sync", json({})),
-
-    removePolicy: (id: string) =>
-      request<void>(`/password/policies${qs({ id })}`, { method: "DELETE" }),
   },
 
   rd: {

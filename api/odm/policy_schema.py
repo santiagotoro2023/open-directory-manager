@@ -955,6 +955,38 @@ class LocalAdministrator(Strict):
         return value
 
 
+class PasswordPolicy(Strict):
+    """What a password in the domain has to be.
+
+    Active Directory holds these rules on the domain itself and the directory
+    enforces them on every change, wherever it is made — so this is the one
+    setting the machine does not apply: the control plane writes it, and a
+    machine never sees it. Linked at the domain root it is the domain's own
+    policy, which is where Active Directory keeps it. Naming groups makes it a
+    fine-grained password policy for their members instead — a password
+    settings object — and those apply to users and groups, never to a
+    container, in Samba exactly as in AD.
+    """
+
+    complexity: bool = True
+    minimum_length: Annotated[int, Field(ge=1, le=255)] = 12
+    # How many previous passwords cannot be used again.
+    history: Annotated[int, Field(ge=0, le=24)] = 5
+    minimum_age_days: Annotated[int, Field(ge=0, le=999)] = 0
+    # 0 is "never expires", as it is in the directory.
+    maximum_age_days: Annotated[int, Field(ge=0, le=999)] = 0
+    # 0 is "never lock out".
+    lockout_threshold: Annotated[int, Field(ge=0, le=999)] = 0
+    lockout_minutes: Annotated[int, Field(ge=0, le=99999)] = 30
+    reset_lockout_minutes: Annotated[int, Field(ge=0, le=99999)] = 30
+    # Empty is every account in the domain, and then the policy has to be
+    # linked at the domain root for there to be anything for it to reach.
+    groups: Annotated[list[Name], Field(default_factory=list, max_length=32)]
+    # Where two fine-grained policies reach the same person, lower wins — the
+    # directory's own rule, not one invented here.
+    precedence: Annotated[int, Field(ge=1, le=10000)] = 100
+
+
 class LocalPasswordPolicy(Strict):
     """Password rules for accounts that live on the machine itself.
 
@@ -1035,6 +1067,7 @@ class PolicySettings(Strict):
     ]
     password_self_service: PasswordSelfService | None = None
     local_password_policy: LocalPasswordPolicy | None = None
+    password_policy: PasswordPolicy | None = None
     printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
     remote_desktop_files: Annotated[
         list[RemoteDesktopFile], Field(default_factory=list, max_length=50)

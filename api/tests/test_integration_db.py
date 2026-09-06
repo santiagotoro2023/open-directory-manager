@@ -539,6 +539,17 @@ async def test_a_machine_that_reports_only_its_inventory_counts_as_alive(fresh):
         # A machine nobody has heard from is still nobody: no row, no guess.
         assert "cn=ws-02,cn=computers,dc=example,dc=org" not in await agents.last_contact(fresh)
 
+        # Moved to another organizational unit, it is the same machine under a
+        # new distinguished name, and its rows are still under the old one.
+        # Looked up by that name alone the console said a machine reporting
+        # every fifteen minutes had never been heard from, and would not
+        # install a role on it.
+        contacts = await agents.last_contact(fresh)
+        moved = "CN=WS-01,OU=Servers,OU=Site,DC=example,DC=org"
+        assert agents.for_dn(contacts, moved) is not None
+        assert agents.for_dn(contacts, dn) is not None
+        assert agents.for_dn(contacts, "CN=WS-02,OU=Servers,DC=example,DC=org") is None
+
 
 async def test_a_policy_change_reaches_machines_only_when_the_domain_pushes(fresh):
     """Push is a domain setting and off by default: a policy edit must not

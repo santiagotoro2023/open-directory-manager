@@ -210,23 +210,25 @@ export function Content() {
         <Section title="Domain password policy">
           <p>
             The domain&rsquo;s password rules — length, complexity, history, minimum and maximum
-            age, and lockout — are held on the domain object and enforced by the directory on every
-            password change, wherever it is made. They are on this page under{" "}
-            <strong>Domain password policy</strong>.
+            age, and lockout — are a policy-object setting like any other:{" "}
+            <strong>Computer</strong> &rarr; <strong>Password policy</strong>. What is different is
+            who applies it. The directory holds these on the domain object and enforces them on
+            every password change, wherever it is made, so the console writes them there when the
+            object or its links change; no machine ever sees the setting.
           </p>
           <p>
-            They are not a policy-object setting and cannot be linked to an organizational unit.
-            Active Directory keeps them on the domain, one set for every domain account; a policy
-            object linked below the domain has no effect on them. Where a group needs different
-            rules, that is a fine-grained policy, which applies to users and groups rather than to
-            a container.
+            That is why the object has to be linked at the domain root for the domain&rsquo;s own
+            rules: Active Directory keeps one set for every domain account, and an account policy
+            linked to an organizational unit reaches nothing. Where a group needs different rules,
+            name the group in the setting — that is a fine-grained policy, and it applies to users
+            and groups rather than to a container.
           </p>
           <Reference
             headers={["Rules for", "Set under", "Applies to"]}
             rows={[
               [
                 "Domain accounts",
-                "Group Policy → Domain password policy",
+                "Group Policy → Computer → Password policy, linked at the domain root",
                 "Every account in the domain, plus fine-grained policies for named groups.",
               ],
               [

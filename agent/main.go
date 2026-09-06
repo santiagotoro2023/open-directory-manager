@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.8.4"
+const version = "0.8.5"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -362,13 +362,18 @@ func runDaemon(args []string) int {
 	// next pass through the loop applies whether or not the policy changed,
 	// which is what somebody clicking Refresh in the console asked for.
 	forced := false
+	failures := 0
 	for {
 		if err := applyOnce(ctx, *configPath, *root, "", forced); err != nil {
 			fmt.Fprintln(os.Stderr, "odm-agent:", err)
+			failures++
+		} else {
+			failures = 0
 		}
 		// Read after the run, so an interval the run just learned about takes
 		// effect now rather than one cycle later.
 		wait := refreshInterval(apply.NewEnv(*root), *configPath)
+		wait = afterFailures(wait, failures)
 
 		keepGoing, refresh := waitAndPoll(ctx, *configPath, *root, wait+jitter(wait))
 		if !keepGoing {
@@ -376,6 +381,27 @@ func runDaemon(args []string) int {
 		}
 		forced = refresh
 	}
+}
+
+// A run that failed is tried again soon rather than at the next refresh.
+// The machine that most needs this is one that has just started: the agent
+// comes up while the console is still starting, the first run cannot reach
+// it, and waiting a quarter of an hour meant a freshly installed controller
+// sat in the console as "has never been heard from" — and would not take a
+// role — long after everything was working. Doubling from half a minute up
+// to the ordinary interval retries quickly without hammering a console that
+// is down for real.
+const retryFloor = 30 * time.Second
+
+func afterFailures(interval time.Duration, failures int) time.Duration {
+	if failures <= 0 {
+		return interval
+	}
+	backoff := retryFloor
+	for range min(failures-1, 8) {
+		backoff *= 2
+	}
+	return min(backoff, interval)
 }
 
 // waitAndPoll waits until the next policy refresh, collecting queued work as
@@ -499,6 +525,16 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 		}
 	}
 	if err != nil {
+		// Whatever went wrong with the policy, this machine is still here and
+		// still has work waiting for it. Returning at this point left a
+		// controller that could not fetch a policy invisible in the console —
+		// "has never been heard from" — and impossible to install a role on,
+		// because the one thing it could not do was the first thing tried.
+		// Neither the inventory nor the task queue depends on policy.
+		if username == "" {
+			_ = runTasks(ctx, api, env)
+			reportInventory(ctx, api, env)
+		}
 		return err
 	}
 

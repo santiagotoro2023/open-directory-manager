@@ -313,8 +313,10 @@ export function Content() {
         <Section title="Password rules">
           <p>
             The domain&rsquo;s own password policy — length, complexity, history, ages and lockout —
-            is under <strong>Delegation</strong> &rarr; <strong>Password policy</strong>, with the
-            fine-grained policies that reach particular groups. Whether people may change their own
+            is a policy-object setting: <strong>Group Policy</strong> &rarr;{" "}
+            <strong>Computer</strong> &rarr; <strong>Password policy</strong>, linked at the domain
+            root. Naming groups in the same setting is how a fine-grained policy reaches particular
+            people. Whether people may change their own
             password from the console is a policy setting, under{" "}
             <PageLink page="policy-settings" anchor="self-service-password">
               Self-service password

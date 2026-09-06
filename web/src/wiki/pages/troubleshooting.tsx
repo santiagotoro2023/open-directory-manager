@@ -427,11 +427,16 @@ export function Content() {
               [
                 '"has never been heard from, so it is probably not running the agent"',
                 <>
-                  Correct if nothing at all has arrived from it. It used to appear over machines
-                  checking in every fifteen minutes, because it was judged on the last run that
-                  applied policy and policy already applied is not applied again &mdash; upgrade
-                  the control plane. If it persists, the agent really is not reaching the console
-                  from there.
+                  Correct if nothing at all has arrived from it. Three things used to say it
+                  wrongly, and all three are fixed: it was judged on the last run that applied
+                  policy, and policy already applied is not applied again; a machine moved to
+                  another organizational unit was looked up under the name it no longer had; and
+                  an agent whose first run could not reach the console &mdash; a machine that
+                  starts faster than the console it is on &mdash; waited a full refresh interval
+                  before trying again, so a freshly installed controller said this for a quarter
+                  of an hour. It now retries within a minute. If it persists, the agent really is
+                  not reaching the console from there: <C key="hb">journalctl -u odm-agent</C> on
+                  the machine says why.
                 </>,
               ],
               [

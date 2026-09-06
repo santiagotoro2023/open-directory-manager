@@ -64,6 +64,24 @@ async def last_contact(pool: asyncpg.Pool) -> dict[str, Contact]:
     }
 
 
+def for_dn(contacts: dict[str, Contact], dn: str) -> Contact | None:
+    """One machine's last contact, found by name when its place has changed.
+
+    An agent's rows are stored against the distinguished name the machine had
+    when it wrote them. Moving it to another organizational unit changes that
+    name, and an exact lookup then found nothing: the console said a machine
+    reporting every fifteen minutes had never been heard from, and refused to
+    install a role on it. Its own name does not change when it moves, which is
+    the same fallback its facts are already read with.
+    """
+    exact = contacts.get(dn.lower())
+    if exact is not None:
+        return exact
+    name = dn.split(",", 1)[0].lower()
+    moved = [c for key, c in contacts.items() if key.split(",", 1)[0] == name]
+    return max(moved, key=lambda contact: contact.at) if moved else None
+
+
 async def freshness(pool: asyncpg.Pool, stale_after_minutes: int) -> dict[str, int]:
     """How many machines have an agent, and how many were heard from lately.
 
