@@ -1,0 +1,27 @@
+#!/bin/sh
+# Answer the questions this package's dependencies would otherwise ask.
+#
+# krb5-user brings in krb5-config, which asks "Default Kerberos version 5
+# realm?" the first time it is configured, and samba-common asks whether to
+# take WINS settings from DHCP. Installing the client package then stopped on
+# a blue screen asking about a realm, before anything had been joined to
+# anything — and the answer does not matter: odm-client-install writes
+# /etc/krb5.conf itself, with the realm of the domain being joined.
+#
+# Best effort, and only where nothing has been answered already: an
+# administrator who has configured Kerberos on this machine keeps their
+# answer.
+set -e
+
+if command -v debconf-set-selections >/dev/null 2>&1; then
+    REALM="$(hostname -d 2>/dev/null | tr '[:lower:]' '[:upper:]')"
+    [ -n "$REALM" ] || REALM="EXAMPLE.ORG"
+    if ! debconf-show krb5-config 2>/dev/null | grep -q "^\* krb5-config/default_realm:"; then
+        echo "krb5-config krb5-config/default_realm string $REALM" |
+            debconf-set-selections 2>/dev/null || true
+    fi
+    echo "samba-common samba-common/dhcp boolean false" |
+        debconf-set-selections 2>/dev/null || true
+fi
+
+exit 0

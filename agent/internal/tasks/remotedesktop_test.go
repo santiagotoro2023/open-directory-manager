@@ -111,15 +111,45 @@ func TestAnAccessListKeepsTheNamesThisMachineKnows(t *testing.T) {
 // xfce4-session cannot find its own defaults under /etc/xdg and every
 // connection ends at "Unable to determine failsafe session name".
 func TestTheSessionIsStartedThroughXsession(t *testing.T) {
-	script := startWM()
+	env := apply.Env{Root: t.TempDir()}
+	script := startWM(env)
 	if !strings.Contains(script, "exec /etc/X11/Xsession "+rdSessionScript) {
 		t.Errorf("the collection's session is not started through Xsession:\n%s", script)
 	}
-	if !strings.Contains(script, "exec /etc/X11/Xsession startxfce4") {
+	if !strings.Contains(script, `exec /etc/X11/Xsession "$session"`) {
 		t.Errorf("the plain desktop is not started through Xsession:\n%s", script)
 	}
 	if strings.Contains(script, "\nexec startxfce4") {
 		t.Error("a desktop is still started without a session environment")
+	}
+}
+
+func TestACollectionServesTheDesktopTheHostWasInstalledWith(t *testing.T) {
+	// A GNOME session host put into a collection was told to start XFCE,
+	// which was not installed on it: a black screen for a few seconds and
+	// then the connection dropped.
+	env := apply.Env{Root: t.TempDir()}
+	if err := os.MkdirAll(env.Path("/etc/odm"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(env.Path(sessionHostConf), []byte("DESKTOP=gnome\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := startWM(env)
+	if !strings.Contains(script, "for session in gnome-session ") {
+		t.Errorf("a GNOME host is not asked to start GNOME:\n%s", script)
+	}
+	if !strings.Contains(script, "XDG_CURRENT_DESKTOP=GNOME") {
+		t.Errorf("the session does not say which desktop it is:\n%s", script)
+	}
+	if !strings.Contains(script, "LIBGL_ALWAYS_SOFTWARE") {
+		t.Error("a server with no graphics card is not given a renderer")
+	}
+
+	// And a host from before the choice existed had XFCE.
+	plain := startWM(apply.Env{Root: t.TempDir()})
+	if !strings.Contains(plain, "for session in startxfce4 ") {
+		t.Errorf("a host with no record is not treated as XFCE:\n%s", plain)
 	}
 }
 
@@ -222,4 +252,49 @@ func readFile(t *testing.T, env apply.Env, path string) string {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	return string(body)
+}
+
+func TestTheProfileHookRunsBeforeAnythingMakesAHome(t *testing.T) {
+	// pam_mkhomedir created and seeded a local home first; the profile disk
+	// was mounted over it, and detaching it at sign-out revealed the local
+	// copy again — a home directory left on every host for everybody who
+	// ever signed in.
+	env := apply.Env{Root: t.TempDir()}
+	if err := os.MkdirAll(env.Path("/etc/pam.d"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stack that already carries the line in the place that did not work.
+	original := "@include common-auth\n@include common-session\n" +
+		"-session optional pam_gnome_keyring.so auto_start\n" +
+		"# Managed by Open Directory Manager. Local edits are overwritten.\n" +
+		"session required pam_exec.so " + rdProfileScript + "\n"
+	if err := os.WriteFile(env.Path(rdPamFile), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensurePamHook(env); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(env.Path(rdPamFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(body), "\n")
+	hook, include := -1, -1
+	for index, line := range lines {
+		if strings.Contains(line, rdProfileScript) {
+			if hook >= 0 {
+				t.Fatalf("the hook is in there twice:\n%s", body)
+			}
+			hook = index
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "@include common-session") {
+			include = index
+		}
+	}
+	if hook < 0 || include < 0 {
+		t.Fatalf("the stack lost a line:\n%s", body)
+	}
+	if hook > include {
+		t.Errorf("the profile is attached after a home has been made:\n%s", body)
+	}
 }

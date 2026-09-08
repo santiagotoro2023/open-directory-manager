@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.8.6"
+const version = "0.8.7"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -547,12 +547,28 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	if document.AgentAvailable != nil {
 		env.Offered = document.AgentAvailable.Version
 	}
+	// Who has a second factor, on every pass — not only when the policy has
+	// changed. Somebody enrolling changes no policy object and no serial, so
+	// fetched below the unchanged check the machine never heard about it: a
+	// person who had scanned the QR code an hour ago was still let in on
+	// their password alone, for as long as nobody edited a policy object.
+	var enrolments []policy.Result
+	if username == "" {
+		enrolments = fetchSecondFactor(ctx, document.Settings, api, env)
+	}
+
 	// An unchanged policy is normally nothing to do. Not when the console has
 	// started handing out a different agent: that changes no policy object and
 	// no serial, and waiting for one to change is waiting forever — which is
 	// the opposite of "the release is out, take it".
 	if !force && username == "" && document.Serial == lastSerial(env) && !updateWaiting(document, env) {
 		fmt.Println("policy unchanged")
+		for _, result := range enrolments {
+			if result.Status == "failed" {
+				fmt.Fprintf(os.Stderr, "  %-40s %s: %s\n",
+					result.Setting, result.Status, result.Reason)
+			}
+		}
 		runTasks(ctx, api, env)
 		reportInventory(ctx, api, env)
 		return nil
@@ -570,11 +586,10 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	// what comes back.
 	if username == "" {
 		results = append(results, enrol.Apply(ctx, document.Settings, env, api)...)
-		// The enrolments the second factor checks against. Fetched rather
-		// than applied, because they are not policy: they are the people the
-		// policy names, and they change when somebody enrols rather than when
-		// an operator saves a policy object.
-		results = append(results, fetchSecondFactor(ctx, document.Settings, api, env)...)
+		// Fetched above, before the unchanged check, because they are not
+		// policy: they are the people the policy names, and they change when
+		// somebody enrols rather than when an operator saves a policy object.
+		results = append(results, enrolments...)
 	}
 	failed := 0
 	for _, result := range results {

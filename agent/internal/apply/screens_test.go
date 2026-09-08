@@ -212,3 +212,25 @@ func TestBlockUntilConnectedBlackholesTheTunnelsRoutes(t *testing.T) {
 		t.Errorf("the blackholes are never removed:\n%s", body)
 	}
 }
+
+func TestTheNoticeIsAlsoOnTheLockScreen(t *testing.T) {
+	// GNOME shows the same key when it locks, out of the session's own
+	// database rather than the greeter's. Written only for the greeter, the
+	// notice appeared at sign-in and not when somebody came back to a locked
+	// screen — which reads as it working sometimes and not others.
+	env, _ := testEnv(t)
+	applyLoginScreen(context.Background(), policy.Settings{
+		LoginScreen: &policy.LoginScreen{BannerText: "Authorised use only."},
+	}, env)
+
+	notice := read(t, env, lockNoticePath)
+	if !strings.Contains(notice, "banner-message-text='Authorised use only.'") {
+		t.Errorf("the lock screen has no notice:\n%s", notice)
+	}
+	if !strings.Contains(read(t, env, dconfProfilePath), "system-db:odm") {
+		t.Error("nothing reads the database it was written into")
+	}
+	if !strings.Contains(read(t, env, greeterKeyfilePath), "banner-message-text") {
+		t.Error("the greeter lost its notice")
+	}
+}

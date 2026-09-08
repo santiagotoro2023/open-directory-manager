@@ -28,6 +28,9 @@ const (
 	rdBrokerConfig   = "/etc/haproxy/conf.d/odm-remote-desktop.cfg"
 	rdSesmanIni      = "/etc/xrdp/sesman.ini"
 	rdXrdpIni        = "/etc/xrdp/xrdp.ini"
+	// What the role installer recorded about this host, including which
+	// desktop it was given.
+	sessionHostConf = "/etc/odm/session-host.conf"
 )
 
 var (
@@ -75,27 +78,33 @@ func applyRemoteDesktopHost(
 
 	var written []string
 
-	// What a session runs. A published application replaces the desktop
-	// rather than sitting on top of one: closing it ends the session, which
-	// is what somebody handed a single application expects.
-	session := apply.Header + "#!/bin/sh\n"
+	// What a session runs, when it is not the machine's own desktop. A
+	// published application replaces the desktop rather than sitting on top
+	// of one: closing it ends the session, which is what somebody handed a
+	// single application expects.
+	//
+	// A full desktop has no script of its own. It used to have one, and that
+	// script said startxfce4 whatever desktop the host had been installed
+	// with — so a GNOME session host put into a collection served a black
+	// screen for a few seconds and then dropped the connection, because the
+	// desktop it was told to start was not installed on it.
 	if kind == "remoteapp" {
-		session = "#!/bin/sh\n" + apply.Header +
+		session := "#!/bin/sh\n" + apply.Header +
 			"# Published application. Closing it ends the session.\n" +
 			"exec " + appPath + "\n"
-	} else {
-		session = "#!/bin/sh\n" + apply.Header + "exec startxfce4\n"
-	}
-	if err := writeManaged(env, rdSessionScript, session, 0o755); err != nil {
+		if err := writeManaged(env, rdSessionScript, session, 0o755); err != nil {
+			return "", err
+		}
+		written = append(written, rdSessionScript)
+	} else if err := os.Remove(env.Path(rdSessionScript)); err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	written = append(written, rdSessionScript)
 
 	// And how it is started. The role installer writes this too, but a host
 	// installed before the fix keeps its old copy for ever otherwise — and
 	// the old copy ran the desktop with none of a session's environment, so
 	// every connection ended at "Unable to determine failsafe session name".
-	if err := writeManaged(env, rdStartWM, startWM(), 0o755); err != nil {
+	if err := writeManaged(env, rdStartWM, startWM(env), 0o755); err != nil {
 		return "", err
 	}
 	written = append(written, rdStartWM)
@@ -151,16 +160,75 @@ func applyRemoteDesktopHost(
 // XDG_CONFIG_DIRS, XDG_DATA_DIRS, the D-Bus session bus. Started without it,
 // xfce4-session cannot find its own defaults under /etc/xdg and every
 // connection ends at "Unable to load a failsafe session".
-func startWM() string {
+func startWM(env apply.Env) string {
+	desktop, command, name := hostDesktop(env)
+	graphics := ""
+	if desktop != "xfce" {
+		// A server has no graphics card, and both GNOME Shell and Plasma want
+		// a GL context. Mesa's software renderer provides one.
+		graphics = "LIBGL_ALWAYS_SOFTWARE=1\nexport LIBGL_ALWAYS_SOFTWARE\n"
+	}
 	return "#!/bin/sh\n" + apply.Header + `
 if [ -r /etc/profile ]; then
     . /etc/profile
 fi
+
+# What the session tells applications it is. A desktop that cannot answer that
+# starts without its panel, its settings or the policy that rides on them.
+XDG_SESSION_TYPE=x11
+XDG_CURRENT_DESKTOP=` + name + `
+export XDG_SESSION_TYPE XDG_CURRENT_DESKTOP
+` + graphics + `
 if [ -x ` + rdSessionScript + ` ]; then
     exec /etc/X11/Xsession ` + rdSessionScript + `
 fi
-exec /etc/X11/Xsession startxfce4
+
+# The desktop this host was installed with, then whatever else is installed.
+# A session host whose desktop package is missing used to serve a black screen
+# and drop the connection; this way it serves the desktop it has.
+for session in ` + strings.Join(sessionOrder(command), " ") + `; do
+    if command -v "$session" >/dev/null 2>&1; then
+        exec /etc/X11/Xsession "$session"
+    fi
+done
+echo "no desktop session is installed on this host" >&2
+exit 1
 `
+}
+
+// sessionOrder is the desktop this host was installed with, then the others,
+// each named once.
+func sessionOrder(first string) []string {
+	order := []string{first}
+	for _, other := range []string{"gnome-session", "startplasma-x11", "startxfce4"} {
+		if other != first {
+			order = append(order, other)
+		}
+	}
+	return order
+}
+
+// hostDesktop is what the session-host role was installed with, which decides
+// what a full desktop means on this machine. A host installed before the
+// choice existed has no record and had XFCE.
+func hostDesktop(env apply.Env) (desktop, command, name string) {
+	body, err := os.ReadFile(env.Path(sessionHostConf))
+	desktop = "xfce"
+	if err == nil {
+		for _, line := range strings.Split(string(body), "\n") {
+			if value, found := strings.CutPrefix(strings.TrimSpace(line), "DESKTOP="); found {
+				desktop = strings.Trim(strings.TrimSpace(value), `"`)
+			}
+		}
+	}
+	switch desktop {
+	case "gnome":
+		return desktop, "gnome-session", "GNOME"
+	case "plasma":
+		return desktop, "startplasma-x11", "KDE"
+	default:
+		return "xfce", "startxfce4", "XFCE"
+	}
 }
 
 // profileScript is the logon hook. It is deliberately the only way a home
@@ -275,7 +343,10 @@ case "$SUB" in *..*) warn "$PROFILE_SHARE may not contain .." ;; esac
 # this PAM stack too. Whichever got there first, the profile is attached.
 mountpoint -q "$HOME_DIR" && exit 0
 
+# The store is root's alone. It holds everybody's profile disks, and a mode
+# anybody could walk would let one person read another's whole profile.
 mkdir -p "$STORE" "$HOME_DIR" 2>/dev/null || warn "cannot create $HOME_DIR"
+chmod 0700 "$STORE" 2>/dev/null || true
 # Theirs from the moment it exists. Made by root and left that way, nothing in
 # their session can write to it — including the X server, which then does not
 # start at all.
@@ -283,15 +354,22 @@ chown "$USER_ID:$(id -g "$USER_NAME")" "$HOME_DIR" 2>/dev/null ||
     logger -t odm-rd-profile "could not give $HOME_DIR to $USER_NAME"
 chmod 0700 "$HOME_DIR" 2>/dev/null || true
 
-# The share is reached with the machine's own credentials: the user's ticket
-# is not available to PAM at this point, and the disk is the machine's to
-# mount on their behalf.
+# The share is reached with the machine's own ticket and multiuser, which is
+# what a machine several people sign in to needs: the mount belongs to the
+# host and each session reaches its own profile with its own credentials.
+#
+# root has no ticket of its own until it is asked for one. Without this the
+# mount was attempted with nothing to authenticate as, answered "could not be
+# mounted", and — a profile disk being the whole home — every session on a
+# collection with a profile share was refused.
 if ! mountpoint -q "$STORE"; then
-    mount -t cifs "$MOUNT_SRC" "$STORE" \
-        -o sec=krb5,cruid=0,multiuser,vers=3.1.1,noperm 2>/dev/null \
-    || mount -t cifs "$MOUNT_SRC" "$STORE" \
-        -o sec=krb5,vers=3.0,noperm 2>/dev/null \
-    || warn "$MOUNT_SRC could not be mounted for $USER_NAME"
+    klist -s 2>/dev/null || kinit -k 2>/dev/null || true
+    for OPTIONS in "sec=krb5,cruid=0,multiuser,vers=3.1.1,noperm" \
+                   "sec=krb5,cruid=$USER_ID,vers=3.1.1,noperm" \
+                   "sec=krb5,cruid=$USER_ID,vers=3.0,noperm"; do
+        mount -t cifs "$MOUNT_SRC" "$STORE" -o "$OPTIONS" 2>/dev/null && break
+    done
+    mountpoint -q "$STORE" || warn "$MOUNT_SRC could not be mounted for $USER_NAME"
 fi
 
 TARGET="$STORE"
@@ -326,18 +404,50 @@ fi
 // ensurePamHook wires the profile script into the session-manager's PAM
 // stack. Appended once and left alone afterwards, because the rest of that
 // file is Debian's and not ours to rewrite.
+// ensurePamHook puts the profile hook into the remote desktop session stack,
+// before the module that would otherwise make a home directory first.
+//
+// Appended at the end it ran after pam_mkhomedir, which had already created
+// and seeded a local home: the profile disk was then mounted over the top,
+// and detaching it at sign-out revealed the local copy again. Every person
+// who ever signed in left a home directory on every host they touched, which
+// is exactly what a profile disk exists to avoid.
 func ensurePamHook(env apply.Env) error {
 	path := env.Path(rdPamFile)
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", rdPamFile, err)
 	}
-	line := "session required pam_exec.so /etc/odm/rd-profile.sh"
-	if strings.Contains(string(body), "/etc/odm/rd-profile.sh") {
-		return nil
+	line := "session required pam_exec.so " + rdProfileScript
+	comment := "# " + strings.TrimSuffix(apply.Header, "\n")[2:]
+
+	kept := []string{}
+	for _, existing := range strings.Split(string(body), "\n") {
+		// Any earlier copy of ours, wherever it was put, and the comment
+		// above it. A host configured before this is repaired rather than
+		// left with the line in the place that did not work.
+		if strings.Contains(existing, rdProfileScript) || existing == comment {
+			continue
+		}
+		kept = append(kept, existing)
 	}
-	updated := string(body) + "\n# " + strings.TrimSuffix(apply.Header, "\n")[2:] + "\n" + line + "\n"
-	return os.WriteFile(path, []byte(updated), 0o644)
+
+	// pam_mkhomedir is usually reached through common-session, so the include
+	// is what has to be preceded; a stack naming the module directly is
+	// handled too.
+	at := len(kept)
+	for index, existing := range kept {
+		trimmed := strings.TrimSpace(existing)
+		if strings.HasPrefix(trimmed, "@include common-session") ||
+			strings.Contains(trimmed, "pam_mkhomedir.so") {
+			at = index
+			break
+		}
+	}
+	updated := append([]string{}, kept[:at]...)
+	updated = append(updated, comment, line)
+	updated = append(updated, kept[at:]...)
+	return os.WriteFile(path, []byte(strings.Join(updated, "\n")), 0o644)
 }
 
 // setSesman rewrites named keys in xrdp's session manager configuration and

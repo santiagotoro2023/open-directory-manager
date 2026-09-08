@@ -974,7 +974,7 @@ fs.protected_symlinks                1`}</Code>
             rows={[
               [
                 "Walk people through setting one up",
-                "On a text login or over SSH they are asked there and then. In a graphical session a terminal opens as the desktop starts, before they get on with anything else — it runs the same enrolment through sudo, because reaching the console means reading the machine's keytab and that is root's alone. Somebody already enrolled, exempt, or outside \"Only for\" is shown nothing.",
+                "On a text login or over SSH they are asked there and then. In a graphical session it opens full-screen as the desktop starts and asks until it is done: closing it three times without enrolling signs the session out, because a window that can be clicked away is a second factor nobody sets up. It runs the enrolment through sudo, since reaching the console means reading the machine's keytab and that is root's alone. Somebody already enrolled, exempt, or outside \"Only for\" is shown nothing, and a console that cannot be reached never signs anybody out.",
               ],
               [
                 "Grace period",
@@ -991,6 +991,12 @@ fs.protected_symlinks                1`}</Code>
             on the machine checks codes, not the console&rsquo;s recovery list. Somebody who has
             lost their device signs in to the console with a recovery code and re-enrols, or an
             administrator removes their enrolment under the user object.
+          </Note>
+          <Note>
+            A machine picks up an enrolment on its next check-in, within the refresh interval and
+            without anything being saved in the console: somebody scanning a QR code changes no
+            policy object, and a machine that only looked when policy changed let them in on
+            their password alone until something else was edited.
           </Note>
           <Note>
             The machines carrying this hold the enrolments of the people who sign in to them, in a

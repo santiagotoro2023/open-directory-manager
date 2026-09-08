@@ -106,6 +106,26 @@ func TestEverySessionApplierIsActuallyCalled(t *testing.T) {
 	}
 }
 
+func TestEnrolmentsAreFetchedEvenWhenNoPolicyChanged(t *testing.T) {
+	// Somebody enrolling changes no policy object and no serial. Fetched
+	// after the unchanged check, the machine never heard about it: a person
+	// who had scanned the QR code was still let in on their password alone,
+	// for as long as nobody edited a policy object.
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+	fetch := strings.Index(body, "enrolments = fetchSecondFactor(")
+	unchanged := strings.Index(body, `fmt.Println("policy unchanged")`)
+	if fetch < 0 || unchanged < 0 {
+		t.Fatal("the unchanged path or the enrolment fetch has moved")
+	}
+	if fetch > unchanged {
+		t.Error("enrolments are fetched only when the policy changed")
+	}
+}
+
 func TestAFailedRunIsTriedAgainSoon(t *testing.T) {
 	// A controller whose console was still starting waited a quarter of an
 	// hour before saying anything about itself, and the console said it had

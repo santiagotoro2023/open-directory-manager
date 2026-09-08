@@ -251,9 +251,12 @@ func mountShare(ctx context.Context, share string, who account, env Env) error {
 	if mounted(ProfileStore) {
 		return nil
 	}
-	if err := os.MkdirAll(ProfileStore, 0o755); err != nil {
+	// Root's alone: it holds everybody's profiles, and a mode anybody could
+	// walk would let one person read another's.
+	if err := os.MkdirAll(ProfileStore, 0o700); err != nil {
 		return err
 	}
+	_ = os.Chmod(ProfileStore, 0o700)
 	attempts := []string{
 		fmt.Sprintf("sec=krb5,cruid=%d,vers=3.1.1,noperm", who.uid),
 		fmt.Sprintf("sec=krb5,cruid=%d,vers=3.0,noperm", who.uid),

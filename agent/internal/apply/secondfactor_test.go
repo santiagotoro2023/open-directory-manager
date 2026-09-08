@@ -453,3 +453,34 @@ func TestTheGuardNeverAsksALocalAccountForACode(t *testing.T) {
 		t.Errorf("the guard does not know a local account when it sees one:\n%s", guard)
 	}
 }
+
+func TestTheWalkthroughDoesNotLetSomebodyPastWithoutDoingIt(t *testing.T) {
+	// A window that can be clicked away is a second factor nobody sets up.
+	env, _ := testEnv(t)
+	withPam(t, env, "gdm-password")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, SelfEnrol: true, GraceDays: 7},
+	}, env)
+
+	session := read(t, env, enrolSession)
+	if !strings.Contains(session, "check") {
+		t.Error("it never asks whether the person actually enrolled")
+	}
+	if !strings.Contains(session, "terminate-session") {
+		t.Error("a session that never enrolled is allowed to carry on")
+	}
+	// An unreachable console must never sign anybody out.
+	if !strings.Contains(session, "2) exit 0 ;;") {
+		t.Errorf("a console that cannot be asked ends the session:\n%s", session)
+	}
+	// And the privileged half is what answers the question, for the caller
+	// and nobody else.
+	privileged := read(t, env, enrolPrivileged)
+	if !strings.Contains(privileged, "SUDO_USER") || !strings.Contains(privileged, "exit 2") {
+		t.Errorf("the check does not distinguish 'not enrolled' from 'could not ask':\n%s",
+			privileged)
+	}
+	if !strings.Contains(read(t, env, enrolSudoers), enrolPrivileged+" check") {
+		t.Error("the check is not something a person may run")
+	}
+}

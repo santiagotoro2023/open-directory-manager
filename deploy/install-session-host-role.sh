@@ -81,6 +81,12 @@ esac
 # context. Mesa's software renderer provides one; saying so explicitly is the
 # difference between a session that starts and a black window on hardware that
 # offers a partial GL.
+# The desktop this host was given, then the others, each named once.
+SESSION_ORDER="$SESSION_COMMAND"
+for OTHER in gnome-session startplasma-x11 startxfce4; do
+    [[ "$OTHER" == "$SESSION_COMMAND" ]] || SESSION_ORDER="$SESSION_ORDER $OTHER"
+done
+
 GRAPHICS_FALLBACK=""
 if [[ "$DESKTOP" != "xfce" ]]; then
     GRAPHICS_FALLBACK=$'LIBGL_ALWAYS_SOFTWARE=1\nexport LIBGL_ALWAYS_SOFTWARE'
@@ -147,7 +153,17 @@ $GRAPHICS_FALLBACK
 if [ -x /etc/odm/rd-session.sh ]; then
     exec /etc/X11/Xsession /etc/odm/rd-session.sh
 fi
-exec /etc/X11/Xsession $SESSION_COMMAND
+
+# The desktop this host was installed with, then whatever else is installed:
+# a host whose desktop package is missing serves the desktop it has rather
+# than a black screen and a dropped connection.
+for session in $SESSION_ORDER; do
+    if command -v "$session" >/dev/null 2>&1; then
+        exec /etc/X11/Xsession "$session"
+    fi
+done
+echo "no desktop session is installed on this host" >&2
+exit 1
 WM
 chmod 0755 /etc/xrdp/startwm.sh
 

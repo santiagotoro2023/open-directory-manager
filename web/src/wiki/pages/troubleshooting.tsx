@@ -220,6 +220,44 @@ export function Content() {
                 </>,
               ],
               [
+                "A remote desktop session is a black screen and then the client closes",
+                <>
+                  The collection told the host to start XFCE whatever desktop it had been
+                  installed with, so a GNOME or Plasma session host was asked to start something
+                  that was not on it. Fixed: a collection serves the desktop the host was
+                  installed with, and a host whose desktop package is missing falls back to one
+                  that is there rather than to nothing.
+                </>,
+              ],
+              [
+                "Every session on a collection with a profile share is refused",
+                <>
+                  The profile disk is mounted by the host, as the host, and root had no Kerberos
+                  ticket to mount it with &mdash; so the mount failed and, a profile disk being
+                  the whole home, the session was refused. It asks for the machine&rsquo;s own
+                  ticket first now.
+                </>,
+              ],
+              [
+                "A code is never asked for, however many people have enrolled",
+                <>
+                  Enrolments were fetched only on a run that had a policy change to apply, and
+                  somebody scanning a QR code changes no policy object and no serial &mdash; so
+                  the machine never heard about it and let them in on their password alone for as
+                  long as the grace period lasted. They are fetched on every check-in now.
+                </>,
+              ],
+              [
+                'Installing the client package asks for a "default Kerberos realm"',
+                <>
+                  <C key="kr">krb5-config</C>, which comes with the Kerberos tools, asks that the
+                  first time it is configured. The answer does not matter &mdash;{" "}
+                  <C key="kr2">odm-client-install</C> writes <C key="kr3">/etc/krb5.conf</C>{" "}
+                  itself &mdash; and the package now answers it. On a machine that still asks,
+                  install with <C key="kr4">DEBIAN_FRONTEND=noninteractive</C>.
+                </>,
+              ],
+              [
                 "A role installs the way an older release did",
                 <>
                   The installers a machine was joined with never moved: the agent replaces itself

@@ -38,6 +38,10 @@ const (
 	// replaced: dropping it takes the distribution's greeter defaults with
 	// it, which is a setting nobody in the console ever turned off.
 	debianGreeterDB = "/var/lib/gdm3/greeter-dconf-defaults"
+
+	// And where the session — not the greeter — reads the same notice, so a
+	// locked screen shows what the sign-in screen showed.
+	lockNoticePath = "/etc/dconf/db/odm.d/05-odm-login-notice"
 )
 
 func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.Result {
@@ -116,6 +120,29 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 
 	if err := env.WriteFile(greeterKeyfilePath, keyfile.String(), 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("login_screen", err)}
+	}
+
+	// The same notice where the session's own lock screen reads it. GNOME
+	// Shell shows banner-message-text when it locks, out of the user
+	// database rather than the greeter's — so a notice set here appeared at
+	// the greeter and not when somebody came back to a locked screen, which
+	// reads as the setting working sometimes and not others.
+	if screen.BannerText != "" {
+		notice := Header + "[org/gnome/login-screen]\n" +
+			"banner-message-enable=true\n" +
+			fmt.Sprintf("banner-message-text='%s'\n", dconfEscape(screen.BannerText))
+		if err := env.WriteFile(
+			lockNoticePath, notice, 0o644, "root", "root",
+		); err != nil {
+			results = append(results, policy.Fail("login_screen:lock", err))
+		}
+		// The user profile has to name ODM's database, or nothing in it is
+		// read. Written by the background applier too; the same two lines.
+		if err := env.WriteFile(
+			dconfProfilePath, "user-db:user\nsystem-db:odm\n", 0o644, "root", "root",
+		); err != nil {
+			results = append(results, policy.Fail("login_screen:lock", err))
+		}
 	}
 
 	results = append(results, runAll(ctx, env, "login_screen", []string{"dconf", "update"}))

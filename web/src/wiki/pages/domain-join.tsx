@@ -26,7 +26,7 @@ export function Content() {
       <Quickstart>
         <Example title="Install the package and run the join">
           <Code>{`sudo apt update
-sudo apt install ./odm-client_<version>_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_<version>_amd64.deb
 sudo odm-client-install \
   --domain corp.example.internal \
   --admin-user Administrator`}</Code>

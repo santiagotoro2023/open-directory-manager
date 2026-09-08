@@ -383,12 +383,27 @@ exit 0
 	privileged := "#!/bin/sh\n" + Header + `
 WHO="${SUDO_USER:-}"
 [ -n "$WHO" ] || WHO="$(id -un)"
+
+# check: ask the console for this machine's enrolments again and say whether
+# this person is now in them. Used by the session prompt to decide whether
+# somebody actually finished, rather than trusting that a window was closed.
+# Exit 0 enrolled, 1 not, 2 the console could not be reached — which must not
+# be read as "not enrolled", or an unreachable console signs people out.
+if [ "${1:-}" = "check" ]; then
+    SHORT="$(printf '%s' "$WHO" | sed 's/@.*//; s/.*\\\\//' | tr 'A-Z' 'a-z')"
+    /usr/sbin/odm-agent apply >/dev/null 2>&1 || exit 2
+    [ -r ` + enrolledList + ` ] || exit 2
+    grep -qxF "$SHORT" ` + enrolledList + ` && exit 0
+    exit 1
+fi
+
 exec /usr/sbin/odm-agent enrol-factor --user "$WHO"
 `
 	if err := env.WriteFile(enrolPrivileged, privileged, 0o755, "root", "root"); err != nil {
 		return err
 	}
-	rule := Header + "ALL ALL=(root) NOPASSWD: " + enrolPrivileged + "\n"
+	rule := Header + "ALL ALL=(root) NOPASSWD: " + enrolPrivileged + ", " +
+		enrolPrivileged + " check\n"
 	if err := env.WriteFile(enrolSudoers, rule, 0o440, "root", "root"); err != nil {
 		return err
 	}
@@ -441,30 +456,67 @@ if [ -r ` + enrolledList + ` ] && grep -qxF "$SHORT" ` + enrolledList + `; then
     exit 0
 fi
 
-# Tried in turn rather than the first one found being trusted: a desktop can
-# have a terminal installed that will not start in this session, and running
-# out of terminals silently is the same as never asking.
-for terminal in x-terminal-emulator gnome-terminal kgx konsole xfce4-terminal \
-                mate-terminal xterm; do
-    command -v "$terminal" >/dev/null 2>&1 || continue
-    case "$terminal" in
-        gnome-terminal|mate-terminal|kgx)
-            "$terminal" -- sudo -n ` + enrolPrivileged + ` && exit 0
-            ;;
-        *)
-            "$terminal" -e sudo -n ` + enrolPrivileged + ` && exit 0
-            ;;
+# Somebody who has to set one up is asked until they have, and cannot get on
+# with anything else first. A window that can be clicked away is a second
+# factor nobody sets up: the point of asking here is that the machine is not
+# usable until it is done.
+open_terminal() {
+    for terminal in x-terminal-emulator gnome-terminal kgx konsole xfce4-terminal \
+                    mate-terminal xterm; do
+        command -v "$terminal" >/dev/null 2>&1 || continue
+        case "$terminal" in
+            gnome-terminal|mate-terminal)
+                "$terminal" --full-screen -- sudo -n ` + enrolPrivileged + ` && return 0
+                ;;
+            kgx)
+                "$terminal" -- sudo -n ` + enrolPrivileged + ` && return 0
+                ;;
+            konsole|xfce4-terminal)
+                "$terminal" --fullscreen -e "sudo -n ` + enrolPrivileged + `" && return 0
+                ;;
+            *)
+                "$terminal" -e sudo -n ` + enrolPrivileged + ` && return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+ATTEMPT=1
+while [ "$ATTEMPT" -le 3 ]; do
+    if ! open_terminal; then
+        # No terminal on this desktop, or none that would start. Say what has
+        # to happen rather than silently letting somebody past.
+        MESSAGE="Set up your second factor: open a terminal and run  sudo ` + enrolPrivileged + `"
+        if command -v zenity >/dev/null 2>&1; then
+            zenity --error --no-wrap --title="Second factor" --text="$MESSAGE"
+        elif command -v notify-send >/dev/null 2>&1; then
+            notify-send -u critical "Second factor" "$MESSAGE"
+        fi
+        exit 0
+    fi
+
+    sudo -n ` + enrolPrivileged + ` check
+    case "$?" in
+        0) exit 0 ;;
+        2) exit 0 ;;
     esac
+    ATTEMPT=$((ATTEMPT + 1))
 done
 
-# No terminal on this desktop. Say so rather than silently not asking: the
-# person still has to enrol before the grace period ends.
-message="Set up your second factor: open a terminal and run  sudo ` + enrolPrivileged + `"
+# Three times round and still not enrolled. The session ends rather than
+# carrying on without one: how long somebody may put this off is the grace
+# period, and that is the control plane's decision, not this window's.
 if command -v zenity >/dev/null 2>&1; then
-    zenity --info --no-wrap --title="Second factor" --text="$message"
+    zenity --error --no-wrap --title="Second factor" \
+        --text="A second factor is required on this machine. Signing out." 2>/dev/null
 elif command -v notify-send >/dev/null 2>&1; then
-    notify-send "Second factor" "$message"
+    notify-send -u critical "Second factor" "Required on this machine. Signing out."
 fi
+sleep 3
+loginctl terminate-session "${XDG_SESSION_ID:-}" 2>/dev/null ||
+    gnome-session-quit --logout --no-prompt 2>/dev/null ||
+    pkill -u "$(id -u)" -x gnome-session-binary 2>/dev/null
 exit 0
 `
 	if err := env.WriteFile(enrolSession, session, 0o755, "root", "root"); err != nil {

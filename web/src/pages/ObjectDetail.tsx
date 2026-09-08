@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Download,
   FileText,
   Folder,
   KeyRound,
@@ -359,7 +360,7 @@ export function ObjectDetail() {
       {isComputer && tab === "files" && <FilesTab hostname={machineName} />}
 
       {isComputer && tab === "shell" && <ShellTab dn={dn} hostname={machineName} />}
-      {isComputer && tab === "logs" && <LogsTab dn={dn} />}
+      {isComputer && tab === "logs" && <LogsTab dn={dn} name={machineName} />}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
       {dialog === "photo" && (
@@ -1163,13 +1164,16 @@ function ShellTab({ dn, hostname }: { dn: string; hostname: string }) {
   );
 }
 
-function LogsTab({ dn }: { dn: string }) {
+function LogsTab({ dn, name }: { dn: string; name: string }) {
   const [hours, setHours] = useState(24);
   const [groups, setGroups] = useState<LogGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Errors only: what somebody opening this page is nearly always looking
+  // for, and a machine that has been up for a week has a great deal else.
+  const [errorsOnly, setErrorsOnly] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1199,11 +1203,48 @@ function LogsTab({ dn }: { dn: string }) {
     });
   }
 
+  // What is on screen, which is what an export has to be: filtering and then
+  // exporting something else is a report nobody can check against the page.
+  const shown = errorsOnly
+    ? groups
+        .map((group) => ({
+          ...group,
+          entries: group.entries.filter((entry) => entry.priority <= 3),
+        }))
+        .filter((group) => group.entries.length > 0)
+    : groups;
+  const showing = shown.reduce((sum, group) => sum + group.entries.length, 0);
+
+  function exportView() {
+    const rows = [["time", "unit", "level", "message"]];
+    for (const group of shown) {
+      for (const entry of group.entries) {
+        rows.push([
+          new Date(entry.occurred_at).toISOString(),
+          group.unit,
+          entry.priority <= 3 ? "error" : "warning",
+          entry.message,
+        ]);
+      }
+    }
+    const csv = rows
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${name || "machine"}-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <div className="page-header">
         <h3 className="section-title">
-          {total} {total === 1 ? "entry" : "entries"}
+          {errorsOnly ? `${showing} of ${total}` : total} {total === 1 ? "entry" : "entries"}
         </h3>
         <span className="spacer" />
         <Select
@@ -1216,6 +1257,24 @@ function LogsTab({ dn }: { dn: string }) {
           <option value={72}>Last 3 days</option>
           <option value={336}>Last 14 days</option>
         </Select>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={errorsOnly}
+            onChange={(e) => setErrorsOnly(e.target.checked)}
+          />
+          Errors only
+        </label>
+        <button
+          type="button"
+          className="ghost"
+          onClick={exportView}
+          disabled={showing === 0}
+          title="Download what is on screen as a CSV file"
+        >
+          <Download size={15} aria-hidden="true" />
+          Export
+        </button>
         <button type="button" className="ghost" onClick={() => void load()}>
           <RefreshCw size={15} aria-hidden="true" />
           Refresh
@@ -1229,7 +1288,7 @@ function LogsTab({ dn }: { dn: string }) {
       )}
 
       <ul className="log-groups">
-        {groups.map((group) => (
+        {shown.map((group) => (
           <li key={group.unit}>
             <button type="button" className="log-group" onClick={() => toggle(group.unit)}>
               {open.has(group.unit) ? (
@@ -1268,9 +1327,11 @@ function LogsTab({ dn }: { dn: string }) {
             )}
           </li>
         ))}
-        {!loading && groups.length === 0 && (
+        {!loading && shown.length === 0 && (
           <li className="empty">
-            Nothing at warning level or worse. The agent sends these on its check-in.
+            {errorsOnly && groups.length > 0
+              ? "No errors in this period. Untick to see warnings as well."
+              : "Nothing at warning level or worse. The agent sends these on its check-in."}
           </li>
         )}
       </ul>

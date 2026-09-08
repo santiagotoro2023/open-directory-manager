@@ -474,6 +474,12 @@ This name is     published in this domain's DNS, by ODM`}</Code>
             Removing the role takes away only what installing it put there. A machine that was
             already a GNOME desktop before it became a session host keeps GNOME.
           </Note>
+          <p>
+            A collection serves whatever the host was installed with. It used to name XFCE
+            whatever the host had, which on a GNOME or Plasma host meant a black screen for a few
+            seconds and then a dropped connection; a host that has lost its desktop package now
+            falls back to one that is installed rather than to nothing.
+          </p>
         </Section>
 
         <Section title="What is installed">
