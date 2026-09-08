@@ -329,8 +329,29 @@ func seedFromSkel(who account) {
 		strconv.Itoa(who.uid)+":"+strconv.Itoa(who.gid), who.home).Run()
 }
 
+// mounted answers from the kernel's own list rather than by looking at the
+// path.
+//
+// mountpoint(1) stats it, and a share mounted with sec=krb5 cannot be stat'd
+// by root at all — the kernel answers "Required key not available" — so a
+// mount that was there and working read as absent, and the drive map that
+// owned it was reported as failed on every run.
 func mounted(path string) bool {
-	return exec.Command("mountpoint", "-q", path).Run() == nil
+	clean := filepath.Clean(path)
+	raw, err := os.ReadFile("/proc/self/mounts")
+	if err != nil {
+		return exec.Command("mountpoint", "-q", path).Run() == nil
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		// The kernel escapes a space in a mount point as \040; nothing here
+		// mounts on such a path, and an unescaped compare is what the rest of
+		// this file does.
+		if len(fields) >= 2 && filepath.Clean(fields[1]) == clean {
+			return true
+		}
+	}
+	return false
 }
 
 // anyProfileMounted reports whether another session on this machine still has

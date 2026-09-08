@@ -15,6 +15,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 import asyncpg
@@ -716,6 +717,36 @@ class Inventory(BaseModel):
     replication: Annotated[str, Field(max_length=32768)] = ""
     # Which of this machine's disks are encrypted.
     volumes: Annotated[list[ReportedVolume], Field(default_factory=list, max_length=64)]
+
+
+# Where install-agent.sh puts the role installers, on this machine as on every
+# other. The console hands out its own copies so a machine joined at 0.8.1 does
+# not keep installing roles the way 0.8.1 did: the agent updates itself from
+# here, and until now the scripts beside it never moved.
+ROLE_DIR = Path("/usr/lib/odm/roles")
+
+
+@router.get("/role-script")
+async def agent_role_script(
+    role: Annotated[str, Query(min_length=2, max_length=32, pattern=r"^[a-z][a-z0-9-]{1,31}$")],
+    _: Machine = Depends(require_machine),
+) -> dict[str, str]:
+    """The installer for one role, and the helpers it sources, as this console
+    has them.
+
+    A machine runs the installer; the console decides which one. Nothing here
+    is a secret — the same scripts are in the source tree — but it is only
+    served to a machine in this domain, like everything else the agent asks
+    for.
+    """
+    installer = ROLE_DIR / f"install-{role}-role.sh"
+    common = ROLE_DIR / "odm-role-common.sh"
+    if not installer.is_file():
+        raise objects.NotFound(f"this console has no installer for {role}")
+    answer = {"installer": installer.read_text(encoding="utf-8", errors="strict")}
+    if common.is_file():
+        answer["common"] = common.read_text(encoding="utf-8", errors="strict")
+    return answer
 
 
 @router.post("/inventory", status_code=204)

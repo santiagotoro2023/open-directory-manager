@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.8.5"
+const version = "0.8.6"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -648,6 +648,7 @@ func taskEnv(root string, api *client.Client) apply.Env {
 	env := apply.NewEnv(root)
 	env.Version = version
 	env.Download = api.DownloadAgent
+	env.RoleScript = api.RoleScript
 	return env
 }
 

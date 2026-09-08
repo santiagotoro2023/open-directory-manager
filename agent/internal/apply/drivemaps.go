@@ -37,9 +37,17 @@ func applyDriveMaps(ctx context.Context, s policy.Settings, env Env) []policy.Re
 				fmt.Errorf("cannot parse share %q", drive.UNC)))
 			continue
 		}
-		if err := os.MkdirAll(env.Path(drive.MountPoint), 0o755); err != nil {
-			results = append(results, policy.Fail(setting, err))
-			continue
+		// Already mounted is already there. A share mounted with sec=krb5
+		// and multiuser cannot be looked at by root at all — the kernel
+		// answers "Required key not available" — and MkdirAll reported that
+		// as "file exists", so a drive that was mounted and working was
+		// reported as failed on every run for as long as it stayed mounted.
+		point := env.Path(drive.MountPoint)
+		if !isMounted(point) {
+			if err := os.MkdirAll(point, 0o755); err != nil {
+				results = append(results, policy.Fail(setting, err))
+				continue
+			}
 		}
 		results = append(results, policy.Ok(setting))
 	}

@@ -207,7 +207,16 @@ func installRole(
 		return "", err
 	}
 
+	// The console's copy first. A machine keeps the installers it was joined
+	// with for ever otherwise — the agent replaces itself and the scripts
+	// beside it never move — so a role installed on a machine joined a
+	// release ago was installed the way that release did it.
 	installer := env.Path(filepath.Join(RoleDir, "install-"+role+"-role.sh"))
+	if err := refreshInstaller(ctx, env, role, installer); err != nil {
+		// Not fatal: an older console has nothing to hand out, and the copy
+		// this machine has is the one it was going to use anyway.
+		fmt.Fprintln(os.Stderr, "odm-agent: role installer:", err)
+	}
 	if _, err := os.Stat(installer); err != nil {
 		return "", fmt.Errorf(
 			"%s is not installed on this machine; reinstall the agent package to get the "+
@@ -217,7 +226,40 @@ func installRole(
 	if env.Run == nil {
 		return "", fmt.Errorf("no command runner")
 	}
+	// A role installs packages, and the allowlist does not know about roles:
+	// it refused chrony while the console was installing the time server.
+	defer apply.SuspendSoftwareControl(env)()
 	return unsandboxed(ctx, env, progress, installer, arguments...)
+}
+
+// refreshInstaller replaces this machine's copy of a role installer with the
+// console's, so what runs is what the console that asked for it ships.
+func refreshInstaller(ctx context.Context, env apply.Env, role, installer string) error {
+	if env.RoleScript == nil {
+		return nil
+	}
+	body, common, err := env.RoleScript(ctx, role)
+	if err != nil {
+		return err
+	}
+	if body == "" {
+		return fmt.Errorf("the console sent an empty installer for %s", role)
+	}
+	dir := filepath.Dir(installer)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(installer, []byte(body), 0o755); err != nil {
+		return err
+	}
+	if common != "" {
+		// Every installer sources this from its own directory.
+		if err := os.WriteFile(filepath.Join(dir, "odm-role-common.sh"),
+			[]byte(common), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // unsandboxed runs a command as a transient systemd unit instead of as a

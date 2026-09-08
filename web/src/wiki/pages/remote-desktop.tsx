@@ -380,6 +380,14 @@ This name is     published in this domain's DNS, by ODM`}</Code>
             appears on the desktop of everybody in that group when they sign in, and goes when the
             membership goes or the policy object is unlinked.
           </p>
+          <Note>
+            The machine is also given something that opens one. Debian&rsquo;s Remmina does not
+            claim the <C>.rdp</C> type and cannot read one without its RDP plugin &mdash; opening
+            the file answered &ldquo;corrupted, unreadable, or could not be found&rdquo; over a
+            perfectly good connection file &mdash; so a machine whose policy hands out connection
+            files gets the plugin and a handler for the type, and double-clicking the icon
+            connects.
+          </Note>
           <Reference
             headers={["Field", "What it is"]}
             rows={[
@@ -429,13 +437,52 @@ This name is     published in this domain's DNS, by ODM`}</Code>
           </p>
         </Section>
 
+        <Section title="Which desktop a session host serves">
+          <p>
+            Chosen when the role is installed, because it is a different set of packages rather
+            than a setting: <strong>Server Roles</strong> &rarr;{" "}
+            <strong>Remote desktop session host</strong> &rarr; <strong>Desktop environment</strong>
+            .
+          </p>
+          <Reference
+            headers={["Choice", "What a session looks like", "Installs"]}
+            rows={[
+              [
+                "XFCE (default)",
+                "The lightest of the three, and the most sessions per server.",
+                <C key="x">xfce4, xfce4-goodies, xfce4-terminal</C>,
+              ],
+              [
+                "GNOME",
+                "What a Debian desktop client runs, so a session looks like the machine somebody left rather than a different product.",
+                <C key="g">gnome-session, gnome-shell, nautilus, gnome-control-center</C>,
+              ],
+              [
+                "KDE Plasma",
+                "For an estate whose desktops are Plasma.",
+                <C key="k">plasma-desktop, plasma-workspace, dolphin, konsole</C>,
+              ],
+            ]}
+          />
+          <p>
+            Every policy setting applies whichever is chosen, apart from the four written through
+            GNOME&rsquo;s own configuration &mdash; the desktop background, the dash, the screen
+            lock and what the first sign-in shows. Those need GNOME, on a session host exactly as
+            on a client.
+          </p>
+          <Note>
+            Removing the role takes away only what installing it put there. A machine that was
+            already a GNOME desktop before it became a session host keeps GNOME.
+          </Note>
+        </Section>
+
         <Section title="What is installed">
           <Reference
             headers={["Role", "Installs", "Listens"]}
             rows={[
               [
                 "Remote desktop session host",
-                <C key="a">xrdp, xorgxrdp, xfce4, cifs-utils</C>,
+                <C key="a">xrdp, xorgxrdp, cifs-utils, and the desktop chosen at install</C>,
                 "3389/tcp",
               ],
               ["Remote desktop broker", <C key="b">haproxy</C>, "3389/tcp"],

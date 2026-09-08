@@ -284,7 +284,7 @@ REGISTRY: dict[str, Role] = {
     ),
     "time": Role(
         name="time",
-        title="Time",
+        title="Time server",
         summary=(
             "chrony, serving the domain. Kerberos gives up on a clock more than "
             "five minutes out, so every sign-in depends on this being right."
@@ -361,7 +361,25 @@ REGISTRY: dict[str, Role] = {
             "Serves desktops and published applications over RDP. Joins a "
             "collection, which is where everything about it is decided."
         ),
-        packages=("xrdp", "xorgxrdp", "xfce4", "xfce4-goodies", "cifs-utils", "dbus-x11"),
+        packages=("xrdp", "xorgxrdp", "cifs-utils", "dbus-x11"),
+        arguments=(
+            Argument(
+                name="desktop",
+                label="Desktop environment",
+                help=(
+                    "What somebody sees when they connect. GNOME is what a Debian "
+                    "desktop client runs, so a session looks like the machine they "
+                    "left; XFCE is far lighter and serves more people on the same "
+                    "hardware. Every policy setting applies either way, apart from "
+                    "the ones written through GNOME's own configuration — the "
+                    "desktop background, the dash, the screen lock and the first "
+                    "sign-in — which need GNOME."
+                ),
+                kind="choice",
+                choices=("xfce", "gnome", "plasma"),
+                default="xfce",
+            ),
+        ),
         ui_section="remote-desktop",
         notes=(
             "Add it to a collection under Remote Desktop. Until it is in one it "

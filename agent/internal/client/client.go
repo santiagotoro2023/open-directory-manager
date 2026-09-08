@@ -514,6 +514,35 @@ func why(response *http.Response) string {
 //
 // A 60-second client timeout covers a policy request and is not enough for a
 // 30 MB binary over a slow link, so this one gets its own deadline.
+// RoleScript is the installer for one role as the console has it, with the
+// helpers it sources. The scripts a machine was joined with are the ones it
+// keeps for ever otherwise: the agent updates itself and they never moved,
+// so a role installed on an old machine was installed the old way.
+func (c *Client) RoleScript(ctx context.Context, role string) (installer, common string, err error) {
+	var answer struct {
+		Installer string `json:"installer"`
+		Common    string `json:"common"`
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, c.base+"/api/v1/agent/role-script?role="+url.QueryEscape(role), nil,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return "", "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("role installer: %s", why(response))
+	}
+	if err := json.NewDecoder(response.Body).Decode(&answer); err != nil {
+		return "", "", err
+	}
+	return answer.Installer, answer.Common, nil
+}
+
 func (c *Client) DownloadAgent(ctx context.Context, beside string) (path, version string, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()

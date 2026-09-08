@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,9 +49,59 @@ func applySysctl(ctx context.Context, s policy.Settings, env Env) []policy.Resul
 	if err := env.WriteFile(sysctlPath, body.String(), 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("sysctl", err)}
 	}
+	// Outside the agent's own restrictions. The unit sets
+	// ProtectKernelTunables, which makes /proc/sys read-only for everything
+	// this service runs — so every kernel parameter policy set was written to
+	// a file, refused by the kernel, and reported as "permission denied" for
+	// keys nobody had asked about. Setting kernel parameters is one of the
+	// things an agent is for; the sandbox stays for everything else.
+	//
 	// --system rather than -p, so what ends up in force is the machine's whole
-	// set in its documented order rather than only this file's.
-	return []policy.Result{runAll(ctx, env, "sysctl", []string{"sysctl", "-q", "--system"})}
+	// set in its documented order rather than only this file's. Its exit
+	// status is not the answer, though: it reports every other file on the
+	// machine too, and a key some unrelated file cannot set is not this
+	// policy failing. What this policy asked for is read back instead.
+	_, _ = Unsandboxed(ctx, env, "sysctl", "-q", "--system")
+
+	if env.Run == nil {
+		return []policy.Result{policy.Skip("sysctl", "no command runner")}
+	}
+	var wrong []string
+	for _, setting := range s.Sysctl {
+		if !seen[setting.Key] {
+			continue
+		}
+		out, err := env.Run.Run(ctx, "sysctl", "-n", setting.Key)
+		if err != nil {
+			wrong = append(wrong, setting.Key+" (no such key)")
+			continue
+		}
+		if strings.Join(strings.Fields(out), " ") != strings.Join(strings.Fields(setting.Value), " ") {
+			wrong = append(wrong, fmt.Sprintf("%s is %s", setting.Key, strings.TrimSpace(out)))
+		}
+	}
+	if len(wrong) > 0 {
+		return []policy.Result{policy.Fail("sysctl", errors.New(strings.Join(wrong, "; ")))}
+	}
+	return []policy.Result{policy.Ok("sysctl")}
+}
+
+// SuspendSoftwareControl turns the allowlist off for the duration of an
+// install ODM is doing itself, and returns the function that puts it back.
+//
+// The allowlist is there to stop somebody installing what they like on a
+// machine. It is not there to stop the console installing a role on it — and
+// it did: installing the time server answered "not on this machine's allowed
+// software list: chrony" and the role failed, because a role's packages are
+// not the ones a policy names. Suspending it around the install is narrower
+// than an escape hatch anything running as root could use.
+func SuspendSoftwareControl(env Env) func() {
+	hook := env.Path(aptAllowlist)
+	aside := hook + ".odm-installing"
+	if err := os.Rename(hook, aside); err != nil {
+		return func() {} // not in force here; nothing to put back
+	}
+	return func() { _ = os.Rename(aside, hook) }
 }
 
 func safeSysctlKey(key string) bool {

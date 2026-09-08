@@ -365,7 +365,8 @@ teardown_session_host() {
     say "Remote desktop session host role"
     maybe systemctl disable --now xrdp xrdp-sesman
     restore_backup /etc/xrdp/sesman.ini
-    run rm -f /etc/xrdp/startwm.sh /etc/xrdp/cert.pem /etc/xrdp/key.pem /etc/X11/Xwrapper.config
+    run rm -f /etc/xrdp/startwm.sh /etc/xrdp/cert.pem /etc/xrdp/key.pem \
+        /etc/X11/Xwrapper.config /etc/odm/session-host.conf
 
     # The PAM line first, and whether or not xrdp is being purged: it names a
     # script that is about to be removed, and "session required" with a
@@ -390,7 +391,23 @@ teardown_session_host() {
     shopt -u nullglob
     mountpoint -q /run/odm/profiles 2>/dev/null && maybe umount -l /run/odm/profiles
 
-    [[ "$PURGE_PACKAGES" == "yes" ]] && PURGE_LIST+=(xrdp xorgxrdp xfce4 xfce4-goodies xfce4-terminal)
+    # Only what installing the role actually put on this machine. The
+    # installer records it, because the desktop is now a choice: purging every
+    # desktop it can install would take GNOME off a machine that was a GNOME
+    # desktop before it was ever a session host.
+    if [[ "$PURGE_PACKAGES" == "yes" ]]; then
+        PURGE_LIST+=(xrdp xorgxrdp)
+        if [[ -r /etc/odm/session-host.conf ]]; then
+            # shellcheck source=/dev/null
+            . /etc/odm/session-host.conf
+            # A space-separated list is what the installer wrote.
+            # shellcheck disable=SC2206
+            [[ -n "${INSTALLED:-}" ]] && PURGE_LIST+=(${INSTALLED})
+        else
+            # Installed before the choice existed: XFCE was the only desktop.
+            PURGE_LIST+=(xfce4 xfce4-goodies xfce4-terminal)
+        fi
+    fi
     ok "Remote desktop session host role removed"
 }
 

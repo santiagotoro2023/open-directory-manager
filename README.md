@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo apt install ./odm-client_0.8.5_amd64.deb
+sudo apt install ./odm-client_0.8.6_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -146,7 +146,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | DHCP | ISC Kea scopes, reservations, leases, failover pair and dynamic DNS |
 | File shares | SMB shares on any file server, with per-user and per-group access levels, choosing the directory by browsing the server itself |
 | Printing | CUPS printers on any print server, found on the network by scanning for them, handed to people by policy |
-| Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share you can grow or reset from the console, published applications, and downloadable connection files. An optional standby broker sharing one affinity table, and one DNS name published across both. A host is drained rather than removed while it is patched. The broker owns 3389; a host sharing its machine moves to 3390 |
+| Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share you can grow or reset from the console, published applications, and connection files that arrive on a desktop with something installed that opens them. A session host serves XFCE, GNOME or KDE Plasma, chosen when the role is installed. An optional standby broker sharing one affinity table, and one DNS name published across both. A host is drained rather than removed while it is patched. The broker owns 3389; a host sharing its machine moves to 3390 |
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
 | Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
@@ -235,7 +235,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.8.5   # -> dist/odm-client_0.8.5_amd64.deb
+bash packaging/deb/build-in-container.sh 0.8.6   # -> dist/odm-client_0.8.6_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

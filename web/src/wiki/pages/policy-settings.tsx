@@ -974,7 +974,7 @@ fs.protected_symlinks                1`}</Code>
             rows={[
               [
                 "Walk people through setting one up",
-                "On a text login or over SSH they are asked there and then. In a graphical session a terminal opens as the desktop starts.",
+                "On a text login or over SSH they are asked there and then. In a graphical session a terminal opens as the desktop starts, before they get on with anything else — it runs the same enrolment through sudo, because reaching the console means reading the machine's keytab and that is root's alone. Somebody already enrolled, exempt, or outside \"Only for\" is shown nothing.",
               ],
               [
                 "Grace period",
@@ -1000,8 +1000,10 @@ fs.protected_symlinks                1`}</Code>
           </Note>
           <Note>
             Nobody is refused for not having enrolled yet. A guard runs in front of the check and
-            decides whether this account is asked at all &mdash; it never asks a local account,
-            never asks somebody the policy exempts or does not name, and lets somebody who has not
+            decides whether this account is asked at all &mdash; it never asks an account that
+            lives in the machine&rsquo;s own files, because only the directory can issue a second
+            factor and an account that cannot enrol would be locked out the day the grace
+            period ended; never asks somebody the policy exempts or does not name, and lets somebody who has not
             enrolled through for as long as the grace period lasts. The grace is counted from when
             the setting first reached that machine.
           </Note>

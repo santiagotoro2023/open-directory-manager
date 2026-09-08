@@ -322,3 +322,134 @@ func TestTheGraceClockStartsOnceAndIsNotReset(t *testing.T) {
 		t.Error("the grace period started again on the next refresh")
 	}
 }
+
+func TestTheGraphicalWalkthroughIsSomethingADesktopCanActuallyRun(t *testing.T) {
+	// The autostart entry used to carry a shell command inline. Desktop-entry
+	// Exec values are not parsed by a shell — single quotes mean nothing
+	// there — so what reached /bin/sh was its own apostrophes and a person
+	// signing in graphically was shown nothing at all.
+	env, _ := testEnv(t)
+	withPam(t, env, "gdm-password")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, SelfEnrol: true},
+	}, env)
+
+	entry := read(t, env, enrolAutostart)
+	if !strings.Contains(entry, "Exec="+enrolSession+"\n") {
+		t.Errorf("the autostart entry does not name a script:\n%s", entry)
+	}
+	if strings.Contains(entry, "'") || strings.Contains(entry, "$USER") {
+		t.Errorf("the Exec line still has shell quoting in it:\n%s", entry)
+	}
+
+	// It runs as the person, and reaching the control plane means reading a
+	// keytab only root may. Without this the window opened and said
+	// "permission denied".
+	if !strings.Contains(read(t, env, enrolSession), "sudo -n "+enrolPrivileged) {
+		t.Error("the session script cannot reach the control plane")
+	}
+	rule := read(t, env, enrolSudoers)
+	if !strings.Contains(rule, "NOPASSWD: "+enrolPrivileged) {
+		t.Errorf("nothing lets a person run it:\n%s", rule)
+	}
+	// It enrols whoever called it, never an account named on the command
+	// line: otherwise one person could set another's second factor.
+	privileged := read(t, env, enrolPrivileged)
+	if !strings.Contains(privileged, "SUDO_USER") {
+		t.Errorf("the privileged half takes the account from somewhere else:\n%s", privileged)
+	}
+}
+
+func TestWhoHasEnrolledIsReadableAndTheirSecretsAreNot(t *testing.T) {
+	// The prompt runs as the person and has to know whether to say anything,
+	// and it cannot read the file pam_oath reads.
+	env, _ := testEnv(t)
+	if err := WriteOathUsers(env, []string{
+		"HOTP/T30/6 ada - 3132333435363738393031323334353637383930",
+		"HOTP/T30/6 grace - 3132333435363738393031323334353637383931",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	names := read(t, env, enrolledList)
+	if names != "ada\ngrace\n" {
+		t.Errorf("the readable list is not the names: %q", names)
+	}
+	if strings.Contains(names, "3132") {
+		t.Error("a secret is in the readable list")
+	}
+	info, err := os.Stat(env.Path(oathUsersFile))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("the secrets are not root-only: %v %v", info.Mode().Perm(), err)
+	}
+	// And somebody who stops being enrolled leaves the list.
+	if err := WriteOathUsers(env, nil); err != nil {
+		t.Fatal(err)
+	}
+	if read(t, env, enrolledList) != "" {
+		t.Error("the list still names somebody")
+	}
+}
+
+func TestTurningSelfEnrolmentOffTakesAwayEveryPartOfIt(t *testing.T) {
+	env, _ := testEnv(t)
+	withPam(t, env, "login")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, SelfEnrol: true},
+	}, env)
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, SelfEnrol: false},
+	}, env)
+
+	for _, path := range []string{enrolHelper, enrolAutostart, enrolSession,
+		enrolPrivileged, enrolSudoers} {
+		if _, err := os.Stat(env.Path(path)); !os.IsNotExist(err) {
+			t.Errorf("%s is still there", path)
+		}
+	}
+}
+
+func TestThePolicyTheSessionPromptReadsIsReadableByIt(t *testing.T) {
+	// It runs as the person signing in, and asks the same three questions the
+	// sign-in guard does. Written root-only it read nothing, exited, and
+	// nobody was ever walked through setting a second factor up.
+	env, _ := testEnv(t)
+	withPam(t, env, "gdm-password")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{
+			Enabled: true, SelfEnrol: true, GraceDays: 7,
+			ExemptPrincipals: []string{"%Domain Admins"},
+		},
+	}, env)
+
+	info, err := os.Stat(env.Path(secondFactorPam))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0o044 == 0 {
+		t.Errorf("%s is %v, which the prompt cannot read", secondFactorPam, info.Mode().Perm())
+	}
+	if !strings.Contains(read(t, env, secondFactorPam), "EXEMPT=%Domain Admins") {
+		t.Error("what it says is not what the policy said")
+	}
+	// And nothing in it is a secret.
+	if strings.Contains(read(t, env, secondFactorPam), "HOTP") {
+		t.Error("a secret is in the readable file")
+	}
+}
+
+func TestTheGuardNeverAsksALocalAccountForACode(t *testing.T) {
+	// Only the directory can issue a second factor, so an account that lives
+	// in this machine's own files can never have one — and asked for one the
+	// day the grace period ended, the machine's own administrator would be
+	// locked out of it.
+	env, _ := testEnv(t)
+	withPam(t, env, "login")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, GraceDays: 1},
+	}, env)
+
+	guard := read(t, env, factorGuard)
+	if !strings.Contains(guard, "getent -s files passwd") {
+		t.Errorf("the guard does not know a local account when it sees one:\n%s", guard)
+	}
+}

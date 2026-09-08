@@ -469,5 +469,23 @@ type LocalAdministratorCredential struct {
 func Ok(setting string) Result  { return Result{Setting: setting, Status: "success"} }
 func Skip(s, why string) Result { return Result{Setting: s, Status: "skipped", Reason: why} }
 func Fail(s string, err error) Result {
-	return Result{Setting: s, Status: "failed", Reason: err.Error()}
+	return Result{Setting: s, Status: "failed", Reason: shortened(err.Error())}
 }
+
+// The control plane accepts 512 characters of reason, and a command that
+// prints more than that on failure — sysctl reporting every key on the
+// machine, apt listing every dependency — took the whole report down with it:
+// one over-long reason and the console showed no Resultant Set of Policy at
+// all for that run, for any setting.
+const reasonLimit = 512
+
+func shortened(reason string) string {
+	if len(reason) <= reasonLimit {
+		return reason
+	}
+	// The end is where a command says what went wrong, so keep both ends.
+	head, tail := reasonLimit*2/3, reasonLimit/3-len(reasonEllipsis)
+	return reason[:head] + reasonEllipsis + reason[len(reason)-tail:]
+}
+
+const reasonEllipsis = " […] "

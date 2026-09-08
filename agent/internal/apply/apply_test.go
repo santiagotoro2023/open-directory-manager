@@ -1601,3 +1601,30 @@ func TestABlockStillGoesAtTheEndWhenNothingHasToComeAfterIt(t *testing.T) {
 		t.Errorf("the block did not go at the end:\n%s", body)
 	}
 }
+
+func TestADriveThatIsAlreadyMountedIsNotAFailure(t *testing.T) {
+	// A share mounted with sec=krb5 and multiuser cannot be stat'd by root:
+	// the kernel answers "Required key not available", and MkdirAll turned
+	// that into "file exists". The drive was mounted and working, and every
+	// run reported it as failed.
+	env, _ := testEnv(t)
+	was := isMounted
+	isMounted = func(string) bool { return true }
+	t.Cleanup(func() { isMounted = was })
+
+	// Something at the path that is not a directory, which is what an
+	// unreadable mount looks like from here.
+	write(t, env, "/mnt/profiles", "")
+
+	results := applyDriveMaps(context.Background(), policy.Settings{
+		DriveMaps: []policy.DriveMap{{
+			Name: "profiles", UNC: `//server/profiles`, MountPoint: "/mnt/profiles",
+		}},
+	}, env)
+
+	for _, result := range results {
+		if result.Status == "failed" {
+			t.Fatalf("%s: %s", result.Setting, result.Reason)
+		}
+	}
+}

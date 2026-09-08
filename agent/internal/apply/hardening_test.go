@@ -258,3 +258,27 @@ func TestWhatThePolicyDeploysIsAllowedByIt(t *testing.T) {
 		t.Errorf("a package the policy removes was allowed:\n%s", names)
 	}
 }
+
+func TestOdmsOwnInstallsAreNotRefusedByItsOwnAllowlist(t *testing.T) {
+	// Installing the time server answered "not on this machine's allowed
+	// software list: chrony" and the role failed. The allowlist is for what
+	// people install on a machine, not for what the console installs on it.
+	env, _ := testEnv(t)
+	write(t, env, aptAllowlist, "DPkg::Pre-Install-Pkgs {\"/usr/lib/odm/allow\";};\n")
+
+	restore := SuspendSoftwareControl(env)
+	if _, err := os.Stat(env.Path(aptAllowlist)); !os.IsNotExist(err) {
+		t.Fatal("the hook is still in place during an install ODM is doing")
+	}
+	restore()
+	if _, err := os.Stat(env.Path(aptAllowlist)); err != nil {
+		t.Fatalf("the hook did not come back: %v", err)
+	}
+
+	// A machine with no allowlist at all is not disturbed by any of this.
+	env2, _ := testEnv(t)
+	SuspendSoftwareControl(env2)()
+	if _, err := os.Stat(env2.Path(aptAllowlist)); !os.IsNotExist(err) {
+		t.Error("an allowlist appeared on a machine that had none")
+	}
+}

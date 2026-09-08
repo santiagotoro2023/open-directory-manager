@@ -77,7 +77,7 @@ export function Content() {
                 "Share name, share path, optionally a group allowed to use it.",
               ],
               [
-                "Time",
+                "Time server",
                 "chrony, serving the domain. Kerberos gives up on a clock more than five minutes out, so every sign-in depends on it.",
                 "Optionally an upstream source and the networks that may ask.",
               ],
@@ -204,7 +204,7 @@ export function Content() {
           </Note>
         </Section>
 
-        <Section title="Time">
+        <Section title="Time server">
           <p>
             The one role whose absence is felt everywhere else. Kerberos refuses a ticket whose
             timestamp is more than five minutes out, so a machine with a drifting clock stops

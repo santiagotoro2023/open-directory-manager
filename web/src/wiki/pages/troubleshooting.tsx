@@ -170,6 +170,67 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Policies that look applied and are not">
+          <Reference
+            headers={["What you see", "What it is"]}
+            rows={[
+              [
+                'A connection file on the desktop says "corrupted, unreadable, or could not be found"',
+                <>
+                  Debian&rsquo;s Remmina does not claim the <C key="r1">.rdp</C> type and cannot
+                  read one without <C key="r2">remmina-plugin-rdp</C>, which the desktop task does
+                  not install. Fixed: a machine whose policy hands out connection files is given
+                  the plugin and a handler for the type, so the icon opens.
+                </>,
+              ],
+              [
+                "Nothing at all happens at a first graphical sign-in under a second-factor policy",
+                <>
+                  Fixed. Three things stopped it: the autostart entry carried a shell command
+                  inline, and desktop-entry Exec values are not parsed by a shell, so nothing ran;
+                  the prompt runs as the person and could not read the policy that tells it whether
+                  to say anything; and reaching the console means reading the machine keytab, which
+                  only root may. It now runs a script, reads a readable policy, and enrols through{" "}
+                  <C key="e1">sudo</C>.
+                </>,
+              ],
+              [
+                "Kernel parameters are written and not in force",
+                <>
+                  The agent&rsquo;s own unit sets <C key="k1">ProtectKernelTunables</C>, which
+                  makes <C key="k2">/proc/sys</C> read-only for everything it runs, so every value
+                  was refused. It is applied outside that sandbox now, and the values are read back
+                  and reported rather than trusting <C key="k3">sysctl</C>&rsquo;s exit status.
+                </>,
+              ],
+              [
+                'A role fails with "not on this machine\u2019s allowed software list"',
+                <>
+                  The software allowlist is for what people install on a machine, not for what the
+                  console installs on it, and a role&rsquo;s packages are not the ones a policy
+                  names. It is suspended for the length of an install ODM is doing itself, and put
+                  back afterwards.
+                </>,
+              ],
+              [
+                "One setting fails and the console shows no Resultant Set of Policy at all",
+                <>
+                  A failure reason over 512 characters was refused by the control plane, and it
+                  refused the whole report with it. Reasons are shortened before they are sent.
+                </>,
+              ],
+              [
+                "A role installs the way an older release did",
+                <>
+                  The installers a machine was joined with never moved: the agent replaces itself
+                  and the scripts beside it stayed. The console hands out its own copy when a role
+                  is installed, so what runs is what this console ships.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Policies that did not take">
           <Reference
             headers={["Symptom", "Check"]}

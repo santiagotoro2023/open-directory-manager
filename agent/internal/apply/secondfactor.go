@@ -34,6 +34,16 @@ const (
 	// does the same thing in a graphical session.
 	enrolHelper    = "/usr/lib/odm/enrol-factor"
 	enrolAutostart = "/etc/xdg/autostart/odm-enrol-factor.desktop"
+	// Run in the person's own session by the autostart entry, as them.
+	enrolSession = "/usr/lib/odm/enrol-factor-session"
+	// And what that runs as root, because reaching the control plane means
+	// reading this machine's keytab, which nobody but root may.
+	enrolPrivileged = "/usr/lib/odm/enrol-factor-now"
+	enrolSudoers    = "/etc/sudoers.d/odm-enrol-factor"
+	// Who has enrolled, by name and nothing else, for the parts of this that
+	// run as the person rather than as root. The secrets stay in
+	// /etc/security/users.oath, which stays root-only.
+	enrolledList = "/var/lib/odm/second-factor-enrolled"
 	// What decides, for this account, whether a code is asked for at all.
 	// Without it pam_oath is unconditional, and unconditional means anybody
 	// with no enrolment is refused before they are even asked for a password
@@ -146,11 +156,17 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 	// policy says about grace, "only for" and "except for" is what the
 	// machine actually does rather than a description of it.
 	conf := Header +
+		"# Who is asked for a code, and how long somebody who has not enrolled\n" +
+		"# has. Readable, because the prompt that walks somebody through\n" +
+		"# setting one up runs as them and has to ask the same questions; the\n" +
+		"# secrets are in " + oathUsersFile + ", which is root's alone. Written\n" +
+		"# root-only, the graphical prompt read nothing and said nothing, and\n" +
+		"# a person signing in for the first time was never asked at all.\n" +
 		"SERVICES=" + strings.Join(factor.Services, ",") + "\n" +
 		"REQUIRE=" + strings.Join(factor.RequirePrincipals, ",") + "\n" +
 		"EXEMPT=" + strings.Join(factor.ExemptPrincipals, ",") + "\n" +
 		fmt.Sprintf("GRACE_DAYS=%d\n", factor.GraceDays)
-	if err := env.WriteFile(secondFactorPam, conf, 0o600, "root", "root"); err != nil {
+	if err := env.WriteFile(secondFactorPam, conf, 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("second_factor", err)}
 	}
 
@@ -205,6 +221,9 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 // file pam_oath reads. Called by the agent after it has fetched them, not by
 // an applier: they are not policy, they are the people the policy names.
 func WriteOathUsers(env Env, lines []string) error {
+	if err := writeEnrolled(env, lines); err != nil {
+		return err
+	}
 	if len(lines) == 0 {
 		// Emptied rather than removed: pam_oath fails every authentication
 		// when its file is missing.
@@ -213,6 +232,30 @@ func WriteOathUsers(env Env, lines []string) error {
 	sorted := append([]string(nil), lines...)
 	sort.Strings(sorted)
 	return env.WriteFile(oathUsersFile, strings.Join(sorted, "\n")+"\n", 0o600, "root", "root")
+}
+
+// writeEnrolled records who has a second factor, and only that.
+//
+// The prompt that walks somebody through setting one up runs as them, in
+// their own session, and has to know whether to say anything at all. It
+// cannot read the file pam_oath reads — that one holds everybody's shared
+// secret and is root-only for good reason — so the names are written beside
+// it where a person can read them.
+func writeEnrolled(env Env, lines []string) error {
+	names := make([]string, 0, len(lines))
+	for _, line := range lines {
+		// HOTP/T30/6 <user> - <secret>
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			names = append(names, fields[1])
+		}
+	}
+	sort.Strings(names)
+	body := ""
+	if len(names) > 0 {
+		body = strings.Join(names, "\n") + "\n"
+	}
+	return env.WriteFile(enrolledList, body, 0o644, "root", "root")
 }
 
 // addOathLine puts the module at the top of a PAM stack, where a second
@@ -304,7 +347,9 @@ func removeOathLine(env Env, path string) error {
 // starts — before they can do anything else with it.
 func writeEnrolment(env Env, wanted bool) error {
 	if !wanted {
-		for _, path := range []string{enrolHelper, enrolAutostart} {
+		for _, path := range []string{
+			enrolHelper, enrolAutostart, enrolSession, enrolPrivileged, enrolSudoers,
+		} {
 			if err := os.Remove(env.Path(path)); err != nil && !os.IsNotExist(err) {
 				return err
 			}
@@ -329,13 +374,112 @@ exit 0
 		return err
 	}
 
-	// x-terminal-emulator is the alternative every Debian desktop provides,
-	// so this does not depend on which one is installed.
+	// What the graphical half runs as root. Reaching the control plane means
+	// authenticating as this machine, which means reading its keytab, and
+	// that is root's alone — so the session script cannot do this itself.
+	// It enrols whoever called it and nobody else: the account comes from
+	// sudo, never from an argument, so this cannot be used to set somebody
+	// else's second factor.
+	privileged := "#!/bin/sh\n" + Header + `
+WHO="${SUDO_USER:-}"
+[ -n "$WHO" ] || WHO="$(id -un)"
+exec /usr/sbin/odm-agent enrol-factor --user "$WHO"
+`
+	if err := env.WriteFile(enrolPrivileged, privileged, 0o755, "root", "root"); err != nil {
+		return err
+	}
+	rule := Header + "ALL ALL=(root) NOPASSWD: " + enrolPrivileged + "\n"
+	if err := env.WriteFile(enrolSudoers, rule, 0o440, "root", "root"); err != nil {
+		return err
+	}
+
+	// And the half that runs as the person, from their session.
+	//
+	// A graphical login has no terminal at the point PAM runs, so the text
+	// helper above skips it and this is what asks instead — in a terminal
+	// window, as soon as the desktop is up and before they can get on with
+	// anything else.
+	session := "#!/bin/sh\n" + Header + `
+# Runs as the person signing in, from /etc/xdg/autostart.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+set -u
+
+WHO="${USER:-$(id -un)}"
+[ -n "$WHO" ] || exit 0
+[ "$(id -u)" -ge 1000 ] || exit 0
+# A local account cannot be given a second factor, so it is never asked for
+# one and never walked through setting one up.
+getent -s files passwd "$WHO" >/dev/null 2>&1 && exit 0
+[ -r ` + secondFactorPam + ` ] || exit 0
+. ` + secondFactorPam + `
+
+SHORT="$(printf '%s' "$WHO" | sed 's/@.*//; s/.*\\\\//' | tr 'A-Z' 'a-z')"
+GROUPS_OF="$(id -nG 2>/dev/null | tr 'A-Z' 'a-z')"
+
+named() {
+    for entry in $(printf '%s' "$1" | tr ',' ' '); do
+        candidate="$(printf '%s' "$entry" | sed 's/^%//' | tr 'A-Z' 'a-z')"
+        [ -z "$candidate" ] && continue
+        [ "$candidate" = "$SHORT" ] && return 0
+        for group in $GROUPS_OF; do
+            [ "$candidate" = "$group" ] && return 0
+        done
+    done
+    return 1
+}
+
+# The same three questions the sign-in guard asks, so nobody is walked
+# through setting up something they will never be asked for.
+named "${EXEMPT:-}" && exit 0
+if [ -n "${REQUIRE:-}" ]; then
+    named "$REQUIRE" || exit 0
+fi
+# Already done: say nothing at all, rather than opening a window every time
+# somebody signs in.
+if [ -r ` + enrolledList + ` ] && grep -qxF "$SHORT" ` + enrolledList + `; then
+    exit 0
+fi
+
+# Tried in turn rather than the first one found being trusted: a desktop can
+# have a terminal installed that will not start in this session, and running
+# out of terminals silently is the same as never asking.
+for terminal in x-terminal-emulator gnome-terminal kgx konsole xfce4-terminal \
+                mate-terminal xterm; do
+    command -v "$terminal" >/dev/null 2>&1 || continue
+    case "$terminal" in
+        gnome-terminal|mate-terminal|kgx)
+            "$terminal" -- sudo -n ` + enrolPrivileged + ` && exit 0
+            ;;
+        *)
+            "$terminal" -e sudo -n ` + enrolPrivileged + ` && exit 0
+            ;;
+    esac
+done
+
+# No terminal on this desktop. Say so rather than silently not asking: the
+# person still has to enrol before the grace period ends.
+message="Set up your second factor: open a terminal and run  sudo ` + enrolPrivileged + `"
+if command -v zenity >/dev/null 2>&1; then
+    zenity --info --no-wrap --title="Second factor" --text="$message"
+elif command -v notify-send >/dev/null 2>&1; then
+    notify-send "Second factor" "$message"
+fi
+exit 0
+`
+	if err := env.WriteFile(enrolSession, session, 0o755, "root", "root"); err != nil {
+		return err
+	}
+
+	// The Exec line is parsed by the desktop-entry rules, not by a shell:
+	// single quotes are not special there, so a shell command written inline
+	// arrived at /bin/sh as its own apostrophes and ran nothing at all. It
+	// names a script, which has no quoting to get wrong.
 	entry := "[Desktop Entry]\n" +
 		"Type=Application\n" +
 		"Name=Set up your second factor\n" +
-		"Exec=/bin/sh -c 'command -v x-terminal-emulator >/dev/null && " +
-		"exec x-terminal-emulator -e /usr/sbin/odm-agent enrol-factor --user \"$USER\"'\n" +
+		"Exec=" + enrolSession + "\n" +
+		"Terminal=false\n" +
 		"NoDisplay=true\n" +
 		"X-GNOME-Autostart-enabled=true\n" +
 		"# " + strings.TrimSuffix(strings.TrimPrefix(Header, "# "), "\n") + "\n"
@@ -371,6 +515,15 @@ USER_NAME="${PAM_USER:-}"
 USER_ID="$(id -u "$USER_NAME" 2>/dev/null || echo 0)"
 case "$USER_ID" in ''|*[!0-9]*) exit 0 ;; esac
 [ "$USER_ID" -ge 1000 ] || exit 0
+
+# An account in this machine's own files is a local account, whatever its
+# user id, and a local account cannot enrol: the control plane only issues a
+# second factor to somebody in the directory. Asked for a code they can never
+# have, the machine's own administrator would be locked out of it the day the
+# grace period ended.
+if getent -s files passwd "$USER_NAME" >/dev/null 2>&1; then
+    exit 0
+fi
 
 [ -r ` + secondFactorPam + ` ] || exit 0
 . ` + secondFactorPam + `

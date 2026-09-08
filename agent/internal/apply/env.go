@@ -64,6 +64,10 @@ type Env struct {
 	// policy document this run is applying.
 	Offered  string
 	Download func(ctx context.Context, beside string) (path, version string, err error)
+	// RoleScript fetches a role's installer from the console, so the one that
+	// runs is the one this console ships rather than the one the machine was
+	// joined with. Empty where there is nothing to ask.
+	RoleScript func(ctx context.Context, role string) (installer, common string, err error)
 }
 
 // Unsandboxed runs a command the way PID 1 would, outside this service's own

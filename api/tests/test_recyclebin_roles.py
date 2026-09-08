@@ -201,8 +201,9 @@ def test_install_command_passes_only_declared_arguments():
 
 
 def test_missing_required_argument_is_refused_before_anything_runs():
-    # No role asks for one today — the test above enforces that — so this
-    # holds the rule itself, for the next role that does.
+    # Nothing in the registry is required and unanswered — the test above
+    # enforces that every install-time argument arrives with a default — so
+    # this holds the rule itself, for the next role that does.
     role = roles.Role(
         name="example",
         title="Example",
@@ -263,14 +264,27 @@ def test_what_the_console_already_knows_is_not_asked_for():
     assert kept["dns_server"] == "dc2.example.org"
 
 
-def test_installing_a_role_asks_for_nothing_but_the_server():
-    # Every field the install dialog would draw is one the operator has to
-    # answer before anything happens. None of them are answerable at that
-    # point: the realm is derived, the storage directory has a default, and
-    # what a service does belongs in the section that manages the service.
+def test_installing_a_role_asks_only_what_it_cannot_be_asked_later():
+    """The install dialog draws a field for everything an operator has to
+    answer before anything happens, and almost nothing belongs there: the
+    realm is derived, a storage directory has a default, and what a service
+    does belongs in the section that manages that service.
+
+    The exception is an answer that decides what gets installed — a session
+    host's desktop is a different set of packages, not a setting — and even
+    then it has to be a choice with a default, so somebody who does not care
+    can click Install and get something sensible.
+    """
     for role in roles.REGISTRY.values():
-        asked = [a.name for a in role.arguments if not a.configuration]
-        assert asked == [], f"{role.name} still asks for {asked} at install time"
+        for argument in role.arguments:
+            if argument.configuration or argument.derived:
+                continue
+            assert argument.choices, (
+                f"{role.name} asks for {argument.name} as free text at install time"
+            )
+            assert argument.default, (
+                f"{role.name} asks for {argument.name} with nothing filled in"
+            )
 
 
 def test_every_registered_role_has_an_installer_script():
