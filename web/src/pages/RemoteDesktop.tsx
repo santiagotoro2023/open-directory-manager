@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { ApiError, api, type ProfileDisk, type RdCollection, type RdSession } from "../api";
+import { WATCH, useLive } from "../live";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { ChoiceList } from "../components/ChoiceList";
@@ -77,6 +78,9 @@ export function RemoteDesktop() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.remoteDesktop, load);
 
   return (
     <main className="content">

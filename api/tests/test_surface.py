@@ -780,3 +780,29 @@ def test_the_version_is_the_same_everywhere_it_is_written() -> None:
         assert f'"{expected}"' in text or f"_{expected}_" in text, (
             f"{path} does not carry version {expected}"
         )
+
+
+def test_a_null_list_in_an_inventory_is_an_empty_one():
+    """An empty slice in Go marshals as null. A machine that had no drives,
+    no printers or no sessions to report used to take its whole inventory
+    down with it — one 422, and the console showed nothing about it at all.
+    """
+    from odm.routes_agent import Inventory
+
+    empty = Inventory.model_validate(
+        {
+            "operating_system": "debian-13",
+            "disks": None,
+            "volumes": None,
+            "packages": None,
+            "local_users": None,
+            "sessions": None,
+            "events": None,
+            "logs": None,
+            "print_devices": None,
+            "addresses": None,
+            "updates": None,
+        }
+    )
+    assert empty.disks == [] and empty.volumes == [] and empty.packages == []
+    assert empty.local_users == [] and empty.sessions == [] and empty.addresses == []

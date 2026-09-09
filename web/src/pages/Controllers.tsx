@@ -8,6 +8,7 @@ import {
   type DomainController,
   type Site,
 } from "../api";
+import { WATCH, useLive } from "../live";
 import { InfoPanel } from "../components/DocsLink";
 import { Loading } from "../components/Loading";
 import { Field, Modal } from "../components/Modal";
@@ -51,6 +52,9 @@ export function Controllers() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.servers, load);
 
   const replication = overview?.replication;
 

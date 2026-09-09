@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Printer as PrinterIcon, Search } from "lucide-react";
 import { ApiError, api, type Printer } from "../api";
+import { WATCH, useLive } from "../live";
 import { Loading, LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { useContextMenu } from "../components/ContextMenu";
@@ -40,6 +41,9 @@ export function Printers() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.printers, load);
 
   // A printer becomes real on the print server's next check-in.
   useEffect(() => {

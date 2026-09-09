@@ -82,6 +82,9 @@ type Report struct {
 	// Empty everywhere else. See replication.go for why the controller
 	// collects this rather than the control plane reading it.
 	Replication string `json:"replication,omitempty"`
+	// What the machine is, and what its disks think of themselves.
+	Hardware Hardware `json:"hardware"`
+	Disks    []Disk   `json:"disks"`
 }
 
 // PrintDevice is one thing CUPS found: a URI it can print to and, when the
@@ -177,6 +180,8 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		OperatingSystem: osRelease(env),
 		Kernel:          strings.TrimSpace(readFile(env, "/proc/sys/kernel/osrelease")),
 		LocalUsers:      localUsers(env),
+		Hardware:        hardware(env),
+		Disks:           []Disk{},
 	}
 	if booted, ok := bootTime(env); ok {
 		report.BootedAt = &booted
@@ -188,6 +193,12 @@ func Collect(ctx context.Context, env apply.Env) Report {
 
 		report.PrintDevices = printDevices(ctx, env, 10)
 		report.Replication = replicationState(ctx, env)
+		// Never nil: an empty slice marshals as null, and a list the control
+		// plane expects is not something to send null for.
+		report.Disks = disks(ctx, env)
+		if report.Disks == nil {
+			report.Disks = []Disk{}
+		}
 		report.Volumes = Encryption(ctx, env)
 
 		previous := strings.TrimSpace(readFile(env, CursorPath))

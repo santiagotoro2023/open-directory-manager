@@ -8,6 +8,7 @@ import {
   type IssuedCertificate,
   type TrustAnchor,
 } from "../api";
+import { WATCH, useLive } from "../live";
 import { InfoPanel } from "../components/DocsLink";
 import { FileInput } from "../components/FileInput";
 import { Field, Modal } from "../components/Modal";
@@ -40,6 +41,9 @@ export function Certificates() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.certificates, load);
 
   async function run(action: () => Promise<unknown>, message?: string) {
     setError(null);

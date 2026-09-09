@@ -189,6 +189,10 @@ def _readable_paths():
             and "{" not in route.path
             # Machine-authenticated, and not part of the console.
             and not route.path.startswith("/api/v1/agent/")
+            # A stream, by design: it answers when something changes and
+            # never finishes, so "call it and see what SQL it runs" would
+            # wait for ever.
+            and route.path != "/api/v1/events"
         }
     )
 

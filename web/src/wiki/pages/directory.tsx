@@ -310,6 +310,35 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="Somebody has left">
+          <p>
+            <strong>Directory</strong> &rarr; the person &rarr; <strong>Offboard</strong>. In one
+            action: disabled, taken out of every group, given a password nobody knows, and moved
+            to wherever leavers are kept.
+          </p>
+          <Reference
+            headers={["Step", "Notes"]}
+            rows={[
+              ["Disable the account", "It cannot sign in anywhere."],
+              [
+                "Remove from every group",
+                "Each group it leaves is named in the audit log, so it can be put back.",
+              ],
+              [
+                "Set a password nobody knows",
+                "Random and discarded. Whoever knew the old one no longer has it.",
+              ],
+              ["Move to", "Optional. An organizational unit for leavers."],
+              ["Note", "Recorded with the rest."],
+            ]}
+          />
+          <Note>
+            The account is kept, not deleted: it still owns its files, and the questions asked six
+            months later are about what it had. Delete it from the same page when that is what you
+            want &mdash; the recycle bin holds it either way.
+          </Note>
+        </Section>
+
         <Section title="Password rules">
           <p>
             The domain&rsquo;s own password policy — length, complexity, history, ages and lockout —

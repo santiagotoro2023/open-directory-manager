@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from conftest import BASE_DN, audit_rows, recycle_bin_rows
 
@@ -427,3 +429,46 @@ async def test_writes_require_a_session(client, ldap):
         "/api/v1/directory/ous", json={"container": BASE_DN, "name": "Nope"}
     )
     assert r.status_code == 401
+
+
+async def test_offboarding_disables_strips_and_keeps_the_account(admin_client, ldap):
+    """Somebody has left. The account is disabled, taken out of every group
+    and moved — and kept, because it still owns files and history."""
+    dn = f"CN=ada,OU=Example Corp,{BASE_DN}"
+    group = f"CN=Helpdesk,OU=Example Corp,{BASE_DN}"
+    assert dn in ldap.entries[group]["member"]
+
+    r = await admin_client.post(
+        "/api/v1/directory/user/offboard",
+        json={
+            "dn": dn,
+            "disable": True,
+            "strip_groups": True,
+            "scramble_password": True,
+            "note": "left on the 30th",
+        },
+    )
+    assert r.status_code == 200, r.text
+    answer = r.json()
+    assert group in answer["left_groups"]
+
+    # Still there, and disabled.
+    assert dn in ldap.entries
+    assert int(ldap.entries[dn]["userAccountControl"]) & objects.UF_ACCOUNTDISABLE
+    assert dn not in ldap.entries[group].get("member", [])
+
+    logged = audit_rows(admin_client.state)[-1]
+    assert logged["action"] == "user.offboard"
+    # What it undid is recorded, so it can be put back.
+    before = json.loads(logged["before"]) if isinstance(logged["before"], str) else logged["before"]
+    after = json.loads(logged["after"]) if isinstance(logged["after"], str) else logged["after"]
+    assert group in before["memberships"]
+    assert after["note"] == "left on the 30th"
+
+
+async def test_offboarding_something_that_is_not_a_person_is_refused(admin_client, ldap):
+    r = await admin_client.post(
+        "/api/v1/directory/user/offboard",
+        json={"dn": f"CN=Helpdesk,OU=Example Corp,{BASE_DN}"},
+    )
+    assert r.status_code == 400

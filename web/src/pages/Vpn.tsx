@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiError, api, type VpnPeer, type VpnTunnel } from "../api";
+import { WATCH, useLive } from "../live";
 import { Loading } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -39,6 +40,9 @@ export function Vpn() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.vpn, load);
 
   const tunnel = tunnels.find((entry) => entry.id === selected);
 

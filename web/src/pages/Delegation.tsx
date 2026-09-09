@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type RbacAssignment, type RbacRole } from "../api";
+import { WATCH, useLive } from "../live";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -39,6 +40,9 @@ export function Delegation() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.delegation, load);
 
   async function run(action: () => Promise<unknown>) {
     setError(null);

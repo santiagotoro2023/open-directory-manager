@@ -24,6 +24,7 @@ import {
   Users,
 } from "lucide-react";
 import { ApiError, api, holds, type SessionInfo } from "./api";
+import { WATCH, useLive } from "./live";
 import { Field, Modal } from "./components/Modal";
 import { SecondFactorDialog } from "./components/SecondFactor";
 
@@ -128,6 +129,7 @@ function recall(): boolean {
 export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut: () => void }) {
   const [collapsed, setCollapsed] = useState(recall);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
+  const [readRoles, setReadRoles] = useState<() => void>(() => () => {});
   const [selfService, setSelfService] = useState(false);
   const [changing, setChanging] = useState(false);
   const [secondFactor, setSecondFactor] = useState(false);
@@ -162,11 +164,16 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
         )
         .catch(() => setInstalled(new Set()));
     void read();
-    // An install finishes minutes after it was asked for, and until this was
-    // re-read the new section only appeared after a hard refresh.
-    const timer = setInterval(() => void read(), 20_000);
+    setReadRoles(() => read);
+    // A slow fallback behind the live stream: a console whose stream is
+    // blocked by something in the middle still catches up.
+    const timer = setInterval(() => void read(), 120_000);
     return () => clearInterval(timer);
   }, [session, location.pathname]);
+
+  // And the moment a role finishes installing, wherever it was installed
+  // from, so the section it provides appears without a reload.
+  useLive(WATCH.roles, () => readRoles());
 
   function toggle() {
     setCollapsed((current) => {

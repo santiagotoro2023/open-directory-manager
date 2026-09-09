@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type DhcpLease, type DhcpScope, type RoleInstance } from "../api";
+import { WATCH, useLive } from "../live";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -60,6 +61,9 @@ export function Dhcp() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.dhcp, load);
 
   useEffect(() => {
     if (tab !== "leases" || !configured) return;

@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Trash2,
   User,
+  UserMinus,
   Users,
 } from "lucide-react";
 import {
@@ -41,6 +42,7 @@ import {
   GROUP_SCOPES,
   MembersDialog,
   MoveDialog,
+  OffboardDialog,
   PasswordDialog,
   PhotoDialog,
   isDisabled,
@@ -100,7 +102,7 @@ export function ObjectDetail() {
   const [tab, setTab] = useState<Tab>("general");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<
-    "password" | "photo" | "move" | "members" | "delete" | "rsop" | null
+    "password" | "photo" | "move" | "members" | "delete" | "rsop" | "offboard" | null
   >(
     null,
   );
@@ -313,6 +315,12 @@ export function ObjectDetail() {
                 Picture
               </button>
             )}
+            {object.objectType === "user" && (
+              <button type="button" className="ghost" onClick={() => setDialog("offboard")}>
+                <UserMinus size={15} aria-hidden="true" />
+                Offboard
+              </button>
+            )}
             {isAccount && (
               <button
                 type="button"
@@ -363,6 +371,17 @@ export function ObjectDetail() {
       {isComputer && tab === "logs" && <LogsTab dn={dn} name={machineName} />}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
+      {dialog === "offboard" && object && (
+        <OffboardDialog
+          dn={dn}
+          name={String(object.name ?? object.cn ?? "")}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            setDialog(null);
+            void load();
+          }}
+        />
+      )}
       {dialog === "photo" && (
         <PhotoDialog dn={dn} onClose={() => setDialog(null)} onSaved={() => void load()} />
       )}
@@ -511,6 +530,90 @@ function MembersTab({ object, onChanged }: { object: DirectoryObject; onChanged:
   );
 }
 
+/** Ask somebody to share their screen, and say how to reach it. */
+function AssistDialog({
+  dn,
+  username,
+  onClose,
+}: {
+  dn: string;
+  username: string;
+  onClose: () => void;
+}) {
+  const [minutes, setMinutes] = useState(30);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [offer, setOffer] = useState<{
+    protocol: string;
+    address: string;
+    port: number;
+    username: string;
+    password: string;
+    minutes: number;
+  } | null>(null);
+
+  async function ask() {
+    setBusy(true);
+    setError(null);
+    try {
+      setOffer(await api.servers.assist(dn, username, minutes));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (offer) {
+    return (
+      <Modal title={`${username} accepted`} submitLabel="Done" onClose={onClose} onSubmit={onClose}>
+        <p className="muted">
+          Open this with any {offer.protocol === "rdp" ? "remote desktop" : "VNC"} client. The
+          credential works once and the offer ends in {offer.minutes} minutes.
+        </p>
+        <dl className="definition">
+          <dt>Address</dt>
+          <dd className="mono">
+            {offer.address}:{offer.port}
+          </dd>
+          {offer.username && (
+            <>
+              <dt>User</dt>
+              <dd className="mono">{offer.username}</dd>
+            </>
+          )}
+          <dt>Password</dt>
+          <dd className="mono">{offer.password}</dd>
+        </dl>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      title={`Ask ${username} to share their screen`}
+      submitLabel="Ask"
+      busy={busy}
+      error={error}
+      onClose={onClose}
+      onSubmit={ask}
+    >
+      <p className="muted">
+        They are asked in their own session and have a minute to answer. No answer is a refusal.
+      </p>
+      <Field label="For how long (minutes)">
+        <input
+          type="number"
+          min={1}
+          max={240}
+          value={minutes}
+          onChange={(e) => setMinutes(Number(e.target.value))}
+        />
+      </Field>
+    </Modal>
+  );
+}
+
 function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   const [detail, setDetail] = useState<ComputerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -521,6 +624,7 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   const [power, setPower] = useState<"restart" | "shutdown" | null>(null);
   const [addingUser, setAddingUser] = useState(false);
   const [removingUser, setRemovingUser] = useState<string | null>(null);
+  const [assist, setAssist] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -742,6 +846,9 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   if (tab === "activity") {
     return (
       <>
+        {assist && (
+          <AssistDialog dn={dn} username={assist} onClose={() => setAssist(null)} />
+        )}
         <h3 className="section-title">Signed in now</h3>
         <table className="data compact">
           <tbody>
@@ -753,6 +860,17 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
                 </td>
                 <td className="mono">{session.line}</td>
                 <td>{session.since}</td>
+                <td style={{ textAlign: "right" }}>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => setAssist(session.user)}
+                    title="Ask this person to share their screen"
+                  >
+                    <Monitor size={15} aria-hidden="true" />
+                    Assist
+                  </button>
+                </td>
               </tr>
             ))}
             {facts.sessions.length === 0 && (
@@ -812,6 +930,94 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         <dt>Last reported</dt>
         <dd>{when(facts.reported_at)}</dd>
       </dl>
+
+      {(facts.hardware?.model || facts.hardware?.cpu) && (
+        <>
+          <h3 className="section-title">Hardware</h3>
+          <dl className="definition">
+            <dt>Model</dt>
+            <dd>
+              {[facts.hardware.vendor, facts.hardware.model].filter(Boolean).join(" ") || "—"}
+              {facts.hardware.chassis ? ` (${facts.hardware.chassis})` : ""}
+            </dd>
+            {facts.hardware.serial && (
+              <>
+                <dt>Serial</dt>
+                <dd className="mono">{facts.hardware.serial}</dd>
+              </>
+            )}
+            <dt>Processor</dt>
+            <dd>
+              {facts.hardware.cpu || "—"}
+              {facts.hardware.cores ? ` · ${facts.hardware.cores} threads` : ""}
+            </dd>
+            <dt>Memory</dt>
+            <dd>
+              {facts.hardware.memory_mb
+                ? `${Math.round(facts.hardware.memory_mb / 1024)} GB`
+                : "—"}
+            </dd>
+            {facts.hardware.bios_version && (
+              <>
+                <dt>Firmware</dt>
+                <dd className="mono">
+                  {facts.hardware.bios_version}
+                  {facts.hardware.bios_date ? ` · ${facts.hardware.bios_date}` : ""}
+                </dd>
+              </>
+            )}
+          </dl>
+        </>
+      )}
+
+      {facts.disks && facts.disks.length > 0 && (
+        <>
+          <h3 className="section-title">Drives</h3>
+          <table className="data compact">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Model</th>
+                <th>Size</th>
+                <th>Health</th>
+                <th>Powered on</th>
+                <th>Temperature</th>
+              </tr>
+            </thead>
+            <tbody>
+              {facts.disks.map((disk) => (
+                <tr key={disk.device}>
+                  <td className="mono">{disk.device}</td>
+                  <td>
+                    {disk.model || "—"}
+                    {disk.serial && <p className="dn mono">{disk.serial}</p>}
+                  </td>
+                  <td>{disk.size_gb ? `${disk.size_gb} GB` : "—"}</td>
+                  <td>
+                    {disk.health === "passed" && <span className="badge ok">passed</span>}
+                    {disk.health === "failing" && <span className="badge failure">failing</span>}
+                    {!disk.health && <span className="muted">not reported</span>}
+                    {(disk.reallocated_sectors ?? 0) > 0 && (
+                      <span className="badge failure">
+                        {disk.reallocated_sectors} reallocated
+                      </span>
+                    )}
+                    {(disk.percentage_used ?? 0) >= 80 && (
+                      <span className="badge failure">{disk.percentage_used}% of life used</span>
+                    )}
+                  </td>
+                  <td>
+                    {disk.power_on_hours
+                      ? `${Math.round(disk.power_on_hours / 24)} days`
+                      : "—"}
+                  </td>
+                  <td>{disk.temperature_c ? `${disk.temperature_c} °C` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <h3 className="section-title">Updates</h3>
       <dl className="definition">

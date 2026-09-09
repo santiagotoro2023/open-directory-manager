@@ -1,4 +1,4 @@
-import { C, Details, Quickstart, Reference, Section, Where } from "../components";
+import { C, Details, Note, Quickstart, Reference, Section, Where } from "../components";
 import type { WikiPageMeta } from "../types";
 
 export const meta: WikiPageMeta = {
@@ -91,6 +91,38 @@ export function Content() {
               ["Report", "The agent posts back per-setting results."],
             ]}
           />
+        </Section>
+
+        <Section title="A console that stays true">
+          <p>
+            Pages re-read themselves when the domain changes: a role finishing, a share appearing,
+            a machine reporting, a task ending. Nothing needs refreshing by hand.
+          </p>
+          <Reference
+            headers={["Part", "What it does"]}
+            rows={[
+              [
+                "Postgres",
+                "A statement-level trigger on the tables worth watching sends the table's name on one channel.",
+              ],
+              [
+                "The control plane",
+                <>
+                  One connection listens; <C key="ev">/api/v1/events</C> streams it to every open
+                  console as server-sent events, with a heartbeat every twenty seconds.
+                </>,
+              ],
+              [
+                "The console",
+                "One stream for the whole window. A page subscribes to the tables it shows and re-reads with its own request, so it sees exactly what the person signed in may see.",
+              ],
+            ]}
+          />
+          <Note>
+            The stream carries a table name and never the change itself. A proxy that buffers or
+            drops it costs nothing but freshness: every page also re-reads when it is opened, and
+            the sidebar re-checks its roles on a timer.
+          </Note>
         </Section>
 
         <Section title="Ports">

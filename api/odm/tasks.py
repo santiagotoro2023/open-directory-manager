@@ -49,6 +49,7 @@ KINDS = (
     "rd-broker-apply",
     "agent-update",
     "shell-run",
+    "remote-assist",
 )
 
 

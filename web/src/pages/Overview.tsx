@@ -9,6 +9,7 @@ import {
   type HealthReport,
   type SessionInfo,
 } from "../api";
+import { WATCH, useLive } from "../live";
 import { FileInput } from "../components/FileInput";
 
 type Tab = "health" | "replication" | "backups" | "baseline" | "configuration";
@@ -252,6 +253,9 @@ export function Overview({ session }: { session: SessionInfo }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.overview, load);
 
   // A backup takes minutes, and the row said "No backups taken yet" until
   // something else caused a reload. Follow it while it runs.

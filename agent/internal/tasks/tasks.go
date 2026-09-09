@@ -107,6 +107,8 @@ func RunWithProgress(
 		output, err = takeDomainBackup(ctx, task.Payload, env)
 	case "printer-discover":
 		output, err = discoverPrinters(ctx, env)
+	case "remote-assist":
+		output, err = runRemoteAssist(ctx, task.Payload, env)
 	case "browse":
 		output, err = browse(ctx, task.Payload, env)
 	case "make-directory":
@@ -165,6 +167,9 @@ func timeoutFor(kind string) time.Duration {
 		return 30 * time.Minute
 	case "update-check", "package-install", "package-remove":
 		return 10 * time.Minute
+	case "remote-assist":
+		// The person at the machine has to be asked and has to answer.
+		return 2 * time.Minute
 	case "browse", "make-directory":
 		// A click in a dialog. Nobody waits five minutes for one.
 		return 30 * time.Second

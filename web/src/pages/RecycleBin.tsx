@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Search, Trash2 } from "lucide-react";
 import { ApiError, api, type DeletedObject } from "../api";
+import { WATCH, useLive } from "../live";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -31,6 +32,8 @@ export function RecycleBin() {
       setLoading(false);
     }
   }, [query, includeRestored]);
+
+  useLive(WATCH.recycleBin, load);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 200);

@@ -27,7 +27,9 @@ from . import (
     directory,
     dns,
     enrolment,
+    events,
     kea,
+    ldappool,
     objects,
     printers,
     radius,
@@ -41,6 +43,7 @@ from . import (
     routes_dhcp,
     routes_directory,
     routes_dns,
+    routes_events,
     routes_join,
     routes_operations,
     routes_password,
@@ -85,6 +88,9 @@ async def lifespan(app: FastAPI):
     await _check_directory(settings)
     # The recycle bin's retention window is only real if something enforces
     # it, so the sweep runs with the application (CLAUDE.md §5.3).
+    # What changed, as it changes, for every console with a page open.
+    await events.broadcaster.start(app.state.pool)
+
     background = [
         asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool)),
         asyncio.create_task(routes_operations.backup_loop(app.state.pool, settings)),
@@ -100,6 +106,8 @@ async def lifespan(app: FastAPI):
         for task in background:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        await events.broadcaster.stop()
+        await ldappool.close_all()
         await app.state.pool.close()
 
 
@@ -171,6 +179,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_rbac.router)
     app.include_router(routes_ca.router)
     app.include_router(routes_operations.router)
+    app.include_router(routes_events.router)
     app.include_router(routes_join.router)
     app.include_router(routes_audit.router)
 

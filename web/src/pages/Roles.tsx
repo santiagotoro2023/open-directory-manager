@@ -9,6 +9,7 @@ import {
   type RoleDescriptor,
   type RoleInstance,
 } from "../api";
+import { WATCH, useLive } from "../live";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
@@ -52,6 +53,9 @@ export function Roles() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.roles, load);
 
   // An install is apt work and service restarts. While one is running the
   // machine reports what it has printed every few seconds, so poll for it.

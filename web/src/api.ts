@@ -615,6 +615,28 @@ export interface ComputerFacts {
   updates_checked_at: string | null;
   packages: { name: string; version: string }[];
   package_count: number;
+  hardware?: {
+    vendor?: string;
+    model?: string;
+    serial?: string;
+    chassis?: string;
+    bios_version?: string;
+    bios_date?: string;
+    cpu?: string;
+    cores?: number;
+    memory_mb?: number;
+  };
+  disks?: {
+    device: string;
+    model?: string;
+    serial?: string;
+    size_gb?: number;
+    health?: string;
+    power_on_hours?: number;
+    temperature_c?: number;
+    reallocated_sectors?: number;
+    percentage_used?: number;
+  }[];
   reported_at: string;
 }
 
@@ -1185,6 +1207,19 @@ export const api = {
     setEnabled: (dn: string, enabled: boolean) =>
       request<DirectoryObject>("/directory/object/enabled", json({ dn, enabled })),
 
+    offboard: (body: {
+      dn: string;
+      disable: boolean;
+      strip_groups: boolean;
+      scramble_password: boolean;
+      move_to?: string;
+      note?: string;
+    }) =>
+      request<{ dn: string; disabled: boolean; left_groups: string[]; moved_to: string }>(
+        "/directory/user/offboard",
+        json(body),
+      ),
+
     setPassword: (dn: string, password: string, must_change: boolean) =>
       request<void>("/directory/user/password", json({ dn, password, must_change })),
 
@@ -1718,6 +1753,16 @@ export const api = {
 
     /** Run one command on a machine and read what it printed. Root on that
      *  machine, its own right, and every call is in the audit log. */
+    assist: (dn: string, username: string, minutes: number) =>
+      request<{
+        protocol: string;
+        address: string;
+        port: number;
+        username: string;
+        password: string;
+        minutes: number;
+      }>("/servers/computer/assist", json({ dn, username, minutes })),
+
     shell: (dn: string, command: string, cwd = "/", timeoutSeconds = 60) =>
       request<{ node: string; output: string; cwd: string; failed: string }>(
         "/servers/computer/shell",

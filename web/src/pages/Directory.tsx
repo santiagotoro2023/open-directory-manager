@@ -10,6 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { ApiError, api, type DirectoryObject, type ObjectType } from "../api";
+import { WATCH, useLive } from "../live";
 import { BulkImport, CreateDialog } from "../components/CreateDialog";
 import { useContextMenu, type MenuItem } from "../components/ContextMenu";
 import { Field, Modal } from "../components/Modal";
@@ -181,6 +182,9 @@ export function Directory() {
     await loadTree();
     await loadObjects();
   }, [loadTree, loadObjects]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.directory, refresh);
 
   const moveTo = useCallback(
     async (sourceDn: string, targetDn: string) => {

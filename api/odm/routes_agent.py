@@ -22,7 +22,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from . import agentupdate, audit, ca, objects, routes_dc, rsop, sites, tasks, totp
 from .auth import _accept_spnego
@@ -680,6 +680,34 @@ class PrintDevice(BaseModel):
     description: Annotated[str, Field(max_length=256)] = ""
 
 
+class ReportedHardware(BaseModel):
+    """The machine itself, as its firmware describes it."""
+
+    vendor: Annotated[str, Field(default="", max_length=128)] = ""
+    model: Annotated[str, Field(default="", max_length=128)] = ""
+    serial: Annotated[str, Field(default="", max_length=128)] = ""
+    chassis: Annotated[str, Field(default="", max_length=32)] = ""
+    bios_version: Annotated[str, Field(default="", max_length=64)] = ""
+    bios_date: Annotated[str, Field(default="", max_length=32)] = ""
+    cpu: Annotated[str, Field(default="", max_length=128)] = ""
+    cores: Annotated[int, Field(default=0, ge=0, le=4096)] = 0
+    memory_mb: Annotated[int, Field(default=0, ge=0)] = 0
+
+
+class ReportedDisk(BaseModel):
+    """One drive, as SMART reports it."""
+
+    device: Annotated[str, Field(default="", max_length=128)] = ""
+    model: Annotated[str, Field(default="", max_length=128)] = ""
+    serial: Annotated[str, Field(default="", max_length=128)] = ""
+    size_gb: Annotated[int, Field(default=0, ge=0)] = 0
+    health: Annotated[str, Field(default="", max_length=16)] = ""
+    power_on_hours: Annotated[int, Field(default=0, ge=0)] = 0
+    temperature_c: Annotated[int, Field(default=0, ge=-100, le=200)] = 0
+    reallocated_sectors: Annotated[int, Field(default=0, ge=0)] = 0
+    percentage_used: Annotated[int, Field(default=0, ge=0, le=1000)] = 0
+
+
 class ReportedVolume(BaseModel):
     """One block device, and what the machine says about its encryption."""
 
@@ -694,6 +722,25 @@ class ReportedVolume(BaseModel):
 
 
 class Inventory(BaseModel):
+    """What a machine says about itself.
+
+    Every list here may arrive as null: an empty slice in Go marshals that
+    way, and a field the agent had nothing for used to take the whole report
+    down with it — one 422, and the console showed nothing at all about that
+    machine.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _null_lists_are_empty(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        for name, field in cls.model_fields.items():
+            key = field.alias or name
+            if data.get(key, "") is None and "list" in str(field.annotation):
+                data[key] = []
+        return data
+
     operating_system: Annotated[str, Field(max_length=128)] = ""
     kernel: Annotated[str, Field(max_length=128)] = ""
     booted_at: datetime | None = None
@@ -717,6 +764,9 @@ class Inventory(BaseModel):
     replication: Annotated[str, Field(max_length=32768)] = ""
     # Which of this machine's disks are encrypted.
     volumes: Annotated[list[ReportedVolume], Field(default_factory=list, max_length=64)]
+    # What the machine is, and what its drives say about their own health.
+    hardware: ReportedHardware = ReportedHardware()
+    disks: Annotated[list[ReportedDisk], Field(default_factory=list, max_length=32)]
 
 
 # Where install-agent.sh puts the role installers, on this machine as on every
@@ -764,12 +814,13 @@ async def agent_inventory(
                 local_users, sessions, pending_updates, security_updates,
                 updates, updates_checked_at, packages, package_count,
                 addresses, site_name, print_devices, replication,
-                replication_at, volumes, reported_at
+                replication_at, volumes, hardware, disks, reported_at
             )
             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
                     CASE WHEN $11 THEN now() ELSE NULL END, $12::jsonb, $13,
                     $14::jsonb, $15, $16::jsonb, nullif($17, ''),
-                    CASE WHEN $17 <> '' THEN now() ELSE NULL END, $18::jsonb, now())
+                    CASE WHEN $17 <> '' THEN now() ELSE NULL END, $18::jsonb,
+                    $19::jsonb, $20::jsonb, now())
             ON CONFLICT (computer_dn) DO UPDATE SET
                 hostname           = excluded.hostname,
                 operating_system   = excluded.operating_system,
@@ -795,6 +846,8 @@ async def agent_inventory(
                 replication_at     = COALESCE(excluded.replication_at,
                                               computer_fact.replication_at),
                 volumes            = excluded.volumes,
+                hardware           = excluded.hardware,
+                disks              = excluded.disks,
                 reported_at        = now()
             """,
             machine.dn,
@@ -824,6 +877,8 @@ async def agent_inventory(
             json.dumps([device.model_dump() for device in body.print_devices]),
             body.replication,
             json.dumps([volume.model_dump() for volume in body.volumes]),
+            json.dumps(body.hardware.model_dump()),
+            json.dumps([disk.model_dump() for disk in body.disks]),
         )
 
         # The same machine under the name it used to have. Moving a machine to

@@ -27,7 +27,7 @@ import httpx  # noqa: E402
 import pytest  # noqa: E402
 from ldap3 import MODIFY_ADD, MODIFY_DELETE  # noqa: E402
 
-from odm import directory  # noqa: E402
+from odm import directory, ldappool  # noqa: E402
 from odm.main import create_app  # noqa: E402
 
 BASE_DN = "DC=corp,DC=example,DC=internal"
@@ -158,6 +158,28 @@ _ATTRIBUTE_CASE = {
 }
 
 
+class _FakeStandard:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def paged_search(
+        self, search_base, search_filter, search_scope, attributes,
+        paged_size=None, generator=True,
+    ):
+        self.conn.search(search_base, search_filter, search_scope, attributes)
+        # A page at a time, as the real one does, so a caller that stops early
+        # is exercised rather than always being handed everything.
+        found = list(self.conn.response)
+        size = paged_size or len(found) or 1
+        for start in range(0, len(found), size):
+            yield from found[start : start + size]
+
+
+class _FakeExtend:
+    def __init__(self, conn):
+        self.standard = _FakeStandard(conn)
+
+
 class FakeLdap:
     """Enough of an ldap3 Connection to exercise the object layer.
 
@@ -172,6 +194,9 @@ class FakeLdap:
         self.response: list[dict] = []
         self.unbound = False
         self.serial = 0
+        # The pool asks a connection whether it is still bound before it hands
+        # it to the next request.
+        self.bound = True
 
     # -- helpers --
     def _in_scope(self, dn: str, base: str, scope: str) -> bool:
@@ -255,6 +280,13 @@ class FakeLdap:
         ]
         return True
 
+    @property
+    def extend(self):
+        """conn.extend.standard.paged_search, which is how the object layer
+        searches: a directory answers at most its own page size, so the pages
+        are followed rather than the first one being taken for the answer."""
+        return _FakeExtend(self)
+
     def add(self, dn, object_classes, attributes):
         if dn in self.entries:
             self.result = {"result": 68, "description": "entryAlreadyExists", "message": ""}
@@ -304,6 +336,7 @@ class FakeLdap:
 
     def unbind(self):
         self.unbound = True
+        self.bound = False
 
 
 def sample_directory() -> dict[str, dict]:
@@ -356,6 +389,16 @@ def sample_directory() -> dict[str, dict]:
 @pytest.fixture
 def state() -> dict:
     return {}
+
+
+@pytest.fixture(autouse=True)
+def _empty_ldap_pool():
+    """Connections are pooled, and a pooled connection outlives the request
+    that made it. Each test gets its own directory, so each test starts with
+    an empty pool rather than one holding the previous test's."""
+    ldappool._pool.idle = {True: [], False: []}  # noqa: SLF001 - test isolation
+    yield
+    ldappool._pool.idle = {True: [], False: []}  # noqa: SLF001
 
 
 @pytest.fixture

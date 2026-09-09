@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
-from . import audit, db, directory, dynamicgroups, objects, policy_schema
+from . import audit, db, directory, dynamicgroups, ldappool, objects, policy_schema
 from .authz import Denied
 from .config import Settings, get_settings
 from .security import Authz, authorization, client_ip, get_pool, require_admin, requires
@@ -50,17 +50,15 @@ Text = Annotated[str | None, Field(default=None, max_length=1024)]
 
 @asynccontextmanager
 async def _bound(settings: Settings, *, write: bool):
-    """One GSSAPI-bound connection per request.
+    """A bound connection for one piece of work, from the pool.
 
-    ponytail: binds per request rather than pooling connections. Bind cost is
-    a few milliseconds on a LAN; introduce ldap3's connection pool here if
-    that ever shows up in a profile.
+    A GSSAPI bind is two round trips, and a page of the console is several
+    searches; binding for each of them was the first cost to show up on a
+    domain of any size. Connections are used by one request at a time and
+    dropped rather than reused when anything goes wrong with them.
     """
-    conn = await run_in_threadpool(directory.service_connection, settings, read_only=not write)
-    try:
+    async with ldappool.bound(settings, write=write) as conn:
         yield conn
-    finally:
-        await run_in_threadpool(conn.unbind)
 
 
 async def _read(settings: Settings, fn, *args, **kwargs):
@@ -661,6 +659,69 @@ async def delete_object(
                 session.principal,
                 timedelta(days=settings.retention_days),
             )
+
+
+class OffboardRequest(BaseModel):
+    """Somebody has left."""
+
+    dn: Dn
+    disable: bool = True
+    strip_groups: bool = True
+    scramble_password: bool = False
+    # Where leavers go. Empty leaves the account where it is.
+    move_to: Annotated[str, Field(default="", max_length=1024)] = ""
+    note: Annotated[str, Field(default="", max_length=255)] = ""
+
+
+@router.post("/user/offboard", dependencies=[Depends(requires("user.write"))])
+async def offboard_user(
+    body: OffboardRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Disable, take out of every group, scramble the password and move — in
+    one action, with what it undid recorded.
+
+    Not a delete: an account that is gone takes its group history and its
+    ownership of files with it, and the questions asked six months later are
+    about both.
+    """
+    authz.require("user.write", body.dn)
+    if body.move_to:
+        authz.require("object.move", body.move_to)
+    async with _audit_context(
+        request, session, pool, "user.offboard", object_type="user", object_dn=body.dn
+    ) as entry:
+        state = await _write(
+            settings,
+            objects.offboard,
+            body.dn,
+            disable=body.disable,
+            strip_groups=body.strip_groups,
+            move_to=body.move_to or None,
+            scramble_password=body.scramble_password,
+        )
+        entry.before = {
+            "memberships": state["was"]["memberships"],
+            "dn": state["was"]["object_dn"],
+        }
+        entry.after = {
+            "dn": state["dn"],
+            "disabled": state["disabled"],
+            "left_groups": state["left_groups"],
+            "password_scrambled": state["password_scrambled"],
+            "note": body.note,
+        }
+        entry.object_dn = state["dn"]
+        return {
+            "dn": state["dn"],
+            "disabled": state["disabled"],
+            "left_groups": state["left_groups"],
+            "moved_to": state["moved_to"],
+        }
 
 
 # ---------------------------------------------------------------- in bulk ---

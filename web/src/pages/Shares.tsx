@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpen, Plus, Trash2 } from "lucide-react";
 import { ApiError, api, type FileShare, type ShareAccess, type ShareEntry } from "../api";
+import { WATCH, useLive } from "../live";
 import { LoadingRow } from "../components/Loading";
 import { useContextMenu } from "../components/ContextMenu";
 import { InfoPanel } from "../components/DocsLink";
@@ -47,6 +48,9 @@ export function Shares() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.shares, load);
 
   // A share is made real by the server's agent on its next check-in, so the
   // state moves without anything on this page having caused it.

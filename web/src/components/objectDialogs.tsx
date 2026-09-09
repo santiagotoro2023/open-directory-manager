@@ -181,6 +181,95 @@ export function PasswordDialog({ dn, onClose }: { dn: string; onClose: () => voi
   );
 }
 
+export function OffboardDialog({
+  dn,
+  name,
+  onClose,
+  onDone,
+}: {
+  dn: string;
+  name: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [disable, setDisable] = useState(true);
+  const [stripGroups, setStripGroups] = useState(true);
+  const [scramble, setScramble] = useState(true);
+  const [moveTo, setMoveTo] = useState("");
+  const [note, setNote] = useState("");
+  const [done, setDone] = useState<string[] | null>(null);
+  const { busy, error, run } = useAction();
+
+  if (done) {
+    return (
+      <Modal title={`${name} has left`} submitLabel="Close" onClose={onDone} onSubmit={onDone}>
+        <p className="muted">
+          {done.length === 0
+            ? "The account was left in no groups."
+            : `Taken out of ${done.length} group${done.length === 1 ? "" : "s"}:`}
+        </p>
+        {done.length > 0 && <p className="mono">{done.join(", ")}</p>}
+        <p className="muted">
+          Everything here is in the audit log, and the account still owns what it owned.
+        </p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      title={`Offboard ${name}`}
+      submitLabel="Offboard"
+      busy={busy}
+      error={error}
+      onClose={onClose}
+      onSubmit={() =>
+        void run(async () => {
+          const result = await api.directory.offboard({
+            dn,
+            disable,
+            strip_groups: stripGroups,
+            scramble_password: scramble,
+            move_to: moveTo,
+            note,
+          });
+          setDone(result.left_groups);
+        })
+      }
+    >
+      <p className="muted">
+        The account is kept, not deleted: it still owns its files and its history.
+      </p>
+      <label className="checkbox">
+        <input type="checkbox" checked={disable} onChange={(e) => setDisable(e.target.checked)} />
+        Disable the account
+      </label>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={stripGroups}
+          onChange={(e) => setStripGroups(e.target.checked)}
+        />
+        Remove from every group
+      </label>
+      <label className="checkbox">
+        <input type="checkbox" checked={scramble} onChange={(e) => setScramble(e.target.checked)} />
+        Set a password nobody knows
+      </label>
+      <Field label="Move to" hint="Optional. Where leavers are kept.">
+        <input
+          value={moveTo}
+          placeholder="OU=Leavers,DC=corp,DC=example,DC=internal"
+          onChange={(e) => setMoveTo(e.target.value)}
+        />
+      </Field>
+      <Field label="Note" hint="Recorded in the audit log">
+        <input value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+    </Modal>
+  );
+}
+
 export function MoveDialog({
   object,
   onClose,

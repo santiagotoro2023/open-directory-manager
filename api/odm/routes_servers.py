@@ -183,6 +183,8 @@ async def computer_detail(
             "updates_checked_at": fact["updates_checked_at"],
             "packages": json.loads(fact["packages"]),
             "package_count": fact["package_count"],
+            "hardware": json.loads(fact["hardware"] or "{}"),
+            "disks": json.loads(fact["disks"] or "[]"),
             "reported_at": fact["reported_at"],
         },
         "events": [
@@ -360,6 +362,80 @@ async def browse_computer(
         return json.loads(answer)
     except ValueError as exc:
         raise objects.ObjectError(f"{row['hostname']} sent something unreadable back") from exc
+
+
+class AssistRequest(BaseModel):
+    """Watching somebody's screen on a machine they are signed in to."""
+
+    dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    username: Annotated[str, Field(min_length=1, max_length=104)]
+    minutes: Annotated[int, Field(default=30, ge=1, le=240)] = 30
+
+
+@router.post("/computer/assist", dependencies=[Depends(requires("computer.shell"))])
+async def assist(
+    body: AssistRequest,
+    request: Request,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Ask the person at the machine to share their screen, and say how to
+    reach it if they agree.
+
+    They are asked in their own session and silence is a refusal: an
+    administrator who can do this can already read the machine's disk, and
+    watching somebody work is a different thing. What is handed back is a
+    one-time credential that expires with the offer.
+    """
+    authz.require("computer.shell", body.dn)
+    fact = await pool.fetchrow(HOSTNAME_BY_DN, body.dn)
+    if fact is None:
+        raise objects.NotFound("this machine has not reported yet")
+
+    try:
+        answer = await tasks.run_now(
+            pool,
+            node_fqdn=fact["hostname"],
+            kind="remote-assist",
+            payload={
+                "username": body.username,
+                "minutes": body.minutes,
+                "requested_by": session.principal,
+            },
+            requested_by=session.principal,
+            timeout=150,
+        )
+    except tasks.TaskFailed as exc:
+        raise objects.ObjectError(str(exc)) from exc
+
+    # "rdp 3389 odm-assist <password> <minutes>" or "vnc 5900 - <password> <minutes>"
+    fields = str(answer).split()
+    if len(fields) < 5:
+        raise objects.ObjectError(f"the machine answered {answer!r}")
+    protocol, port, account, password, minutes = fields[:5]
+
+    async with pool.acquire() as conn:
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="computer.assist",
+            outcome="success",
+            object_type="computer",
+            object_dn=body.dn,
+            after={"user": body.username, "protocol": protocol, "minutes": minutes},
+        )
+
+    return {
+        "protocol": protocol,
+        "address": fact["hostname"],
+        "port": int(port),
+        "username": "" if account == "-" else account,
+        "password": password,
+        "minutes": int(minutes),
+    }
 
 
 class Permissions(BaseModel):

@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import logging
 import re
+import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -326,6 +327,11 @@ def _classify(object_classes: list[str]) -> str:
     return "container"
 
 
+# How many entries to ask for at a time. Below every directory's own page
+# size, so the server never has to trim a page and say so.
+PAGE_SIZE = 500
+
+
 def _search(
     conn: Connection,
     base: str,
@@ -334,26 +340,41 @@ def _search(
     scope: str = SUBTREE,
     limit: int = 0,
 ) -> list[dict]:
+    # Paged, always. A directory answers at most its own page size — a
+    # thousand entries on Active Directory and on Samba — and a plain search
+    # over a larger container came back quietly short: a domain with more
+    # than a thousand users showed a thousand of them and said nothing.
+    #
+    # The pages are followed here rather than by the caller, and stopped at
+    # the limit the caller asked for, so a page of the console still costs one
+    # round trip per five hundred objects rather than one per object.
+    wanted = limit or 0
+    entries: list[dict] = []
     try:
-        conn.search(
+        for entry in conn.extend.standard.paged_search(
             search_base=base,
             search_filter=ldap_filter,
             search_scope=scope,
             attributes=attributes,
-            paged_size=limit or None,
-        )
+            paged_size=min(PAGE_SIZE, wanted) if wanted else PAGE_SIZE,
+            generator=True,
+        ):
+            if entry.get("type") != "searchResEntry":
+                continue
+            entries.append(entry)
+            if wanted and len(entries) >= wanted:
+                break
     except LDAPException as exc:
         raise DirectoryError(f"ldap search failed: {exc}") from exc
     # 32 is noSuchObject: the base is not there, so the answer is "nothing",
-    # not an error. Raising here meant every "does this exist?" check failed
-    # with a directory error instead of answering no — which is why restoring
-    # a deleted object could never work. The check for whether the object is
-    # already back is a search for a DN that, by definition, is not.
-    if conn.result["result"] == 32:
+    # not an error. The check for whether a deleted object is already back is
+    # a search for a name that, by definition, is not.
+    result = (conn.result or {}).get("result", 0)
+    if result == 32:
         return []
-    if conn.result["result"] not in (0, 4):  # 4 = sizeLimitExceeded, expected when paging
+    if not entries and result not in (0, 4):  # 4 = sizeLimitExceeded
         _check(conn, "search")
-    return [e for e in conn.response if e.get("type") == "searchResEntry"]
+    return entries
 
 
 # ------------------------------------------------------------------- reads ---
@@ -823,6 +844,67 @@ def move(
     conn.modify_dn(canonical, relative, new_superior=destination)
     _check(conn, "move")
     return f"{relative},{destination}"
+
+
+def offboard(
+    conn: Connection,
+    settings: Settings,
+    dn: str,
+    *,
+    disable: bool,
+    strip_groups: bool,
+    move_to: str | None,
+    scramble_password: bool,
+) -> dict[str, Any]:
+    """Somebody has left: do all of it at once, and record what was undone.
+
+    Every step is one an administrator does by hand today, in an order that
+    matters — the snapshot first, so what the account was is recoverable, and
+    the move last, so nothing else is looking for it at the old name. Deleting
+    is deliberately not one of the steps: an account that is gone takes its
+    group history and its file ownership with it.
+    """
+    canonical = normalize_dn(settings, dn)
+    entry = get(conn, settings, canonical)
+    if entry["objectType"] != "user":
+        raise ObjectError("only a user account can be offboarded")
+    assert_mutable(settings, canonical, entry)
+
+    before = snapshot(conn, settings, canonical)
+    removed: list[str] = []
+
+    if disable:
+        set_enabled(conn, settings, canonical, enabled=False)
+
+    if scramble_password:
+        # Not told to anybody. The account keeps working for what it owns and
+        # nobody can sign in as it, including whoever knew the old one.
+        set_password(conn, settings, canonical, secrets.token_urlsafe(32), must_change=False)
+
+    if strip_groups:
+        # The primary group is not in memberOf and cannot be left anyway; the
+        # rest are the ones that grant anything.
+        for group in list(before["memberships"]):
+            try:
+                edit_members(conn, settings, group, add=[], remove=[canonical])
+                removed.append(group)
+            except (ObjectError, DirectoryError, NotFound):
+                # A group that cannot be edited — built-in, or gone — is
+                # reported rather than stopping the rest.
+                continue
+
+    moved_to = ""
+    if move_to:
+        moved_to = move(conn, settings, canonical, move_to)
+
+    return {
+        "dn": moved_to or canonical,
+        "was": before,
+        "left_groups": removed,
+        "disabled": disable,
+        "moved_to": moved_to,
+        "password_scrambled": scramble_password,
+    }
 
 
 def snapshot(conn: Connection, settings: Settings, dn: str) -> dict[str, Any]:

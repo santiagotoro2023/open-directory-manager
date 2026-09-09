@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Router, Trash2 } from "lucide-react";
 import { ApiError, api, type RadiusClient, type RadiusPolicy } from "../api";
+import { WATCH, useLive } from "../live";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -51,6 +52,9 @@ export function NetworkAccess() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.vpn, load);
 
   useEffect(() => {
     if (tab !== "preview") return;

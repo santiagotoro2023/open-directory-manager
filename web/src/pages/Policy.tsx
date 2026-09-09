@@ -17,6 +17,7 @@ import {
   type GpoRevision,
   type PolicySettings,
 } from "../api";
+import { WATCH, useLive } from "../live";
 import { LoadingRow } from "../components/Loading";
 import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
@@ -55,6 +56,9 @@ export function Policy() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Re-read when the domain changes, so the page is never stale.
+  useLive(WATCH.policy, load);
 
   // Saved by the browser rather than shown: a policy object is something to
   // keep in a repository, not to read in a dialog.

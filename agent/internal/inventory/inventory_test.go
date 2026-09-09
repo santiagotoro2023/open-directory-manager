@@ -197,3 +197,43 @@ func TestBrowseIgnoresWhatCannotBePrintedTo(t *testing.T) {
 		}
 	}
 }
+
+func TestSmartIsReadForWhatAnOperatorActsOn(t *testing.T) {
+	// A drive that has started reallocating sectors is one to replace before
+	// it takes a machine with it.
+	report := `{
+	  "model_name": "Samsung SSD 870", "serial_number": "S5Y2NJ0T123456",
+	  "user_capacity": {"bytes": 500107862016},
+	  "smart_status": {"passed": true},
+	  "power_on_time": {"hours": 14032},
+	  "temperature": {"current": 34},
+	  "ata_smart_attributes": {"table": [
+	    {"name": "Reallocated_Sector_Ct", "raw": {"value": 8}},
+	    {"name": "Power_Cycle_Count", "raw": {"value": 91}}
+	  ]}
+	}`
+	disk, ok := ParseSmart(report)
+	if !ok {
+		t.Fatal("a drive's own report could not be read")
+	}
+	if disk.Health != "passed" || disk.Model != "Samsung SSD 870" {
+		t.Errorf("%+v", disk)
+	}
+	if disk.SizeGB != 500 || disk.PowerOnHours != 14032 || disk.TemperatureC != 34 {
+		t.Errorf("%+v", disk)
+	}
+	if disk.Reallocated != 8 {
+		t.Errorf("reallocated sectors were not read: %+v", disk)
+	}
+
+	// A drive that says it is failing says so here, not "unknown".
+	failing, _ := ParseSmart(`{"smart_status": {"passed": false}}`)
+	if failing.Health != "failing" {
+		t.Errorf("a failing drive reads as %q", failing.Health)
+	}
+	// And one with nothing to say is not reported as either.
+	quiet, _ := ParseSmart(`{"model_name": "QEMU HARDDISK"}`)
+	if quiet.Health != "" {
+		t.Errorf("a drive with no SMART reads as %q", quiet.Health)
+	}
+}

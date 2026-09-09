@@ -156,6 +156,60 @@ export function Content() {
           </p>
         </Section>
 
+        <Section title="What a machine is made of">
+          <p>
+            <strong>Directory</strong> &rarr; the machine &rarr; <strong>Machine</strong>. Model,
+            serial, processor, memory and firmware from the machine&rsquo;s own firmware tables,
+            and every drive it can read SMART from.
+          </p>
+          <Reference
+            headers={["Column", "What it says"]}
+            rows={[
+              ["Health", "What the drive says about itself: passed, or failing."],
+              [
+                "Reallocated",
+                "Sectors the drive has replaced. Any number above zero is a drive to plan around.",
+              ],
+              ["Powered on", "How long it has been running, in days."],
+              ["Temperature", "As the drive reports it."],
+            ]}
+          />
+          <Note>
+            Drives are read with <C key="sm">smartctl</C>. A machine without smartmontools, or a
+            virtual disk with nothing to say, reports no drives rather than an empty health.
+          </Note>
+        </Section>
+
+        <Section title="Watching somebody's screen">
+          <p>
+            <strong>Directory</strong> &rarr; the machine &rarr; <strong>Activity</strong> &rarr;{" "}
+            <strong>Assist</strong> beside whoever is signed in. They are asked in their own
+            session; no answer is a refusal. What comes back is an address and a one-time
+            credential for any remote desktop or VNC client.
+          </p>
+          <Reference
+            headers={["Session", "How it is shared"]}
+            rows={[
+              [
+                "GNOME on Wayland",
+                "GNOME's own remote desktop, over RDP. Connect with any RDP client.",
+              ],
+              [
+                "X11, including every xrdp session",
+                <>
+                  <C key="x1">x11vnc</C>, over VNC. Install it on machines you want to assist this
+                  way.
+                </>,
+              ],
+            ]}
+          />
+          <Note>
+            The offer ends by itself after the minutes given, and needs{" "}
+            <C key="cs">computer.shell</C> — the same right as running a command on that machine.
+            Every request is in the audit log whether or not it was accepted.
+          </Note>
+        </Section>
+
         <Section title="A machine's logs">
           <p>
             <strong>Directory</strong> &rarr; the machine &rarr; <strong>Logs</strong>. Warnings
