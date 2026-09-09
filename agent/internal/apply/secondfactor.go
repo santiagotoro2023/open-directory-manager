@@ -456,25 +456,40 @@ if [ -r ` + enrolledList + ` ] && grep -qxF "$SHORT" ` + enrolledList + `; then
     exit 0
 fi
 
-# Somebody who has to set one up is asked until they have, and cannot get on
-# with anything else first. A window that can be clicked away is a second
-# factor nobody sets up: the point of asking here is that the machine is not
-# usable until it is done.
+# One prompt per person on this machine, whatever starts it and however many
+# times: without the lock a session manager that runs the entry more than
+# once, or a terminal that returns as soon as it has asked its server for a
+# window, left four identical QR codes on screen.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/odm-enrol-factor.lock" 2>/dev/null || exit 0
+flock -n 9 2>/dev/null || exit 0
+
+# Full screen, and blocking: the terminals that talk to a server of their own
+# return immediately unless told to wait, and a prompt that returns before
+# anybody has typed anything is a prompt that opens again straight away.
+# x-terminal-emulator is last, not first: it is a symlink to one of these and
+# taking it at face value meant neither flag was passed.
 open_terminal() {
-    for terminal in x-terminal-emulator gnome-terminal kgx konsole xfce4-terminal \
-                    mate-terminal xterm; do
+    for terminal in gnome-terminal konsole xfce4-terminal mate-terminal kgx \
+                    xterm x-terminal-emulator; do
         command -v "$terminal" >/dev/null 2>&1 || continue
         case "$terminal" in
-            gnome-terminal|mate-terminal)
-                "$terminal" --full-screen -- sudo -n ` + enrolPrivileged + ` && return 0
+            gnome-terminal)
+                "$terminal" --wait --full-screen -- sudo -n ` + enrolPrivileged + ` && return 0
+                ;;
+            mate-terminal)
+                "$terminal" --disable-factory --full-screen -e "sudo -n ` + enrolPrivileged + `" && return 0
+                ;;
+            konsole)
+                "$terminal" --fullscreen --nofork -e sudo -n ` + enrolPrivileged + ` && return 0
+                ;;
+            xfce4-terminal)
+                "$terminal" --disable-server --fullscreen -x sudo -n ` + enrolPrivileged + ` && return 0
                 ;;
             kgx)
-                "$terminal" -- sudo -n ` + enrolPrivileged + ` && return 0
-                ;;
-            konsole|xfce4-terminal)
-                "$terminal" --fullscreen -e "sudo -n ` + enrolPrivileged + `" && return 0
+                "$terminal" --wait -- sudo -n ` + enrolPrivileged + ` && return 0
                 ;;
             *)
+                "$terminal" -fullscreen -e sudo -n ` + enrolPrivileged + ` 2>/dev/null && return 0
                 "$terminal" -e sudo -n ` + enrolPrivileged + ` && return 0
                 ;;
         esac

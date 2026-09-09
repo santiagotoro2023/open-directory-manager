@@ -277,6 +277,14 @@ journalctl -u odm-agent -n 50`}</Code>
           </Note>
         </Section>
 
+        <Section title="Role installers">
+          <p>
+            The console hands out the installer when a role is installed, so a machine runs the
+            one this console ships rather than the one it was joined with. The copies under{" "}
+            <C>/usr/lib/odm/roles/</C> are replaced as they are used.
+          </p>
+        </Section>
+
         <Section title="Files the agent owns">
           <Reference
             headers={["Path", "Holds"]}

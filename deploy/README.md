@@ -23,6 +23,9 @@ framework, from **Server Roles** in the console.
 | `install-vpn-role.sh` | Any joined server | WireGuard, for remote access |
 | `install-radius-role.sh` | Any joined server | FreeRADIUS, against the directory |
 | `install-pxe-role.sh` | A boot server | Unattended installation that joins on first boot |
+| `install-session-host-role.sh` | Any joined server | xrdp and a desktop — XFCE, GNOME or KDE Plasma |
+| `install-remote-desktop-broker-role.sh` | Any joined server | haproxy, returning people to the host they were on |
+| `install-time-role.sh` | Usually a controller | chrony, serving the domain |
 | `install-agent.sh` | An already-joined machine | The policy agent alone |
 | `import-configuration.py` | The control-plane host | Makes this domain the one in a configuration export |
 | `uninstall.sh` | Any of the above | Removes everything the scripts above put on this machine |

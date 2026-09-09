@@ -78,21 +78,19 @@ export function Content() {
 
         <Section title="What a session host needs">
           <p>
-            A server with no graphical environment on it. Installing the role puts one there: xrdp,
-            xorgxrdp and Xfce, which is the desktop each session starts. GNOME is not required and
-            is not installed.
+            A server with no graphical environment on it. Installing the role puts one there:
+            xrdp, xorgxrdp and the desktop chosen at install &mdash; XFCE, GNOME or KDE Plasma.
           </p>
           <Reference
             headers={["Part", "Comes from"]}
             rows={[
-              ["The desktop", "xfce4, installed by the role."],
+              ["The desktop", "Chosen when the role is installed. XFCE by default."],
               ["The X server", "xorgxrdp, one per session, started by xrdp-sesman."],
               [
                 "Sessions without a seat",
                 <>
                   Debian&rsquo;s Xorg wrapper only lets somebody at the machine start an X server;
-                  the role sets <C key="w">allowed_users=anybody</C>, because a session host&rsquo;s
-                  whole job is starting them for people who are not at it.
+                  the role sets <C key="w">allowed_users=anybody</C>.
                 </>,
               ],
               ["Certificates", "A self-signed pair, replaced by the CA role's issued one."],
@@ -475,10 +473,8 @@ This name is     published in this domain's DNS, by ODM`}</Code>
             already a GNOME desktop before it became a session host keeps GNOME.
           </Note>
           <p>
-            A collection serves whatever the host was installed with. It used to name XFCE
-            whatever the host had, which on a GNOME or Plasma host meant a black screen for a few
-            seconds and then a dropped connection; a host that has lost its desktop package now
-            falls back to one that is installed rather than to nothing.
+            A collection serves whatever the host was installed with, and a host whose desktop
+            package has gone falls back to one that is installed.
           </p>
         </Section>
 

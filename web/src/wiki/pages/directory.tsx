@@ -408,15 +408,9 @@ and    Title       starts with  Senior`}</Code>
             ]}
           />
           <Note>
-            The query <em>is</em> the membership. Somebody put in the group by hand is taken out
-            again at the next run &mdash; two sources of truth for one list is how a group ends up
-            with members nobody can explain. <strong>Stop maintaining it</strong> leaves the
-            membership exactly as it is and stops answering the question.
-          </Note>
-          <Note>
-            The conditions are named rather than typed as an LDAP filter, and every value is
-            escaped on the way in. A filter typed by hand is one nobody reviews, and one that is
-            subtly wrong quietly empties a group a sudo rule or a share depends on.
+            The query <em>is</em> the membership: somebody put in the group by hand is taken out
+            again at the next run. <strong>Stop maintaining it</strong> leaves the membership as
+            it is and stops answering the question.
           </Note>
         </Section>
 

@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.8.7_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.8.8_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -150,11 +150,11 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
 | Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
-| Machine management | Installed software, local accounts to add and remove, sign-in history, recent logs, updates, restart, a remote agent update, a shell that runs as root and keeps its working directory, a file browser that shows and changes owner, group and mode, and disk-encryption status with an escrowed recovery key — on the computer object itself, starting within a second rather than at the next check-in |
+| Machine management | Installed software, local accounts to add and remove, sign-in history, recent logs filtered to errors and exportable, updates, restart, a remote agent update, a shell that runs as root and keeps its working directory, a file browser that shows and changes owner, group and mode, and disk-encryption status with an escrowed recovery key — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, re-issues the console's own certificate, and withdraws one to a revocation list every issued certificate points at |
 | Passwords | The domain's rules and per-group fine-grained ones, both set as a policy-object setting; helpdesk resets; self-service change gated by policy |
 | Pictures | A person's picture set on their account and shown by every machine they sign in to, at the login screen and in the desktop |
-| Sign-in | A second factor, enrolled once with a QR code and asked for at the console and at the machine alike — on screen, over SSH, at sudo or over remote desktop. Somebody who has not enrolled is walked through it when they sign in |
+| Sign-in | A second factor, enrolled once with a QR code and asked for at the console and at the machine alike — on screen, over SSH, at sudo or over remote desktop. Somebody who has not enrolled is walked through it at their next sign-in, full screen, and cannot get past it |
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit, including a read-only role that sees everything and changes nothing |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them |
@@ -235,7 +235,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.8.7   # -> dist/odm-client_0.8.7_amd64.deb
+bash packaging/deb/build-in-container.sh 0.8.8   # -> dist/odm-client_0.8.8_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

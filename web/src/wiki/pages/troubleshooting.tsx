@@ -110,11 +110,7 @@ export function Content() {
               ],
               [
                 '"Operation not permitted" from a package\u2019s own postinst',
-                <>
-                  Fixed: the agent&rsquo;s unit forbade a <C key="f">chmod</C> that sets the setgid
-                  bit, and a service&rsquo;s restrictions are inherited by everything it starts.
-                  Packages now install outside it. Upgrade the agent on that machine.
-                </>,
+                "Upgrade the agent on that machine. Packages are installed outside its own restrictions.",
               ],
               [
                 "Unmet dependencies for a package the archive plainly has",
@@ -127,21 +123,11 @@ export function Content() {
               ],
               [
                 'kea-ctrl-agent "start condition unmet"',
-                <>
-                  Fixed: Debian&rsquo;s unit carries{" "}
-                  <C key="k">ConditionFileNotEmpty=/etc/kea/kea-api-password</C> and refuses to
-                  start without that exact file. The DHCP role writes its Control Agent credential
-                  there now.
-                </>,
+                "Re-run the DHCP role. It writes the credential file the unit refuses to start without.",
               ],
               [
                 "Network boot and DHCP on the same machine",
-                <>
-                  Only one process can bind UDP 67, so dnsmasq cannot answer as a proxy DHCP server
-                  beside Kea. Installing both on one machine now leaves dnsmasq serving TFTP alone
-                  and puts <C key="n">next-server</C> and the boot files into Kea, which is what a
-                  DHCP server and a boot server sharing a host have always had to do.
-                </>,
+                "Only one process can bind UDP 67. Installing both on one machine leaves dnsmasq serving TFTP and puts next-server and the boot files into Kea.",
               ],
               [
                 "A service the role installed refuses to start",
@@ -170,128 +156,22 @@ export function Content() {
           />
         </Section>
 
-        <Section title="Policies that look applied and are not">
-          <Reference
-            headers={["What you see", "What it is"]}
-            rows={[
-              [
-                'A connection file on the desktop says "corrupted, unreadable, or could not be found"',
-                <>
-                  Debian&rsquo;s Remmina does not claim the <C key="r1">.rdp</C> type and cannot
-                  read one without <C key="r2">remmina-plugin-rdp</C>, which the desktop task does
-                  not install. Fixed: a machine whose policy hands out connection files is given
-                  the plugin and a handler for the type, so the icon opens.
-                </>,
-              ],
-              [
-                "Nothing at all happens at a first graphical sign-in under a second-factor policy",
-                <>
-                  Fixed. Three things stopped it: the autostart entry carried a shell command
-                  inline, and desktop-entry Exec values are not parsed by a shell, so nothing ran;
-                  the prompt runs as the person and could not read the policy that tells it whether
-                  to say anything; and reaching the console means reading the machine keytab, which
-                  only root may. It now runs a script, reads a readable policy, and enrols through{" "}
-                  <C key="e1">sudo</C>.
-                </>,
-              ],
-              [
-                "Kernel parameters are written and not in force",
-                <>
-                  The agent&rsquo;s own unit sets <C key="k1">ProtectKernelTunables</C>, which
-                  makes <C key="k2">/proc/sys</C> read-only for everything it runs, so every value
-                  was refused. It is applied outside that sandbox now, and the values are read back
-                  and reported rather than trusting <C key="k3">sysctl</C>&rsquo;s exit status.
-                </>,
-              ],
-              [
-                'A role fails with "not on this machine\u2019s allowed software list"',
-                <>
-                  The software allowlist is for what people install on a machine, not for what the
-                  console installs on it, and a role&rsquo;s packages are not the ones a policy
-                  names. It is suspended for the length of an install ODM is doing itself, and put
-                  back afterwards.
-                </>,
-              ],
-              [
-                "One setting fails and the console shows no Resultant Set of Policy at all",
-                <>
-                  A failure reason over 512 characters was refused by the control plane, and it
-                  refused the whole report with it. Reasons are shortened before they are sent.
-                </>,
-              ],
-              [
-                "A remote desktop session is a black screen and then the client closes",
-                <>
-                  The collection told the host to start XFCE whatever desktop it had been
-                  installed with, so a GNOME or Plasma session host was asked to start something
-                  that was not on it. Fixed: a collection serves the desktop the host was
-                  installed with, and a host whose desktop package is missing falls back to one
-                  that is there rather than to nothing.
-                </>,
-              ],
-              [
-                "Every session on a collection with a profile share is refused",
-                <>
-                  The profile disk is mounted by the host, as the host, and root had no Kerberos
-                  ticket to mount it with &mdash; so the mount failed and, a profile disk being
-                  the whole home, the session was refused. It asks for the machine&rsquo;s own
-                  ticket first now.
-                </>,
-              ],
-              [
-                "A code is never asked for, however many people have enrolled",
-                <>
-                  Enrolments were fetched only on a run that had a policy change to apply, and
-                  somebody scanning a QR code changes no policy object and no serial &mdash; so
-                  the machine never heard about it and let them in on their password alone for as
-                  long as the grace period lasted. They are fetched on every check-in now.
-                </>,
-              ],
-              [
-                'Installing the client package asks for a "default Kerberos realm"',
-                <>
-                  <C key="kr">krb5-config</C>, which comes with the Kerberos tools, asks that the
-                  first time it is configured. The answer does not matter &mdash;{" "}
-                  <C key="kr2">odm-client-install</C> writes <C key="kr3">/etc/krb5.conf</C>{" "}
-                  itself &mdash; and the package now answers it. On a machine that still asks,
-                  install with <C key="kr4">DEBIAN_FRONTEND=noninteractive</C>.
-                </>,
-              ],
-              [
-                "A role installs the way an older release did",
-                <>
-                  The installers a machine was joined with never moved: the agent replaces itself
-                  and the scripts beside it stayed. The console hands out its own copy when a role
-                  is installed, so what runs is what this console ships.
-                </>,
-              ],
-            ]}
-          />
-        </Section>
-
         <Section title="Policies that did not take">
           <Reference
             headers={["Symptom", "Check"]}
             rows={[
               [
                 "The console shows no report for a machine",
-                <>
-                  Fixed: the appliers report five words and the control plane accepted three, so
-                  one <C key="a">applied</C> made it refuse the whole report. Upgrade both.
-                </>,
+                "Upgrade the control plane and the agent.",
               ],
               [
                 "A removed policy is still being enforced",
-                <>
-                  Fixed: taking a file away is a change to whatever reads it. Removing an HBAC
-                  rule left sshd refusing a user with a rule that existed nowhere on disk; the
-                  services that read a pruned file are reloaded now.
-                </>,
+                "Upgrade the agent. It reloads whatever reads a file it has just pruned.",
               ],
               [
                 'An HBAC rule for a group refused everyone',
                 <>
-                  Fixed, and worth knowing: a group is written <C key="b">%Engineers</C> —{" "}
+                  A group is written <C key="b">%Engineers</C> &mdash;{" "}
                   <strong>Select…</strong> does that for you. A bare name is a user.
                 </>,
               ],
@@ -306,28 +186,15 @@ export function Content() {
               ],
               [
                 "One printer is listed two or three times",
-                <>
-                  Fixed: a managed machine no longer answers DNS-SD and no longer lets
-                  cups-browsed make queues of its own, and the print server no longer advertises
-                  the queues it hands out. Both were copies of the printer the policy gave you,
-                  under names nobody chose.
-                </>,
+                "Upgrade the agent and the print server. A managed machine makes no queues of its own.",
               ],
               [
                 "A mapped drive is nowhere in the file manager",
-                <>
-                  Fixed: drive maps are attached when somebody signs in, with their own ticket,
-                  and added to the file manager&rsquo;s sidebar. Started by the machine they could
-                  not authenticate at all &mdash; <C key="c">No such device</C> on every access.
-                </>,
+                "Upgrade the agent. Drives are attached at sign-in, with the person’s own ticket.",
               ],
               [
                 "A setting stayed after its policy object was unlinked",
-                <>
-                  Fixed. A file is pruned; so now are the things that are not files &mdash; a
-                  printer queue, a mapped drive and its bookmark, a roaming profile, a login
-                  banner in the greeter&rsquo;s compiled database.
-                </>,
+                "Upgrade the agent.",
               ],
               [
                 "Applications take minutes to open and settings do not save",
@@ -351,11 +218,9 @@ export function Content() {
                   <C key="d">X server could not be started</C>
                 </>,
                 <>
-                  Fixed, in three places: Debian only lets a console user start an X server and a
-                  remote session has no console seat; a home directory made for somebody as root
-                  is one their X server cannot write to; and a home under{" "}
-                  <C key="e">/home/DOMAIN/name</C> was unreachable because the directory above it
-                  was root&rsquo;s alone.
+                  Re-run the session-host role on that machine, and check that the person’s
+                  home directory is theirs to write to: an X server cannot start in a home
+                  it does not own.
                 </>,
               ],
               [
@@ -363,11 +228,10 @@ export function Content() {
                   <C key="f">Can&rsquo;t create session for user</C>
                 </>,
                 <>
-                  A profile disk that could not be attached used to fail the whole PAM session,
-                  which stops everybody signing in rather than one person&rsquo;s profile
-                  roaming. It falls back to a local home and says why in the journal. Check that
-                  the collection&rsquo;s profile share exists and that the people using it may
-                  write to it.
+                  The profile disk could not be attached. Check the collection&rsquo;s profile
+                  share exists and that the people using it may write to it; the reason is in the
+                  journal under <C key="rp">odm-rd-profile</C>. With <strong>Allow local homes</strong>{" "}
+                  the session gets a local home instead of being refused.
                 </>,
               ],
               [
@@ -388,12 +252,7 @@ export function Content() {
             rows={[
               [
                 '"Invalid configuration. Exiting..." from net ads join',
-                <>
-                  Fixed: Debian&rsquo;s <C key="s">smb.conf</C> says{" "}
-                  <C key="t">server role = standalone server</C> and{" "}
-                  <C key="u">net ads join</C> reads it first. The join writes one that says
-                  the machine is a domain member. Use a client package from 0.3.2 or later.
-                </>,
+                "Use a client package from 0.3.2 or later.",
               ],
               [
                 '"failed to find DC for domain"',
@@ -406,7 +265,7 @@ export function Content() {
               ],
               [
                 '"Unit odm-agent.service does not exist"',
-                "Fixed: the agent and its unit are in the client package now. Reinstall it.",
+                "Reinstall the client package.",
               ],
               [
                 '"certificate signed by unknown authority" after joining',
@@ -420,9 +279,7 @@ export function Content() {
               [
                 "KDC_ERR_S_PRINCIPAL_UNKNOWN for HTTP/odm.<domain>",
                 <>
-                  Fixed: the console answers to <C key="y">odm.&lt;domain&gt;</C> as well as its
-                  own name, and that principal is registered now. Re-run{" "}
-                  <C key="z">deploy/create-api-service-account.sh</C> on a controller.
+                  Re-run <C key="z">deploy/create-api-service-account.sh</C> on a controller.
                 </>,
               ],
             ]}
@@ -526,25 +383,14 @@ export function Content() {
               [
                 '"has never been heard from, so it is probably not running the agent"',
                 <>
-                  Correct if nothing at all has arrived from it. Three things used to say it
-                  wrongly, and all three are fixed: it was judged on the last run that applied
-                  policy, and policy already applied is not applied again; a machine moved to
-                  another organizational unit was looked up under the name it no longer had; and
-                  an agent whose first run could not reach the console &mdash; a machine that
-                  starts faster than the console it is on &mdash; waited a full refresh interval
-                  before trying again, so a freshly installed controller said this for a quarter
-                  of an hour. It now retries within a minute. If it persists, the agent really is
-                  not reaching the console from there: <C key="hb">journalctl -u odm-agent</C> on
-                  the machine says why.
+                  Correct if nothing at all has arrived from it. Otherwise upgrade the
+                  control plane and the agent, then read{" "}
+                  <C key="hb">journalctl -u odm-agent</C> on the machine.
                 </>,
               ],
               [
                 'A printer, tunnel or collection sits at "applying"',
-                <>
-                  Fixed: only three kinds of work ever wrote their outcome back, so a queue that
-                  was created, an interface that was up and a broker that was balancing all
-                  looked unfinished. Upgrade the control plane.
-                </>,
+                "Upgrade the control plane.",
               ],
               [
                 "DHCP says the role is not installed",
@@ -557,10 +403,7 @@ export function Content() {
               ],
               [
                 "A DHCP scope disappears after a restart",
-                <>
-                  Fixed: Kea rewrites its own configuration to persist one, and both the file
-                  ownership and its AppArmor profile refused. Re-run the DHCP role.
-                </>,
+                "Re-run the DHCP role.",
               ],
               [
                 "Remote desktop connects but never balances",
@@ -580,12 +423,7 @@ export function Content() {
             rows={[
               [
                 'Restore fails with "search failed: noSuchObject"',
-                <>
-                  Fixed, and it was every restore: the directory reports{" "}
-                  <C key="r">noSuchObject</C> for a search whose base is not there, and the check
-                  for whether the object is already back searches a name that by definition is not.
-                  Upgrade the control plane.
-                </>,
+                "Upgrade the control plane.",
               ],
               [
                 "The container it came from is gone",
@@ -610,11 +448,7 @@ export function Content() {
               ],
               [
                 "A row reading WARNING / The option -k is deprecated",
-                <>
-                  Fixed: samba-tool writes that notice on standard output, next to the policy, and
-                  it was read back as a line of it. The control plane passes{" "}
-                  <C key="u">--use-kerberos=required</C> now.
-                </>,
+                "Upgrade the control plane.",
               ],
               [
                 "A restored object came back with a new SID",
@@ -628,11 +462,7 @@ export function Content() {
               ],
               [
                 "A row of tildes and carets where an error should be",
-                <>
-                  Fixed: <C key="q">samba-tool</C> reports a failure as a Python traceback, and the
-                  console used to show its last line, which is the marker under the expression that
-                  raised rather than the message. Upgrade the control plane.
-                </>,
+                "Upgrade the control plane.",
               ],
             ]}
           />
@@ -666,21 +496,13 @@ export function Content() {
               ],
               [
                 "A client stops finding the domain after a reboot",
-                <>
-                  Fixed: the join pins the domain&rsquo;s DNS to the connection profile.
-                  NetworkManager rewrites resolv.conf from DHCP on every boot, and resolvectl&rsquo;s
-                  per-link settings are runtime state, so a machine configured either of those
-                  ways left the domain at its first restart.
-                </>,
+                "Re-join with a current client package: it pins the domain’s DNS to the connection profile, which survives a reboot.",
               ],
               [
                 <>
                   Setup stops at <C key="s">Could not get lock /var/lib/dpkg/lock-frontend</C>
                 </>,
-                <>
-                  Fixed: a machine that booted a minute ago is usually still running its own
-                  apt. Setup waits for the lock now instead of failing.
-                </>,
+                "The machine is still running its own apt. Wait, or upgrade — setup waits for the lock.",
               ],
             ]}
           />
@@ -818,7 +640,7 @@ export function Content() {
               ],
               [
                 "The Leases tab is empty while a scope reports addresses in use",
-                "Fixed in 0.6.0: the lease query asked for the leases in zero subnets. Upgrade the control plane.",
+                "Upgrade the control plane.",
               ],
             ]}
           />

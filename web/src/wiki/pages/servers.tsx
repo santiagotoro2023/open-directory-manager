@@ -156,6 +156,22 @@ export function Content() {
           </p>
         </Section>
 
+        <Section title="A machine's logs">
+          <p>
+            <strong>Directory</strong> &rarr; the machine &rarr; <strong>Logs</strong>. Warnings
+            and errors from the units that explain a machine&rsquo;s behaviour, sent with the
+            agent&rsquo;s check-in and grouped by unit.
+          </p>
+          <Reference
+            headers={["Control", "What it does"]}
+            rows={[
+              ["Period", "6 hours to 14 days."],
+              ["Errors only", "Hides warnings."],
+              ["Export", "Downloads what is on screen as CSV: time, unit, level, message."],
+            ]}
+          />
+        </Section>
+
         <Section title="Disk encryption">
           <p>
             The <strong>Machine</strong> tab lists this machine&rsquo;s block devices and says

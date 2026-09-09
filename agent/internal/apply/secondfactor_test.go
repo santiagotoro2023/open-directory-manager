@@ -484,3 +484,32 @@ func TestTheWalkthroughDoesNotLetSomebodyPastWithoutDoingIt(t *testing.T) {
 		t.Error("the check is not something a person may run")
 	}
 }
+
+func TestOnlyOneEnrolmentWindowOpens(t *testing.T) {
+	// A terminal that hands its window to a server of its own returns as soon
+	// as it has asked for one, so the loop opened another, and another: four
+	// identical QR codes on screen at once.
+	env, _ := testEnv(t)
+	withPam(t, env, "gdm-password")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, SelfEnrol: true},
+	}, env)
+
+	session := read(t, env, enrolSession)
+	if !strings.Contains(session, "flock -n 9") {
+		t.Error("nothing stops a second prompt opening beside the first")
+	}
+	if !strings.Contains(session, "--wait --full-screen") {
+		t.Error("gnome-terminal neither waits nor fills the screen")
+	}
+	for _, wanted := range []string{"--nofork", "--disable-server", "--disable-factory"} {
+		if !strings.Contains(session, wanted) {
+			t.Errorf("a terminal is still allowed to return before it has asked: %s", wanted)
+		}
+	}
+	// The symlink is a last resort, not the first thing tried: taking it at
+	// face value meant no flags were passed at all.
+	if !strings.Contains(session, "for terminal in gnome-terminal") {
+		t.Error("x-terminal-emulator is still tried before the terminals it points at")
+	}
+}

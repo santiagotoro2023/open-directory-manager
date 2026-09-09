@@ -429,7 +429,11 @@ teardown_policy_artefacts() {
 
     # Desktop and login screen, in every database the agent writes to.
     run rm -f /etc/dconf/db/odm.d/00-odm-desktop \
+              /etc/dconf/db/odm.d/05-odm-login-notice \
+              /etc/dconf/db/odm.d/10-odm-session \
+              /etc/dconf/db/odm.d/20-odm-first-run \
               /etc/dconf/db/odm.d/locks/odm-desktop \
+              /etc/dconf/db/odm.d/locks/odm-session \
               /etc/dconf/db/gdm.d/00-odm-login-screen \
               /etc/dconf/profile/gdm \
               /usr/share/gdm/dconf/95-odm-login-screen
@@ -445,13 +449,29 @@ teardown_policy_artefacts() {
     run rm -f /etc/xdg/mimeapps.list /usr/share/mime/packages/odm-file-types.xml
     command -v update-mime-database >/dev/null 2>&1 && maybe update-mime-database /usr/share/mime
 
+    # What the first sign-in was told not to show. Only the files ODM wrote:
+    # a machine that had its own copy keeps it.
+    local masked
+    for masked in /etc/xdg/autostart/gnome-welcome-tour.desktop \
+                  /etc/xdg/autostart/gnome-initial-setup-first-login.desktop; do
+        grep -q "Open Directory Manager" "$masked" 2>/dev/null && run rm -f "$masked"
+    done
+
     # Access control, scheduled work, deployed scripts and trust anchors.
     shopt -s nullglob
     local leftovers=(/etc/sudoers.d/odm-* /etc/security/odm-access-* /etc/cron.d/odm-*
                      /usr/local/share/ca-certificates/odm-* /etc/ssh/sshd_config.d/50-odm.conf
                      /etc/apt/apt.conf.d/20odm-auto-upgrades
                      /etc/apt/apt.conf.d/51odm-unattended-upgrades
+                     /etc/apt/apt.conf.d/50-odm-software-control
                      /etc/pwquality.conf.d/50-odm.conf /etc/security/pwquality.conf.d/50-odm.conf
+                     /etc/sysctl.d/50-odm.conf /etc/systemd/logind.conf.d/50-odm.conf
+                     /etc/udev/rules.d/99-odm-removable.rules
+                     /etc/polkit-1/rules.d/50-odm-removable.rules
+                     /etc/polkit-1/rules.d/50-odm-software.rules
+                     /etc/xdg/autostart/odm-enrol-factor.desktop
+                     /usr/share/applications/odm-remote-desktop.desktop
+                     /etc/security/users.oath
                      /etc/systemd/system/odm-firewall.service
                      /etc/systemd/system/odm-scripts.service)
     shopt -u nullglob
@@ -460,6 +480,13 @@ teardown_policy_artefacts() {
         run rm -f "${leftovers[@]}"
         command -v update-ca-certificates >/dev/null 2>&1 && maybe update-ca-certificates --fresh
     fi
+
+    run rm -rf /usr/local/share/fonts/odm /usr/share/backgrounds/odm
+    command -v fc-cache >/dev/null 2>&1 && maybe fc-cache -f
+    command -v update-desktop-database >/dev/null 2>&1 \
+        && maybe update-desktop-database /usr/share/applications
+    maybe systemctl daemon-reload
+    maybe udevadm control --reload
 
     # Drive maps are systemd mount units, named after where they mount.
     shopt -s nullglob
@@ -474,6 +501,32 @@ teardown_policy_artefacts() {
     maybe systemctl daemon-reload
 
     ok "Applied settings removed"
+}
+
+# Every line ODM put in a PAM stack, out of every stack it put one in.
+#
+# This runs before the agent's files are deleted, and it is the one teardown
+# step that cannot be skipped: a stack naming /usr/lib/odm/second-factor-
+# required after that directory has gone refuses every sign-in through that
+# service, and pam_oath with no users file refuses the rest. Uninstalling ODM
+# has to leave a machine somebody can still log in to.
+teardown_pam() {
+    [[ "$HAS_AGENT" == "yes" ]] || return 0
+    say "PAM"
+    shopt -s nullglob
+    local stack
+    for stack in /etc/pam.d/*; do
+        [[ -f "$stack" ]] || continue
+        grep -qE "/usr/lib/odm/|/etc/odm/|users.oath" "$stack" 2>/dev/null || continue
+        run cp -a "$stack" "$stack.pre-odm-uninstall"
+        run sed -i -e '\#/usr/lib/odm/#d' \
+                   -e '\#/etc/odm/#d' \
+                   -e '/pam_oath.so.*users.oath/d' \
+                   -e '/^# Managed by Open Directory Manager/d' \
+                   -e '/^# BEGIN ODM MANAGED BLOCK$/,/^# END ODM MANAGED BLOCK$/d' "$stack"
+    done
+    shopt -u nullglob
+    ok "PAM lines removed"
 }
 
 teardown_vpn() {
@@ -527,6 +580,7 @@ teardown_vpn
 teardown_certificate_authority
 teardown_pxe
 teardown_time
+teardown_pam
 teardown_policy_artefacts
 
 # -------------------------------------------------------------- core ODM --
