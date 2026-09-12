@@ -142,6 +142,12 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		}
 		controller = found[0].Host
 		progress("Found a domain controller", controller)
+		// The join uses the controller everything else here just used, rather
+		// than letting net look again. A domain name with a stale address on
+		// it — a rebuilt controller, a machine that once held the name, an
+		// IPv6 address nothing routes to — is one net can pick and fail on,
+		// after discovery had already found a controller that answers.
+		options.Server = controller
 	}
 
 	progress("Writing Kerberos configuration", Krb5ConfPath)

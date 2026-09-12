@@ -1,6 +1,7 @@
 package join
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -130,4 +131,32 @@ func (r *recordingRunner) ran(want string) bool {
 		}
 	}
 	return false
+}
+
+func TestAFailureSaysWhatTheCommandSaid(t *testing.T) {
+	// net ads join prints "Failed to join domain: …" on standard output and
+	// leaves standard error empty. Built from stderr alone, the join reported
+	//
+	//	the domain refused the join: net: exit status 255:
+	//
+	// which is a colon with nothing after it.
+	var out, errOut bytes.Buffer
+	out.WriteString("Using short domain name -- CORP\nFailed to join domain: " +
+		"failed to find DC for domain CORP\n")
+	said := reason(out, errOut)
+	if !strings.Contains(said, "Failed to join domain") {
+		t.Errorf("what the command said was thrown away: %q", said)
+	}
+
+	// Both streams, when both have something.
+	errOut.WriteString("kinit: Clock skew too great\n")
+	said = reason(out, errOut)
+	if !strings.Contains(said, "Clock skew") || !strings.Contains(said, "Failed to join") {
+		t.Errorf("one of the two streams was dropped: %q", said)
+	}
+
+	// And a command that said nothing says so, rather than trailing a colon.
+	if reason(bytes.Buffer{}, bytes.Buffer{}) != "it said nothing" {
+		t.Error("silence is still reported as an empty reason")
+	}
 }

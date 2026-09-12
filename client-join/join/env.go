@@ -43,9 +43,43 @@ func (execRunner) RunWithInput(
 	cmd.Stdout = &out
 	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
-		return out.String(), fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(errOut.String()))
+		return out.String(), fmt.Errorf("%s: %w: %s", name, err, reason(out, errOut))
 	}
 	return out.String(), nil
+}
+
+// reason is what the command said about its own failure.
+//
+// Both streams, because the one that matters depends on the command: net ads
+// join prints "Failed to join domain: …" on standard output and leaves
+// standard error empty, so an error built from stderr alone read
+//
+//	the domain refused the join: net: exit status 255:
+//
+// — a colon with nothing after it, over a command that had just said exactly
+// what was wrong.
+func reason(out, errOut bytes.Buffer) string {
+	said := strings.TrimSpace(errOut.String())
+	if printed := strings.TrimSpace(out.String()); printed != "" {
+		if said != "" {
+			said += "\n"
+		}
+		said += printed
+	}
+	if said == "" {
+		return "it said nothing"
+	}
+	return lastLines(said, 8)
+}
+
+// lastLines keeps the end of some output, which is where a command says how
+// it went. Samba's tools are verbose on the way to a failure.
+func lastLines(text string, count int) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) <= count {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[len(lines)-count:], "\n")
 }
 
 // NewEnv returns an Env writing to the real machine, or beneath root.

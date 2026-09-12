@@ -495,3 +495,22 @@ func TestAJoinSaysWhenTheAgentCannotVerifyTheConsole(t *testing.T) {
 		t.Error("a dry run must not be reported as untrusted")
 	}
 }
+
+func TestTheJoinUsesTheControllerItFound(t *testing.T) {
+	// Discovery finds a controller that answers; net then looked for one
+	// again on its own. A domain name carrying a stale address — a rebuilt
+	// controller, an IPv6 nothing routes to — is one it can pick and fail
+	// on, with everything else in the join having worked.
+	source, err := os.ReadFile("join.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(source)
+	found := strings.Index(body, `progress("Found a domain controller", controller)`)
+	if found < 0 {
+		t.Fatal("discovery has moved")
+	}
+	if !strings.Contains(body[found:min(found+900, len(body))], "options.Server = controller") {
+		t.Error("the join does not use the controller discovery found")
+	}
+}
