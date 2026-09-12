@@ -24,7 +24,6 @@ from . import (
     domainexport,
     kea,
     objects,
-    password_policy,
     replication,
     tasks,
 )
@@ -667,10 +666,6 @@ async def security_baseline(
         admins = await run_in_threadpool(
             objects.account_names_in, conn, settings, settings.admin_group
         )
-        try:
-            policy_rows = await run_in_threadpool(password_policy.read_domain, settings)
-        except Exception:  # noqa: BLE001 - a domain whose policy cannot be read is a finding
-            policy_rows = {}
 
     described = [
         {
@@ -685,7 +680,6 @@ async def security_baseline(
     checks.append(baseline.stale_accounts(described, STALE_ACCOUNT_DAYS, now))
     checks.append(baseline.passwords_never_expire(described))
     checks.append(baseline.privileged_accounts(sorted(admins)))
-    checks.append(baseline.password_policy(_normalised_policy(policy_rows)))
 
     enrolled = {
         str(row["principal"]).split("@")[0].lower()
@@ -762,26 +756,3 @@ def _as_datetime(value: Any) -> datetime | None:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None
-
-
-def _normalised_policy(raw: dict[str, Any]) -> dict[str, Any] | None:
-    """samba-tool's labels, as the checks want to read them."""
-    if not raw:
-        return None
-
-    def number(label: str) -> int:
-        for key, value in raw.items():
-            if label.lower() in key.lower():
-                digits = "".join(character for character in str(value) if character.isdigit())
-                return int(digits) if digits else 0
-        return 0
-
-    complexity = ""
-    for key, value in raw.items():
-        if "complexity" in key.lower():
-            complexity = str(value).strip().lower()
-    return {
-        "min_length": number("Minimum password length"),
-        "complexity": complexity in ("on", "true", "yes"),
-        "lockout_threshold": number("Account lockout threshold"),
-    }

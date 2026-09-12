@@ -245,6 +245,23 @@ class Package(Strict):
         return value
 
 
+class CustomPackage(Strict):
+    """A .deb an operator uploaded directly, for software with no apt
+    repository this domain can reach.
+
+    Only the id travels in the policy object — the file itself is fetched
+    separately, from the control plane's own store, the same way the agent
+    binary itself is rather than embedded the way a font or a background
+    picture is.
+    """
+
+    name: Name
+    package_id: Annotated[str, Field(min_length=1, max_length=64)]
+    state: Literal["present", "absent"] = "present"
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
+
+
 class TrustedCertificate(Strict):
     """A certificate to install into the machine's system trust store."""
 
@@ -452,22 +469,6 @@ class CertificateEnrolment(Strict):
         return value.rstrip("/")
 
 
-class PasswordSelfService(Strict):
-    """Whether people may change their own password, and what it must be."""
-
-    enabled: bool = True
-    # Changing a password needs the current one, always. This is about whether
-    # the page is offered at all.
-    minimum_length: Annotated[int, Field(ge=1, le=255)] = 12
-    # Checked before the directory is asked, so somebody typing a password the
-    # domain will refuse is told which rule they missed rather than getting
-    # one flat rejection from Samba.
-    require_uppercase: bool = False
-    require_lowercase: bool = False
-    require_digit: bool = False
-    require_symbol: bool = False
-
-
 class RemoteDesktopFile(Strict):
     """A connection file on somebody's desktop.
 
@@ -571,6 +572,11 @@ class DashLayout(Strict):
     # Desktop entries in the order they should appear.
     applications: Annotated[str, Field(min_length=1, max_length=1024)]
     for_principal: Annotated[str, Field(max_length=128)] = ""
+    # Whether somebody signed in may then rearrange their own dash. Off by
+    # default, matching every other "the operator set this" control: a layout
+    # nobody may keep for themselves past the next sign-in is not really a
+    # setting they were given, it is one reapplied at them.
+    allow_user_change: bool = False
     # Optional: this entry applies only where it matches.
     targeting: ItemTargeting | None = None
 
@@ -955,36 +961,18 @@ class LocalAdministrator(Strict):
         return value
 
 
-class PasswordPolicy(Strict):
-    """What a password in the domain has to be.
+class GraphicsDrivers(Strict):
+    """Which GPU driver a machine should have.
 
-    Active Directory holds these rules on the domain itself and the directory
-    enforces them on every change, wherever it is made — so this is the one
-    setting the machine does not apply: the control plane writes it, and a
-    machine never sees it. Linked at the domain root it is the domain's own
-    policy, which is where Active Directory keeps it. Naming groups makes it a
-    fine-grained password policy for their members instead — a password
-    settings object — and those apply to users and groups, never to a
-    container, in Samba exactly as in AD.
+    "auto" reads the card off the machine with lspci and installs the
+    matching vendor driver; naming a vendor directly skips that and installs
+    it regardless of what the machine reports, for the one card lspci cannot
+    identify cleanly or an operator who already knows. A driver is never
+    uninstalled by unlinking this setting later — the one machine that would
+    prove that a mistake is the one that can no longer show it.
     """
 
-    complexity: bool = True
-    minimum_length: Annotated[int, Field(ge=1, le=255)] = 12
-    # How many previous passwords cannot be used again.
-    history: Annotated[int, Field(ge=0, le=24)] = 5
-    minimum_age_days: Annotated[int, Field(ge=0, le=999)] = 0
-    # 0 is "never expires", as it is in the directory.
-    maximum_age_days: Annotated[int, Field(ge=0, le=999)] = 0
-    # 0 is "never lock out".
-    lockout_threshold: Annotated[int, Field(ge=0, le=999)] = 0
-    lockout_minutes: Annotated[int, Field(ge=0, le=99999)] = 30
-    reset_lockout_minutes: Annotated[int, Field(ge=0, le=99999)] = 30
-    # Empty is every account in the domain, and then the policy has to be
-    # linked at the domain root for there to be anything for it to reach.
-    groups: Annotated[list[Name], Field(default_factory=list, max_length=32)]
-    # Where two fine-grained policies reach the same person, lower wins — the
-    # directory's own rule, not one invented here.
-    precedence: Annotated[int, Field(ge=1, le=10000)] = 100
+    mode: Literal["auto", "nvidia", "amd", "none"] = "auto"
 
 
 class LocalPasswordPolicy(Strict):
@@ -1056,6 +1044,9 @@ class PolicySettings(Strict):
         list[TrustedCertificate], Field(default_factory=list, max_length=32)
     ]
     packages: Annotated[list[Package], Field(default_factory=list, max_length=200)]
+    custom_packages: Annotated[
+        list[CustomPackage], Field(default_factory=list, max_length=100)
+    ]
     admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
     wallpaper: Wallpaper | None = None
@@ -1065,9 +1056,7 @@ class PolicySettings(Strict):
     certificate_enrolment: Annotated[
         list[CertificateEnrolment], Field(default_factory=list, max_length=8)
     ]
-    password_self_service: PasswordSelfService | None = None
     local_password_policy: LocalPasswordPolicy | None = None
-    password_policy: PasswordPolicy | None = None
     printers: Annotated[list[Printer], Field(default_factory=list, max_length=100)]
     remote_desktop_files: Annotated[
         list[RemoteDesktopFile], Field(default_factory=list, max_length=50)
@@ -1088,6 +1077,7 @@ class PolicySettings(Strict):
     dash: Annotated[list[DashLayout], Field(default_factory=list, max_length=50)]
     always_on_vpn: AlwaysOnVpn | None = None
     local_administrator: LocalAdministrator | None = None
+    graphics_drivers: GraphicsDrivers | None = None
     remote_desktop_session: RemoteDesktopSession | None = None
     agent: AgentSettings | None = None
     agent_update: AgentUpdate | None = None

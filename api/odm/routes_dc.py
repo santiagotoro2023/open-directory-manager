@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import agents, audit, directory, objects, replication, sites
 from .config import Settings, get_settings
-from .routes_directory import _read
+from .routes_directory import _bound, _read
 from .security import client_ip, get_pool, require_admin, requires
 from .sessions import Session
 
@@ -203,6 +203,76 @@ async def write_agent_schedule(
             outcome="success",
             object_type="domain",
             object_dn="agents",
+            before=before,
+            after=after,
+        )
+    return after
+
+
+class JoinSettings(BaseModel):
+    """Where a computer object lands when nothing about its join names one."""
+
+    # Empty is Samba's own default: whatever "Computers" resolves to today,
+    # unchanged from before this setting existed.
+    default_computer_container: Annotated[str, Field(default="", max_length=1024)] = ""
+
+
+async def join_settings(pool: asyncpg.Pool) -> dict[str, Any]:
+    row = await pool.fetchrow("SELECT default_computer_container FROM join_settings")
+    return {"default_computer_container": row["default_computer_container"] if row else ""}
+
+
+@router.get("/join-settings", dependencies=[Depends(requires("dc.read"))])
+async def read_join_settings(
+    _: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    return await join_settings(pool)
+
+
+@router.put("/join-settings", dependencies=[Depends(requires("dc.write"))])
+async def write_join_settings(
+    body: JoinSettings,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Set the container a join lands in when it does not choose one itself.
+
+    An enrolment token always names its own container and is unaffected —
+    this is only for a join that never asked, which today means
+    odm-client-install run with a domain credential and no --ou.
+    """
+    container = body.default_computer_container.strip()
+    if container:
+        async with _bound(settings, write=False) as conn:
+            await run_in_threadpool(objects.get, conn, settings, container)
+
+    async with pool.acquire() as conn:
+        before = await join_settings(pool)
+        await conn.execute(
+            """
+            INSERT INTO join_settings (id, default_computer_container, updated_by)
+            VALUES (true, $1, $2)
+            ON CONFLICT (id) DO UPDATE SET
+                default_computer_container = EXCLUDED.default_computer_container,
+                updated_at = now(),
+                updated_by = EXCLUDED.updated_by
+            """,
+            container,
+            session.principal,
+        )
+        after = await join_settings(pool)
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="join.settings",
+            outcome="success",
+            object_type="domain",
+            object_dn="join-settings",
             before=before,
             after=after,
         )

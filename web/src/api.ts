@@ -91,6 +91,15 @@ export interface PolicySettings {
   sysctl?: Record<string, unknown>[];
   shortcuts?: Record<string, unknown>[];
   fonts?: Record<string, unknown>[];
+  custom_packages?: {
+    name: string;
+    package_id: string;
+    state?: "present" | "absent";
+    package_name?: string;
+    version?: string;
+    sha256?: string;
+    unavailable?: string;
+  }[];
   power?: {
     screen_off_ac_minutes: number;
     screen_off_battery_minutes: number;
@@ -175,25 +184,8 @@ export interface PolicySettings {
     length: number;
     administrator: boolean;
   };
-  password_self_service?: {
-    enabled: boolean;
-    minimum_length: number;
-    require_uppercase?: boolean;
-    require_lowercase?: boolean;
-    require_digit?: boolean;
-    require_symbol?: boolean;
-  };
-  password_policy?: {
-    complexity?: boolean;
-    minimum_length: number;
-    history?: number;
-    minimum_age_days?: number;
-    maximum_age_days?: number;
-    lockout_threshold?: number;
-    lockout_minutes?: number;
-    reset_lockout_minutes?: number;
-    groups?: string[];
-    precedence?: number;
+  graphics_drivers?: {
+    mode: "auto" | "nvidia" | "amd" | "none";
   };
   local_password_policy?: {
     minimum_length: number;
@@ -443,6 +435,10 @@ export interface DomainController {
 export interface AgentSchedule {
   poll_minutes: 1 | 5 | 15 | 30;
   push_enabled: boolean;
+}
+
+export interface JoinSettings {
+  default_computer_container: string;
 }
 
 export interface ControllerOverview {
@@ -963,6 +959,19 @@ export interface BackupRecord {
   detail: string | null;
 }
 
+export interface CustomPackageMeta {
+  id: string;
+  name: string;
+  file_name: string;
+  package_name: string;
+  version: string;
+  architecture: string;
+  size_bytes: number;
+  sha256: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
 export interface JoinToken {
   id: string;
   label: string;
@@ -1361,6 +1370,15 @@ export const api = {
       ),
   },
 
+  packages: {
+    list: () => request<{ packages: CustomPackageMeta[] }>("/packages"),
+
+    upload: (name: string, file_name: string, contentB64: string) =>
+      request<CustomPackageMeta>("/packages", json({ name, file_name, content: contentB64 })),
+
+    remove: (id: string) => request<void>(`/packages/${id}`, { method: "DELETE" }),
+  },
+
   dns: {
     status: () => request<{ available: boolean; server: string }>("/dns/status"),
 
@@ -1485,6 +1503,14 @@ export const api = {
         method: "PUT",
         body: JSON.stringify(body),
       }),
+
+    joinSettings: () => request<JoinSettings>("/controllers/join-settings"),
+
+    setJoinSettings: (body: JoinSettings) =>
+      request<JoinSettings>("/controllers/join-settings", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
   },
 
   radius: {
@@ -1546,18 +1572,6 @@ export const api = {
         "/controllers/sites/controllers",
         json({ controller_dn, site_name, hostname }),
       ),
-  },
-
-  password: {
-    policy: () => request<{ policy: Record<string, string> }>("/password/policy"),
-
-    selfService: () =>
-      request<{ enabled: boolean; minimum_length?: number; detail?: string }>(
-        "/password/self-service",
-      ),
-
-    change: (current_password: string, new_password: string) =>
-      request<void>("/password/change", json({ current_password, new_password })),
   },
 
   rd: {

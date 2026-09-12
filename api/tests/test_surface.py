@@ -22,6 +22,10 @@ PUBLIC = {
     ("POST", "/api/v1/auth/login"),      # authenticates a credential
     ("POST", "/api/v1/auth/negotiate"),  # authenticates a Kerberos ticket
     ("POST", "/api/v1/join/redeem"),     # authenticated by the enrolment token
+    # Where a computer object lands when a join names no container of its
+    # own. Asked before the machine has any credential to ask anything else
+    # with, and reveals nothing a credential is needed to act on.
+    ("GET", "/api/v1/join/default-container"),
     ("GET", "/api/v1/healthz"),          # liveness probe
     # The certificate revocation list. Public because the certificates this
     # domain issues point at it: a client checking whether one has been

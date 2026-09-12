@@ -48,19 +48,6 @@ def test_an_administrator_signing_in_with_a_password_alone_is_critical():
     assert baseline.second_factor(["ada"], {"ada"}).severity == "ok"
 
 
-def test_a_password_policy_is_measured_against_the_usual_baseline():
-    weak = baseline.password_policy(
-        {"min_length": 7, "complexity": False, "lockout_threshold": 0}
-    )
-    assert weak.severity == "warning"
-    assert weak.count == 3
-    strong = baseline.password_policy(
-        {"min_length": 14, "complexity": True, "lockout_threshold": 5}
-    )
-    assert strong.severity == "ok"
-    assert baseline.password_policy(None).severity == "unknown"
-
-
 def test_a_domain_that_has_never_been_backed_up_is_critical():
     assert baseline.backups(None, NOW).severity == "critical"
     assert baseline.backups(NOW - timedelta(days=2), NOW).severity == "ok"

@@ -43,6 +43,7 @@ var appliers = []applier{
 	// rule that takes effect one refresh late.
 	{"software_control", applySoftwareControl},
 	{"packages", applyPackages},
+	{"custom_packages", applyCustomPackages},
 	{"updates", applyUpdates},
 	{"trusted_certificates", applyTrustedCertificates},
 	{"browser", applyBrowser},
@@ -58,6 +59,7 @@ var appliers = []applier{
 	{"first_run", applyFirstRun},
 	{"always_on_vpn", applyAlwaysOnVpn},
 	{"local_administrator", applyLocalAdministrator},
+	{"graphics_drivers", applyGraphicsDrivers},
 	{"local_password_policy", applyLocalPasswordPolicy},
 	{"remote_desktop_session", applyRemoteDesktopSession},
 	// What opens a connection file, on a machine whose policy hands them out.

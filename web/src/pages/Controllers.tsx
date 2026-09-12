@@ -6,6 +6,7 @@ import {
   type AgentSchedule,
   type ControllerOverview,
   type DomainController,
+  type JoinSettings,
   type Site,
 } from "../api";
 import { WATCH, useLive } from "../live";
@@ -102,7 +103,12 @@ export function Controllers() {
 
       {tab === "sites" && <Sites controllers={overview?.controllers ?? []} />}
 
-      {tab === "agents" && <Agents />}
+      {tab === "agents" && (
+        <>
+          <Agents />
+          <NewComputers />
+        </>
+      )}
 
       {tab === "controllers" && (
         <>
@@ -313,6 +319,113 @@ function Agents() {
       </label>
       <p className="muted">
         One request per machine per policy edit, on top of the polling above.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Where a computer object lands when a join does not name a container of its
+ * own — an enrolment token always does, chosen from the directory tree, so
+ * this is only for odm-client-install run with a domain credential and no
+ * --ou, which is the common case.
+ */
+function NewComputers() {
+  const [settings, setSettings] = useState<JoinSettings | null>(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.controllers
+      .joinSettings()
+      .then((result) => {
+        setSettings(result);
+        setDraft(result.default_computer_container);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : String(err)));
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.controllers.setJoinSettings({
+        default_computer_container: draft.trim(),
+      });
+      setSettings(result);
+      setDraft(result.default_computer_container);
+      setNotice("Saved. Machines that join without naming their own container pick this up.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!settings) {
+    return error ? (
+      <p className="alert" role="alert">
+        {error}
+      </p>
+    ) : (
+      <Loading label="Reading the join settings…" />
+    );
+  }
+
+  const dirty = draft.trim() !== settings.default_computer_container;
+
+  return (
+    <section className="role-configuration">
+      <header>
+        <h3>New computer accounts</h3>
+        <p className="muted">
+          Where a machine&rsquo;s computer object is created when its join does not choose an
+          organizational unit itself. Left empty, that is Samba&rsquo;s own default &mdash; the
+          Computers container.
+        </p>
+      </header>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && <p className="muted">{notice}</p>}
+
+      <Field
+        label="Default organizational unit"
+        hint="Applies to odm-client-install run with a domain credential and no --ou"
+      >
+        <PickerField
+          kind="ou"
+          as="dn"
+          ariaLabel="Default organizational unit for new computers"
+          placeholder="Uses Samba's own default (Computers)"
+          value={draft}
+          onChange={setDraft}
+        />
+      </Field>
+      <div className="actions-row">
+        <button type="button" className="primary" disabled={saving || !dirty} onClick={save}>
+          Save
+        </button>
+        {dirty && (
+          <button
+            type="button"
+            className="ghost"
+            disabled={saving}
+            onClick={() => setDraft(settings.default_computer_container)}
+          >
+            Discard
+          </button>
+        )}
+      </div>
+      <p className="muted">
+        An enrolment token always names its own container, chosen from the directory tree when it
+        is created, and is unaffected by this.
       </p>
     </section>
   );

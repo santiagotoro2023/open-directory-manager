@@ -107,6 +107,13 @@ class Settings(BaseSettings):
     # is decided by whether the key is on disk, not by this being set.
     ca_dir: Path | None = Path("/var/lib/odm/ca")
 
+    # --- Custom package deployment ---
+    # Where a .deb an operator uploads is kept. Not in the policy object
+    # itself — a policy document is fetched by every machine it reaches on
+    # every poll, and a software package is commonly tens of megabytes,
+    # which a font or a background picture never is.
+    custom_package_dir: Path = Path("/var/lib/odm/packages")
+
     # --- Backups ---
     backup_dir: Path | None = None
     backup_interval_hours: int = 24

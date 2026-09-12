@@ -45,7 +45,7 @@ echo "==> Installing packages the appliers depend on"
 export DEBIAN_FRONTEND=noninteractive
 apt-get install -y --no-install-recommends \
     cifs-utils keyutils nftables dconf-cli sudo openssh-server \
-    libpam-oath qrencode
+    libpam-oath qrencode libglib2.0-dev-bin
 
 install -m 0755 "$BINARY" /usr/sbin/odm-agent
 

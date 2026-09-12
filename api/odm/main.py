@@ -46,7 +46,7 @@ from . import (
     routes_events,
     routes_join,
     routes_operations,
-    routes_password,
+    routes_packages,
     routes_policy,
     routes_printers,
     routes_radius,
@@ -174,11 +174,11 @@ def create_app() -> FastAPI:
     app.include_router(routes_remotedesktop.router)
     app.include_router(routes_vpn.router)
     app.include_router(routes_radius.router)
-    app.include_router(routes_password.router)
     app.include_router(routes_dc.router)
     app.include_router(routes_rbac.router)
     app.include_router(routes_ca.router)
     app.include_router(routes_operations.router)
+    app.include_router(routes_packages.router)
     app.include_router(routes_events.router)
     app.include_router(routes_join.router)
     app.include_router(routes_audit.router)

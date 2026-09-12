@@ -234,32 +234,6 @@ def encryption(machines: list[dict[str, Any]]) -> Check:
     )
 
 
-def password_policy(policy: dict[str, Any] | None) -> Check:
-    """The domain's own password rules, against what is generally asked for."""
-    if not policy:
-        return Check("password-policy", "Password policy", "unknown",
-                     "The domain's password policy could not be read.", "Passwords")
-    problems = []
-    if int(policy.get("min_length") or 0) < 12:
-        problems.append(f"minimum length is {policy.get('min_length')}")
-    if not policy.get("complexity"):
-        problems.append("complexity is off")
-    if int(policy.get("lockout_threshold") or 0) == 0:
-        problems.append("no lockout after repeated failures")
-    if not problems:
-        return Check("password-policy", "Password policy", "ok",
-                     "The domain's password policy meets the usual baseline.", "Passwords")
-    return Check(
-        "password-policy",
-        "Password policy",
-        "warning",
-        "; ".join(problems).capitalize() + ".",
-        "Passwords",
-        len(problems),
-        problems,
-    )
-
-
 def delegation(assignments: list[dict[str, Any]]) -> Check:
     """Delegated administration granted over the whole domain rather than
     over a part of it."""

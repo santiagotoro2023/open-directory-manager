@@ -131,6 +131,33 @@ func TestSoftwareControlAllowsEveryUpgradeAndOnlyListedNewPackages(t *testing.T)
 	}
 }
 
+// A .deb the same policy object deploys is the same contradiction a named
+// apt package would be if it were not exempted too — and what the hook sees
+// is the real name dpkg-deb found inside the upload, not the label an
+// operator gave it in the console.
+func TestACustomPackageThePolicyDeploysIsAllowedByItsRealName(t *testing.T) {
+	env, _ := testEnv(t)
+	applySoftwareControl(context.Background(), policy.Settings{
+		SoftwareControl: &policy.SoftwareControl{Enabled: true},
+		CustomPackages: []policy.CustomPackage{
+			{Name: "Internal tool", PackageID: "abc", PackageName: "odm-internal-tool"},
+			{Name: "old tool", PackageID: "def", PackageName: "odm-old-tool", State: "absent"},
+			{Name: "gone", PackageID: "ghi", Unavailable: "removed from the console"},
+		},
+	}, env)
+
+	names := read(t, env, aptAllowNames)
+	if !strings.Contains(names, "odm-internal-tool") {
+		t.Errorf("the deployed package's real name is not in the list:\n%s", names)
+	}
+	if strings.Contains(names, "odm-old-tool") {
+		t.Errorf("a package set to absent was allowed anyway:\n%s", names)
+	}
+	if strings.Contains(names, "Internal tool") {
+		t.Errorf("the operator's label reached the list instead of the real name:\n%s", names)
+	}
+}
+
 // A list of names alone is a list nothing can be installed from: apt installs
 // a package with its dependencies in one transaction, and refusing those
 // refuses the package that was actually asked for.

@@ -68,6 +68,10 @@ type Env struct {
 	// runs is the one this console ships rather than the one the machine was
 	// joined with. Empty where there is nothing to ask.
 	RoleScript func(ctx context.Context, role string) (installer, common string, err error)
+	// DownloadPackage fetches a custom .deb into the given directory and
+	// returns its path. Empty where there is nothing to ask, the same as
+	// Download and RoleScript.
+	DownloadPackage func(ctx context.Context, dir, packageID string) (path string, err error)
 }
 
 // Unsandboxed runs a command the way PID 1 would, outside this service's own

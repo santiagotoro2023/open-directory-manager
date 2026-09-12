@@ -183,10 +183,42 @@ async def build(
     )
     await apply_admx(pool, document)
     await attach_vpn(pool, document, target.dn)
+    await attach_custom_packages(pool, document)
     # The serial fingerprints what the agent will actually apply, so it is
     # recomputed after template expansion.
     document["serial"] = policy.serial(document)
     return document
+
+
+async def attach_custom_packages(pool: asyncpg.Pool, document: dict[str, Any]) -> None:
+    """Fill in what dpkg needs to know without fetching the file: its real
+    package name and version.
+
+    A policy object only ever names a package by id — the .deb itself can be
+    tens of megabytes, and this document is what every machine it reaches
+    re-fetches on every poll. Attaching the name and version here lets the
+    agent skip the download entirely when that version is already installed,
+    the same way it never re-runs apt for a package already at the version
+    asked for.
+    """
+    custom = (document.get("settings") or {}).get("custom_packages") or []
+    ids = [str(item.get("package_id") or "") for item in custom]
+    ids = [package_id for package_id in ids if package_id]
+    if not ids:
+        return
+    rows = await pool.fetch(
+        "SELECT id, package_name, version, sha256 FROM custom_package WHERE id = ANY($1::uuid[])",
+        ids,
+    )
+    found = {str(row["id"]): row for row in rows}
+    for item in custom:
+        row = found.get(str(item.get("package_id") or ""))
+        if row is None:
+            item["unavailable"] = "this package was removed from the console"
+            continue
+        item["package_name"] = row["package_name"]
+        item["version"] = row["version"]
+        item["sha256"] = row["sha256"]
 
 
 async def attach_vpn(pool: asyncpg.Pool, document: dict[str, Any], dn: str) -> None:

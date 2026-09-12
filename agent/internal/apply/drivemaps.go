@@ -128,32 +128,37 @@ func MountDriveMaps(
 		// not this session managed to attach it: a share that is briefly down
 		// must not silently un-map somebody's drive.
 		attached = append(attached, drive.MountPoint)
-		if mounted(point) {
-			continue
-		}
-		if err := os.MkdirAll(point, 0o755); err != nil {
-			problems = append(problems, err)
-			continue
-		}
-		if !ticket {
-			problems = append(problems, fmt.Errorf(
-				"%s: %s has no Kerberos ticket in this session, so nothing can be mounted "+
-					"with sec=krb5. klist is empty: whatever authenticated them did not ask "+
-					"the domain for one. Check that pam_sss or pam_winbind runs at sign-in "+
-					"and that the machine was not offline", drive.Name, user))
-			continue
-		}
-		unc := strings.ReplaceAll(drive.UNC, "\\", "/")
-		options := fmt.Sprintf("sec=krb5,cruid=%d,multiuser", who.uid)
-		if drive.Options != "" {
-			options += "," + drive.Options
-		}
-		if out, err := env.Run.Run(
-			ctx, "mount", "-t", "cifs", unc, point, "-o", options,
-		); err != nil {
-			problems = append(problems, fmt.Errorf("%s: %w: %s%s", drive.Name, err,
-				strings.TrimSpace(lastLine(out)), explain(out)))
-			continue
+		// The mount and the bookmark are two different things: a share that
+		// was already mounted — carried over from an earlier session on this
+		// same machine, most often — still needs its bookmark written for
+		// this one, or a drive that is genuinely attached and working simply
+		// never appears in the file manager's sidebar, which reads as the
+		// drive map not working at all.
+		if !mounted(point) {
+			if err := os.MkdirAll(point, 0o755); err != nil {
+				problems = append(problems, err)
+				continue
+			}
+			if !ticket {
+				problems = append(problems, fmt.Errorf(
+					"%s: %s has no Kerberos ticket in this session, so nothing can be mounted "+
+						"with sec=krb5. klist is empty: whatever authenticated them did not ask "+
+						"the domain for one. Check that pam_sss or pam_winbind runs at sign-in "+
+						"and that the machine was not offline", drive.Name, user))
+				continue
+			}
+			unc := strings.ReplaceAll(drive.UNC, "\\", "/")
+			options := fmt.Sprintf("sec=krb5,cruid=%d,multiuser", who.uid)
+			if drive.Options != "" {
+				options += "," + drive.Options
+			}
+			if out, err := env.Run.Run(
+				ctx, "mount", "-t", "cifs", unc, point, "-o", options,
+			); err != nil {
+				problems = append(problems, fmt.Errorf("%s: %w: %s%s", drive.Name, err,
+					strings.TrimSpace(lastLine(out)), explain(out)))
+				continue
+			}
 		}
 		if err := bookmark(who, drive); err != nil {
 			problems = append(problems, err)

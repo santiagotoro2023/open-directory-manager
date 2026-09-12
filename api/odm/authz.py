@@ -61,7 +61,6 @@ PERMISSIONS: tuple[str, ...] = (
     "dc.write",
     "radius.read",
     "radius.write",
-    "password.self_service",
     "site.read",
     "site.write",
     "share.read",

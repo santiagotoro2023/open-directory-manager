@@ -194,6 +194,17 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 			options.APIURL = enrolment.APIURL
 		}
 	} else {
+		// A token names its own container already; a credential join has
+		// nothing to go on but --ou, which is usually left off. The domain's
+		// own default fills that in — best effort, and silently skipped for
+		// a console that cannot be reached, which is exactly today's
+		// behaviour without this.
+		if options.OU == "" && !options.DryRun {
+			if found, err := DefaultContainer(ctx, options); err == nil && found != "" {
+				progress("Using the domain's default computer container", found)
+				options.OU = found
+			}
+		}
 		progress("Joining the domain", controller)
 		if err := NetAdsJoin(ctx, options, env); err != nil {
 			return nil, err

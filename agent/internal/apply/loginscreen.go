@@ -46,7 +46,17 @@ const (
 
 func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.Result {
 	if s.LoginScreen == nil {
-		return nil
+		// Everything else this setting writes is left for whoever removed the
+		// object to also remove the object's other traces, the same as
+		// before this existed — but a machine whose compiled theme was
+		// rewritten for a picture must not be left that way forever just
+		// because the policy that asked for it stopped existing rather than
+		// clearing the picture and staying linked.
+		restored := restoreGreeterTheme(env)
+		if restored.status == "skipped" {
+			return nil
+		}
+		return []policy.Result{{Setting: "login_screen:background", Status: restored.status, Reason: restored.reason}}
 	}
 	screen := *s.LoginScreen
 
@@ -85,11 +95,11 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 	if err != nil {
 		results = append(results, policy.Fail("login_screen:background", err))
 	}
+	fit := screen.BackgroundFit
+	if fit == "" {
+		fit = "zoom"
+	}
 	if background != "" {
-		fit := screen.BackgroundFit
-		if fit == "" {
-			fit = "zoom"
-		}
 		// The greeter session reads the ordinary background keys out of GDM's
 		// own database, so the picture is a dconf value like any other rather
 		// than something only a rebuilt shell theme could carry.
@@ -113,10 +123,17 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 		)
 		if err := env.WriteFile(greeterCssPath, css, 0o644, "root", "root"); err != nil {
 			results = append(results, policy.Fail("login_screen:background", err))
-		} else {
-			results = append(results, greeterBackgroundResult(env))
 		}
+	} else {
+		_ = os.Remove(env.Path(greeterCssPath))
 	}
+	// Whether or not there is a picture: GNOME's greeter needs its compiled
+	// theme rebuilt to show one, and needs the distribution's own theme back
+	// the moment there is none, which is the same call either way.
+	greeter := applyGreeterBackground(ctx, env, background, fit)
+	results = append(results, policy.Result{
+		Setting: "login_screen:background", Status: greeter.status, Reason: greeter.reason,
+	})
 
 	if err := env.WriteFile(greeterKeyfilePath, keyfile.String(), 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("login_screen", err)}
@@ -195,26 +212,5 @@ func cssSize(fit string) string {
 }
 
 // shellTheme is where GNOME Shell keeps the only stylesheet its greeter reads.
+// greetertheme.go is what actually makes a picture show up there.
 const shellTheme = "/usr/share/gnome-shell/gnome-shell-theme.gresource"
-
-// greeterBackgroundResult says what actually happened to the picture.
-//
-// GNOME's greeter takes its background from the compiled shell theme and
-// ignores the background setting, so on a GNOME machine the picture is
-// written, the key is set, and the login screen stays the shell's own grey.
-// Reporting that as success would make the console say a setting applied when
-// nobody can see it; rebuilding the distribution's theme to force it would put
-// a compiler on every desktop and break at the next GNOME update. So it is
-// reported for what it is, and the banner and the user list — which do apply —
-// are reported separately.
-func greeterBackgroundResult(env Env) policy.Result {
-	if _, err := os.Stat(env.Path(shellTheme)); err == nil {
-		return policy.Result{
-			Setting: "login_screen:background",
-			Status:  "skipped",
-			Reason: "GNOME's greeter takes its background from its compiled shell theme, " +
-				"not from a setting. The banner and the user list applied.",
-		}
-	}
-	return policy.Ok("login_screen:background")
-}

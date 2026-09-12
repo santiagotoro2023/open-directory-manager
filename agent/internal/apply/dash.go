@@ -27,6 +27,14 @@ import (
 // somebody wants it, and this one does not get in their way.
 const dashScriptName = "odm-dash.sh"
 
+// dashMarkerName records, for a layout that allows the person to change it,
+// which layout was last handed to them as a starting point. Without it
+// "allow user change" could only ever mean "never set it again after the
+// very first sign-in" or "set it back every single time" — neither of which
+// is what letting someone keep their own edits, while still picking up a
+// default the operator has since changed, actually means.
+const dashMarkerName = ".odm-dash-seeded"
+
 func DeployDash(
 	ctx context.Context, layouts []policy.DashLayout, user string, env Env,
 ) []error {
@@ -50,12 +58,14 @@ func DeployDash(
 	// precedence question the control plane has already answered by ordering
 	// them.
 	applications := ""
+	allowUserChange := false
 	matched := false
 	for _, layout := range layouts {
 		if !appliesTo(layout.ForPrincipal, user, memberships) {
 			continue
 		}
 		applications = layout.Applications
+		allowUserChange = layout.AllowUserChange
 		matched = true
 	}
 
@@ -63,22 +73,51 @@ func DeployDash(
 	autostart := filepath.Join(config, "autostart")
 	script := filepath.Join(config, dashScriptName)
 	entry := filepath.Join(autostart, "odm-dash.desktop")
+	marker := filepath.Join(config, dashMarkerName)
 
 	if matched {
 		pinned := desktopIDs(applications)
-		if err := makeUnder(who, autostart); err != nil {
-			problems = append(problems, err)
-		} else if err := writeAs(who, script, dashScript(pinned), 0o755); err != nil {
-			problems = append(problems, err)
-		} else if err := writeAs(who, entry, dashEntry(script), 0o644); err != nil {
-			problems = append(problems, err)
-		} else {
-			written = append(written, script, entry)
-			// And now, so the person signing in does not have to sign in
-			// again to see it. Best effort: at session open there may be no
-			// session bus yet, and the autostart entry is what covers that.
-			applyNow(ctx, user, pinned, env)
+		signature := strings.Join(pinned, ",")
+
+		// Not enforced, and this person already has this exact layout as
+		// their starting point: whatever they have rearranged since is
+		// theirs to keep, which is the one thing this setting promises and
+		// re-running the autostart entry at every sign-in could not.
+		seeded := allowUserChange && dashSeededWith(marker, signature)
+
+		if !seeded {
+			if err := makeUnder(who, autostart); err != nil {
+				problems = append(problems, err)
+			} else if err := writeAs(who, script, dashScript(pinned), 0o755); err != nil {
+				problems = append(problems, err)
+			} else if err := writeAs(who, entry, dashEntry(script), 0o644); err != nil {
+				problems = append(problems, err)
+			} else {
+				// And now, so the person signing in does not have to sign in
+				// again to see it. Best effort: at session open there may be
+				// no session bus yet, and the autostart entry is what covers
+				// that.
+				applyNow(ctx, user, pinned, env)
+			}
 		}
+
+		if allowUserChange {
+			_ = writeAs(who, marker, signature, 0o644)
+			// The autostart entry only exists to seed a default once; left in
+			// place it reapplies the pinned list at every sign-in and undoes
+			// whatever this person rearranged in between.
+			if err := os.Remove(entry); err != nil && !os.IsNotExist(err) {
+				problems = append(problems, err)
+			}
+			if err := os.Remove(script); err != nil && !os.IsNotExist(err) {
+				problems = append(problems, err)
+			}
+		} else {
+			_ = os.Remove(marker)
+			written = append(written, script, entry)
+		}
+	} else {
+		_ = os.Remove(marker)
 	}
 
 	for _, gone := range goneFrom(state.Dash, written) {
@@ -94,6 +133,13 @@ func DeployDash(
 	state.Dash = merge(state.Dash, written, who.home)
 	saveCreated(env, state)
 	return problems
+}
+
+// dashSeededWith answers whether this person's dash was already set to
+// exactly this layout on some earlier sign-in.
+func dashSeededWith(marker, signature string) bool {
+	raw, err := os.ReadFile(marker)
+	return err == nil && strings.TrimSpace(string(raw)) == signature
 }
 
 // dashScript sets the favourites and nothing else, so a person can still

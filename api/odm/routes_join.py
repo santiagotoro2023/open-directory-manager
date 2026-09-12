@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import audit, enrolment, objects, sessions
 from .config import Settings, get_settings
+from .routes_dc import join_settings
 from .routes_directory import _audit_context, _bound
 from .security import client_ip, get_pool, require_admin, requires_domain_admin
 from .sessions import Session
@@ -33,7 +34,11 @@ THROTTLE_WINDOW_MINUTES = 15
 
 class CreateToken(BaseModel):
     label: Annotated[str, Field(default="", max_length=128)] = ""
-    container_dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    # Empty falls back to the domain's own default container, and from there
+    # to Samba's built-in one — the console's own picker always sends one
+    # explicitly, chosen from the directory tree, but a caller using this
+    # endpoint directly need not.
+    container_dn: Annotated[str, Field(default="", max_length=1024)] = ""
     hostname: Annotated[str | None, Field(default=None, max_length=253)] = None
     uses_allowed: Annotated[int, Field(ge=1, le=1000)] = 1
     ttl_minutes: Annotated[int, Field(ge=5, le=43_200)] = 1440
@@ -72,12 +77,19 @@ async def create_token(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Create an enrolment token. The value is returned once."""
+    # Not chosen: the domain's own default, and Samba's built-in one under
+    # that, in the order an operator would expect them to win.
+    container_dn = (
+        body.container_dn.strip()
+        or (await join_settings(pool))["default_computer_container"]
+        or f"CN=Computers,{settings.base_dn}"
+    )
     async with _audit_context(
         request, session, pool, "join.token.create", object_type="join_token",
-        object_dn=body.container_dn,
+        object_dn=container_dn,
     ) as entry:
         async with _bound(settings, write=False) as conn:
-            await run_in_threadpool(objects.get, conn, settings, body.container_dn)
+            await run_in_threadpool(objects.get, conn, settings, container_dn)
 
         hostname = enrolment.validate_hostname(body.hostname) if body.hostname else None
         token = enrolment.new_token()
@@ -91,14 +103,14 @@ async def create_token(
             """,
             _hash(token),
             body.label,
-            body.container_dn,
+            container_dn,
             hostname,
             body.uses_allowed,
             expires_at,
             session.principal,
         )
         entry.after = {
-            "container": body.container_dn,
+            "container": container_dn,
             "uses_allowed": body.uses_allowed,
             "expires_at": str(expires_at),
         }
@@ -131,6 +143,20 @@ async def revoke_token(
         await pool.execute(
             "UPDATE join_token SET revoked_at = now() WHERE id = $1::uuid", id
         )
+
+
+@router.get("/default-container")
+async def default_container(pool: asyncpg.Pool = Depends(get_pool)) -> dict[str, Any]:
+    """Where a computer object lands when the join does not choose one itself.
+
+    Unauthenticated on purpose, and deliberately not a secret: a machine
+    joining with a domain credential and no --ou asks this before it has any
+    credential of its own to ask with anything else, and what it learns
+    grants nothing — creating the account there still needs the real
+    credential odm-client-install was given. Empty means Samba's own default,
+    which is exactly today's behaviour on a domain that has never set one.
+    """
+    return await join_settings(pool)
 
 
 @router.post("/redeem")

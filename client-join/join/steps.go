@@ -136,6 +136,43 @@ func Redeem(ctx context.Context, options Options) (*Enrolment, error) {
 	return enrolment, nil
 }
 
+// DefaultContainer asks the control plane where a computer object lands when
+// nothing about this join names one — the domain's own default, set once
+// under Domain Controllers rather than typed as --ou on every machine.
+//
+// Unauthenticated: this machine has no credential of its own yet, only
+// whatever admin credential is joining it, and asking costs nothing to get
+// wrong — a console that cannot be reached, or that has never had a default
+// set, is answered exactly as if --ou had simply been left off, which is
+// what happened before this existed.
+func DefaultContainer(ctx context.Context, options Options) (string, error) {
+	client, err := httpClient(options.CACert)
+	if err != nil {
+		return "", err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, options.APIURL+"/api/v1/join/default-container", nil,
+	)
+	if err != nil {
+		return "", err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("cannot reach the control plane: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("the control plane refused: %s", response.Status)
+	}
+	var body struct {
+		DefaultComputerContainer string `json:"default_computer_container"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("the control plane returned an unreadable response: %w", err)
+	}
+	return body.DefaultComputerContainer, nil
+}
+
 func httpClient(caCert string) (*http.Client, error) {
 	config := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caCert != "" {

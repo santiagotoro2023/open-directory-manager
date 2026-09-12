@@ -146,11 +146,6 @@ export function Content() {
                 "A certificate the machine gets by itself and renews.",
               ],
               [
-                "Self-service password",
-                "single value",
-                "Whether people may change their own password.",
-              ],
-              [
                 "Default applications",
                 "file type",
                 "Which program opens a kind of file, machine-wide.",
@@ -313,9 +308,12 @@ user      root`}</Code>
               [
                 "Login screen background",
                 <>
-                  Written, and reported as skipped on GNOME: its greeter takes the background from
-                  its compiled shell theme and ignores the setting. The message and the account
-                  list do apply there.
+                  Written as a dconf key, and — on GNOME, whose greeter otherwise ignores it and
+                  takes its background from its own compiled shell theme — the theme is rebuilt
+                  with the picture in it and the greeter restarted to read it. Needs{" "}
+                  <C key="a">libglib2.0-dev-bin</C> on the machine; without it this is reported as
+                  skipped and the message and the account list still apply. A picture removed from
+                  the setting restores the distribution&rsquo;s own theme.
                 </>,
               ],
               [
@@ -378,6 +376,45 @@ user      root`}</Code>
           </Note>
         </Section>
 
+        <Section title="Graphics drivers">
+          <p>
+            Which GPU driver a machine should have &mdash; the manual step behind nearly every
+            &ldquo;why is my desktop running at the wrong resolution&rdquo; support call.{" "}
+            <strong>Detect automatically</strong> reads the card off the machine with{" "}
+            <C>lspci</C> and installs the matching vendor driver; naming NVIDIA or AMD directly
+            skips detection and installs that regardless, for the one card lspci does not identify
+            cleanly or an operator who already knows.
+          </p>
+          <Reference
+            headers={["Mode", "Installs"]}
+            rows={[
+              [
+                "NVIDIA",
+                <>
+                  <C key="a">nvidia-driver</C> and <C key="b">firmware-misc-nonfree</C>. Needs the{" "}
+                  <C key="c">contrib</C> and <C key="d">non-free</C> components enabled in the
+                  machine&rsquo;s own <C key="e">/etc/apt/sources.list</C>; a machine without them
+                  reports the failure and names this as the likely cause rather than leaving apt&rsquo;s
+                  own &ldquo;unable to locate package&rdquo; to be puzzled over.
+                </>,
+              ],
+              [
+                "AMD",
+                <>
+                  <C key="f">firmware-amd-graphics</C> and the Mesa Vulkan drivers &mdash; the
+                  kernel&rsquo;s own <C key="g">amdgpu</C> module already drives the card, and these
+                  are what let anything actually render with it.
+                </>,
+              ],
+            ]}
+          />
+          <Note>
+            Not undone by removing the setting: a working display driver already on a machine is
+            left exactly where it is, because the one machine that would prove the removal a
+            mistake is the one that could no longer show it.
+          </Note>
+        </Section>
+
         <Section title="System updates">
           <p>
             Written as the two files <C>unattended-upgrades</C> reads, and the package is installed
@@ -419,6 +456,28 @@ user      root`}</Code>
             Package names are validated as Debian package names. Nothing the policy did not name is
             installed or removed, and no package is upgraded unless its state says so.
           </p>
+        </Section>
+
+        <Section title="Custom packages">
+          <p>
+            A <C>.deb</C> uploaded directly, for software with no apt repository this domain can
+            reach — installed the way <C>apt-get install ./file.deb</C> would, so apt still resolves
+            whatever it depends on rather than leaving that to dpkg alone.
+          </p>
+          <p>
+            The upload is stored once on the control plane and shared across every policy object
+            that names it; a policy object itself carries only which upload it means and whether
+            that machine should have it. dpkg-deb reads the real package name and version out of the
+            upload at the moment it is added, which is what a machine checks before fetching it
+            again — a poll that changes nothing about a package never re-downloads a file that can
+            run to hundreds of megabytes.
+          </p>
+          <Note>
+            Removing the entry from a policy object — or setting it to <C>absent</C> — takes the
+            package off every machine that object reaches, the same as an apt package would.
+            Deleting the upload itself from the console is separate, and refused while any policy
+            object still names it.
+          </Note>
         </Section>
 
         <Section title="Firewall rules">
@@ -788,6 +847,10 @@ Extensions   rdp`}</Code>
                 "For user or group",
                 "A group takes a leading %. Empty means everybody the policy reaches.",
               ],
+              [
+                "User may change it",
+                "Off, the layout is put back at every sign-in — editing the dash lasts until the next one. On, it is only a starting point: rearranged after that, it is left alone until this entry's own list of applications changes, at which point the new one is seeded once more.",
+              ],
             ]}
           />
           <Example title="A layout for the finance group">
@@ -1121,56 +1184,12 @@ remmina`}</Code>
           </Note>
         </Section>
 
-        <Section title="Password policy">
-          <p>
-            What a password in the domain has to be. The one setting no machine applies: the
-            directory enforces it on every password change, wherever it is made, so the console
-            writes it to the domain rather than handing it to an agent.
-          </p>
-          <Reference
-            headers={["Setting", "Effect"]}
-            rows={[
-              [
-                "Require complexity",
-                "A password must mix character classes and must not contain the account name.",
-              ],
-              ["Minimum length", "Shortest a password may be."],
-              ["Passwords remembered", "How many previous ones cannot be used again."],
-              [
-                "Minimum age",
-                "How long before it can be changed again — this is what stops somebody cycling straight back to the password they had.",
-              ],
-              ["Maximum age", "How long before it must be changed. 0 means it never expires."],
-              ["Lock out after", "Failed attempts before the account locks. 0 is never."],
-              ["Locked out for", "How long a lockout lasts."],
-              ["Reset the count after", "How long a run of failed attempts is remembered."],
-              [
-                "Who it applies to",
-                "No group is the domain's own policy, and then the object has to be linked at the domain root — that is where Active Directory holds this, and linked anywhere else there is nothing for it to reach. Naming groups makes it a fine-grained password policy for their members.",
-              ],
-              [
-                "Precedence",
-                "Only for a policy that names groups. Where two reach the same person, lower wins — the directory's rule, not one invented here.",
-              ],
-            ]}
-          />
-          <Note>
-            Fine-grained policies apply to users and groups, <em>never</em> to a container — true in
-            Active Directory and in Samba, not a limitation here. A policy object that names groups
-            is written as a password settings object applied to them, and it goes when the object
-            stops asking for it or is deleted.
-          </Note>
-          <p>
-            It applies to the next password set, not to the ones already in use: nobody&rsquo;s
-            password is invalidated by a rule arriving.
-          </p>
-        </Section>
-
         <Section title="Local password policy">
           <p>
             Rules for accounts that live on the machine: what a new local password must be, and how
-            long one lasts. Domain accounts are not covered — their rules are the domain&rsquo;s
-            own, under Password policy above.
+            long one lasts. Domain accounts are not covered — set the domain&rsquo;s own password
+            rules with <C>samba-tool domain passwordsettings</C> directly, the same as any other
+            AD-compatible tool would; there is no policy-object setting for it here.
           </p>
           <Reference
             headers={["Setting", "Recommended", "Written as"]}
@@ -1211,20 +1230,6 @@ remmina`}</Code>
           <Note>
             Removing the setting takes the rules file and the <C>login.defs</C> block back. An
             expiry already written onto an account with <C>chage</C> stays on that account.
-          </Note>
-        </Section>
-
-        <Section title="Self-service password">
-          <p>
-            Whether people may change their own password from the sign-in page, and what a new one
-            must contain. Changing it always needs the current one. The rules here are checked
-            before the directory is asked, so somebody typing a password the domain would refuse is
-            told which rule they missed rather than getting one flat rejection.
-          </p>
-          <Note>
-            These rules do not replace the domain&rsquo;s own password policy — they are checked in
-            addition to it. Set the domain policy under Computer → Password policy, linked at the
-            domain root, and keep this one no weaker.
           </Note>
         </Section>
 

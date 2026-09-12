@@ -68,6 +68,12 @@ DEPENDS="$DEPENDS, smbclient"
 # code in the terminal — without it somebody enrolling gets the secret as text
 # and has to type it, which works and is worse.
 DEPENDS="$DEPENDS, libpam-oath, qrencode"
+# What a login-screen background picture needs on GNOME: its greeter takes
+# the background from its own compiled theme rather than from a setting, and
+# showing a picture there means rebuilding that theme with glib-compile-
+# resources. Not installed by default even on a GNOME desktop, so this is not
+# something to leave to whoever notices the setting quietly did nothing.
+DEPENDS="$DEPENDS, libglib2.0-dev-bin"
 # The libraries odm-client-install and odm-agent actually need, read out of
 # the binaries rather than listed by hand: a change to what one of them links
 # against is a change dpkg-shlibdeps notices and this list would not.

@@ -23,9 +23,8 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { ApiError, api, holds, type SessionInfo } from "./api";
+import { api, holds, type SessionInfo } from "./api";
 import { WATCH, useLive } from "./live";
-import { Field, Modal } from "./components/Modal";
 import { SecondFactorDialog } from "./components/SecondFactor";
 
 // `permission` is what the section needs; `domainAdmin` marks a section only
@@ -130,17 +129,7 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
   const [collapsed, setCollapsed] = useState(recall);
   const [installed, setInstalled] = useState<Set<string>>(new Set());
   const [readRoles, setReadRoles] = useState<() => void>(() => () => {});
-  const [selfService, setSelfService] = useState(false);
-  const [changing, setChanging] = useState(false);
   const [secondFactor, setSecondFactor] = useState(false);
-
-  // Changing your own password is offered only where policy allows it.
-  useEffect(() => {
-    api.password
-      .selfService()
-      .then((state) => setSelfService(state.enabled))
-      .catch(() => setSelfService(false));
-  }, []);
 
   // Sections that only manage what a role provides stay out of the way until
   // the role exists. Server Roles is where they are turned on.
@@ -188,8 +177,6 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
         <img src="/odm-logo-full.svg" alt="Open Directory Manager" className="topbar-logo" />
         <AccountMenu
           session={session}
-          selfService={selfService}
-          onChangePassword={() => setChanging(true)}
           onSecondFactor={() => setSecondFactor(true)}
           onSignOut={onSignOut}
         />
@@ -235,7 +222,6 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
         <Outlet />
       </div>
 
-      {changing && <ChangePasswordDialog onClose={() => setChanging(false)} />}
       {secondFactor && <SecondFactorDialog onClose={() => setSecondFactor(false)} />}
     </div>
   );
@@ -243,19 +229,15 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
 
 /** Two letters and a menu, instead of a row of buttons across the bar.
  *
- * Signing out, changing a password and enrolling a second factor are all
- * things done to one account, so they belong under that account rather than
- * spread across the width of the window competing with the product name. */
+ * Signing out and enrolling a second factor are both things done to one
+ * account, so they belong under that account rather than spread across the
+ * width of the window competing with the product name. */
 function AccountMenu({
   session,
-  selfService,
-  onChangePassword,
   onSecondFactor,
   onSignOut,
 }: {
   session: SessionInfo;
-  selfService: boolean;
-  onChangePassword: () => void;
   onSecondFactor: () => void;
   onSignOut: () => void;
 }) {
@@ -305,12 +287,6 @@ function AccountMenu({
             </span>
             {!session.domain_admin && <span className="badge">delegated</span>}
           </div>
-          {selfService && (
-            <button type="button" role="menuitem" onClick={() => choose(onChangePassword)}>
-              <KeyRound size={15} aria-hidden="true" />
-              Change password
-            </button>
-          )}
           <button type="button" role="menuitem" onClick={() => choose(onSecondFactor)}>
             <ShieldCheck size={15} aria-hidden="true" />
             Second factor
@@ -335,86 +311,4 @@ function initials(name: string): string {
   if (parts.length === 0) return "?";
   const letters = parts.slice(0, 2).map((part) => part[0]);
   return letters.join("").toUpperCase();
-}
-
-function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [again, setAgain] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-
-  return (
-    <Modal
-      title="Change your password"
-      submitLabel={done ? "Close" : "Change it"}
-      busy={busy}
-      error={error}
-      onClose={onClose}
-      onSubmit={async () => {
-        if (done) {
-          onClose();
-          return;
-        }
-        if (next !== again) {
-          setError("the two new passwords do not match");
-          return;
-        }
-        setBusy(true);
-        setError(null);
-        try {
-          await api.password.change(current, next);
-          setDone(true);
-        } catch (err) {
-          setError(err instanceof ApiError ? err.message : String(err));
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      {done ? (
-        <p>
-          Changed. Anywhere you are signed in with the old password — a workstation, a mail client —
-          will ask for the new one.
-        </p>
-      ) : (
-        <>
-          <Field
-            label="Current password"
-            hint="Asked for every time: a session is not proof you are still at the keyboard"
-          >
-            <input
-              type="password"
-              value={current}
-              required
-              autoComplete="current-password"
-              onChange={(e) => setCurrent(e.target.value)}
-            />
-          </Field>
-          <Field label="New password">
-            <input
-              type="password"
-              value={next}
-              required
-              autoComplete="new-password"
-              onChange={(e) => setNext(e.target.value)}
-            />
-          </Field>
-          <Field label="New password again">
-            <input
-              type="password"
-              value={again}
-              required
-              autoComplete="new-password"
-              onChange={(e) => setAgain(e.target.value)}
-            />
-          </Field>
-          <p className="muted">
-            It has to satisfy the domain&rsquo;s password policy, which the directory enforces.
-          </p>
-        </>
-      )}
-    </Modal>
-  );
 }

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
@@ -13,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import db, objects, password_policy, policy, rsop, sysvol, tasks
+from . import db, objects, policy, rsop, sysvol, tasks
 from .config import Settings, get_settings
 from .policy_schema import PolicySettings, Targeting
 from .routes_directory import _audit_context, _bound
@@ -89,23 +88,11 @@ async def _mirror_links(pool: asyncpg.Pool, settings: Settings, target_dn: str) 
 # -------------------------------------------------------------------- GPOs ---
 
 
-async def _applied(pool: asyncpg.Pool, settings: Settings, principal: str) -> None:
+async def _applied(pool: asyncpg.Pool, principal: str) -> None:
     """Everything that changes what a policy object says, or where it says it,
     ends here.
-
-    Machines are told to refresh — and the one setting no machine applies is
-    written to the directory now: a password policy is enforced by the
-    directory on every change, wherever it is made, so the control plane is
-    what puts it there.
     """
     await tasks.push_policy(pool, principal)
-    try:
-        await password_policy.apply_effective(pool, settings, principal)
-    except Exception as exc:  # noqa: BLE001 - never fail the operator's save for this
-        # It records its own failures against the domain; anything that got
-        # past that is a bug here, and losing an unrelated policy edit to it
-        # would be worse than the failure itself.
-        print(f"password policy: {exc}", file=sys.stderr, flush=True)
 
 
 @router.get("/gpos", dependencies=[Depends(requires("gpo.read"))])
@@ -375,7 +362,7 @@ async def import_gpos(
             "skipped": [entry["name"] for entry in skipped],
             "links_restored": linked,
         }
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
 
     return {
         "created": created,
@@ -452,7 +439,7 @@ async def update_gpo(
 
         entry.before = _gpo_json(before)
         entry.after = _gpo_json(row)
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
         return _gpo_json(row)
 
 
@@ -503,7 +490,7 @@ async def delete_gpo(
                 await run_in_threadpool(sysvol.delete, conn, settings, str(guid))
         for target in targets:
             await _mirror_links(pool, settings, target)
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
 
 
 # ------------------------------------------------------------------- links ---
@@ -575,7 +562,7 @@ async def create_link(
             "link_order": row["link_order"],
             "enforced": body.enforced,
         }
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
         return {"id": str(row["id"]), "link_order": row["link_order"]}
 
 
@@ -614,7 +601,7 @@ async def update_link(
         await _mirror_links(pool, settings, before["target_dn"])
         row = await pool.fetchrow("SELECT * FROM gpo_link WHERE id = $1", body.id)
         entry.after = {k: row[k] for k in ("link_order", "enforced", "enabled")}
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
         return {**entry.after, "id": str(body.id)}
 
 
@@ -659,7 +646,7 @@ async def delete_link(
                     "UPDATE gpo_link SET link_order = $2 WHERE id = $1", link["id"], index
                 )
         await _mirror_links(pool, settings, row["target_dn"])
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
 
 
 @router.post("/inheritance", dependencies=[Depends(requires("gpo.write"))])
@@ -689,7 +676,7 @@ async def set_inheritance(
             body.block_inheritance,
         )
         entry.after = {"block_inheritance": body.block_inheritance}
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
         return {"ou_dn": body.ou_dn, "block_inheritance": body.block_inheritance}
 
 
@@ -1008,7 +995,7 @@ async def rollback_gpo(
                 )
         entry.before = _gpo_json(before)
         entry.after = _gpo_json(row)
-        await _applied(pool, settings, session.principal)
+        await _applied(pool, session.principal)
         return _gpo_json(row)
 
 

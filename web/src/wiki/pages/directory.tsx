@@ -342,13 +342,15 @@ export function Content() {
         <Section title="Password rules">
           <p>
             The domain&rsquo;s own password policy — length, complexity, history, ages and lockout —
-            is a policy-object setting: <strong>Group Policy</strong> &rarr;{" "}
-            <strong>Computer</strong> &rarr; <strong>Password policy</strong>, linked at the domain
-            root. Naming groups in the same setting is how a fine-grained policy reaches particular
-            people. Whether people may change their own
-            password from the console is a policy setting, under{" "}
-            <PageLink page="policy-settings" anchor="self-service-password">
-              Self-service password
+            is set the way every AD-compatible tool sets it, with{" "}
+            <C>samba-tool domain passwordsettings</C> directly, not from a policy object. See{" "}
+            <PageLink page="passwords" anchor="the-domain-s-own-policy">
+              Passwords
+            </PageLink>{" "}
+            for the commands. Accounts that live on a machine itself, rather than in the domain,
+            keep their own rules instead — under{" "}
+            <PageLink page="policy-settings" anchor="local-password-policy">
+              Local password policy
             </PageLink>
             .
           </p>

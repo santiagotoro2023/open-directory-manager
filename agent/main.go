@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.8.10"
+const version = "0.8.11"
 
 const serialPath = "/var/lib/odm/last-serial"
 
@@ -71,6 +71,8 @@ func main() {
 		os.Exit(runTrust(os.Args[2:]))
 	case "enrol-factor":
 		os.Exit(runEnrolFactor(os.Args[2:]))
+	case "sync-second-factor":
+		os.Exit(runSyncSecondFactor(os.Args[2:]))
 	case "--version", "-v", "version":
 		fmt.Println("odm-agent", version)
 	default:
@@ -87,6 +89,7 @@ func usage() {
   daemon                          apply on the policy's refresh interval
   profile --user NAME [--release] attach that person's roaming profile
   enrol-factor --user NAME        set up a second factor for that account
+  sync-second-factor              refresh who may hold one, without applying policy
   --version                       print the version
 
   --force is the equivalent of gpupdate /force: apply even when the policy
@@ -107,6 +110,57 @@ func runApply(args []string) int {
 	defer stop()
 
 	if err := applyOnce(ctx, *configPath, *root, *username, *force); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent:", err)
+		return 1
+	}
+	return 0
+}
+
+// runSyncSecondFactor refreshes the enrolments pam_oath reads, and nothing
+// else — no package, no firewall rule, no sudo file, none of what an
+// ordinary apply run would also do.
+//
+// It exists because the only thing that used to refresh
+// /etc/security/users.oath was the machine's own periodic apply pass, on its
+// ordinary interval of up to fifteen minutes. Somebody enrolling and then
+// signing straight back in landed inside that window more often than not: the
+// guard PAM runs read a file that still said they had no second factor, let
+// them straight in on their password alone, and only the sign-in after that
+// — once the machine's own timer had caught up — actually asked for a code.
+// Run from the guard itself, with a short timeout, so the answer is current
+// at the moment it is actually needed rather than whenever the clock next
+// allows it.
+func runSyncSecondFactor(args []string) int {
+	flags := flag.NewFlagSet("sync-second-factor", flag.ExitOnError)
+	configPath := flags.String("config", config.DefaultPath, "agent configuration file")
+	root := flags.String("root", "", "write beneath this directory instead of /")
+	_ = flags.Parse(args)
+
+	// A console that cannot be reached in time must not hold a sign-in
+	// hostage: the guard runs this ahead of every authentication that might
+	// ask for a code, on machines that may currently have no route to the
+	// domain at all.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent:", err)
+		return 1
+	}
+	api, err := client.New(cfg, version)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent:", err)
+		return 1
+	}
+	defer api.Close()
+
+	lines, err := api.SecondFactorUsers(ctx)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent:", err)
+		return 1
+	}
+	if err := apply.WriteOathUsers(apply.NewEnv(*root), lines); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		return 1
 	}
@@ -498,6 +552,7 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	env := apply.NewEnv(root)
 	env.Version = version
 	env.Download = api.DownloadAgent
+	env.DownloadPackage = api.DownloadPackage
 
 	fetch := func() (*policy.Document, error) {
 		if username != "" {

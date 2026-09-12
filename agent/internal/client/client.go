@@ -186,6 +186,10 @@ func (c *Client) get(ctx context.Context, path string) (*policy.Document, error)
 // actually happened rather than inferring it.
 func (c *Client) Report(ctx context.Context, report policy.Report) error {
 	report.AgentVersion = c.version
+	// Whatever built these results, they leave the machine through here — the
+	// one place a single over-long reason cannot take the rest of the report
+	// down with it (policy.SanitizeForReport).
+	report.Results = policy.SanitizeForReport(report.Results)
 	body, err := json.Marshal(report)
 	if err != nil {
 		return err
@@ -591,4 +595,58 @@ func (c *Client) DownloadAgent(ctx context.Context, beside string) (path, versio
 		return "", "", err
 	}
 	return file.Name(), response.Header.Get("X-ODM-Agent-Version"), nil
+}
+
+// DownloadPackage fetches a custom .deb into the given directory and returns
+// its path. The name on disk is the console's own, not trusted from
+// anywhere else: it only ever names a file inside dir.
+func (c *Client) DownloadPackage(ctx context.Context, dir, packageID string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, c.base+"/api/v1/packages/"+packageID+"/download", nil,
+	)
+	if err != nil {
+		return "", err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("package %s: %s", packageID, why(response))
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	file, err := os.CreateTemp(dir, ".odm-package-*")
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(file, digest), response.Body); err != nil {
+		file.Close()
+		os.Remove(file.Name())
+		return "", fmt.Errorf("downloading the package: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(file.Name())
+		return "", err
+	}
+	if want := response.Header.Get("X-ODM-Package-Sha256"); want != "" {
+		if got := hex.EncodeToString(digest.Sum(nil)); got != want {
+			os.Remove(file.Name())
+			return "", fmt.Errorf("the package that arrived is not the one offered")
+		}
+	}
+
+	final := filepath.Join(dir, packageID+".deb")
+	if err := os.Rename(file.Name(), final); err != nil {
+		os.Remove(file.Name())
+		return "", err
+	}
+	return final, nil
 }

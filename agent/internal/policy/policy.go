@@ -58,6 +58,7 @@ type Settings struct {
 	HbacRules            []HbacRule             `json:"hbac_rules,omitempty"`
 	TrustedCerts         []TrustedCert          `json:"trusted_certificates,omitempty"`
 	Packages             []Package              `json:"packages,omitempty"`
+	CustomPackages       []CustomPackage        `json:"custom_packages,omitempty"`
 	Browser              *Browser               `json:"browser,omitempty"`
 	Wallpaper            *Wallpaper             `json:"wallpaper,omitempty"`
 	RoamingProfile       *RoamingProfile        `json:"roaming_profile,omitempty"`
@@ -80,6 +81,7 @@ type Settings struct {
 	SoftwareControl      *SoftwareControl       `json:"software_control,omitempty"`
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
+	GraphicsDrivers      *GraphicsDrivers       `json:"graphics_drivers,omitempty"`
 	LocalPasswordPolicy  *LocalPasswordPolicy   `json:"local_password_policy,omitempty"`
 	RemoteDesktopSession *RemoteDesktopSession  `json:"remote_desktop_session,omitempty"`
 	AgentUpdate          *AgentUpdate           `json:"agent_update,omitempty"`
@@ -185,6 +187,9 @@ type DashLayout struct {
 	// Desktop entries in the order they should appear, comma separated.
 	Applications string `json:"applications"`
 	ForPrincipal string `json:"for_principal"`
+	// Whether somebody signed in may then rearrange their own dash. Off by
+	// default: applied at every sign-in like any other enforced setting.
+	AllowUserChange bool `json:"allow_user_change"`
 }
 
 // PowerSettings is when the machine turns its screen off and suspends.
@@ -298,6 +303,26 @@ type Package struct {
 	State string `json:"state"` // present | latest | absent
 }
 
+// CustomPackage is a .deb an operator uploaded directly, for software with
+// no apt repository this machine can reach. The content is not here: it is
+// fetched separately, from the control plane's own store, by PackageID.
+//
+// PackageName, Version and SHA256 are filled in by the control plane, not
+// chosen by whoever wrote the policy object: they are what dpkg-deb actually
+// found in the upload, which lets the agent skip the download entirely when
+// that version is already installed.
+type CustomPackage struct {
+	Name        string `json:"name"`
+	PackageID   string `json:"package_id"`
+	State       string `json:"state"` // present | absent
+	PackageName string `json:"package_name"`
+	Version     string `json:"version"`
+	SHA256      string `json:"sha256"`
+	// Set instead of the three fields above when the upload this entry
+	// named no longer exists.
+	Unavailable string `json:"unavailable"`
+}
+
 // TrustedCert is a certificate to install into the system trust store.
 type TrustedCert struct {
 	Name           string `json:"name"`
@@ -392,6 +417,16 @@ type LocalAdministrator struct {
 	Administrator bool   `json:"administrator"`
 }
 
+// GraphicsDrivers is which GPU driver this machine should have.
+//
+// Never taken away once installed, unlike almost everything else a policy
+// object controls: a driver a machine no longer needs is a driver it is safe
+// to leave, and uninstalling one automatically is a machine that can lose
+// its display the moment an operator unlinks the wrong GPO.
+type GraphicsDrivers struct {
+	Mode string `json:"mode"` // auto | nvidia | amd | none
+}
+
 // AlwaysOnVpn holds a tunnel up whatever the person using the machine does.
 //
 // Configuration is filled in by the control plane for the machine asking, not
@@ -479,6 +514,11 @@ func Fail(s string, err error) Result {
 // all for that run, for any setting.
 const reasonLimit = 512
 
+// And 256 for the setting name, which is normally short but is sometimes
+// built from a name an operator typed — a drive map, a printer — that this
+// has to survive rather than trust.
+const settingLimit = 256
+
 func shortened(reason string) string {
 	if len(reason) <= reasonLimit {
 		return reason
@@ -486,6 +526,35 @@ func shortened(reason string) string {
 	// The end is where a command says what went wrong, so keep both ends.
 	head, tail := reasonLimit*2/3, reasonLimit/3-len(reasonEllipsis)
 	return reason[:head] + reasonEllipsis + reason[len(reason)-tail:]
+}
+
+func shortenedSetting(setting string) string {
+	if len(setting) <= settingLimit {
+		return setting
+	}
+	return setting[:settingLimit-len(reasonEllipsis)] + reasonEllipsis
+}
+
+// SanitizeForReport guarantees every result fits what the control plane
+// accepts, whichever applier produced it.
+//
+// Fail already ran its reason through shortened, but that only covers a
+// Result built through Fail — several appliers build one directly, with raw
+// command output as the reason (a failed apt install's own dependency
+// trace, in one case), and the API validates a report as a single unit: one
+// reason over the limit refused the whole report, not just its own setting,
+// so a machine that had in fact applied everything correctly reported
+// nothing at all. Run once here, at the one place every report leaves the
+// machine through, rather than trusted to every call site that builds a
+// Result.
+func SanitizeForReport(results []Result) []Result {
+	sanitized := make([]Result, len(results))
+	for i, result := range results {
+		result.Setting = shortenedSetting(result.Setting)
+		result.Reason = shortened(result.Reason)
+		sanitized[i] = result
+	}
+	return sanitized
 }
 
 const reasonEllipsis = " […] "

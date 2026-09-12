@@ -595,6 +595,17 @@ fi
 [ -r ` + secondFactorPam + ` ] || exit 0
 . ` + secondFactorPam + `
 
+# Current at the moment it is actually needed, rather than whenever the
+# machine's own fifteen-minute timer next happens to run. Without this,
+# somebody who had just enrolled — at the console, or on another machine —
+# was refused a prompt on this one until its own periodic apply pass caught
+# up, so the first sign-in after enrolling let them straight in on their
+# password alone and only the one after that actually asked. Bounded and
+# best-effort: a console this machine cannot reach right now must not turn
+# into a sign-in nobody can complete, so a failed refresh just leaves
+# whatever the last successful one wrote.
+timeout 5 /usr/sbin/odm-agent sync-second-factor >/dev/null 2>&1 || true
+
 SHORT="$(printf '%s' "$USER_NAME" | sed 's/@.*//; s/.*\\\\//' | tr 'A-Z' 'a-z')"
 GROUPS_OF="$(id -nG "$USER_NAME" 2>/dev/null | tr 'A-Z' 'a-z')"
 

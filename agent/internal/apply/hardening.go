@@ -313,7 +313,7 @@ func applySoftwareControl(ctx context.Context, s policy.Settings, env Env) []pol
 
 	// The list itself, one name per line, so the hook does not have to parse
 	// anything and the operator can read what a machine was told.
-	names := make([]string, 0, len(control.Allowed)+len(s.Packages))
+	names := make([]string, 0, len(control.Allowed)+len(s.Packages)+len(s.CustomPackages))
 	for _, name := range control.Allowed {
 		if safePackageGlob(name) {
 			names = append(names, name)
@@ -327,6 +327,15 @@ func applySoftwareControl(ctx context.Context, s policy.Settings, env Env) []pol
 	for _, wanted := range s.Packages {
 		if wanted.State != "absent" && safePackageGlob(wanted.Name) {
 			names = append(names, wanted.Name)
+		}
+	}
+	// A .deb the same policy object uploads is not a different case: it is
+	// still the policy telling the machine what to run, and the real name
+	// dpkg-deb found inside it — not the label an operator gave it — is what
+	// the pre-install hook actually sees.
+	for _, wanted := range s.CustomPackages {
+		if wanted.State != "absent" && wanted.Unavailable == "" && safePackageGlob(wanted.PackageName) {
+			names = append(names, wanted.PackageName)
 		}
 	}
 	sort.Strings(names)

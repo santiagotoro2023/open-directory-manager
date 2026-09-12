@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import {
   ApiError,
   api,
   type AdmxSelection,
+  type CustomPackageMeta,
   type ItemTargeting,
   type PolicySettings,
 } from "../api";
@@ -82,6 +83,24 @@ async function readBase64(file: File): Promise<string> {
 function safeFileName(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9._-]/g, "-").slice(-128);
   return cleaned || "background";
+}
+
+/** Base64, for a file too large for readBase64's byte-by-byte loop to be
+ * worth trying — a software package routinely runs to tens of megabytes,
+ * where building the string one character at a time is slow enough to be
+ * mistaken for a hung tab. The browser's own data-URL encoder does the same
+ * conversion natively. */
+function readBase64Large(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("could not read the file"));
+    reader.readAsDataURL(file);
+  });
 }
 
 // Where one entry can carry targeting of its own. A drive map for laptops and
@@ -599,8 +618,17 @@ export const CATEGORIES: CategorySpec[] = [
         picker: "principal",
         pickerValue: "principal",
       },
+      {
+        key: "allow_user_change",
+        label: "User may change it",
+        kind: "checkbox",
+        width: "140px",
+        hint:
+          "Off, this layout is put back at every sign-in. On, it is only a starting point: " +
+          "rearranged after that, it is left alone until this entry itself changes.",
+      },
     ],
-    blank: { name: "", applications: "", for_principal: "" },
+    blank: { name: "", applications: "", for_principal: "", allow_user_change: false },
   },
   {
     key: "sysctl",
@@ -839,6 +867,15 @@ const SPECIAL: SpecialSpec[] = [
     doc: "local-administrator",
   },
   {
+    key: "graphics_drivers",
+    title: "Graphics drivers",
+    half: "Computer",
+    help:
+      "Which GPU driver a machine should have — detected from its hardware, or named " +
+      "directly. Never uninstalled by removing this setting.",
+    doc: "graphics-drivers",
+  },
+  {
     key: "remote_desktop_session",
     title: "Remote desktop session",
     half: "Computer",
@@ -895,6 +932,15 @@ const SPECIAL: SpecialSpec[] = [
     doc: "fonts",
   },
   {
+    key: "custom_packages",
+    title: "Custom packages",
+    half: "Computer",
+    help:
+      "A .deb uploaded directly, for software with no apt repository this domain can " +
+      "reach — installed the way apt-get install ./file.deb would.",
+    doc: "custom-packages",
+  },
+  {
     key: "desktop_theme",
     title: "Desktop theme",
     half: "Computer",
@@ -932,16 +978,6 @@ const SPECIAL: SpecialSpec[] = [
     doc: "first-sign-in",
   },
   {
-    key: "password_policy",
-    title: "Password policy",
-    half: "Computer",
-    help:
-      "What a password in the domain has to be. Linked at the domain root it is the " +
-      "domain's own policy; naming groups makes it a fine-grained policy for their " +
-      "members. The directory enforces it, so no machine has to.",
-    doc: "password-policy",
-  },
-  {
     key: "local_password_policy",
     title: "Local password policy",
     half: "Computer",
@@ -949,15 +985,6 @@ const SPECIAL: SpecialSpec[] = [
       "What a password on the machine itself has to be, and how long it lasts. " +
       "Accounts in the domain keep the domain's own rules.",
     doc: "local-password-policy",
-  },
-  {
-    key: "password_self_service",
-    title: "Self-service password",
-    half: "User",
-    help:
-      "Whether people may change their own password from the sign-in page, and the " +
-      "rules a new one has to meet.",
-    doc: "self-service-password",
   },
   {
     key: "roaming_profile",
@@ -1000,11 +1027,10 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "login_screen") return settings.login_screen ? 1 : 0;
   if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
+  if (key === "graphics_drivers") return settings.graphics_drivers ? 1 : 0;
   if (key === "remote_desktop_session") return settings.remote_desktop_session ? 1 : 0;
   if (key === "agent_update") return settings.agent_update ? 1 : 0;
-  if (key === "password_self_service") return settings.password_self_service ? 1 : 0;
   if (key === "local_password_policy") return settings.local_password_policy ? 1 : 0;
-  if (key === "password_policy") return settings.password_policy ? 1 : 0;
   if (key === "roaming_profile") return settings.roaming_profile ? 1 : 0;
   if (key === "power") return settings.power ? 1 : 0;
   if (key === "screen_lock") return settings.screen_lock ? 1 : 0;
@@ -1014,6 +1040,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "software_control") return settings.software_control ? 1 : 0;
   if (key === "first_run") return settings.first_run ? 1 : 0;
   if (key === "fonts") return settings.fonts?.length ?? 0;
+  if (key === "custom_packages") return settings.custom_packages?.length ?? 0;
   if (key === "wallpaper") return settings.wallpaper?.uri || settings.wallpaper?.image ? 1 : 0;
   if (key === "browser") {
     const browser = settings.browser;
@@ -1114,20 +1141,17 @@ export function SettingsEditor({
           {selected === "local_administrator" && (
             <LocalAdministratorEditor settings={settings} onChange={onChange} />
           )}
+          {selected === "graphics_drivers" && (
+            <GraphicsDriversEditor settings={settings} onChange={onChange} />
+          )}
           {selected === "agent_update" && (
             <AgentUpdateEditor settings={settings} onChange={onChange} />
           )}
           {selected === "remote_desktop_session" && (
             <RemoteDesktopSessionEditor settings={settings} onChange={onChange} />
           )}
-          {selected === "password_self_service" && (
-            <SelfServiceEditor settings={settings} onChange={onChange} />
-          )}
           {selected === "local_password_policy" && (
             <LocalPasswordEditor settings={settings} onChange={onChange} />
-          )}
-          {selected === "password_policy" && (
-            <PasswordPolicyEditor settings={settings} onChange={onChange} />
           )}
           {selected === "roaming_profile" && (
             <RoamingProfileEditor settings={settings} onChange={onChange} />
@@ -1150,6 +1174,9 @@ export function SettingsEditor({
           )}
           {selected === "first_run" && <FirstRunEditor settings={settings} onChange={onChange} />}
           {selected === "fonts" && <FontsEditor settings={settings} onChange={onChange} />}
+          {selected === "custom_packages" && (
+            <CustomPackagesEditor settings={settings} onChange={onChange} />
+          )}
           {selected === "wallpaper" && <WallpaperEditor settings={settings} onChange={onChange} />}
           {selected === "browser" && <BrowserEditor settings={settings} onChange={onChange} />}
           {selected === "admx" && (
@@ -1760,14 +1787,6 @@ function AlwaysOnVpnEditor({
   );
 }
 
-/** Kept beside the rules the API enforces in routes_password.COMPLEXITY. */
-const COMPLEXITY_RULES = [
-  { key: "require_uppercase", label: "An upper-case letter" },
-  { key: "require_lowercase", label: "A lower-case letter" },
-  { key: "require_digit", label: "A digit" },
-  { key: "require_symbol", label: "A symbol" },
-] as const;
-
 /**
  * A local administrator the machine manages for itself — LAPS.
  *
@@ -1862,6 +1881,60 @@ function LocalAdministratorEditor({
             and read its logs.
           </p>
         </>
+      )}
+    </>
+  );
+}
+
+function GraphicsDriversEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.graphics_drivers;
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("graphics_drivers")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, graphics_drivers: undefined })} />
+          )
+        }
+      />
+      <p className="muted">
+        Installed with apt, the way running the vendor&rsquo;s own installer would be. Removing
+        this setting does not uninstall a driver it already put on a machine — the one machine
+        that would prove that a mistake is the one that can no longer show it.
+      </p>
+
+      {!current ? (
+        <EmptySetting
+          message="Not configured, so a machine's driver is whatever it already has."
+          onAdd={() => onChange({ ...settings, graphics_drivers: { mode: "auto" } })}
+        />
+      ) : (
+        <Field label="Driver" hint="Auto reads the card off the machine with lspci">
+          <Select
+            value={current.mode}
+            onChange={(e) =>
+              onChange({
+                ...settings,
+                graphics_drivers: {
+                  mode: e.target.value as "auto" | "nvidia" | "amd" | "none",
+                },
+              })
+            }
+          >
+            <option value="auto">Detect automatically</option>
+            <option value="nvidia">NVIDIA</option>
+            <option value="amd">AMD</option>
+            <option value="none">None (do not manage)</option>
+          </Select>
+        </Field>
       )}
     </>
   );
@@ -2021,191 +2094,6 @@ function AgentUpdateEditor({
   );
 }
 
-function PasswordPolicyEditor({
-  settings,
-  onChange,
-}: {
-  settings: PolicySettings;
-  onChange: (next: PolicySettings) => void;
-}) {
-  const current = settings.password_policy;
-  const [held, setHeld] = useState<Record<string, string>>({});
-
-  // What the directory holds now, which is not necessarily what this object
-  // says: another object may be linked above it, and a domain provisioned
-  // before anybody wrote a policy has Samba's own defaults.
-  useEffect(() => {
-    api.password
-      .policy()
-      .then((result) => setHeld(result.policy))
-      .catch(() => setHeld({}));
-  }, []);
-
-  function set(changes: Partial<NonNullable<PolicySettings["password_policy"]>>) {
-    onChange({
-      ...settings,
-      password_policy: {
-        complexity: true,
-        minimum_length: 12,
-        history: 5,
-        minimum_age_days: 0,
-        maximum_age_days: 0,
-        lockout_threshold: 0,
-        lockout_minutes: 30,
-        reset_lockout_minutes: 30,
-        groups: [],
-        precedence: 100,
-        ...current,
-        ...changes,
-      },
-    });
-  }
-
-  const groups = current?.groups ?? [];
-
-  return (
-    <>
-      <SettingHeading
-        meta={specialFor("password_policy")}
-        actions={
-          current && (
-            <RemoveSetting onRemove={() => onChange({ ...settings, password_policy: undefined })} />
-          )
-        }
-      />
-      <p className="muted">
-        The directory enforces this on every password change, wherever it is made, so no machine
-        applies it. With no group named it is the domain&rsquo;s own policy and the object has to
-        be linked at the domain root; naming groups makes it a fine-grained password policy for
-        their members instead.
-      </p>
-
-      {Object.keys(held).length > 0 && (
-        <>
-          <h3 className="section-title">As the directory holds it</h3>
-          <table className="data">
-            <tbody>
-              {Object.entries(held).map(([label, value]) => (
-                <tr key={label}>
-                  <th scope="row">{label}</th>
-                  <td className="mono">{value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-
-      {!current ? (
-        <EmptySetting
-          message="Not configured, so the domain keeps the rules it has."
-          onAdd={() => set({})}
-        />
-      ) : (
-        <>
-          <div className="field-grid">
-            <Field label="Minimum length">
-              <input
-                type="number"
-                min={1}
-                max={255}
-                value={current.minimum_length}
-                onChange={(e) => set({ minimum_length: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Passwords remembered" hint="Cannot be reused">
-              <input
-                type="number"
-                min={0}
-                max={24}
-                value={current.history ?? 0}
-                onChange={(e) => set({ history: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Minimum age (days)" hint="Before it can be changed again">
-              <input
-                type="number"
-                min={0}
-                max={999}
-                value={current.minimum_age_days ?? 0}
-                onChange={(e) => set({ minimum_age_days: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Maximum age (days)" hint="0 means it never expires">
-              <input
-                type="number"
-                min={0}
-                max={999}
-                value={current.maximum_age_days ?? 0}
-                onChange={(e) => set({ maximum_age_days: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Lock out after" hint="Failed attempts; 0 is never">
-              <input
-                type="number"
-                min={0}
-                max={999}
-                value={current.lockout_threshold ?? 0}
-                onChange={(e) => set({ lockout_threshold: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Locked out for (minutes)">
-              <input
-                type="number"
-                min={0}
-                max={99999}
-                value={current.lockout_minutes ?? 0}
-                onChange={(e) => set({ lockout_minutes: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Reset the count after (minutes)">
-              <input
-                type="number"
-                min={0}
-                max={99999}
-                value={current.reset_lockout_minutes ?? 0}
-                onChange={(e) => set({ reset_lockout_minutes: Number(e.target.value) })}
-              />
-            </Field>
-          </div>
-
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={current.complexity !== false}
-              onChange={(e) => set({ complexity: e.target.checked })}
-            />
-            Require complexity
-          </label>
-
-          <h3 className="section-title">Who it applies to</h3>
-          <ChoiceList
-            kind="group"
-            values={groups}
-            onChange={(next) => set({ groups: next })}
-            addLabel="Add a group…"
-            emptyLabel="Every account in the domain, when this object is linked at the domain root."
-          />
-          {groups.length > 0 && (
-            <Field
-              label="Precedence"
-              hint="Where two of these reach the same person, lower wins"
-            >
-              <input
-                type="number"
-                min={1}
-                max={10000}
-                value={current.precedence ?? 100}
-                onChange={(e) => set({ precedence: Number(e.target.value) })}
-              />
-            </Field>
-          )}
-        </>
-      )}
-    </>
-  );
-}
-
 function LocalPasswordEditor({
   settings,
   onChange,
@@ -2248,8 +2136,8 @@ function LocalPasswordEditor({
       />
       <p className="muted">
         Applies to accounts that live on the machine — a local administrator, an engineer&rsquo;s
-        own account on a server. Domain accounts are governed by the domain&rsquo;s own rules,
-        under Password policy.
+        own account on a server. Domain accounts are governed by the domain&rsquo;s own password
+        rules instead, set with samba-tool directly rather than from a policy object.
       </p>
 
       {!current ? (
@@ -2323,104 +2211,6 @@ function LocalPasswordEditor({
             addLabel="Add an account…"
             emptyLabel="Every account on the machine somebody can sign in to."
           />
-        </>
-      )}
-    </>
-  );
-}
-
-function SelfServiceEditor({
-  settings,
-  onChange,
-}: {
-  settings: PolicySettings;
-  onChange: (next: PolicySettings) => void;
-}) {
-  const current = settings.password_self_service;
-
-  return (
-    <>
-      <SettingHeading
-        meta={specialFor("password_self_service")}
-        actions={
-          current && <RemoveSetting onRemove={() => onChange({ ...settings, password_self_service: undefined })} />
-        }
-      />
-      <p className="muted">
-        Checked before the directory is asked, in addition to the domain&rsquo;s own password
-        policy — the Password policy setting. Changing a password always needs the current one.
-      </p>
-
-      {!current ? (
-        <EmptySetting
-          message="Not configured here, so people may change their own password."
-          onAdd={() =>
-            onChange({
-              ...settings,
-              password_self_service: { enabled: true, minimum_length: 12 },
-            })
-          }
-        />
-      ) : (
-        <>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={current.enabled}
-              onChange={(e) =>
-                onChange({
-                  ...settings,
-                  password_self_service: { ...current, enabled: e.target.checked },
-                })
-              }
-            />
-            Let people change their own password
-          </label>
-          <label className="field">
-            <span>Minimum length</span>
-            <input
-              type="number"
-              value={current.minimum_length}
-              onChange={(e) =>
-                onChange({
-                  ...settings,
-                  password_self_service: {
-                    ...current,
-                    minimum_length: Number(e.target.value),
-                  },
-                })
-              }
-            />
-            <small>
-              Checked before the change is attempted. The domain&rsquo;s own policy is enforced by
-              the directory on top of this.
-            </small>
-          </label>
-
-          <div className="field">
-            <span>Must contain</span>
-            <div className="option-row">
-              {COMPLEXITY_RULES.map((rule) => (
-                <label key={rule.key} className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(current[rule.key])}
-                    onChange={(e) =>
-                      onChange({
-                        ...settings,
-                        password_self_service: { ...current, [rule.key]: e.target.checked },
-                      })
-                    }
-                  />
-                  {rule.label}
-                </label>
-              ))}
-            </div>
-            <small>
-              Whoever is changing their password is told which of these they missed, rather than
-              getting one flat refusal from the directory.
-            </small>
-          </div>
         </>
       )}
     </>
@@ -3944,6 +3734,184 @@ function FontsEditor({
             <tr>
               <td colSpan={3} className="empty">
                 No fonts yet. A machine keeps whatever it already has.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+const MAX_PACKAGE_BYTES = 200 * 1024 * 1024;
+
+/**
+ * A .deb uploaded directly, for software with no apt repository this domain
+ * can reach.
+ *
+ * The upload itself is shared across every policy object — the console
+ * stores it once, keyed by id, rather than embedding the file in each GPO
+ * that deploys it — so this offers both uploading a new one and pointing an
+ * entry at one already on file.
+ */
+function CustomPackagesEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const entries = settings.custom_packages ?? [];
+  const [library, setLibrary] = useState<CustomPackageMeta[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.packages
+      .list()
+      .then((result) => setLibrary(result.packages))
+      .catch((err) => setError(err instanceof ApiError ? err.message : String(err)));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  function set(changes: Partial<NonNullable<PolicySettings["custom_packages"]>[number]>[]) {
+    onChange({ ...settings, custom_packages: changes as PolicySettings["custom_packages"] });
+  }
+
+  async function upload(file: File) {
+    setError(null);
+    if (!file.name.endsWith(".deb")) {
+      setError(`${file.name} is not a .deb file.`);
+      return;
+    }
+    if (file.size > MAX_PACKAGE_BYTES) {
+      setError(
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. Packages up to ` +
+          `${MAX_PACKAGE_BYTES / 1024 / 1024} MB.`,
+      );
+      return;
+    }
+    setUploading(true);
+    try {
+      const content = await readBase64Large(file);
+      const name = safeFileName(file.name.replace(/\.deb$/i, ""));
+      const uploaded = await api.packages.upload(name, file.name, content);
+      load();
+      set([
+        ...entries,
+        { name: uploaded.name, package_id: uploaded.id, state: "present" },
+      ]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function addExisting(packageId: string) {
+    const found = library.find((entry) => entry.id === packageId);
+    if (!found) return;
+    set([...entries, { name: found.name, package_id: packageId, state: "present" }]);
+  }
+
+  const unused = library.filter((entry) => !entries.some((used) => used.package_id === entry.id));
+
+  return (
+    <>
+      <SettingHeading meta={specialFor("custom_packages")} />
+      <p className="muted">
+        Installed the way <code>apt-get install ./file.deb</code> would — apt resolves whatever
+        it depends on. An upload is shared across every policy object; removing the last entry
+        that uses one does not delete it from the console.
+      </p>
+
+      {error && (
+        <p className="alert" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="actions-row">
+        <FileInput
+          accept=".deb"
+          placeholder={uploading ? "Uploading…" : "No package chosen"}
+          onChoose={(file) => void upload(file)}
+        />
+        {unused.length > 0 && (
+          <Select
+            aria-label="Add a package already on file"
+            value=""
+            disabled={uploading}
+            onChange={(e) => e.target.value && addExisting(e.target.value)}
+          >
+            <option value="">Add one already on file…</option>
+            {unused.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name} — {entry.package_name} {entry.version}
+              </option>
+            ))}
+          </Select>
+        )}
+      </div>
+
+      <table className="data">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Package</th>
+            <th scope="col" style={{ width: "130px" }}>
+              State
+            </th>
+            <th scope="col" style={{ width: "110px" }}>
+              <span className="sr-only">Remove</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry, index) => {
+            const found = library.find((candidate) => candidate.id === entry.package_id);
+            return (
+              <tr key={index}>
+                <td>{entry.name}</td>
+                <td className="mono">
+                  {found ? `${found.package_name} ${found.version}` : "no longer on file"}
+                </td>
+                <td>
+                  <Select
+                    aria-label={`State for ${entry.name}`}
+                    value={entry.state ?? "present"}
+                    onChange={(e) =>
+                      set(
+                        entries.map((other, i) =>
+                          i === index ? { ...other, state: e.target.value as "present" | "absent" } : other,
+                        ),
+                      )
+                    }
+                  >
+                    <option value="present">present</option>
+                    <option value="absent">absent</option>
+                  </Select>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => set(entries.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 size={15} aria-hidden="true" />
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+          {entries.length === 0 && (
+            <tr>
+              <td colSpan={4} className="empty">
+                No custom packages deployed by this object.
               </td>
             </tr>
           )}

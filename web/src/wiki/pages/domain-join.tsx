@@ -116,7 +116,10 @@ sudo odm-client-install --leave --domain corp.example.internal --force`}</Code>
               [<C key="2">--server</C>, "A specific controller. Discovered from DNS when omitted."],
               [<C key="3">--admin-user</C>, "Join as this account; the password is prompted for."],
               [<C key="4">--otp</C>, "Enrol with a one-time token instead of a credential."],
-              [<C key="5">--ou</C>, "Create the computer account in this organizational unit."],
+              [
+                <C key="5">--ou</C>,
+                "Create the computer account in this organizational unit. Left off, a credential join uses the domain's own default (Domain Controllers → Agents → New computer accounts) if one is set and the console can be reached, then falls back to Samba's own Computers container.",
+              ],
               [
                 <C key="6">--hostname</C>,
                 "Name this machine takes in the domain. Its own name when omitted.",
