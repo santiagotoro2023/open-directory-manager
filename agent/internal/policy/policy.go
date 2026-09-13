@@ -82,6 +82,7 @@ type Settings struct {
 	AlwaysOnVpn          *AlwaysOnVpn           `json:"always_on_vpn,omitempty"`
 	LocalAdministrator   *LocalAdministrator    `json:"local_administrator,omitempty"`
 	GraphicsDrivers      *GraphicsDrivers       `json:"graphics_drivers,omitempty"`
+	Grub                 *Grub                  `json:"grub,omitempty"`
 	LocalPasswordPolicy  *LocalPasswordPolicy   `json:"local_password_policy,omitempty"`
 	RemoteDesktopSession *RemoteDesktopSession  `json:"remote_desktop_session,omitempty"`
 	AgentUpdate          *AgentUpdate           `json:"agent_update,omitempty"`
@@ -425,6 +426,13 @@ type LocalAdministrator struct {
 // its display the moment an operator unlinks the wrong GPO.
 type GraphicsDrivers struct {
 	Mode string `json:"mode"` // auto | nvidia | amd | none
+}
+
+// Grub is how long the boot loader waits, and whether it shows its menu at
+// all, before starting the default entry.
+type Grub struct {
+	TimeoutSeconds int  `json:"timeout_seconds"`
+	HideMenu       bool `json:"hide_menu"`
 }
 
 // AlwaysOnVpn holds a tunnel up whatever the person using the machine does.

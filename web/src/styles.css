@@ -1725,6 +1725,50 @@ ul.plain {
   color: var(--text-muted);
 }
 
+/* A folder groups related settings within one half. The marker is drawn by
+   hand so it matches the rest of the icon set instead of the browser's own
+   triangle, which looks out of place next to Lucide icons everywhere else. */
+.category-folder summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-sm);
+}
+
+.category-folder summary::-webkit-details-marker {
+  display: none;
+}
+
+.category-folder summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  flex: none;
+  border-style: solid;
+  border-width: 4px 0 4px 5px;
+  border-color: transparent transparent transparent var(--text-muted);
+  transition: transform 0.1s ease;
+}
+
+.category-folder[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.category-folder summary:hover {
+  background: #eef2ff;
+}
+
+.category-folder > ul {
+  padding-left: 8px;
+}
+
 .category-list button {
   display: flex;
   align-items: center;

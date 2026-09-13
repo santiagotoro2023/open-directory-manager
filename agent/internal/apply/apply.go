@@ -60,6 +60,7 @@ var appliers = []applier{
 	{"always_on_vpn", applyAlwaysOnVpn},
 	{"local_administrator", applyLocalAdministrator},
 	{"graphics_drivers", applyGraphicsDrivers},
+	{"grub", applyGrub},
 	{"local_password_policy", applyLocalPasswordPolicy},
 	{"remote_desktop_session", applyRemoteDesktopSession},
 	// What opens a connection file, on a machine whose policy hands them out.
@@ -210,6 +211,10 @@ func reloadAfterPrune(ctx context.Context, removed []string, env Env) []policy.R
 		{"/etc/cups/", "removed:printers", [][]string{
 			{"systemctl", "reload-or-restart", "cups"},
 		}},
+		// /etc/default/grub.d is read by grub-mkconfig, not by the boot
+		// loader directly: removing the drop-in changes nothing on the next
+		// boot until grub.cfg is regenerated from what is left.
+		{"/etc/default/grub.d/", "removed:grub", [][]string{{"update-grub"}}},
 	}
 
 	var results []policy.Result

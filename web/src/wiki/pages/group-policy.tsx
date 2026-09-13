@@ -122,6 +122,12 @@ export function Content() {
 
         <Section title="Editing settings">
           <p>
+            The Settings tab files its categories into folders — System configuration, Security,
+            Software and drivers, Desktop and login, User environment, Remote access,
+            Administrative templates — one click each to expand or collapse. Which folders are
+            open is remembered in the browser, not saved on the policy object.
+          </p>
+          <p>
             Each category lists its entries: the name on the left, what the entry sets beside it,
             and — for the categories that support it — who it applies to.{" "}
             <strong>Edit</strong> opens the whole entry, targeting included;{" "}
@@ -207,47 +213,27 @@ export function Content() {
           </p>
         </Section>
 
-        <Section title="Domain password policy">
+        <Section title="Password rules">
           <p>
-            The domain&rsquo;s password rules — length, complexity, history, minimum and maximum
-            age, and lockout — are a policy-object setting like any other:{" "}
-            <strong>Computer</strong> &rarr; <strong>Password policy</strong>. What is different is
-            who applies it. The directory holds these on the domain object and enforces them on
-            every password change, wherever it is made, so the console writes them there when the
-            object or its links change; no machine ever sees the setting.
+            The domain&rsquo;s own password rules — length, complexity, history, minimum and
+            maximum age, and lockout — are not a policy-object setting: Active Directory holds
+            these on the domain object itself, and the directory enforces them on every password
+            change, wherever it is made. Set them the way any AD-compatible tool would, directly
+            against the directory, with <C>samba-tool domain passwordsettings</C>; a fine-grained
+            policy for particular accounts is <C>samba-tool domain passwordsettings pso-create</C>.
+            A console setting duplicating that would only be a second place for it to drift out of
+            step with the one the directory actually enforces.
           </p>
           <p>
-            That is why the object has to be linked at the domain root for the domain&rsquo;s own
-            rules: Active Directory keeps one set for every domain account, and an account policy
-            linked to an organizational unit reaches nothing. Where a group needs different rules,
-            name the group in the setting — that is a fine-grained policy, and it applies to users
-            and groups rather than to a container.
+            What a policy object <em>does</em> set is the rules for accounts that live on a
+            machine itself — a local administrator, an engineer&rsquo;s own account on a server —
+            under{" "}
+            <PageLink page="policy-settings" anchor="local-password-policy">
+              Local password policy
+            </PageLink>
+            . Domain accounts are not covered by it and keep the domain&rsquo;s own rules
+            regardless of what it says.
           </p>
-          <Reference
-            headers={["Rules for", "Set under", "Applies to"]}
-            rows={[
-              [
-                "Domain accounts",
-                "Group Policy → Computer → Password policy, linked at the domain root",
-                "Every account in the domain, plus fine-grained policies for named groups.",
-              ],
-              [
-                "Accounts on a machine",
-                <>
-                  Group Policy → a policy object →{" "}
-                  <PageLink key="lpp" page="policy-settings" anchor="local-password-policy">
-                    Local password policy
-                  </PageLink>
-                </>,
-                "The local accounts on the machines that object reaches.",
-              ],
-              [
-                "Changing your own password",
-                "Group Policy → a policy object → Self-service password",
-                "Whether the console offers it, and what it checks before asking the directory.",
-              ],
-            ]}
-          />
         </Section>
 
         <Section title="Default policies">

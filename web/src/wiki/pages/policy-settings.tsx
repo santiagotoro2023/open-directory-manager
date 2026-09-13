@@ -311,8 +311,9 @@ user      root`}</Code>
                   Written as a dconf key, and — on GNOME, whose greeter otherwise ignores it and
                   takes its background from its own compiled shell theme — the theme is rebuilt
                   with the picture in it and the greeter restarted to read it. Needs{" "}
-                  <C key="a">libglib2.0-dev-bin</C> on the machine; without it this is reported as
-                  skipped and the message and the account list still apply. A picture removed from
+                  <C key="a">libglib2.0-dev-bin</C>, installed automatically if the machine does
+                  not have it; only a machine apt cannot install it on reports this as skipped,
+                  with the message and the account list still applying. A picture removed from
                   the setting restores the distribution&rsquo;s own theme.
                 </>,
               ],
@@ -412,6 +413,40 @@ user      root`}</Code>
             Not undone by removing the setting: a working display driver already on a machine is
             left exactly where it is, because the one machine that would prove the removal a
             mistake is the one that could no longer show it.
+          </Note>
+        </Section>
+
+        <Section title="Boot loader">
+          <p>
+            How long GRUB waits, and whether it shows its menu at all, before starting Debian.
+            Written as a drop-in under <C>/etc/default/grub.d</C> rather than into{" "}
+            <C>/etc/default/grub</C> itself &mdash; Debian&rsquo;s own grub-common documents that
+            file as the way to change this without an operator&rsquo;s own edits to the real file
+            being clobbered by it, and <C>update-grub</C> runs afterwards so the change actually
+            takes effect on the next boot.
+          </p>
+          <Reference
+            headers={["Setting", "Effect"]}
+            rows={[
+              [
+                "Wait (seconds)",
+                "How long the boot menu is given before starting the default entry. 0 boots immediately.",
+              ],
+              [
+                "Hide the menu",
+                <>
+                  Sets <C key="a">GRUB_TIMEOUT_STYLE=hidden</C> instead of the ordinary menu —
+                  nothing is shown during the wait, which is what &ldquo;the machine just
+                  boots&rdquo; usually means. Escape during boot still reaches the menu either
+                  way; nothing about reaching it by hand is taken away.
+                </>,
+              ],
+            ]}
+          />
+          <Note>
+            Removing the setting takes the drop-in file back off and runs{" "}
+            <C>update-grub</C> again, so the machine returns to whatever its own{" "}
+            <C>/etc/default/grub</C> already said before this setting reached it.
           </Note>
         </Section>
 

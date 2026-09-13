@@ -35,6 +35,12 @@ func TestGreeterCSSOverrideNamesTheImageAndTheFit(t *testing.T) {
 	if !strings.Contains(css, cssSize("stretched")) {
 		t.Errorf("the fit did not translate to CSS:\n%s", css)
 	}
+	// Without this, the login dialog's own background paints over the
+	// picture on GDM's shield actor behind it, and the picture never
+	// actually becomes visible despite the theme rebuilding correctly.
+	if !strings.Contains(css, ".login-dialog { background-color: transparent; }") {
+		t.Errorf("the login dialog itself is not made transparent:\n%s", css)
+	}
 }
 
 func TestGreeterManifestXMLListsEveryFileUnderOnePrefix(t *testing.T) {
@@ -87,15 +93,38 @@ func TestNoShellThemeIsSkippedNotFailed(t *testing.T) {
 	}
 }
 
-// A machine with the theme but without the tools that read and rebuild it
-// is told what to install rather than left to guess why nothing changed.
-func TestMissingToolsIsSkippedWithAClearReason(t *testing.T) {
-	env, _ := testEnv(t)
+// A machine without the tools that read and rebuild the theme gets them
+// installed — the client package depends on them, but a machine that joined
+// before that dependency existed only ever gets its agent binary swapped in
+// place, which is not apt installing anything.
+func TestMissingToolsAreInstalledAutomatically(t *testing.T) {
+	env, runner := testEnv(t)
 	write(t, env, shellTheme, "not a real gresource file")
 
 	got := applyGreeterBackground(context.Background(), env, "file:///usr/share/backgrounds/odm/x.png", "zoom")
+
+	if !runner.ran("apt-get", "libglib2.0-dev-bin") {
+		t.Error("the missing tools were never installed")
+	}
+	// The fake runner does not actually put the tools on disk, so this
+	// machine is still missing them after the attempt — which must be
+	// reported plainly, not read as if the picture had applied.
+	if got.status != "skipped" {
+		t.Errorf("status = %q, wanted skipped: %s", got.status, got.reason)
+	}
+}
+
+// apt itself refusing the install — no route to the package, most often —
+// is reported as what it is rather than a generic failure.
+func TestAFailedToolInstallIsReportedPlainly(t *testing.T) {
+	env, runner := testEnv(t)
+	write(t, env, shellTheme, "not a real gresource file")
+	runner.fail["apt-get"] = "unable to locate package libglib2.0-dev-bin"
+
+	got := applyGreeterBackground(context.Background(), env, "file:///usr/share/backgrounds/odm/x.png", "zoom")
+
 	if got.status != "skipped" || !strings.Contains(got.reason, "libglib2.0-dev-bin") {
-		t.Errorf("not reported as missing the tools: %+v", got)
+		t.Errorf("not reported as a failed install: %+v", got)
 	}
 }
 

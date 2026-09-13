@@ -68,16 +68,30 @@ func applyGreeterBackground(ctx context.Context, env Env, background, fit string
 		return restoreGreeterTheme(env)
 	}
 
-	if !glibToolsInstalled(env) {
-		return skippedResult(
-			"gresource and glib-compile-resources are not installed on this machine, and " +
-				"showing a picture at the greeter means rebuilding its compiled theme with " +
-				"them. Install libglib2.0-dev-bin to enable it; the banner and the user " +
-				"list applied regardless.",
-		)
-	}
 	if env.Run == nil {
 		return skippedResult("no command runner")
+	}
+	// The client package depends on this, but a machine joined before that
+	// dependency existed only ever gets its agent binary swapped in place —
+	// replacing a binary is not apt installing a package, so the dependency
+	// a newer version of it needs is not something a self-update can bring
+	// along by itself. Installed here instead, the same way a missing
+	// libpam-pwquality is for the local password policy.
+	if !glibToolsInstalled(env) {
+		if out, err := env.Run.Run(ctx, "apt-get", "install", "-y",
+			"--no-install-recommends", "libglib2.0-dev-bin"); err != nil {
+			return skippedResult(fmt.Sprintf(
+				"gresource and glib-compile-resources are not installed, and installing "+
+					"libglib2.0-dev-bin to get them failed: %v: %s. The banner and the user "+
+					"list applied regardless.", err, lastLine(out)))
+		}
+		if !glibToolsInstalled(env) {
+			return skippedResult(
+				"installed libglib2.0-dev-bin, but gresource or glib-compile-resources is " +
+					"still not where this expects it. The banner and the user list applied " +
+					"regardless.",
+			)
+		}
 	}
 
 	imagePath := strings.TrimPrefix(background, "file://")
@@ -245,7 +259,13 @@ func greeterCSSOverride(imageName, fit string) string {
 			"  background-size: %s;\n"+
 			"  background-repeat: no-repeat;\n"+
 			"  background-position: center;\n"+
-			"}\n",
+			"}\n"+
+			// GDM's greeter is screenShield.js's own shield actor with
+			// loginDialog.js's dialog stacked in front of it — #lockDialogGroup
+			// above is the shield, and .login-dialog is what actually sits on
+			// screen. Left alone it paints over the picture with the theme's
+			// own background, which reads as the setting having done nothing.
+			".login-dialog { background-color: transparent; }\n",
 		imageName, cssSize(fit),
 	)
 }

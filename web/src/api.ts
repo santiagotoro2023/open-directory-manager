@@ -187,6 +187,10 @@ export interface PolicySettings {
   graphics_drivers?: {
     mode: "auto" | "nvidia" | "amd" | "none";
   };
+  grub?: {
+    timeout_seconds: number;
+    hide_menu: boolean;
+  };
   local_password_policy?: {
     minimum_length: number;
     require_uppercase?: boolean;

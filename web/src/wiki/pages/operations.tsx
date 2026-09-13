@@ -188,7 +188,6 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               ["Passwords that never expire", "Enabled accounts exempt from password expiry."],
               ["Domain administrators", "How many accounts can administer the whole domain."],
               ["Second factor on administrators", "Which of them sign in with a password alone."],
-              ["Password policy", "Minimum length, complexity and lockout."],
               ["Machines reporting", "Machines that have not checked in for a day."],
               ["Disk encryption", "Machines reporting no encrypted volume."],
               ["Domain backups", "How long since one completed."],

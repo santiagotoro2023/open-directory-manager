@@ -975,6 +975,23 @@ class GraphicsDrivers(Strict):
     mode: Literal["auto", "nvidia", "amd", "none"] = "auto"
 
 
+class Grub(Strict):
+    """How long the boot loader waits, and whether it shows its menu at all,
+    before starting the default entry.
+
+    Written as a drop-in under /etc/default/grub.d rather than into
+    /etc/default/grub itself, the way Debian's own grub-common documents:
+    something other than an administrator's own editor can change this
+    without clobbering whatever else is in that file.
+    """
+
+    timeout_seconds: Annotated[int, Field(ge=0, le=600)] = 0
+    # Hidden rather than a visible countdown: "the machine just boots" is
+    # what this setting is usually for, and Escape during boot still reaches
+    # the menu the one time somebody actually needs it.
+    hide_menu: bool = True
+
+
 class LocalPasswordPolicy(Strict):
     """Password rules for accounts that live on the machine itself.
 
@@ -1078,6 +1095,7 @@ class PolicySettings(Strict):
     always_on_vpn: AlwaysOnVpn | None = None
     local_administrator: LocalAdministrator | None = None
     graphics_drivers: GraphicsDrivers | None = None
+    grub: Grub | None = None
     remote_desktop_session: RemoteDesktopSession | None = None
     agent: AgentSettings | None = None
     agent_update: AgentUpdate | None = None

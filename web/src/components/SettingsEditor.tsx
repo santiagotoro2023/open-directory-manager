@@ -71,6 +71,39 @@ const COMMON_SUDO_COMMANDS = [
 
 type Half = "Computer" | "User";
 
+// Folders the category list is filed into, within each half. Order here is
+// display order.
+const GROUP_ORDER = [
+  "System configuration",
+  "Security",
+  "Software and drivers",
+  "Desktop and login",
+  "User environment",
+  "Remote access",
+  "Administrative templates",
+] as const;
+type SettingGroup = (typeof GROUP_ORDER)[number];
+
+// Which folders are open is per-operator furniture, not domain state: it
+// belongs in the browser, and a browser that refuses to store it must not
+// break the list — everything just opens by default instead.
+function recallOpenFolders(): Record<string, boolean> {
+  try {
+    const stored = localStorage.getItem("odm.policy-folders");
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberOpenFolders(state: Record<string, boolean>) {
+  try {
+    localStorage.setItem("odm.policy-folders", JSON.stringify(state));
+  } catch {
+    /* private windows and blocked site data are not an error here */
+  }
+}
+
 // A picture travels in the policy document itself, so the machines it is for
 // receive it rather than being pointed at a path nobody put it at.
 async function readBase64(file: File): Promise<string> {
@@ -153,6 +186,10 @@ interface CategorySpec {
   // Which half of the policy the setting is enforced in, as the Group Policy
   // Management Editor splits them.
   half: Half;
+  // The folder this setting is filed under in the category list, within its
+  // half. Purely a navigation aid — it changes nothing about how the setting
+  // is stored or applied.
+  group: SettingGroup;
   // What the entry is called in its row. Defaults to the first field, which
   // is the identity for every category where the first field is not it.
   identity?: string;
@@ -177,6 +214,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "files",
     title: "File deployment",
     half: "Computer",
+    group: "System configuration",
     identity: "path",
     help:
       "A file written to every machine the policy reaches, with the owner and mode " +
@@ -197,6 +235,7 @@ export const CATEGORIES: CategorySpec[] = [
     only: { field: "trigger", values: ["startup", "shutdown"] },
     title: "Startup and shutdown scripts",
     half: "Computer",
+    group: "System configuration",
     identity: "name",
     help:
       "A script the machine runs as root when it starts or as it shuts down.",
@@ -230,6 +269,7 @@ export const CATEGORIES: CategorySpec[] = [
     only: { field: "trigger", values: ["logon", "logoff"] },
     title: "Logon and logoff scripts",
     half: "User",
+    group: "System configuration",
     identity: "name",
     help:
       "A script that runs as the person signing in or out, in their own session.",
@@ -261,6 +301,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "systemd_units",
     title: "systemd units",
     half: "Computer",
+    group: "System configuration",
     identity: "unit",
     help:
       "The state a service, socket or timer is held in: enabled, disabled, masked, " +
@@ -282,6 +323,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "cron",
     title: "Scheduled tasks",
     half: "Computer",
+    group: "System configuration",
     identity: "name",
     help:
       "A command run on a schedule, written into the machine's cron. Five cron " +
@@ -312,6 +354,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "drive_maps",
     title: "Drive maps",
     half: "User",
+    group: "User environment",
     identity: "name",
     help:
       "A share mounted for the person signing in, with their own Kerberos ticket.",
@@ -346,6 +389,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "sudo_rules",
     title: "Sudo rules",
+    group: "Security",
     note: "Users and commands are comma separated.",
     half: "Computer",
     identity: "name",
@@ -379,6 +423,7 @@ export const CATEGORIES: CategorySpec[] = [
   {
     key: "hbac_rules",
     title: "HBAC rules",
+    group: "Security",
     identity: "principal",
     help:
       "Who may open a session, and how: locally, over SSH, or over remote desktop. " +
@@ -416,6 +461,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "packages",
     title: "Software deployment",
     half: "Computer",
+    group: "Software and drivers",
     identity: "name",
     help:
       "Packages the machine should have, keep current, or not have, installed with " +
@@ -437,6 +483,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "trusted_certificates",
     title: "Trusted certificates",
     half: "Computer",
+    group: "Security",
     identity: "name",
     help:
       "Authorities every machine trusts, installed into the system trust store.",
@@ -458,6 +505,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "certificate_enrolment",
     title: "Certificates",
     half: "Computer",
+    group: "Security",
     identity: "profile",
     help:
       "Certificates the machine requests for itself and renews before they expire.",
@@ -483,6 +531,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "remote_desktop_files",
     title: "Remote desktop files",
     half: "User",
+    group: "User environment",
     identity: "name",
     help:
       "A connection file on the desktop of everybody in a group, for one " +
@@ -534,6 +583,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "default_applications",
     title: "Default applications",
     half: "Computer",
+    group: "Desktop and login",
     identity: "mime_type",
     help:
       "Which program opens which kind of file. Give the extensions too for a type " +
@@ -586,6 +636,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "dash",
     title: "Dash and taskbar",
     half: "User",
+    group: "Desktop and login",
     identity: "name",
     help:
       "What is pinned to the dash, and in what order, for the people this entry " +
@@ -634,6 +685,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "sysctl",
     title: "Kernel parameters",
     half: "Computer",
+    group: "System configuration",
     identity: "key",
     help:
       "Kernel settings, as sysctl names them. Written to /etc/sysctl.d and applied " +
@@ -667,6 +719,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "shortcuts",
     title: "Shortcuts and bookmarks",
     half: "User",
+    group: "Desktop and login",
     identity: "name",
     help:
       "An icon on the desktop, an entry in the menu, or a place in the file " +
@@ -711,6 +764,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "printers",
     title: "Printers",
     half: "User",
+    group: "User environment",
     identity: "name",
     help:
       "Printers the person signing in should have, from a machine carrying the " +
@@ -751,6 +805,7 @@ export const CATEGORIES: CategorySpec[] = [
     key: "firewall",
     title: "Firewall rules",
     half: "Computer",
+    group: "Security",
     identity: "name",
     help:
       "Rules applied to the machine's firewall. Anything not named here is left as " +
@@ -822,6 +877,7 @@ interface SpecialSpec {
   key: string;
   title: string;
   half: Half;
+  group: SettingGroup;
   help: string;
   doc: string;
   /** The wiki page the link lands on. Defaults to the policy-settings page. */
@@ -833,6 +889,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "updates",
     title: "System updates",
     half: "Computer",
+    group: "Software and drivers",
     help:
       "Which updates the machine installs unattended, on what schedule, and whether " +
       "it may restart to finish them.",
@@ -842,6 +899,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "login_screen",
     title: "Login screen",
     half: "Computer",
+    group: "Desktop and login",
     help:
       "The greeter, before anybody has signed in: its message, its background, and " +
       "whether it lists accounts. Separate from the desktop background, which belongs " +
@@ -852,6 +910,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "always_on_vpn",
     title: "Always-on VPN",
     half: "Computer",
+    group: "Remote access",
     help:
       "Holds a WireGuard tunnel up on the machine, optionally refusing to route the " +
       "networks it carries until it is up.",
@@ -861,6 +920,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "local_administrator",
     title: "Local administrator",
     half: "Computer",
+    group: "Security",
     help:
       "A local account with a password the machine generates, rotates on a schedule " +
       "and reports back. Different on every machine.",
@@ -870,15 +930,26 @@ const SPECIAL: SpecialSpec[] = [
     key: "graphics_drivers",
     title: "Graphics drivers",
     half: "Computer",
+    group: "Software and drivers",
     help:
       "Which GPU driver a machine should have — detected from its hardware, or named " +
       "directly. Never uninstalled by removing this setting.",
     doc: "graphics-drivers",
   },
   {
+    key: "grub",
+    title: "Boot loader",
+    half: "Computer",
+    group: "System configuration",
+    help:
+      "How long GRUB waits, and whether it shows its menu at all, before starting Debian.",
+    doc: "boot-loader",
+  },
+  {
     key: "remote_desktop_session",
     title: "Remote desktop session",
     half: "Computer",
+    group: "Remote access",
     help:
       "What a remote desktop session carries between client and host: clipboard, " +
       "printers, drives, audio, microphone. Set here and linked where it applies, " +
@@ -889,6 +960,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "agent_update",
     title: "Agent updates",
     half: "Computer",
+    group: "Software and drivers",
     help:
       "Whether machines take the ODM agent this console hands out. Off keeps every " +
       "agent where it is; notify only reports how far behind a machine is.",
@@ -898,6 +970,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "power",
     title: "Power and suspend",
     half: "Computer",
+    group: "Desktop and login",
     help:
       "When the screen turns off, when the machine suspends, and what the lid and " +
       "the power button do. Enforced by logind as well as the desktop, so a laptop " +
@@ -908,6 +981,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "screen_lock",
     title: "Screen lock",
     half: "Computer",
+    group: "Desktop and login",
     help:
       "When an idle screen locks itself, how long the grace period is, and whether " +
       "somebody may turn it off.",
@@ -917,6 +991,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "removable_storage",
     title: "Removable storage",
     half: "Computer",
+    group: "Security",
     help:
       "What may be done with a disk somebody plugs in: nothing, read it, or use it. " +
       "Named groups can be exempted.",
@@ -926,6 +1001,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "fonts",
     title: "Fonts",
     half: "Computer",
+    group: "Desktop and login",
     help:
       "Font files installed for everybody on the machine. A font removed here is " +
       "removed from the machine.",
@@ -935,6 +1011,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "custom_packages",
     title: "Custom packages",
     half: "Computer",
+    group: "Software and drivers",
     help:
       "A .deb uploaded directly, for software with no apt repository this domain can " +
       "reach — installed the way apt-get install ./file.deb would.",
@@ -944,6 +1021,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "desktop_theme",
     title: "Desktop theme",
     half: "Computer",
+    group: "Desktop and login",
     help:
       "Theme, icons, cursor and the interface fonts. Deploy the fonts themselves " +
       "under Fonts, or name ones the machine already has.",
@@ -953,6 +1031,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "second_factor",
     title: "Second factor",
     half: "Computer",
+    group: "Security",
     help:
       "A code as well as a password, at the machine. The same enrolment as the " +
       "console's, so one QR code covers both, and people who have not enrolled are " +
@@ -963,6 +1042,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "software_control",
     title: "Software control",
     half: "Computer",
+    group: "Software and drivers",
     help:
       "Which packages may be installed. Anything not on the list is refused; " +
       "upgrading what is already installed is always allowed.",
@@ -972,6 +1052,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "first_run",
     title: "First sign-in",
     half: "Computer",
+    group: "Desktop and login",
     help:
       "What somebody is shown the first time they sign in — the distribution's " +
       "welcome tour, and a message of the day if you want one.",
@@ -981,6 +1062,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "local_password_policy",
     title: "Local password policy",
     half: "Computer",
+    group: "Security",
     help:
       "What a password on the machine itself has to be, and how long it lasts. " +
       "Accounts in the domain keep the domain's own rules.",
@@ -990,6 +1072,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "roaming_profile",
     title: "Roaming profile",
     half: "User",
+    group: "User environment",
     help:
       "Where a person's home directory lives, so it follows them from machine to " +
       "machine.",
@@ -999,6 +1082,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "wallpaper",
     title: "Desktop background",
     half: "User",
+    group: "Desktop and login",
     help: "The picture behind the desktop, and whether the person signing in may change it.",
     doc: "desktop-background",
   },
@@ -1006,6 +1090,7 @@ const SPECIAL: SpecialSpec[] = [
     key: "admx",
     title: "Administrative templates",
     half: "Computer",
+    group: "Administrative templates",
     help:
       "Settings from imported ADMX templates. Import a template under Group Policy, " +
       "then configure its policies here.",
@@ -1028,6 +1113,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
   if (key === "graphics_drivers") return settings.graphics_drivers ? 1 : 0;
+  if (key === "grub") return settings.grub ? 1 : 0;
   if (key === "remote_desktop_session") return settings.remote_desktop_session ? 1 : 0;
   if (key === "agent_update") return settings.agent_update ? 1 : 0;
   if (key === "local_password_policy") return settings.local_password_policy ? 1 : 0;
@@ -1074,53 +1160,95 @@ export function SettingsEditor({
       key: categoryId(category),
       title: category.title,
       half: category.half,
+      group: category.group,
     })),
     ...SPECIAL.map((special) => ({
       key: special.key,
       title: special.title,
       half: special.half,
+      group: special.group,
     })),
     ...(legacyBrowser
-      ? [{ key: "browser", title: "Browser policy", half: "Computer" as Half }]
+      ? [
+          {
+            key: "browser",
+            title: "Browser policy",
+            half: "Computer" as Half,
+            group: "Software and drivers" as SettingGroup,
+          },
+        ]
       : []),
   ];
 
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>(() => recallOpenFolders());
+
+  function toggleFolder(name: string, open: boolean) {
+    setOpenFolders((prev) => {
+      const next = { ...prev, [name]: open };
+      rememberOpenFolders(next);
+      return next;
+    });
+  }
+
   const tree = (
     <ul className="category-list">
-      {(["Computer", "User"] as Half[]).map((half) => (
-        <li key={half}>
-          <p className="category-group">
-            {half} Configuration
-            <span>
-              {half === "Computer" ? "Computers in the linked OU" : "Users in the linked OU"}
-            </span>
-          </p>
-          <ul>
-            {entries
-              .filter((entry) => entry.half === half)
-              .map((entry) => {
-                const count = countOf(settings, entry.key);
+      {(["Computer", "User"] as Half[]).map((half) => {
+        const forHalf = entries.filter((entry) => entry.half === half);
+        const folders = GROUP_ORDER.map((group) => ({
+          group,
+          items: forHalf.filter((entry) => entry.group === group),
+        })).filter((folder) => folder.items.length > 0);
+        return (
+          <li key={half}>
+            <p className="category-group">
+              {half} Configuration
+              <span>
+                {half === "Computer" ? "Computers in the linked OU" : "Users in the linked OU"}
+              </span>
+            </p>
+            <ul>
+              {folders.map((folder) => {
+                const open = openFolders[folder.group] ?? true;
                 return (
-                  <li key={entry.key}>
-                    <button
-                      type="button"
-                      className={selected === entry.key ? "active" : ""}
-                      aria-current={selected === entry.key ? "true" : undefined}
-                      onClick={() => setSelected(entry.key)}
+                  <li key={folder.group}>
+                    <details
+                      className="category-folder"
+                      open={open}
+                      onToggle={(event) =>
+                        toggleFolder(folder.group, (event.target as HTMLDetailsElement).open)
+                      }
                     >
-                      <span className="truncate">{entry.title}</span>
-                      {count > 0 && (
-                        <span className="count" aria-label={`${count} configured`}>
-                          {count}
-                        </span>
-                      )}
-                    </button>
+                      <summary>{folder.group}</summary>
+                      <ul>
+                        {folder.items.map((entry) => {
+                          const count = countOf(settings, entry.key);
+                          return (
+                            <li key={entry.key}>
+                              <button
+                                type="button"
+                                className={selected === entry.key ? "active" : ""}
+                                aria-current={selected === entry.key ? "true" : undefined}
+                                onClick={() => setSelected(entry.key)}
+                              >
+                                <span className="truncate">{entry.title}</span>
+                                {count > 0 && (
+                                  <span className="count" aria-label={`${count} configured`}>
+                                    {count}
+                                  </span>
+                                )}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </details>
                   </li>
                 );
               })}
-          </ul>
-        </li>
-      ))}
+            </ul>
+          </li>
+        );
+      })}
     </ul>
   );
 
@@ -1144,6 +1272,7 @@ export function SettingsEditor({
           {selected === "graphics_drivers" && (
             <GraphicsDriversEditor settings={settings} onChange={onChange} />
           )}
+          {selected === "grub" && <GrubEditor settings={settings} onChange={onChange} />}
           {selected === "agent_update" && (
             <AgentUpdateEditor settings={settings} onChange={onChange} />
           )}
@@ -1637,8 +1766,10 @@ function LoginScreenEditor({
           <label className="field">
             <span>Background picture</span>
             <small>
-              GNOME&rsquo;s greeter takes its background from its compiled shell theme and
-              ignores this; the banner and the user list below do apply there.
+              On GNOME, whose greeter otherwise ignores this and takes its background from its
+              own compiled theme, the agent rebuilds that theme with the picture in it. Needs
+              libglib2.0-dev-bin on the machine, installed automatically if missing; the banner
+              and the user list below apply either way.
             </small>
             <FileInput
               accept="image/*"
@@ -1935,6 +2066,67 @@ function GraphicsDriversEditor({
             <option value="none">None (do not manage)</option>
           </Select>
         </Field>
+      )}
+    </>
+  );
+}
+
+function GrubEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.grub;
+
+  function set(changes: Partial<NonNullable<PolicySettings["grub"]>>) {
+    onChange({
+      ...settings,
+      grub: { timeout_seconds: 0, hide_menu: true, ...current, ...changes },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("grub")}
+        actions={current && <RemoveSetting onRemove={() => onChange({ ...settings, grub: undefined })} />}
+      />
+      <p className="muted">
+        Written as a drop-in under <code>/etc/default/grub.d</code>, the way Debian&rsquo;s own
+        grub-common documents changing this without hand-editing{" "}
+        <code>/etc/default/grub</code> itself.
+      </p>
+
+      {!current ? (
+        <EmptySetting
+          message="Not configured, so a machine keeps whatever wait its own /etc/default/grub sets."
+          onAdd={() => set({})}
+        />
+      ) : (
+        <>
+          <Field
+            label="Wait (seconds)"
+            hint="0 boots immediately. Escape during boot reaches the menu either way."
+          >
+            <input
+              type="number"
+              min={0}
+              max={600}
+              value={current.timeout_seconds}
+              onChange={(e) => set({ timeout_seconds: Number(e.target.value) })}
+            />
+          </Field>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.hide_menu}
+              onChange={(e) => set({ hide_menu: e.target.checked })}
+            />
+            Hide the menu — the machine just boots
+          </label>
+        </>
       )}
     </>
   );

@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.8.12_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.9.0_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -138,8 +138,8 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Area | Capability |
 |---|---|
 | Directory | Users, groups, computers and organizational units — create, edit, move, delete, bulk CSV import, one action that offboards a leaver, one change applied to a selection of objects, and groups whose membership is a query rather than a list |
-| Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering, item-level targeting, a full change history with one-button rollback, modelling a link before making it, and export/import as portable JSON |
-| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen, desktop background, browser policy, software deployment, unattended updates, always-on VPN, remote desktop session rules, default applications per file type, the dash layout per user or group, desktop shortcuts and file-manager bookmarks, fonts and the desktop theme, the domain's password policy, kernel parameters, power and screen-lock behaviour, removable-storage rules, a second factor at the machine, an allowlist for what may be installed, what the first sign-in shows, agent updates, and a local administrator whose password each machine rotates itself. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
+| Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering, item-level targeting, a full change history with one-button rollback, modelling a link before making it, export/import as portable JSON, and settings filed into collapsible folders so a long list stays navigable |
+| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen (including a background picture that actually appears at GNOME's greeter, not only in the setting), desktop background, browser policy, apt package deployment, a `.deb` uploaded directly for software with no apt repository to reach, graphics drivers detected from the hardware or named directly, unattended updates, always-on VPN, remote desktop session rules, default applications per file type, the dash layout per user or group (optionally left alone once seeded, for someone free to rearrange their own), desktop shortcuts and file-manager bookmarks, fonts and the desktop theme, the local password policy, boot loader wait and menu visibility, kernel parameters, power and screen-lock behaviour, removable-storage rules, a second factor at the machine, an allowlist for what may be installed, what the first sign-in shows, agent updates, and a local administrator whose password each machine rotates itself — removed from a machine the moment the policy stops naming one. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
 | Roaming profiles | A home directory on a share that follows the person between desktops and session hosts, as a disk image per person or a directory. The same mechanism a remote desktop collection uses, so one profile can serve both |
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
@@ -152,12 +152,12 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
 | Machine management | Model, serial and drive health from SMART, installed software, local accounts to add and remove, sign-in history, watching a signed-in person's screen with their consent, recent logs filtered to errors and exportable, updates, restart, a remote agent update, a shell that runs as root and keeps its working directory, a file browser that shows and changes owner, group and mode, and disk-encryption status with an escrowed recovery key — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, re-issues the console's own certificate, and withdraws one to a revocation list every issued certificate points at |
-| Passwords | The domain's rules and per-group fine-grained ones, both set as a policy-object setting; helpdesk resets; self-service change gated by policy |
+| Passwords | The local password policy for accounts that live on a machine itself, set as a policy-object setting; helpdesk resets. The domain's own password rules are set with `samba-tool domain passwordsettings`, the way any AD-compatible tool sets them, rather than duplicated as console state |
 | Pictures | A person's picture set on their account and shown by every machine they sign in to, at the login screen and in the desktop |
 | Sign-in | A second factor, enrolled once with a QR code and asked for at the console and at the machine alike — on screen, over SSH, at sudo or over remote desktop. Somebody who has not enrolled is walked through it at their next sign-in, full screen, and cannot get past it |
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit, including a read-only role that sees everything and changes nothing |
-| Domain controllers | Which controllers exist, which are read-only, and replication between them |
+| Domain controllers | Which controllers exist, which are read-only, and replication between them; a default organizational unit for a computer that joins without naming one itself |
 | Operations | Health dashboard on Overview, replication, domain backups taken by the controller's own agent, a security baseline measuring the domain against a checklist, and a configuration export: every object, zone and setting in one readable file, importable into a new domain from the console or from `setup.sh --import` |
 | Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one, keeping the security identifier it had |
 | Audit | Every change with actor, outcome and before-and-after state |
@@ -245,7 +245,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.8.12   # -> dist/odm-client_0.8.12_amd64.deb
+bash packaging/deb/build-in-container.sh 0.9.0   # -> dist/odm-client_0.9.0_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on
