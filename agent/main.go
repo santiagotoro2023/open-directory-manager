@@ -30,7 +30,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.9.2"
+const version = "0.9.3"
 
 const serialPath = "/var/lib/odm/last-serial"
 
