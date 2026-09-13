@@ -125,31 +125,39 @@ function safeFileName(name: string): string {
  * nothing displayed, and nothing anywhere reported why. This decodes
  * whatever format the browser itself can display and re-encodes it as a
  * real PNG before it ever leaves the browser, so what reaches the agent is
- * always genuine PNG data regardless of what the operator picked. */
+ * always genuine PNG data regardless of what the operator picked.
+ *
+ * Reads the file as a data: URL rather than URL.createObjectURL's blob:
+ * one — the console's own Content-Security-Policy (api/odm/security.py,
+ * _CONSOLE_CSP) sets img-src to 'self' data: deliberately, with no blob:,
+ * and a blob: URL assigned to an <img> under that policy is silently
+ * refused by the browser: every conversion failed the same way, with
+ * nothing to explain why. data: is already explicitly allowed, so this
+ * needs no change to the policy at all. */
 function readImageAsPng(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      URL.revokeObjectURL(url);
-      if (!ctx) {
-        reject(new Error("could not get a 2D canvas context to convert this image"));
-        return;
-      }
-      ctx.drawImage(img, 0, 0);
-      const dataUrl = canvas.toDataURL("image/png");
-      const comma = dataUrl.indexOf(",");
-      resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("could not get a 2D canvas context to convert this image"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL("image/png");
+        const comma = dataUrl.indexOf(",");
+        resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
+      };
+      img.onerror = () => reject(new Error("could not decode this file as an image"));
+      img.src = reader.result as string;
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("could not decode this file as an image"));
-    };
-    img.src = url;
+    reader.onerror = () => reject(reader.error ?? new Error("could not read this file"));
+    reader.readAsDataURL(file);
   });
 }
 

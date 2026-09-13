@@ -898,6 +898,21 @@ export function Content() {
                   forward — a setting already saved empty by it needs the picture uploaded again.
                 </>,
               ],
+              [
+                "0.10.6 upgraded, but no picture upload works at all anymore — nothing happens after choosing a file",
+                <>
+                  0.10.6&rsquo;s own PNG conversion used <C key="csp1">URL.createObjectURL</C>, a{" "}
+                  <C key="csp2">blob:</C> URL — and the console&rsquo;s Content-Security-Policy
+                  (<C key="csp3">api/odm/security.py</C>) sets <C key="csp4">img-src</C> to{" "}
+                  <C key="csp5">&apos;self&apos; data:</C> deliberately, with no{" "}
+                  <C key="csp6">blob:</C>. The browser silently refused to load the picture under
+                  that policy, so every conversion failed the same way on every upload, with
+                  nothing shown to explain why. 0.10.7 reads the file as a{" "}
+                  <C key="csp7">data:</C> URL instead — already explicitly allowed — rather than
+                  loosen the policy, and a failure here is no longer silent: it now shows in the
+                  file picker&rsquo;s own label where the file name would otherwise appear.
+                </>,
+              ],
             ]}
           />
         </Section>

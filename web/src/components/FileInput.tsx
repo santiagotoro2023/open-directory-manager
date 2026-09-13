@@ -25,6 +25,7 @@ export function FileInput({
   const input = useRef<HTMLInputElement>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div className="file-input">
@@ -37,8 +38,8 @@ export function FileInput({
         <Upload size={15} aria-hidden="true" />
         Choose a file
       </button>
-      <span className={chosen && !reading ? "truncate" : "truncate muted"}>
-        {reading ? "Reading…" : (chosen ?? placeholder)}
+      <span className={chosen && !reading && !error ? "truncate" : "truncate muted"}>
+        {reading ? "Reading…" : (error ?? chosen ?? placeholder)}
       </span>
       <input
         ref={input}
@@ -51,10 +52,18 @@ export function FileInput({
           event.target.value = "";
           if (!file) return;
           setReading(true);
+          setError(null);
           beginUpload();
           try {
             await onChoose(file);
             setChosen(file.name);
+          } catch (err) {
+            // A failure here used to be entirely silent: nothing changed,
+            // nothing explained why, and the setting quietly saved without
+            // the picture. Shown in the same place the file name would
+            // have gone, since that is where an operator is already
+            // looking to confirm the upload worked.
+            setError(err instanceof Error ? err.message : "could not read this file");
           } finally {
             setReading(false);
             endUpload();
