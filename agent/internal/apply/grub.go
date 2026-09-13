@@ -64,32 +64,28 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		// side — the kernel inherits the same graphics mode GRUB was already
 		// in, rather than GRUB resetting to text mode first and the kernel
 		// switching back a moment later, which is the flash itself.
-		cmdline := "quiet splash"
-		if nvidiaProprietaryDriverInUse(env) {
-			// Confirmed live: without this, the proprietary driver never
-			// takes over kernel mode setting, so Plymouth has nothing to
-			// draw on for the whole of early boot regardless of how correct
-			// the theme is — the console stays on the firmware's own plain
-			// framebuffer, showing kernel and systemd text the entire time,
-			// on exactly the hardware this setting exists to hide that from.
-			//
-			// modeset=1 alone confirmed live to be not quite enough on its
-			// own: "quiet" successfully suppressed all boot text (proving
-			// the kernel and initramfs side was fine), and the theme's own
-			// files were correctly present and validated, yet nothing —
-			// spinner, background, logo, message — ever appeared, all the
-			// way through to the login screen. This is a known rough edge
-			// of the proprietary driver's DRM implementation: modeset=1
-			// hands the display over, but Plymouth's own DRM renderer still
-			// needs the driver's fbdev emulation to actually get a usable
-			// framebuffer to draw into. Without fbdev=1, the DRM handoff
-			// itself can succeed while Plymouth still has nothing it can
-			// actually render onto — which reads as exactly this: no
-			// crash, no error anywhere, boot proceeds normally, simply
-			// nothing is ever drawn.
-			cmdline += " nvidia-drm.modeset=1 nvidia_drm.fbdev=1"
-		}
-		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", cmdline)
+		//
+		// Deliberately never asks a real GPU driver to take over kernel mode
+		// setting for this. An earlier version added nvidia-drm.modeset=1 (and
+		// later nvidia_drm.fbdev=1 alongside it) specifically to give the
+		// proprietary NVIDIA driver early KMS, on the reasoning that Plymouth
+		// otherwise had nothing to draw on. Confirmed live that this was the
+		// wrong fix for the wrong problem: with both parameters correctly
+		// applied, Plymouth's DRM renderer still rendered nothing at all —
+		// not a missing-driver problem, but a real, reproducible kernel WARN_ON
+		// inside NVIDIA's own nvidia_drm.ko (nv_drm_revoke_modeset_permission,
+		// hit during the exact drop-master handoff to the login manager),
+		// confirmed to have no module parameter or driver-version workaround
+		// available in Debian's own repos. "keep" alone already solves the
+		// actual problem without touching any vendor driver at all: the
+		// kernel's own generic, in-tree simpledrm/efifb driver picks up
+		// whatever graphics mode GRUB (via UEFI GOP) already negotiated and
+		// exposes it as a plain DRM device Plymouth's renderer can draw onto
+		// directly — no NVIDIA, AMD or Intel driver code involved during the
+		// splash at all, on any vendor's hardware. The real GPU driver still
+		// takes over normally once the desktop session itself starts; this
+		// only changes what draws the splash in between.
+		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", "quiet splash")
 		body += "GRUB_GFXPAYLOAD_LINUX=keep\n"
 	}
 	if err := env.WriteFile(grubConfPath, body, 0o644, "root", "root"); err != nil {

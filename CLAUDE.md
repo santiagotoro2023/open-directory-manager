@@ -264,6 +264,40 @@ goal.
   that shape — must go through `Unsandboxed`, not `env.Run.Run` directly; this is not
   obvious from reading the failing code in isolation, only from reading the
   service file's own hardening (`deploy/odm-agent.service`) alongside it.
+- **Prefer a generic, in-kernel mechanism over asking a specific vendor's
+  driver to do something early, even when the vendor's own documentation
+  says to.** A fourth round of the boot-splash incident above: two versions
+  in a row added an NVIDIA-specific kernel parameter
+  (`nvidia-drm.modeset=1`, then `nvidia_drm.fbdev=1` alongside it) to give
+  the proprietary driver early kernel mode setting, on the reasoning —
+  correct in general, and the standard, documented way to do this — that
+  Plymouth needed a driver to have taken over the display before it could
+  draw anything. Confirmed live, on real NVIDIA hardware, that this was
+  the wrong fix for the wrong problem: with both parameters verified
+  active on the actual running kernel, Plymouth's DRM renderer still drew
+  nothing at all, because of a real, reproducible kernel `WARN_ON` inside
+  NVIDIA's own compiled `nvidia_drm.ko`, hit during the ordinary
+  drop-master handoff to the login manager — confirmed to have no module
+  parameter (`/sys/module/nvidia_drm/parameters/` only exposes `modeset`
+  and `fbdev`, checked directly against the running module rather than
+  assumed) and no different driver version available to work around. The
+  actual fix needed no vendor driver involved at all:
+  `GRUB_GFXPAYLOAD_LINUX=keep` (already present, for a different reason —
+  closing the GRUB-to-kernel graphics-mode flash) is sufficient by itself,
+  because the kernel's own generic, in-tree `simpledrm`/`efifb` driver
+  picks up whatever mode GRUB already negotiated via UEFI and exposes it
+  as a plain DRM device Plymouth can draw onto directly, on any vendor's
+  hardware, before that vendor's own driver ever loads. The real GPU
+  driver still takes over normally once the desktop session itself
+  starts — early boot and the desktop session are separate, sequential
+  owners of the display, and only the desktop session actually needs the
+  real driver loaded. Before reaching for a vendor-specific early-KMS
+  parameter for anything boot-critical, check whether the kernel's own
+  generic mechanism already covers the actual need — a proprietary,
+  out-of-tree driver is exactly the code this project has the least
+  ability to debug or work around when it has its own bug, which is a
+  reason to avoid depending on it early, not a reason to reach for its
+  specific flags first.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

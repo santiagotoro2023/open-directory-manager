@@ -114,10 +114,6 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("splash background: %w", err)))
 	}
-	nvidiaModulesChanged, err := ensureNvidiaModulesInInitramfs(env)
-	if err != nil {
-		results = append(results, policy.Fail("grub:splash", fmt.Errorf("nvidia modules: %w", err)))
-	}
 	kmsModulesChanged, err := ensureOpenSourceKmsModulesInInitramfs(env)
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("kms modules: %w", err)))
@@ -132,7 +128,7 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	}
 
 	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
-		nvidiaModulesChanged || kmsModulesChanged || storageModulesChanged || inputModulesChanged
+		kmsModulesChanged || storageModulesChanged || inputModulesChanged
 	if needsRebuild {
 		// A rebuild that runs out of room on /boot can leave a truncated
 		// initrd behind — one that boots straight to an "(initramfs)" rescue
@@ -222,43 +218,30 @@ func themeIsActive(ctx context.Context, env Env) bool {
 	return err == nil && strings.TrimSpace(out) == splashTheme
 }
 
-// nvidiaProprietaryDriverInUse reports whether this machine's graphics are
-// driven by the closed nvidia driver rather than nouveau or anything else —
-// confirmed live against real hardware to matter: without it, Plymouth is
-// never given a display to draw on at all, and every kernel and systemd
-// message this setting exists to hide keeps showing on the console's plain
-// firmware framebuffer for the whole of early boot, whatever the theme
-// itself says. Checked by path rather than by asking the kernel, so a
-// machine with no command runner still has a filesystem this can look at.
-func nvidiaProprietaryDriverInUse(env Env) bool {
-	for _, marker := range []string{"/proc/driver/nvidia/version", "/usr/bin/nvidia-smi"} {
-		if _, err := os.Stat(env.Path(marker)); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
 const initramfsModulesPath = "/etc/initramfs-tools/modules"
 
-// ensureNvidiaModulesInInitramfs is the other half of nvidia-drm.modeset=1 on
-// the kernel command line: mode setting has nothing to turn on early if the
-// driver itself is not in the initramfs to begin with. update-initramfs
-// resolves nvidia_drm's own dependencies (nvidia_modeset, nvidia) the same
-// way modprobe does, so naming it is enough — the other two are listed
-// anyway, since a machine that already has one of them by some other means
-// should not end up missing another.
-func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
-	if !nvidiaProprietaryDriverInUse(env) {
-		return false, nil
-	}
-	return addModulesToInitramfs(env, []string{"nvidia", "nvidia_modeset", "nvidia_drm"})
-}
-
 // openSourceKmsModules gives Plymouth something to draw on for early Kernel
-// Mode Setting on the open-source drivers, the non-nvidia counterpart to
-// ensureNvidiaModulesInInitramfs above. An earlier version of this instead
-// widened /etc/initramfs-tools/initramfs.conf's MODULES= setting to "most",
+// Mode Setting on the open-source drivers. There is deliberately no NVIDIA
+// counterpart to this any more: an earlier version added
+// nvidia-drm.modeset=1 (and later nvidia_drm.fbdev=1) to give the
+// proprietary driver the same early KMS, and confirmed live that this was
+// the wrong fix — with both correctly applied, Plymouth's DRM renderer
+// still rendered nothing at all, because of a real, reproducible kernel
+// WARN_ON inside NVIDIA's own nvidia_drm.ko
+// (nv_drm_revoke_modeset_permission, hit during the drop-master handoff to
+// the login manager), with no module parameter or available driver version
+// found to work around it. GRUB_GFXPAYLOAD_LINUX=keep (grub.go) already
+// solves the actual problem without any vendor driver involved: the
+// kernel's own generic, in-tree simpledrm/efifb driver picks up whatever
+// mode GRUB already negotiated and gives Plymouth a plain DRM device to
+// draw onto directly, on any vendor's hardware, before that vendor's own
+// driver ever loads. amdgpu/i915/radeon/nouveau are still named here
+// unconditionally regardless, on the same reasoning as before — untested
+// live to have this same class of bug, and each one small enough that
+// listing it costs nothing on hardware that does not have it.
+//
+// An earlier version of this instead widened
+// /etc/initramfs-tools/initramfs.conf's MODULES= setting to "most",
 // which pulls every module for every class of hardware the running kernel
 // knows about — network, sound, USB storage, Bluetooth, every filesystem —
 // into the initramfs, not just the display drivers this needs. Confirmed
@@ -270,8 +253,8 @@ func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
 // reaches a login screen again, on every machine the policy reached, not
 // just ones with unusual hardware. Naming the handful of drivers actually
 // needed keeps the initrd within a few hundred kilobytes of what it already
-// was, the same bounded, one-file mechanism the nvidia modules already use
-// safely above.
+// was, the same bounded, one-file mechanism addModulesToInitramfs already
+// uses safely below.
 var openSourceKmsModules = []string{"amdgpu", "i915", "radeon", "nouveau"}
 
 func ensureOpenSourceKmsModulesInInitramfs(env Env) (changed bool, err error) {
@@ -294,8 +277,8 @@ func ensureOpenSourceKmsModulesInInitramfs(env Env) (changed bool, err error) {
 // fixed, generous list rather than another attempt to detect the right
 // answer per machine. Every module here is small; listing one this
 // particular machine does not need costs a few tens of kilobytes and is
-// skipped harmlessly by update-initramfs, the same as the nvidia modules
-// above already do when nvidia is not the actual hardware.
+// skipped harmlessly by update-initramfs, the same as the display drivers
+// above already do on hardware that does not have them.
 var storageModules = []string{
 	"nvme", "nvme_core",
 	"ahci", "sd_mod", "sr_mod",

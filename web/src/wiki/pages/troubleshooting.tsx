@@ -776,17 +776,21 @@ export function Content() {
                   kernel/systemd text instead of the spinner, from the very start of boot
                 </>,
                 <>
-                  Confirmed live: on a machine with an NVIDIA card using the proprietary driver,
-                  this is what happens without <C key="bs1">nvidia-drm.modeset=1</C> on the kernel
-                  command line — the driver never takes over kernel mode setting, so Plymouth has
-                  nothing to draw on for the whole of early boot, whatever the theme says.
-                  0.10.2 adds that parameter (and the driver&rsquo;s own modules to the
-                  initramfs) automatically whenever an NVIDIA card is detected; before that,
-                  every other part of the splash could be completely correct and this would still
-                  happen. Upgrade to 0.10.5 or later and re-apply. On any other card, check{" "}
-                  <C key="bs2">grep -E &apos;amdgpu|i915|radeon|nouveau&apos;
-                  /etc/initramfs-tools/modules</C> lists them — 0.10.3 adds these explicitly,
-                  since they are what give early graphics on a non-NVIDIA machine.
+                  Check <C key="bs2">grep -E &apos;amdgpu|i915|radeon|nouveau&apos;
+                  /etc/initramfs-tools/modules</C> lists the open-source display drivers — these
+                  are what give early graphics on real hardware, and the kernel&rsquo;s own generic{" "}
+                  <C key="bs3">simpledrm</C>/<C key="bs4">efifb</C> driver (backed by{" "}
+                  <C key="bs5">GRUB_GFXPAYLOAD_LINUX=keep</C> in the drop-in file) is what actually
+                  gives Plymouth a framebuffer to draw on for the rest, on any vendor&rsquo;s
+                  hardware, without any GPU driver needing to load early at all. Two earlier
+                  versions instead added an NVIDIA-specific kernel parameter for this
+                  (<C key="bs6">nvidia-drm.modeset=1</C>, later{" "}
+                  <C key="bs7">nvidia_drm.fbdev=1</C> alongside it) — both were removed after being
+                  confirmed live to cause a different, worse problem on real NVIDIA hardware (see
+                  the row below on nothing rendering at all). Upgrade to 0.10.12 or later; a
+                  machine still on an older agent version may still carry one of those parameters
+                  in its grub drop-in, which does no harm on its own but is no longer written by
+                  current policy.
                 </>,
               ],
               [
@@ -906,24 +910,37 @@ export function Content() {
               ],
               [
                 <>
-                  Nothing at all appears — no spinner, no background, no logo, no message — but
-                  boot text is correctly suppressed and the machine reaches login normally
-                  (NVIDIA)
+                  On an older agent version (0.10.2&ndash;0.10.11): nothing at all appears — no
+                  spinner, no background, no logo, no message — but boot text is correctly
+                  suppressed and the machine reaches login normally (NVIDIA)
                 </>,
                 <>
-                  Confirmed live, on real NVIDIA hardware, after everything else about the setup
-                  checked out: the agent&rsquo;s own report showed <C key="fbd1">grub:splash</C> as
-                  a clean success, the theme files and pictures were correctly present and
-                  validated in the rebuilt initramfs, and still nothing ever rendered, all the way
-                  through to the login screen. <C key="fbd2">nvidia-drm.modeset=1</C> hands the
-                  display over to the driver, but Plymouth&rsquo;s own DRM renderer separately
-                  needs the driver&rsquo;s fbdev emulation to actually get a usable framebuffer to
-                  draw into — without it, the handoff itself can succeed while Plymouth still has
-                  nothing it can render onto, with no crash and no error anywhere to explain why.
-                  0.10.11 adds <C key="fbd3">nvidia_drm.fbdev=1</C> alongside{" "}
-                  <C key="fbd4">modeset=1</C> for exactly this. Confirm with{" "}
-                  <C key="fbd5">cat /proc/cmdline</C> after upgrading and re-applying — both
-                  parameters should be present — then reboot once to see the theme for real.
+                  This took three rounds to actually root-cause, all on the same real NVIDIA
+                  hardware. First, <C key="fbd2">nvidia-drm.modeset=1</C> alone: the agent&rsquo;s
+                  own report showed a clean success and the theme files were correctly present and
+                  validated in the rebuilt initramfs, and still nothing rendered. Adding{" "}
+                  <C key="fbd3">nvidia_drm.fbdev=1</C> alongside it (0.10.11, on the theory that
+                  DRM mode-setting alone was not giving Plymouth&rsquo;s renderer a usable
+                  framebuffer) did not fix it either — <C key="fbd5">cat /proc/cmdline</C> confirmed
+                  both parameters were genuinely active, and it still rendered nothing. The actual
+                  cause, found from <C key="fbd6">journalctl -b -k | grep -B2 -A30 "Comm:
+                  plymouthd"</C>: a real, reproducible kernel <C key="fbd7">WARN_ON</C> inside
+                  NVIDIA&rsquo;s own <C key="fbd8">nvidia_drm.ko</C> (
+                  <C key="fbd9">nv_drm_revoke_modeset_permission</C>), hit every time{" "}
+                  <C key="fbd10">plymouthd</C> drops DRM master to hand the display to the login
+                  manager — confirmed to have no module parameter (
+                  <C key="fbd11">/sys/module/nvidia_drm/parameters/</C> only exposes{" "}
+                  <C key="fbd12">modeset</C> and <C key="fbd13">fbdev</C>, nothing for this) and no
+                  different driver version available in Debian&rsquo;s own repos, including
+                  backports, to work around. 0.10.12 stops asking any vendor driver for early
+                  kernel mode setting at all: <C key="fbd14">GRUB_GFXPAYLOAD_LINUX=keep</C> alone
+                  already gives Plymouth a generic, vendor-neutral framebuffer through the
+                  kernel&rsquo;s own <C key="fbd15">simpledrm</C>/<C key="fbd16">efifb</C> driver,
+                  with no NVIDIA (or AMD, or Intel) driver code involved during the splash at all —
+                  the real GPU driver still takes over normally once the desktop session itself
+                  starts. Upgrade to 0.10.12 or later and re-apply; a machine still on an older
+                  agent version carries the NVIDIA-specific parameters in its grub drop-in until it
+                  updates and re-applies, which does no harm on its own but will not render either.
                 </>,
               ],
               [

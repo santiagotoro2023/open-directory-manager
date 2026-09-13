@@ -499,21 +499,22 @@ user      root`}</Code>
             for the splash to stop, not for a package removed.
           </Note>
           <Note>
-            On a machine with an NVIDIA card using the proprietary driver, turning the splash on
-            also adds <C>nvidia-drm.modeset=1</C> and <C>nvidia_drm.fbdev=1</C> to the kernel
-            command line and lists <C>nvidia</C>, <C>nvidia_modeset</C> and <C>nvidia_drm</C> in{" "}
-            <C>/etc/initramfs-tools/modules</C>. Confirmed live, on real NVIDIA hardware: without{" "}
-            <C>modeset=1</C> and the driver itself in the initramfs, the driver never takes over
-            kernel mode setting, and Plymouth has nothing to draw on for the whole of early boot
-            regardless of how correct the theme is — the console stays on the plain firmware
-            framebuffer showing kernel and systemd text the entire time, which is indistinguishable
-            from the splash simply not being configured. Confirmed live a second time:{" "}
-            <C>modeset=1</C> alone can still leave Plymouth with nothing to actually draw into —
-            the driver hands the display over, but Plymouth&rsquo;s own DRM renderer needs the
-            driver&rsquo;s fbdev emulation too, and without it every boot text line is correctly
-            suppressed while the graphical theme (spinner, background, logo, message — all of it)
-            simply never renders, with no error anywhere. <C>fbdev=1</C> is what closes that second
-            gap.
+            No NVIDIA-specific kernel parameter is used at all, deliberately. Two earlier versions
+            of this tried <C>nvidia-drm.modeset=1</C>, then <C>nvidia_drm.fbdev=1</C> alongside it,
+            both intended to give the proprietary driver early kernel mode setting so Plymouth had
+            something to draw on. Confirmed live, on real NVIDIA hardware, that this was the wrong
+            fix: with both correctly applied and everything else about the setup verified
+            correct, Plymouth&rsquo;s DRM renderer still rendered nothing at all — not a
+            missing-driver problem, but a real, reproducible kernel <C>WARN_ON</C> inside NVIDIA&rsquo;s
+            own <C>nvidia_drm.ko</C> (<C>nv_drm_revoke_modeset_permission</C>, hit during the
+            drop-master handoff to the login manager), with no module parameter or available
+            driver version found to work around it. <C>GRUB_GFXPAYLOAD_LINUX=keep</C> below
+            already solves the actual problem without any vendor driver involved at all: the
+            kernel&rsquo;s own generic, in-tree <C>simpledrm</C>/<C>efifb</C> driver picks up
+            whatever mode GRUB already negotiated via UEFI and gives Plymouth a plain DRM device to
+            draw onto directly, on any hardware, before any vendor&rsquo;s own driver ever loads.
+            The real GPU driver still takes over normally once the desktop session itself starts —
+            this only changes what draws the splash in the meantime.
             Every machine also gets <C>amdgpu</C>, <C>i915</C>, <C>radeon</C> and <C>nouveau</C>{" "}
             listed the same way in <C>/etc/initramfs-tools/modules</C> while the splash is on —
             named explicitly rather than by widening <C>MODULES=</C> to <C>most</C>, which used to
