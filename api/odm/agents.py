@@ -82,13 +82,24 @@ def for_dn(contacts: dict[str, Contact], dn: str) -> Contact | None:
     return max(moved, key=lambda contact: contact.at) if moved else None
 
 
-async def freshness(pool: asyncpg.Pool, stale_after_minutes: int) -> dict[str, int]:
+async def freshness(
+    pool: asyncpg.Pool, stale_after_minutes: int, existing: set[str] | None = None
+) -> dict[str, int]:
     """How many machines have an agent, and how many were heard from lately.
 
     The same contact rule as last_contact: a machine applying nothing because
     nothing changed is not a machine that has gone quiet.
+
+    These tables are never pruned when a computer object is deleted — an
+    agent's own history is not this account's to erase just because the
+    account it reported against is gone — so a machine rebuilt under a new
+    name, or a test machine from long before this domain was in real use,
+    stays counted forever unless `existing` narrows it back down to the
+    computers actually in the directory today.
     """
     contacts = await last_contact(pool)
+    if existing is not None:
+        contacts = {dn: contact for dn, contact in contacts.items() if dn in existing}
     cutoff = datetime.now(UTC) - timedelta(minutes=stale_after_minutes)
     fresh = sum(1 for contact in contacts.values() if contact.at > cutoff)
     return {"checked_in": len(contacts), "fresh": fresh, "stale": len(contacts) - fresh}

@@ -273,9 +273,19 @@ async def _certificate_health(pool: asyncpg.Pool, settings: Settings) -> dict[st
     return described
 
 
+def _existing_computer_dns(conn, settings: Settings) -> set[str]:
+    found, _ = objects.search(
+        conn, settings, object_type="computer", container=None, query=None,
+        scope="subtree", limit=2000,
+    )
+    return {str(entry["distinguishedName"]).lower() for entry in found}
+
+
 async def _agent_health(pool: asyncpg.Pool, settings: Settings) -> dict[str, Any]:
     stale_after = max(settings.agent_refresh_minutes * 3, 60)
-    counts = await agents.freshness(pool, stale_after)
+    async with _bound(settings, write=False) as conn:
+        existing = await run_in_threadpool(_existing_computer_dns, conn, settings)
+    counts = await agents.freshness(pool, stale_after, existing)
     failures = await pool.fetchval(
         """
         SELECT coalesce(sum(failures), 0) FROM (
@@ -666,6 +676,7 @@ async def security_baseline(
         admins = await run_in_threadpool(
             objects.account_names_in, conn, settings, settings.admin_group
         )
+        existing_computers = await run_in_threadpool(_existing_computer_dns, conn, settings)
 
     described = [
         {
@@ -689,7 +700,13 @@ async def security_baseline(
     }
     checks.append(baseline.second_factor(sorted(admins), enrolled))
 
-    machines = await pool.fetch("SELECT hostname, volumes, reported_at FROM computer_fact")
+    machines = [
+        row
+        for row in await pool.fetch(
+            "SELECT computer_dn, hostname, volumes, reported_at FROM computer_fact"
+        )
+        if row["computer_dn"].lower() in existing_computers
+    ]
     stale = sum(
         1
         for row in machines

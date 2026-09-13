@@ -513,6 +513,16 @@ async def test_a_machine_that_reports_only_its_inventory_counts_as_alive(fresh):
         assert agents.describe(contact)["last_seen"] == contact.at
         assert (await agents.freshness(fresh, 60))["fresh"] == 1
 
+        # A computer object deleted from the directory does not un-write its
+        # own history: computer_fact and agent_report are never pruned when
+        # it goes, so a health card counting every distinct computer_dn ever
+        # seen kept a long-gone test machine in its total forever. Narrowed
+        # to what is actually still in the directory, it drops out.
+        counts = await agents.freshness(fresh, 60, existing={dn.lower()})
+        assert counts == {"checked_in": 1, "fresh": 1, "stale": 0}
+        counts = await agents.freshness(fresh, 60, existing=set())
+        assert counts == {"checked_in": 0, "fresh": 0, "stale": 0}
+
         # Collecting queued work is contact too, and it is the machine itself
         # that claims it.
         await tasks.enqueue(
