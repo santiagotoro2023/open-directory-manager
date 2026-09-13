@@ -103,14 +103,19 @@ async def create_reverse_zone(
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    """Create the reverse lookup zone for a network."""
+    """Create the reverse lookup zone for a network, and back-fill it from
+    every A record the forward zones already hold for that network."""
     zone = dns.reverse_zone_name(body.network)
     async with _audit_context(
         request, session, pool, "dns.zone.create", object_type="dns_zone", object_dn=zone
     ) as entry:
         await run_in_threadpool(dns.create_zone, settings, zone)
-        entry.after = {"zone": zone, "network": body.network}
-        return {"zone": zone, "network": body.network}
+        existing = await run_in_threadpool(dns.list_zones, settings)
+        backfilled = await run_in_threadpool(
+            dns.backfill_pointers, settings, zone, [str(z["name"]) for z in existing]
+        )
+        entry.after = {"zone": zone, "network": body.network, "backfilled": backfilled}
+        return {"zone": zone, "network": body.network, "backfilled": backfilled}
 
 
 @router.delete("/zone", status_code=204, dependencies=[Depends(requires("dns.write"))])

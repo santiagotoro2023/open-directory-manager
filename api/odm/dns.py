@@ -307,8 +307,54 @@ def pointer_for(address: str, zones: list[str]) -> tuple[str, str] | None:
     return None
 
 
+def backfill_pointers(settings: Settings, reverse_zone: str, zones: list[str]) -> list[str]:
+    """Populate a freshly created reverse zone from what the forward zones
+    already know, rather than leaving an operator to type every PTR by hand.
+
+    Creating a reverse zone in AD — Samba's or Windows' — has only ever meant
+    creating the container; a Windows admin gets the same empty zone from
+    dnsmgmt.msc and expects dynamic updates or "Create associated pointer
+    record" checkboxes on individual A records to fill it in afterwards. The
+    difference here is that every A record in the domain typically already
+    exists before its matching reverse zone gets created — the forward zone
+    is what a machine registers into on join, the reverse zone is what an
+    operator adds later, once DHCP or a support ticket makes them want
+    reverse lookups to work — so there is a backlog of real answers sitting
+    in the forward zones the moment the reverse zone appears, and there is no
+    reason to make an operator retype what ODM can already see.
+    """
+    forward_zones = [
+        z for z in zones if z != reverse_zone and not z.endswith((".in-addr.arpa", ".ip6.arpa"))
+    ]
+    created: list[str] = []
+    for forward_zone in forward_zones:
+        for record in list_records(settings, forward_zone):
+            if record.type != "A":
+                continue
+            placement = pointer_for(record.data, [reverse_zone])
+            if placement is None:
+                continue
+            _, relative = placement
+            fqdn = (
+                f"{forward_zone}."
+                if record.name in ("@", "")
+                else f"{record.name}.{forward_zone}."
+            )
+            try:
+                add_record(settings, reverse_zone, relative, "PTR", fqdn)
+            except DnsError:
+                # Already there, or samba-tool refused this one name — the
+                # rest of the backfill still matters more than one entry.
+                continue
+            created.append(f"{relative}.{reverse_zone} -> {fqdn}")
+    return created
+
+
 def delete_zone(settings: Settings, zone: str) -> None:
-    _run(settings, "zonedelete", server(settings), validate_zone(zone), "--force")
+    # zonedelete never asks for confirmation and never took a --force flag —
+    # passing one made every deletion fail with "no such option: --force"
+    # before samba-tool got anywhere near the zone.
+    _run(settings, "zonedelete", server(settings), validate_zone(zone))
 
 
 def zone_info(settings: Settings, zone: str) -> dict[str, Any]:

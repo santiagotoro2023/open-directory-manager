@@ -19,6 +19,7 @@ export function Dns() {
   const [records, setRecords] = useState<DnsRecord[]>([]);
   const [available, setAvailable] = useState(true);
   const [dialog, setDialog] = useState<"zone" | "record" | null>(null);
+  const [removing, setRemoving] = useState<DnsZone | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingRecords, setLoadingRecords] = useState(true);
@@ -104,6 +105,12 @@ export function Dns() {
                   setSelected(zone.name);
                   setDialog("record");
                 },
+              },
+              { separator: true },
+              {
+                label: "Delete zone…",
+                danger: true,
+                onSelect: () => setRemoving(zone),
               },
             ])}
           >
@@ -223,9 +230,14 @@ export function Dns() {
       {dialog === "zone" && (
         <ZoneDialog
           onClose={() => setDialog(null)}
-          onCreated={(zone) => {
+          onCreated={(zone, backfilled) => {
             setDialog(null);
             setSelected(zone);
+            setNotice(
+              backfilled
+                ? `${backfilled} pointer record${backfilled === 1 ? "" : "s"} filled in from the forward zones.`
+                : null,
+            );
             void loadZones();
           }}
         />
@@ -246,6 +258,32 @@ export function Dns() {
           }}
         />
       )}
+
+      {removing && (
+        <Modal
+          title={`Delete ${removing.name}?`}
+          submitLabel="Delete zone"
+          onClose={() => setRemoving(null)}
+          onSubmit={async () => {
+            setError(null);
+            try {
+              await api.dns.deleteZone(removing.name);
+              if (selected === removing.name) setSelected("");
+              setRemoving(null);
+              await loadZones();
+            } catch (err) {
+              setError(err instanceof ApiError ? err.message : String(err));
+              setRemoving(null);
+            }
+          }}
+        >
+          <p>
+            Every record in <strong>{removing.name}</strong> is deleted, and anything that
+            resolves through it stops working immediately.
+          </p>
+          <p className="muted">Zones deleted this way are not in Deleted Objects.</p>
+        </Modal>
+      )}
     </Split>
   );
 }
@@ -255,7 +293,7 @@ function ZoneDialog({
   onCreated,
 }: {
   onClose: () => void;
-  onCreated: (zone: string) => void;
+  onCreated: (zone: string, backfilled?: number) => void;
 }) {
   const [kind, setKind] = useState<"forward" | "reverse">("forward");
   const [zone, setZone] = useState("");
@@ -279,7 +317,7 @@ function ZoneDialog({
             onCreated(zone);
           } else {
             const created = await api.dns.createReverseZone(network);
-            onCreated(created.zone);
+            onCreated(created.zone, created.backfilled.length);
           }
         } catch (err) {
           setError(err instanceof ApiError ? err.message : String(err));

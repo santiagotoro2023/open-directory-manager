@@ -1392,7 +1392,10 @@ export const api = {
       request<{ zone: Record<string, string>; records: DnsRecord[] }>(`/dns/zone${qs({ zone })}`),
 
     createReverseZone: (network: string) =>
-      request<{ zone: string; network: string }>("/dns/zones/reverse", json({ network })),
+      request<{ zone: string; network: string; backfilled: string[] }>(
+        "/dns/zones/reverse",
+        json({ network }),
+      ),
 
     createZone: (zone: string) => request<{ zone: string }>("/dns/zones", json({ zone })),
 

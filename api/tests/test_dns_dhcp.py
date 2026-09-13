@@ -124,6 +124,93 @@ def test_dns_reports_unavailable_rather_than_crashing(monkeypatch):
         dns._run(get_settings(), "zonelist", "dc1")
 
 
+def test_deleting_a_zone_never_passes_the_force_flag(monkeypatch):
+    """zonedelete never asks for confirmation and never took a --force flag —
+    passing one made every deletion fail with "no such option: --force"
+    before samba-tool got anywhere near the zone."""
+    calls = []
+    monkeypatch.setattr(dns, "_run", lambda settings, *args: calls.append(args) or "")
+
+    dns.delete_zone(get_settings(), "corp.example.internal")
+
+    assert calls == [("zonedelete", dns.server(get_settings()), "corp.example.internal")]
+    assert "--force" not in calls[0]
+
+
+def test_reverse_zone_backfill_fills_ptrs_from_matching_forward_records(monkeypatch):
+    query_outputs = {
+        "corp.example.internal": (
+            "  Name=, Records=1, Children=1\n"
+            "    A: 10.0.0.1 (flags=f0, serial=1, ttl=900)\n"
+            "  Name=dc1, Records=1, Children=0\n"
+            "    A: 10.0.0.10 (flags=f0, serial=1, ttl=900)\n"
+        ),
+        # A different /24: none of this zone's records belong in our reverse zone.
+        "other.example.internal": (
+            "  Name=ws1, Records=1, Children=0\n"
+            "    A: 10.0.5.5 (flags=f0, serial=1, ttl=900)\n"
+        ),
+    }
+    added: list[tuple[str, ...]] = []
+
+    def fake_run(settings, *args):
+        if args[0] == "query":
+            zone = args[2]
+            if zone not in query_outputs:
+                raise AssertionError(f"queried a zone that should have been excluded: {zone}")
+            return query_outputs[zone]
+        if args[0] == "add":
+            added.append(args)
+            return ""
+        raise AssertionError(f"unexpected samba-tool call: {args}")
+
+    monkeypatch.setattr(dns, "_run", fake_run)
+    created = dns.backfill_pointers(
+        get_settings(),
+        "0.0.10.in-addr.arpa",
+        [
+            "corp.example.internal",
+            "other.example.internal",
+            # Another reverse zone in the domain: never queried for records,
+            # since a reverse zone holds no A records to back-fill from.
+            "5.0.10.in-addr.arpa",
+            "0.0.10.in-addr.arpa",
+        ],
+    )
+
+    assert created == [
+        "1.0.0.10.in-addr.arpa -> corp.example.internal.",
+        "10.0.0.10.in-addr.arpa -> dc1.corp.example.internal.",
+    ]
+    assert [call[2:5] for call in added] == [
+        ("0.0.10.in-addr.arpa", "1", "PTR"),
+        ("0.0.10.in-addr.arpa", "10", "PTR"),
+    ]
+
+
+def test_reverse_zone_backfill_skips_one_bad_record_rather_than_aborting(monkeypatch):
+    output = (
+        "  Name=a, Records=1, Children=0\n"
+        "    A: 10.0.0.1 (flags=f0, serial=1, ttl=900)\n"
+        "  Name=b, Records=1, Children=0\n"
+        "    A: 10.0.0.2 (flags=f0, serial=1, ttl=900)\n"
+    )
+
+    def fake_run(settings, *args):
+        if args[0] == "query":
+            return output
+        if args[0] == "add" and args[3] == "1":
+            raise dns.DnsError("samba-tool refused this one")
+        return ""
+
+    monkeypatch.setattr(dns, "_run", fake_run)
+    created = dns.backfill_pointers(
+        get_settings(), "0.0.10.in-addr.arpa", ["corp.example.internal", "0.0.10.in-addr.arpa"]
+    )
+
+    assert created == ["2.0.0.10.in-addr.arpa -> b.corp.example.internal."]
+
+
 # -------------------------------------------------------------------- DHCP ---
 
 
