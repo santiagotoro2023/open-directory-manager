@@ -64,10 +64,37 @@ func NetAdsJoin(ctx context.Context, options Options, env Env) error {
 	if _, err := env.Run.RunWithInput(ctx, options.Password+"\n", "net", args...); err != nil {
 		return fmt.Errorf("the domain refused the join: %w", err)
 	}
+
+	// join registers HOST/ for this machine, because that is what a Windows
+	// domain member needs: Windows' own Kerberos client and KDC quietly alias
+	// every other service a Windows machine offers to its HOST/ ticket.
+	// Linux's cifs.upcall carries no such aliasing — a sec=krb5 mount asks the
+	// KDC for the literal principal "cifs/<server>" — so a file share on a
+	// Samba member server joined the ordinary way is unreachable from any
+	// Linux client until the account also carries that exact name. Best
+	// effort and after the join itself: a share nobody can reach yet is a
+	// smaller problem than a join this could otherwise fail over.
+	addCifsSPN(ctx, options, env)
+
 	if _, err := env.Run.Run(ctx, "net", "ads", "keytab", "create", "-P"); err != nil {
 		return fmt.Errorf("the machine keytab could not be created: %w", err)
 	}
+	// keytab create only carries the principals the account had at the
+	// moment it ran, which is before the cifs/ names above existed.
+	addCifsKeytabEntries(ctx, options, env)
 	return nil
+}
+
+func addCifsSPN(ctx context.Context, options Options, env Env) {
+	for _, name := range []string{shortName(options.Hostname), options.Hostname} {
+		_, _ = env.Run.Run(ctx, "net", "ads", "setspn", "add", "cifs/"+name, "-P")
+	}
+}
+
+func addCifsKeytabEntries(ctx context.Context, options Options, env Env) {
+	for _, name := range []string{shortName(options.Hostname), options.Hostname} {
+		_, _ = env.Run.Run(ctx, "net", "ads", "keytab", "add", "cifs/"+name, "-P")
+	}
 }
 
 // Enrolment is what the control plane returns for a redeemed token.

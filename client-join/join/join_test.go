@@ -14,9 +14,14 @@ type fakeRunner struct {
 	commands [][]string
 	stdin    []string
 	fail     map[string]string
+	// failArgs fails a command whose arguments contain this substring,
+	// rather than every command sharing its name — "net" covers join,
+	// keytab and setspn alike, and a test on just one of them needs the
+	// other two to still succeed.
+	failArgs map[string]string
 }
 
-func newRunner() *fakeRunner { return &fakeRunner{fail: map[string]string{}} }
+func newRunner() *fakeRunner { return &fakeRunner{fail: map[string]string{}, failArgs: map[string]string{}} }
 
 func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	return f.RunWithInput(ctx, "", name, args...)
@@ -29,6 +34,12 @@ func (f *fakeRunner) RunWithInput(
 	f.stdin = append(f.stdin, stdin)
 	if message, bad := f.fail[name]; bad {
 		return "", &runError{message}
+	}
+	joined := strings.Join(args, " ")
+	for needle, message := range f.failArgs {
+		if strings.Contains(joined, needle) {
+			return "", &runError{message}
+		}
 	}
 	return "", nil
 }
@@ -340,6 +351,46 @@ func TestCredentialJoinNeverPutsThePasswordOnACommandLine(t *testing.T) {
 	}
 	if runner.stdin[0] != o.Password+"\n" {
 		t.Error("the password was not fed on standard input")
+	}
+}
+
+func TestCredentialJoinRegistersTheCifsSPNAndKeytabEntry(t *testing.T) {
+	// net ads join only ever gives this machine a HOST/ service principal
+	// name, which is what a Windows domain member needs. Linux's cifs.upcall
+	// asks the KDC for the literal principal "cifs/<server>" instead, with no
+	// aliasing to HOST/ on either side, so a share on this machine is
+	// unreachable from any Linux client until the join adds that name too.
+	env, runner := testEnv(t)
+	o := options()
+	_ = o.Validate()
+
+	if err := NetAdsJoin(context.Background(), o, env); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"ws01", "ws01.corp.example.internal"} {
+		if !runner.ran("net", "ads setspn add cifs/"+name+" -P") {
+			t.Errorf("cifs SPN not registered for %s: %v", name, runner.commands)
+		}
+		if !runner.ran("net", "ads keytab add cifs/"+name+" -P") {
+			t.Errorf("cifs keytab entry not added for %s: %v", name, runner.commands)
+		}
+	}
+}
+
+func TestACifsSPNThatCannotBeAddedDoesNotFailTheJoin(t *testing.T) {
+	// Best effort: a share nobody can reach yet is a smaller problem than a
+	// join this fails over, and re-running the join later retries it.
+	env, runner := testEnv(t)
+	runner.failArgs["setspn"] = "ldb_modify failed: Attribute or value exists"
+	o := options()
+	_ = o.Validate()
+
+	if err := NetAdsJoin(context.Background(), o, env); err != nil {
+		t.Fatalf("a failed SPN registration must not fail the join: %v", err)
+	}
+	if !runner.ran("net", "ads keytab create") {
+		t.Error("the join did not continue past the failed SPN registration")
 	}
 }
 

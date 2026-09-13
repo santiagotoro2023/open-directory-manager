@@ -347,15 +347,20 @@ export function Content() {
               [
                 'Nothing mounts, and the file server is not the domain controller',
                 <>
-                  A computer enrolled by token before this was fixed has no{" "}
-                  <C key="spn1">cifs/</C> service principal name, so the KDC answers &ldquo;Server
-                  not found in Kerberos database&rdquo; to every client asking for one &mdash; the
-                  mount fails silently and the drive never reaches the sidebar, while the share
-                  itself and its access list are perfectly correct. Upgrade the control plane, then
-                  re-run <C key="spn2">odm-client-install --otp</C> on the file server with a valid
-                  token: re-enrolling resets its account and adds the missing SPNs, and a fresh
-                  keytab comes down with it. A domain controller is unaffected, since its account
-                  already carries every service principal name from provisioning.
+                  Joining registers this machine&rsquo;s <C key="spn1">HOST/</C> service principal
+                  name, which is what a Windows domain member needs &mdash; Windows quietly aliases
+                  every other service to it. Linux&rsquo;s <C key="spn1b">cifs.upcall</C> carries no
+                  such aliasing: a <C key="spn1c">sec=krb5</C> mount asks the KDC for the literal
+                  principal <C key="spn1d">cifs/&lt;server&gt;</C>, and before 0.9.3 nothing ever
+                  added that name, credentialed join or token enrolment alike. The KDC answers
+                  &ldquo;Server not found in Kerberos database&rdquo; to every client asking for
+                  one &mdash; the mount fails silently and the drive never reaches the sidebar,
+                  while the share itself and its access list are perfectly correct. Upgrade to
+                  0.9.3 or later, then re-run <C key="spn2">odm-client-install</C> on the file
+                  server (with <C key="spn2b">--otp</C> or the admin credential, whichever it
+                  joined with) to add the missing SPN and keytab entry to its existing account. A
+                  domain controller is unaffected, since its account already carries every service
+                  principal name from provisioning.
                 </>,
               ],
               [
