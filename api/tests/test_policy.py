@@ -5,6 +5,8 @@ Precedence is resolved once, in the API, so this is where it gets proven.
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 from conftest import BASE_DN
 from pydantic import ValidationError
@@ -251,6 +253,32 @@ def test_settings_accept_a_realistic_policy():
     stored = settings.stored()
     assert "firewall" not in stored  # empty categories are not persisted
     assert stored["drive_maps"][0]["unc"] == "//fs01/shared"
+
+
+def test_grub_boot_splash_rejects_bad_input():
+    for bad in (
+        {"grub": {"splash_message": "line one\nline two"}},
+        {"grub": {"splash_image": "not valid base64!!"}},
+        {"grub": {"splash_image": base64.b64encode(b"not an image").decode()}},
+        {"grub": {"splash_image_name": "../../etc/passwd"}},
+    ):
+        with pytest.raises(ValidationError):
+            PolicySettings(**bad)
+
+
+def test_grub_boot_splash_accepts_a_real_logo():
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\nrest of a real file").decode()
+    settings = PolicySettings(
+        grub={
+            "boot_splash": True,
+            "splash_message": "Starting up",
+            "splash_image": png,
+            "splash_image_name": "logo.png",
+        }
+    )
+    assert settings.grub.boot_splash is True
+    assert settings.grub.splash_message == "Starting up"
+    assert settings.grub.splash_image_name == "logo.png"
 
 
 def test_a_share_written_the_way_a_file_manager_shows_it_is_accepted():

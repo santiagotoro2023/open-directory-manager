@@ -190,6 +190,10 @@ export interface PolicySettings {
   grub?: {
     timeout_seconds: number;
     hide_menu: boolean;
+    boot_splash: boolean;
+    splash_message: string;
+    splash_image: string;
+    splash_image_name: string;
   };
   local_password_policy?: {
     minimum_length: number;

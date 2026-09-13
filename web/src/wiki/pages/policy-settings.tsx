@@ -451,12 +451,37 @@ user      root`}</Code>
                   way; nothing about reaching it by hand is taken away.
                 </>,
               ],
+              [
+                "Boot splash",
+                <>
+                  A graphical spinner in place of the kernel and initramfs text a boot otherwise
+                  flashes on its way to the login screen — off by default, so a machine keeps the
+                  ordinary Debian boot, text included, until this is turned on. Installs{" "}
+                  <C key="b">plymouth</C> and <C key="c">plymouth-themes</C> if they are not
+                  already there, sets the spinner theme, adds <C key="d">quiet splash</C> to the
+                  kernel command line and <C key="e">GRUB_GFXPAYLOAD_LINUX=keep</C> so the kernel
+                  inherits GRUB&rsquo;s own graphics mode instead of resetting to text and back —
+                  that reset is the flash a hidden menu alone does not stop. Turning this on hides
+                  the menu above regardless of how it is set: a visible menu in front of a
+                  seamless splash defeats the point, even for the menu&rsquo;s own timeout window.
+                </>,
+              ],
+              [
+                "Message",
+                "Shown with the spinner, through Plymouth's own display-message mechanism. Empty means no message. Can be changed without touching the machine's boot configuration at all — it is a text file the spinner reads at boot, not part of the kernel command line or the initramfs.",
+              ],
+              [
+                "Logo",
+                "Watermarked onto the spinner theme. Optional — the spinner alone is a complete splash without one, and nothing is shown by default until a logo is chosen. There is deliberately no way to set a full custom background picture: Plymouth's built-in themes have no setting for one, and a hand-written boot-time theme script is not something to ship without being able to see it actually render.",
+              ],
             ]}
           />
           <Note>
             Removing the setting takes the drop-in file back off and runs{" "}
             <C>update-grub</C> again, so the machine returns to whatever its own{" "}
-            <C>/etc/default/grub</C> already said before this setting reached it.
+            <C>/etc/default/grub</C> already said before this setting reached it. Turning the boot
+            splash off the same way stops it showing but leaves Plymouth installed — this asked
+            for the splash to stop, not for a package removed.
           </Note>
         </Section>
 

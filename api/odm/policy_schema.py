@@ -991,6 +991,43 @@ class Grub(Strict):
     # the menu the one time somebody actually needs it.
     hide_menu: bool = True
 
+    # A graphical spinner in place of the kernel and initramfs text a boot
+    # otherwise flashes on its way to the login screen — Plymouth, the same
+    # mechanism most desktop Linux distributions already use for this, not
+    # anything ODM invents. Off by default: installing it is a real package
+    # and a kernel command-line change, not something every machine should
+    # get without being asked.
+    boot_splash: bool = False
+    # Shown on top of the spinner for as long as it is on screen. Optional;
+    # an empty message is simply no message.
+    splash_message: Annotated[str, Field(max_length=128)] = ""
+    # A logo watermarked onto the spinner theme. Optional; the spinner alone
+    # is a complete, working splash without one.
+    splash_image: Annotated[str, Field(max_length=8_000_000)] = ""
+    splash_image_name: Annotated[str, Field(max_length=128)] = ""
+
+    @field_validator("splash_message")
+    @classmethod
+    def _splash_message(cls, value: str) -> str:
+        # Read back with a shell command substitution (CLAUDE.md §6 —
+        # command substitution, not string interpolation, is what keeps this
+        # from being shell code someone typed into a text box); a newline
+        # would end the file's one line early enough to matter to nothing,
+        # but is refused anyway for the same reason banner_text refuses one.
+        if "\n" in value or "\r" in value:
+            raise ValueError("the splash message cannot contain newlines")
+        return value
+
+    @field_validator("splash_image")
+    @classmethod
+    def _splash_image(cls, value: str) -> str:
+        return validate_image(value)
+
+    @field_validator("splash_image_name")
+    @classmethod
+    def _splash_image_name(cls, value: str) -> str:
+        return validate_image_name(value)
+
 
 class LocalPasswordPolicy(Strict):
     """Password rules for accounts that live on the machine itself.

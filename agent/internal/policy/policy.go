@@ -429,10 +429,17 @@ type GraphicsDrivers struct {
 }
 
 // Grub is how long the boot loader waits, and whether it shows its menu at
-// all, before starting the default entry.
+// all, before starting the default entry — and, past the boot loader, the
+// graphical splash Plymouth shows in place of the kernel and initramfs text
+// a boot otherwise flashes on its way to the login screen.
 type Grub struct {
 	TimeoutSeconds int  `json:"timeout_seconds"`
 	HideMenu       bool `json:"hide_menu"`
+
+	BootSplash      bool   `json:"boot_splash"`
+	SplashMessage   string `json:"splash_message"`
+	SplashImage     string `json:"splash_image"` // base64
+	SplashImageName string `json:"splash_image_name"`
 }
 
 // AlwaysOnVpn holds a tunnel up whatever the person using the machine does.

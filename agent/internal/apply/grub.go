@@ -33,12 +33,34 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		// somebody actually needs it.
 		style = "hidden"
 	}
+	if s.Grub.BootSplash {
+		// A seamless splash and a visible boot menu are a contradiction —
+		// the whole point of turning this on is that nothing shows before
+		// the spinner, not even the menu for its own timeout window. An
+		// operator asking for the splash gets a hidden menu whether or not
+		// they separately asked for one.
+		timeout = 0
+		style = "hidden"
+	}
 
 	body := Header +
 		fmt.Sprintf("GRUB_TIMEOUT=%d\n", timeout) +
 		fmt.Sprintf("GRUB_TIMEOUT_STYLE=%s\n", style)
+	if s.Grub.BootSplash {
+		// "quiet" is what grub-mkconfig's own 10_linux template checks before
+		// it prints "Loading Linux ..." and "Loading initial ramdisk ...": the
+		// two lines that flashed on screen even with the menu already hidden,
+		// in the gap between GRUB handing off and Plymouth's first frame.
+		// GRUB_GFXPAYLOAD_LINUX=keep is what closes that gap on the graphics
+		// side — the kernel inherits the same graphics mode GRUB was already
+		// in, rather than GRUB resetting to text mode first and the kernel
+		// switching back a moment later, which is the flash itself.
+		body += "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash\"\n"
+		body += "GRUB_GFXPAYLOAD_LINUX=keep\n"
+	}
 	if err := env.WriteFile(grubConfPath, body, 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("grub", err)}
 	}
-	return []policy.Result{runAll(ctx, env, "grub", []string{"update-grub"})}
+	results := []policy.Result{runAll(ctx, env, "grub", []string{"update-grub"})}
+	return append(results, applyBootSplash(ctx, s.Grub, env)...)
 }

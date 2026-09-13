@@ -942,7 +942,8 @@ const SPECIAL: SpecialSpec[] = [
     half: "Computer",
     group: "System configuration",
     help:
-      "How long GRUB waits, and whether it shows its menu at all, before starting Debian.",
+      "How long GRUB waits, and whether it shows its menu at all, before starting Debian — " +
+      "and, past the menu, a graphical boot splash in place of the boot messages.",
     doc: "boot-loader",
   },
   {
@@ -2083,7 +2084,16 @@ function GrubEditor({
   function set(changes: Partial<NonNullable<PolicySettings["grub"]>>) {
     onChange({
       ...settings,
-      grub: { timeout_seconds: 0, hide_menu: true, ...current, ...changes },
+      grub: {
+        timeout_seconds: 0,
+        hide_menu: true,
+        boot_splash: false,
+        splash_message: "",
+        splash_image: "",
+        splash_image_name: "",
+        ...current,
+        ...changes,
+      },
     });
   }
 
@@ -2101,19 +2111,24 @@ function GrubEditor({
 
       {!current ? (
         <EmptySetting
-          message="Not configured, so a machine keeps whatever wait its own /etc/default/grub sets."
+          message="Not configured, so a machine keeps whatever wait and boot messages its own /etc/default/grub sets — the ordinary Debian boot, kernel and initramfs text included."
           onAdd={() => set({})}
         />
       ) : (
         <>
           <Field
             label="Wait (seconds)"
-            hint="0 boots immediately. Escape during boot reaches the menu either way."
+            hint={
+              current.boot_splash
+                ? "The boot splash below always boots immediately with the menu hidden, whatever this says."
+                : "0 boots immediately. Escape during boot reaches the menu either way."
+            }
           >
             <input
               type="number"
               min={0}
               max={600}
+              disabled={current.boot_splash}
               value={current.timeout_seconds}
               onChange={(e) => set({ timeout_seconds: Number(e.target.value) })}
             />
@@ -2121,11 +2136,59 @@ function GrubEditor({
           <label className="checkbox">
             <input
               type="checkbox"
-              checked={current.hide_menu}
+              disabled={current.boot_splash}
+              checked={current.hide_menu || current.boot_splash}
               onChange={(e) => set({ hide_menu: e.target.checked })}
             />
             Hide the menu — the machine just boots
           </label>
+
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.boot_splash}
+              onChange={(e) => set({ boot_splash: e.target.checked })}
+            />
+            Boot splash — a graphical spinner in place of the boot messages
+          </label>
+          <p className="muted">
+            Off by default: a machine keeps the ordinary Debian boot, kernel and initramfs text
+            included, until this is turned on. Installs Plymouth if it is not already there, and
+            hides the menu above however it is set — a visible menu in front of a seamless splash
+            defeats the point, even for the menu&rsquo;s own timeout window.
+          </p>
+
+          {current.boot_splash && (
+            <>
+              <label className="field">
+                <span>Message</span>
+                <input
+                  value={current.splash_message}
+                  placeholder="Starting up…"
+                  onChange={(e) => set({ splash_message: e.target.value })}
+                />
+                <small>Shown with the spinner. Empty means no message.</small>
+              </label>
+
+              <label className="field">
+                <span>Logo</span>
+                <small>
+                  Watermarked onto the spinner. Optional — the spinner alone is a complete splash
+                  without one; nothing is shown by default until a logo is chosen here.
+                </small>
+                <FileInput
+                  accept="image/*"
+                  placeholder={current.splash_image_name || "No logo chosen"}
+                  onChoose={async (file) =>
+                    set({
+                      splash_image: await readBase64(file),
+                      splash_image_name: safeFileName(file.name),
+                    })
+                  }
+                />
+              </label>
+            </>
+          )}
         </>
       )}
     </>

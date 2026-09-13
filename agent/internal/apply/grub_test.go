@@ -51,6 +51,63 @@ func TestSkippingTheMenuIsTimeoutZeroAndHiddenStyle(t *testing.T) {
 	}
 }
 
+// "quiet" is what grub-mkconfig's own template checks before it prints
+// "Loading Linux ..." and "Loading initial ramdisk ..."; GRUB_GFXPAYLOAD_
+// LINUX=keep is what stops the kernel resetting to text mode and back,
+// which is the other half of the flash a hidden menu alone did not fix.
+func TestBootSplashAddsQuietAndKeepsTheGraphicsMode(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{HideMenu: true, BootSplash: true},
+	}, env)
+
+	body := read(t, env, grubConfPath)
+	for _, want := range []string{
+		`GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"`,
+		"GRUB_GFXPAYLOAD_LINUX=keep",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("grub drop-in missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// A seamless splash and a visible boot menu are a contradiction: an operator
+// who turned on the splash but left the menu on a countdown still gets a
+// hidden, instant boot, because the whole point is nothing shows before the
+// spinner — not even the menu, for however briefly its own timeout runs.
+func TestBootSplashForcesTheMenuHiddenRegardlessOfItsOwnSetting(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{TimeoutSeconds: 10, HideMenu: false, BootSplash: true},
+	}, env)
+
+	body := read(t, env, grubConfPath)
+	if !strings.Contains(body, "GRUB_TIMEOUT=0") {
+		t.Errorf("the splash left a visible countdown:\n%s", body)
+	}
+	if !strings.Contains(body, "GRUB_TIMEOUT_STYLE=hidden") {
+		t.Errorf("the splash left the menu visible:\n%s", body)
+	}
+}
+
+func TestBootSplashOffAddsNeitherCmdlineNorGfxpayload(t *testing.T) {
+	env, _ := testEnv(t)
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{HideMenu: true, BootSplash: false},
+	}, env)
+
+	body := read(t, env, grubConfPath)
+	if strings.Contains(body, "quiet") || strings.Contains(body, "GFXPAYLOAD") {
+		t.Errorf("boot splash left cmdline changes behind while off:\n%s", body)
+	}
+}
+
 func TestNoGrubSettingDoesNothing(t *testing.T) {
 	env, runner := testEnv(t)
 
