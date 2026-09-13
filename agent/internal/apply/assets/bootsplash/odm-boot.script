@@ -35,17 +35,29 @@ if (background_image) {
 
 logo_image = Image("watermark.png");
 if (logo_image) {
+    # An operator-uploaded logo arrives at whatever resolution it was
+    # uploaded at, which is routinely far larger than a boot framebuffer —
+    # unlike background.png above, nothing here previously capped its size,
+    # so it was drawn edge-to-edge instead of as a small watermark. Scaled
+    # down (never up, so a small logo is not blown up either) to a fraction
+    # of the window's own width, the same relative size a Plymouth watermark
+    # is meant to read as.
+    logo_max_width = Window.GetWidth() * 0.18;
+    if (logo_image.GetWidth() > logo_max_width) {
+        logo_scale = logo_max_width / logo_image.GetWidth();
+        logo_image = logo_image.Scale(logo_image.GetWidth() * logo_scale, logo_image.GetHeight() * logo_scale);
+    }
     logo_sprite = Sprite(logo_image);
     logo_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - logo_image.GetWidth() / 2);
     logo_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.62 - logo_image.GetHeight() / 2);
     logo_sprite.SetZ(10);
 }
 
-# A pre-rendered chasing-dots animation, generated once and shipped with the
-# agent rather than depending on another theme's own frame files being
-# present under some particular name — that is the one part of this drawn
-# without a live display to check it against, so it is images to composite,
-# not script logic to get right blind.
+# A pre-rendered rotating-arc spinner (a fading ring, not discrete dots) —
+# generated once and shipped with the agent rather than depending on another
+# theme's own frame files being present under some particular name. That is
+# the one part of this drawn without a live display to check it against, so
+# it is images to composite, not script logic to get right blind.
 throbber_frames[0] = Image("throbber-00.png");
 throbber_frames[1] = Image("throbber-01.png");
 throbber_frames[2] = Image("throbber-02.png");

@@ -11,6 +11,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"syscall"
 
 	"odm.example.org/agent/internal/policy"
 )
@@ -111,18 +112,29 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("nvidia modules: %w", err)))
 	}
-	modulesModeChanged, err := ensureInitramfsModulesMost(env)
+	kmsModulesChanged, err := ensureOpenSourceKmsModulesInInitramfs(env)
 	if err != nil {
-		results = append(results, policy.Fail("grub:splash", fmt.Errorf("initramfs module set: %w", err)))
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("kms modules: %w", err)))
 	}
 
 	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
-		nvidiaModulesChanged || modulesModeChanged
+		nvidiaModulesChanged || kmsModulesChanged
 	if needsRebuild {
-		// -R rebuilds the initramfs with this theme baked in; without it the
-		// theme is set for next time update-initramfs runs for some other
-		// reason, and the machine boots on whatever theme it already had.
-		if out, err := env.Run.Run(ctx, "plymouth-set-default-theme", splashTheme, "-R"); err != nil {
+		// A rebuild that runs out of room on /boot can leave a truncated
+		// initrd behind — one that boots straight to an "(initramfs)" rescue
+		// prompt on every machine it happened on, with no login screen ever
+		// reached again until someone rescues it by hand. Checked before
+		// rather than after: leaving the last-known-good image in place and
+		// failing loudly here is always recoverable, replacing it with a
+		// half-written one is not.
+		if ok, spaceErr := sufficientBootSpace(env); spaceErr == nil && !ok {
+			results = append(results, policy.Fail("grub:splash",
+				fmt.Errorf("not enough free space on /boot to safely rebuild the initramfs; leaving the existing boot image in place")))
+		} else if out, err := env.Run.Run(ctx, "plymouth-set-default-theme", splashTheme, "-R"); err != nil {
+			// -R rebuilds the initramfs with this theme baked in; without it
+			// the theme is set for next time update-initramfs runs for some
+			// other reason, and the machine boots on whatever theme it
+			// already had.
 			results = append(results, policy.Result{
 				Setting: "grub:splash", Status: "failed",
 				Reason: fmt.Sprintf("setting the boot splash theme: %v: %s", err, lastLine(out)),
@@ -201,6 +213,37 @@ func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
 	if !nvidiaProprietaryDriverInUse(env) {
 		return false, nil
 	}
+	return addModulesToInitramfs(env, []string{"nvidia", "nvidia_modeset", "nvidia_drm"})
+}
+
+// openSourceKmsModules gives Plymouth something to draw on for early Kernel
+// Mode Setting on the open-source drivers, the non-nvidia counterpart to
+// ensureNvidiaModulesInInitramfs above. An earlier version of this instead
+// widened /etc/initramfs-tools/initramfs.conf's MODULES= setting to "most",
+// which pulls every module for every class of hardware the running kernel
+// knows about — network, sound, USB storage, Bluetooth, every filesystem —
+// into the initramfs, not just the display drivers this needs. Confirmed
+// live: on a machine with a small /boot partition and more than one kernel
+// already installed (ordinary after a few unattended-upgrades cycles that
+// never got an autoremove), that made the rebuilt initramfs too big for the
+// partition to hold, and the rebuild left a truncated image behind — a
+// machine that boots straight to an "(initramfs)" rescue shell and never
+// reaches a login screen again, on every machine the policy reached, not
+// just ones with unusual hardware. Naming the handful of drivers actually
+// needed keeps the initrd within a few hundred kilobytes of what it already
+// was, the same bounded, one-file mechanism the nvidia modules already use
+// safely above.
+var openSourceKmsModules = []string{"amdgpu", "i915", "radeon", "nouveau"}
+
+func ensureOpenSourceKmsModulesInInitramfs(env Env) (changed bool, err error) {
+	return addModulesToInitramfs(env, openSourceKmsModules)
+}
+
+// addModulesToInitramfs force-includes the given modules regardless of the
+// machine's MODULES= mode — this file is read in addition to whatever that
+// setting already resolves to, not instead of it, so it never has to touch
+// or widen that setting to get a specific module included.
+func addModulesToInitramfs(env Env, modules []string) (changed bool, err error) {
 	existing, err := os.ReadFile(env.Path(initramfsModulesPath))
 	if err != nil && !os.IsNotExist(err) {
 		return false, err
@@ -211,7 +254,7 @@ func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
 	}
 
 	body := string(existing)
-	for _, module := range []string{"nvidia", "nvidia_modeset", "nvidia_drm"} {
+	for _, module := range modules {
 		if present[module] {
 			continue
 		}
@@ -230,46 +273,26 @@ func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
 	return true, nil
 }
 
-const initramfsConfPath = "/etc/initramfs-tools/initramfs.conf"
+// minBootFreeBytes is the headroom required on /boot before this will start
+// an initramfs rebuild. A stock Debian initrd with a handful of extra named
+// modules (as opposed to the "most" module set this deliberately avoids
+// above) runs well under this; the margin is for the old image, which
+// update-initramfs keeps on disk alongside the new one until the rebuild
+// finishes, plus whatever else already lives on a typically small /boot
+// partition.
+const minBootFreeBytes = 200 * 1024 * 1024
 
-// ensureInitramfsModulesMost is what makes early graphics work at all on
-// whatever card a machine happens to have, nvidia or not: Debian's default
-// already bundles every open-source kernel driver (amdgpu, i915 and the
-// rest) into the initramfs under MODULES=most, which is where a card other
-// than nvidia's early Kernel Mode Setting actually comes from — nothing
-// specific to any one vendor needs to be named for those, only this. Left
-// alone if a machine already has some other value set on purpose; only ever
-// widened to "most", never narrowed, and only while the splash itself is on.
-func ensureInitramfsModulesMost(env Env) (changed bool, err error) {
-	existing, err := os.ReadFile(env.Path(initramfsConfPath))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil // no initramfs-tools here; nothing for this to widen
-		}
+// sufficientBootSpace reports whether /boot has enough room to rebuild the
+// initramfs without running out of space mid-write. A stat failure (no
+// /boot mount, a sandboxed test environment) is reported as an error so the
+// caller can choose to proceed rather than block a machine that has no such
+// partition to begin with.
+func sufficientBootSpace(env Env) (bool, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(env.Path("/boot"), &stat); err != nil {
 		return false, err
 	}
-
-	lines := strings.Split(string(existing), "\n")
-	found := false
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") || !strings.HasPrefix(trimmed, "MODULES=") {
-			continue
-		}
-		found = true
-		if trimmed == "MODULES=most" {
-			return false, nil
-		}
-		lines[i] = "MODULES=most"
-	}
-	if !found {
-		lines = append(lines, "MODULES=most")
-	}
-
-	if err := env.WriteFile(initramfsConfPath, strings.Join(lines, "\n"), 0o644, "root", "root"); err != nil {
-		return false, err
-	}
-	return true, nil
+	return stat.Bavail*uint64(stat.Bsize) >= minBootFreeBytes, nil
 }
 
 // writeSplashTheme installs this project's own theme — the script, its

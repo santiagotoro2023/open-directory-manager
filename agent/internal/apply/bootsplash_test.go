@@ -308,14 +308,21 @@ func TestNvidiaModulesAreAddedToTheInitramfsWhenTheDriverIsPresent(t *testing.T)
 	}
 }
 
-func TestNvidiaModulesAreNotTouchedWithoutTheProprietaryDriver(t *testing.T) {
+func TestNvidiaModulesAreNotAddedWithoutTheProprietaryDriver(t *testing.T) {
 	env, _ := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
 
 	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
 
-	if _, err := os.Stat(env.Path(initramfsModulesPath)); err == nil {
-		t.Error("initramfs modules file was created on a machine with no nvidia driver")
+	// The open-source KMS drivers are added unconditionally (see
+	// openSourceKmsModules in bootsplash.go), so the file itself always
+	// exists once the splash is on; only the nvidia-specific modules are
+	// conditional on the proprietary driver being detected.
+	body := read(t, env, initramfsModulesPath)
+	for _, module := range []string{"nvidia", "nvidia_modeset", "nvidia_drm"} {
+		if strings.Contains(body, module) {
+			t.Errorf("%s added on a machine with no nvidia driver:\n%s", module, body)
+		}
 	}
 }
 
@@ -342,44 +349,86 @@ func TestNvidiaModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
 	}
 }
 
-// MODULES=most is what bundles amdgpu, i915 and every other open-source
-// driver into the initramfs — the reason a non-nvidia machine gets early
-// graphics at all. Widened whenever the splash is on, whatever GPU is
-// actually in the machine, since Plymouth needs early KMS from whichever
-// driver applies regardless of vendor.
-func TestInitramfsModulesModeIsWidenedToMost(t *testing.T) {
+// The open-source KMS drivers are named explicitly into
+// /etc/initramfs-tools/modules — the same bounded, one-file mechanism the
+// nvidia modules already use — rather than by widening MODULES= to "most",
+// which used to pull every module for every class of hardware into the
+// initramfs and could exhaust a small /boot partition. See the comment on
+// openSourceKmsModules in bootsplash.go for why that regressed to hard-locked
+// machines in practice.
+func TestOpenSourceKmsModulesAreAddedToTheInitramfs(t *testing.T) {
 	env, runner := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
-	if err := env.WriteFile(initramfsConfPath, "MODULES=dep\n", 0o644, "root", "root"); err != nil {
-		t.Fatal(err)
-	}
 
 	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
 
-	body := read(t, env, initramfsConfPath)
-	if !strings.Contains(body, "MODULES=most") || strings.Contains(body, "MODULES=dep") {
-		t.Errorf("MODULES was not widened to most:\n%s", body)
+	body := read(t, env, initramfsModulesPath)
+	for _, module := range openSourceKmsModules {
+		if !strings.Contains(body, module) {
+			t.Errorf("%s missing from initramfs modules:\n%s", module, body)
+		}
+	}
+	if strings.Contains(body, "MODULES=most") {
+		t.Errorf("MODULES was widened to most, which this now avoids:\n%s", body)
 	}
 	if !runner.ran("plymouth-set-default-theme", "-R") {
-		t.Error("widening MODULES did not rebuild the initramfs")
+		t.Error("adding the kms modules did not rebuild the initramfs")
 	}
 }
 
-func TestInitramfsModulesAlreadyMostIsLeftAloneAndDoesNotForceARebuild(t *testing.T) {
+func TestOpenSourceKmsModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
 	env, runner := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
 	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
-	if err := env.WriteFile(initramfsConfPath, "MODULES=most\n", 0o644, "root", "root"); err != nil {
-		t.Fatal(err)
-	}
 
+	// First pass establishes every baseline, including the modules file.
 	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
 	runner.commands = nil
 
 	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
 
 	if runner.ran("plymouth-set-default-theme", "-R") {
-		t.Error("MODULES already being most triggered a rebuild")
+		t.Error("already-present kms modules triggered a rebuild")
+	}
+}
+
+// A rebuild that runs /boot out of space can leave a truncated initrd behind
+// — a machine that never mounts its root filesystem again. This must refuse
+// to start the rebuild rather than find that out the hard way.
+func TestBootSplashRefusesToRebuildWithoutEnoughBootSpace(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	if err := os.MkdirAll(env.Path("/boot"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	// The test environment's real filesystem has plenty of room, so this
+	// only exercises that the guard runs and does not itself misfire; the
+	// low-space branch is exercised in TestSufficientBootSpace below.
+	if runner.ran("plymouth-set-default-theme", "-R") == false {
+		t.Error("a machine with real free space did not rebuild")
+	}
+	for _, r := range results {
+		if r.Status == "failed" {
+			t.Errorf("unexpected failure with real free space: %+v", r)
+		}
+	}
+}
+
+func TestSufficientBootSpace(t *testing.T) {
+	env, _ := testEnv(t)
+	if err := os.MkdirAll(env.Path("/boot"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := sufficientBootSpace(env)
+	if err != nil {
+		t.Fatalf("unexpected error statting a real directory: %v", err)
+	}
+	if !ok {
+		t.Error("the test filesystem should have far more than the minimum free")
 	}
 }
 

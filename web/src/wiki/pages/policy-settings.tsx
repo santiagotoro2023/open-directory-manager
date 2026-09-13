@@ -507,12 +507,19 @@ user      root`}</Code>
             draw on for the whole of early boot regardless of how correct the theme is — the
             console stays on the plain firmware framebuffer showing kernel and systemd text the
             entire time, which is indistinguishable from the splash simply not being configured.
-            Every machine also gets <C>MODULES=most</C> in{" "}
-            <C>/etc/initramfs-tools/initramfs.conf</C> while the splash is on — Debian&rsquo;s own
-            default, and what bundles amdgpu, i915 and every other open-source driver into the
-            initramfs, which is where early graphics on a non-NVIDIA machine actually come from.
-            Neither is undone when the splash is turned back off: both are otherwise-harmless
-            configuration, not something to unwind for a setting that only stops showing.
+            Every machine also gets <C>amdgpu</C>, <C>i915</C>, <C>radeon</C> and <C>nouveau</C>{" "}
+            listed the same way in <C>/etc/initramfs-tools/modules</C> while the splash is on —
+            named explicitly rather than by widening <C>MODULES=</C> to <C>most</C>, which used to
+            be how this worked: that setting pulls in every module for every class of hardware the
+            kernel knows about, not just display drivers, and on a machine with a small{" "}
+            <C>/boot</C> partition and more than one kernel already installed it could make the
+            rebuilt initramfs too big to fit — leaving a truncated image that boots straight to an{" "}
+            <C>(initramfs)</C> rescue prompt and never reaches a login screen again. The agent also
+            refuses to start a rebuild at all when <C>/boot</C> is too low on free space, rather
+            than risk leaving a half-written image behind. Neither the driver listing nor the
+            splash-on kernel command line is undone when the splash is turned back off: both are
+            otherwise-harmless configuration, not something to unwind for a setting that only stops
+            showing.
           </Note>
         </Section>
 

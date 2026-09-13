@@ -783,10 +783,39 @@ export function Content() {
                   0.10.2 adds that parameter (and the driver&rsquo;s own modules to the
                   initramfs) automatically whenever an NVIDIA card is detected; before that,
                   every other part of the splash could be completely correct and this would still
-                  happen. Upgrade to 0.10.2 or later and re-apply. On any other card, check{" "}
-                  <C key="bs2">grep MODULES /etc/initramfs-tools/initramfs.conf</C> says{" "}
-                  <C key="bs3">most</C> — 0.10.2 sets this too, since it is what bundles
-                  amdgpu, i915 and every other open-source driver into the initramfs.
+                  happen. Upgrade to 0.10.3 or later and re-apply. On any other card, check{" "}
+                  <C key="bs2">grep -E &apos;amdgpu|i915|radeon|nouveau&apos;
+                  /etc/initramfs-tools/modules</C> lists them — 0.10.3 adds these explicitly,
+                  since they are what give early graphics on a non-NVIDIA machine.
+                </>,
+              ],
+              [
+                <>
+                  The machine no longer boots at all: it drops straight to an{" "}
+                  <C key="bsx1">(initramfs)</C> busybox prompt on every boot, with no GRUB menu,
+                  no login screen, nothing
+                </>,
+                <>
+                  0.10.2 gave early graphics on non-NVIDIA hardware by widening{" "}
+                  <C key="bsx2">MODULES=</C> in <C key="bsx3">/etc/initramfs-tools/initramfs.conf</C>{" "}
+                  to <C key="bsx4">most</C>, which pulls in every module for every class of
+                  hardware the kernel knows about, not just display drivers. On a machine with a
+                  small <C key="bsx5">/boot</C> partition and more than one kernel already
+                  installed, the rebuilt initramfs could be too big to fit, leaving a truncated
+                  image that can never mount root again — this is exactly that symptom. 0.10.3
+                  removes the <C key="bsx6">MODULES=most</C> widening entirely (naming the
+                  handful of actual display drivers instead) and refuses to start a rebuild at
+                  all when <C key="bsx7">/boot</C> is low on free space. A machine already stuck
+                  at the <C key="bsx8">(initramfs)</C> prompt needs to be booted from rescue media
+                  to free up <C key="bsx9">/boot</C> (remove old kernels with{" "}
+                  <C key="bsx10">apt autoremove</C>, or delete an old{" "}
+                  <C key="bsx11">initrd.img-*</C> for a kernel that is no longer installed) and
+                  run <C key="bsx12">update-initramfs -u</C> by hand — this cannot be fixed
+                  remotely once a machine is in this state, since the agent itself cannot run
+                  without a bootable system underneath it. Before re-applying the policy fleet-wide,
+                  update every machine&rsquo;s agent to 0.10.3 or later first, otherwise a machine
+                  still on the old agent version can hit this again the next time it polls a
+                  boot-splash policy with a change to apply.
                 </>,
               ],
               [
