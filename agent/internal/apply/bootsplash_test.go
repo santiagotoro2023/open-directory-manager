@@ -258,12 +258,9 @@ func writeNvidiaMarker(t *testing.T, env Env) {
 	}
 }
 
-// modeset=1 is back, but nvidia_drm.fbdev=1 deliberately is not — see the
-// comment on ensureNvidiaModulesInInitramfs in bootsplash.go for why:
-// modeset=1 alone is the one combination ever seen live to actually render
-// something, and fbdev=1 is the one variable that changed between that run
-// and the runs that rendered nothing.
-func TestGrubAddsNvidiaModesetButNeverFbdev(t *testing.T) {
+// Both parameters together, the configuration NVIDIA's own documentation
+// and every independent working write-up for this combination specify.
+func TestGrubAddsNvidiaModesetAndFbdev(t *testing.T) {
 	env, _ := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
 	writeNvidiaMarker(t, env)
@@ -273,11 +270,112 @@ func TestGrubAddsNvidiaModesetButNeverFbdev(t *testing.T) {
 	}, env)
 
 	body := read(t, env, grubConfPath)
-	if !strings.Contains(body, "nvidia-drm.modeset=1") {
-		t.Errorf("nvidia-drm.modeset=1 missing with the proprietary driver present:\n%s", body)
+	for _, want := range []string{
+		"nvidia-drm.modeset=1",
+		"nvidia-drm.fbdev=1",
+		"GRUB_GFXMODE=auto",
+		"GRUB_GFXPAYLOAD_LINUX=keep",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s missing with the proprietary driver present:\n%s", want, body)
+		}
 	}
-	if strings.Contains(body, "fbdev") {
-		t.Errorf("nvidia_drm.fbdev=1 was added back despite being the suspect variable:\n%s", body)
+}
+
+// nouveau cannot coexist with the proprietary driver, and a blacklist does
+// not stop an explicit modprobe of a name in the initramfs modules file —
+// so the name must not be in that file at all. Confirmed live as the cause
+// of four consecutive attempts at this setting rendering nothing.
+func TestNouveauIsNeverInTheInitramfsWithTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsModulesPath)
+	for _, line := range strings.Split(body, "\n") {
+		if strings.TrimSpace(line) == "nouveau" {
+			t.Errorf("nouveau was force-loaded alongside the proprietary driver:\n%s", body)
+		}
+	}
+	if !strings.Contains(body, "nvidia_uvm") {
+		t.Errorf("nvidia_uvm missing from the nvidia module set:\n%s", body)
+	}
+}
+
+// A machine given the nouveau line by an earlier agent keeps it through
+// every later rebuild unless something actually deletes it — dropping it
+// from the list is not enough on its own to fix a machine already running.
+func TestNouveauAlreadyWrittenByAnEarlierAgentIsRemoved(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	if err := env.WriteFile(
+		initramfsModulesPath, "# comment\nnouveau\namdgpu\n", 0o644, "root", "root",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsModulesPath)
+	for _, line := range strings.Split(body, "\n") {
+		if strings.TrimSpace(line) == "nouveau" {
+			t.Errorf("a nouveau line written by an earlier agent survived:\n%s", body)
+		}
+	}
+	if !strings.Contains(body, "# comment") || !strings.Contains(body, "amdgpu") {
+		t.Errorf("removing nouveau disturbed other lines:\n%s", body)
+	}
+}
+
+// Without the proprietary driver, nouveau is the correct driver for the
+// hardware and stays listed.
+func TestNouveauIsKeptWithoutTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsModulesPath)
+	if !strings.Contains(body, "nouveau") {
+		t.Errorf("nouveau missing on a machine with no proprietary driver:\n%s", body)
+	}
+}
+
+// The module options modprobe itself reads, copied into the initramfs by
+// mkinitramfs — the path that actually applies when the module is loaded
+// by name there, rather than only the kernel command line.
+func TestNvidiaModprobeOptionsAreWritten(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, nvidiaModprobePath)
+	for _, want := range []string{
+		"options nvidia-drm modeset=1 fbdev=1",
+		"blacklist nouveau",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%q missing from %s:\n%s", want, nvidiaModprobePath, body)
+		}
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("writing the module options did not rebuild the initramfs")
+	}
+}
+
+func TestNvidiaModprobeOptionsAreNotWrittenWithoutTheDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if _, err := os.Stat(env.Path(nvidiaModprobePath)); err == nil {
+		t.Error("nvidia module options written on a machine with no nvidia driver")
 	}
 }
 

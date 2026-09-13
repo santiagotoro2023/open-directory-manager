@@ -65,31 +65,35 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		// in, rather than GRUB resetting to text mode first and the kernel
 		// switching back a moment later, which is the flash itself.
 		//
-		// nvidia-drm.modeset=1 alone — never nvidia_drm.fbdev=1 alongside it
-		// — on a machine with the proprietary NVIDIA driver. The full
-		// history, across several rounds of this on the same real hardware:
-		// plain GRUB_GFXPAYLOAD_LINUX=keep alone, relying only on the
-		// kernel's own generic simpledrm/efifb driver with no vendor driver
-		// involved at all, rendered nothing. modeset=1 combined with
-		// fbdev=1 also rendered nothing. modeset=1 by itself — before
-		// fbdev=1 was ever added, and before an unrelated sandboxing bug in
-		// this project's own agent was fixed (CLAUDE.md) — is the one
-		// combination ever actually seen to render something live. The
-		// kernel WARN_ON this project found inside NVIDIA's own
-		// nvidia_drm.ko (nv_drm_revoke_modeset_permission) fires during
-		// Plymouth's drop-master handoff at the *end* of its active window,
-		// not before it — a WARN_ON is not fatal, and every machine that
-		// hit it still reached a normal login screen afterward, so it does
-		// not rule out Plymouth having already drawn its frames
-		// successfully first. fbdev=1 is deliberately not re-added: it is
-		// the one variable that changed between a run that rendered
-		// something and runs that rendered nothing, which makes it the
-		// suspect, not modeset=1 itself.
+		// On the proprietary NVIDIA driver, both parameters together, which
+		// is the configuration NVIDIA's own documentation and every
+		// independent working write-up for this combination specify:
+		// modeset=1 hands kernel mode setting to the driver, and fbdev=1
+		// makes nvidia-drm provide /dev/fb0 itself rather than leaving
+		// Plymouth looking for an efifb that nvidia has already evicted.
+		// bootsplash.go writes the same two as module options under
+		// /etc/modprobe.d as well, which is what actually applies when the
+		// module is loaded by name inside the initramfs.
+		//
+		// Four earlier attempts at this setting each changed one of these
+		// parameters and each rendered nothing, which made the parameters
+		// look like the problem. They were not: bootsplash.go was
+		// force-loading nouveau into the same initramfs the whole time,
+		// which evicts the display and then fails on hardware the
+		// proprietary driver owns. See the comment on nvidiaModprobeConf.
 		cmdline := "quiet splash"
 		if nvidiaProprietaryDriverInUse(env) {
-			cmdline += " nvidia-drm.modeset=1"
+			cmdline += " nvidia-drm.modeset=1 nvidia-drm.fbdev=1"
 		}
 		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", cmdline)
+		// auto is already grub-mkconfig's own default, but it is the mode
+		// GRUB_GFXPAYLOAD_LINUX=keep then hands the kernel, so it is worth
+		// being explicit about rather than inheriting from whatever else
+		// happens to be in /etc/default/grub: "auto" is what asks the
+		// firmware for the display's own preferred mode, which is what
+		// keeps the splash at the panel's native resolution instead of
+		// something the monitor then stretches to fit.
+		body += "GRUB_GFXMODE=auto\n"
 		body += "GRUB_GFXPAYLOAD_LINUX=keep\n"
 	}
 	if err := env.WriteFile(grubConfPath, body, 0o644, "root", "root"); err != nil {

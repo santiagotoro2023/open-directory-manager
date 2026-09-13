@@ -910,7 +910,7 @@ export function Content() {
               ],
               [
                 <>
-                  On an older agent version (0.10.2&ndash;0.10.11): nothing at all appears — no
+                  On an older agent version (0.10.2&ndash;0.10.13): nothing at all appears — no
                   spinner, no background, no logo, no message — but boot text is correctly
                   suppressed and the machine reaches login normally (NVIDIA)
                 </>,
@@ -932,15 +932,36 @@ export function Content() {
                   <C key="fbd11">/sys/module/nvidia_drm/parameters/</C> only exposes{" "}
                   <C key="fbd12">modeset</C> and <C key="fbd13">fbdev</C>, nothing for this) and no
                   different driver version available in Debian&rsquo;s own repos, including
-                  backports, to work around. 0.10.12 stops asking any vendor driver for early
-                  kernel mode setting at all: <C key="fbd14">GRUB_GFXPAYLOAD_LINUX=keep</C> alone
-                  already gives Plymouth a generic, vendor-neutral framebuffer through the
-                  kernel&rsquo;s own <C key="fbd15">simpledrm</C>/<C key="fbd16">efifb</C> driver,
-                  with no NVIDIA (or AMD, or Intel) driver code involved during the splash at all —
-                  the real GPU driver still takes over normally once the desktop session itself
-                  starts. Upgrade to 0.10.12 or later and re-apply; a machine still on an older
-                  agent version carries the NVIDIA-specific parameters in its grub drop-in until it
-                  updates and re-applies, which does no harm on its own but will not render either.
+                  backports, to work around.
+                  <br />
+                  <br />
+                  <strong>
+                    None of that was the actual cause, and neither were the parameters.
+                  </strong>{" "}
+                  Removing the NVIDIA parameters entirely (0.10.12) and putting{" "}
+                  <C key="nvx1">modeset=1</C> back alone (0.10.13) each rendered nothing too — four
+                  attempts, four different parameter combinations, one identical result. The
+                  constant across all of them: this agent&rsquo;s own display-driver list named{" "}
+                  <C key="nvx2">nouveau</C> unconditionally, so every rebuilt initramfs
+                  force-loaded the in-tree NVIDIA driver onto a machine running the proprietary
+                  one. The two claim the same hardware; nouveau&rsquo;s probe calls{" "}
+                  <C key="nvx3">drm_aperture_remove_conflicting_pci_framebuffers()</C> before
+                  anything else — evicting <C key="nvx4">simpledrm</C>/<C key="nvx5">efifb</C> from
+                  the display — and then fails on hardware it has no firmware for, leaving nothing
+                  for Plymouth to draw on whatever its parameters said. A{" "}
+                  <C key="nvx6">blacklist</C> does not prevent it either: a blacklist only blocks
+                  automatic loading by modalias, while initramfs-tools runs an explicit{" "}
+                  <C key="nvx7">modprobe</C> for every name in{" "}
+                  <C key="nvx8">/etc/initramfs-tools/modules</C>. 0.10.14 removes that name on
+                  proprietary-driver machines (including taking it back off machines an earlier
+                  agent already wrote it to — every version before only ever appended to that
+                  file), adds <C key="nvx9">nvidia_uvm</C> to the module set, and writes{" "}
+                  <C key="nvx10">options nvidia-drm modeset=1 fbdev=1</C> to{" "}
+                  <C key="nvx11">/etc/modprobe.d/</C>, which <C key="nvx12">mkinitramfs</C> copies
+                  into the initramfs so it applies where the driver actually loads. Upgrade to
+                  0.10.14 or later and re-apply. Verify with{" "}
+                  <C key="nvx13">lsinitramfs /boot/initrd.img-$(uname -r) | grep -c nouveau</C> —
+                  it must print <C key="nvx14">0</C>.
                 </>,
               ],
               [

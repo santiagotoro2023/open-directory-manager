@@ -312,6 +312,33 @@ goal.
   version's DRM implementation cannot render a Plymouth theme on this
   hardware at all, and the setting should stay off for machines with it
   rather than clock up a fifth guess.
+- **When several consecutive fixes to the same symptom each change a
+  different variable and each change nothing, stop tuning that variable
+  and go looking for the one that is constant across all of them.** The
+  boot-splash setting rendered nothing across four attempts —
+  `modeset=1`, `modeset=1 + fbdev=1`, neither, `modeset=1` again — and the
+  parameter under test was never the cause. The constant was that this
+  file's own unconditional display-driver list named `nouveau`, which was
+  therefore force-loaded into the initramfs of a machine running the
+  proprietary NVIDIA driver, on every one of those boots. The two drivers
+  claim the same hardware; `nouveau`'s probe calls
+  `drm_aperture_remove_conflicting_pci_framebuffers()` before anything
+  else, evicting `simpledrm`/`efifb` from the display, and then fails on
+  hardware it has no firmware for — leaving nothing for Plymouth to draw
+  on no matter how its parameters were set. Two things this project got
+  wrong made it invisible:
+  - A `blacklist` line in `/etc/modprobe.d` does **not** stop this. A
+    blacklist only suppresses *automatic* loading by modalias;
+    initramfs-tools runs an explicit `modprobe` for every name in
+    `/etc/initramfs-tools/modules`, and an explicit modprobe ignores the
+    blacklist. The name must not be in that file at all.
+  - Every version of this code only ever *appended* to that file. A module
+    name written by an older agent therefore survives every later rebuild
+    for the life of the machine unless something deletes it, so removing a
+    name from a list in this source file does nothing for any machine that
+    already has it. Anything that writes a name into a persistent list on
+    a machine needs the matching removal path written at the same time, or
+    it cannot be taken back.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

@@ -118,6 +118,10 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("nvidia modules: %w", err)))
 	}
+	nvidiaModprobeChanged, err := ensureNvidiaModprobeConf(env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("nvidia module options: %w", err)))
+	}
 	kmsModulesChanged, err := ensureOpenSourceKmsModulesInInitramfs(env)
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("kms modules: %w", err)))
@@ -132,7 +136,8 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	}
 
 	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
-		nvidiaModulesChanged || kmsModulesChanged || storageModulesChanged || inputModulesChanged
+		nvidiaModulesChanged || nvidiaModprobeChanged || kmsModulesChanged ||
+		storageModulesChanged || inputModulesChanged
 	if needsRebuild {
 		// A rebuild that runs out of room on /boot can leave a truncated
 		// initrd behind — one that boots straight to an "(initramfs)" rescue
@@ -237,28 +242,84 @@ func nvidiaProprietaryDriverInUse(env Env) bool {
 
 const initramfsModulesPath = "/etc/initramfs-tools/modules"
 
+// nvidiaModules is the set the proprietary driver's own early kernel mode
+// setting needs present in the initramfs, in the order NVIDIA's own and
+// Arch's documented working configurations list them. nvidia_uvm was
+// missing from an earlier version of this list; both references name it.
+var nvidiaModules = []string{"nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm"}
+
 // ensureNvidiaModulesInInitramfs is the other half of nvidia-drm.modeset=1 on
 // the kernel command line: mode setting has nothing to turn on early if the
-// driver itself is not in the initramfs to begin with. update-initramfs
-// resolves nvidia_drm's own dependencies (nvidia_modeset, nvidia) the same
-// way modprobe does, so naming it is enough — the other two are listed
-// anyway, since a machine that already has one of them by some other means
-// should not end up missing another. See grub.go for why modeset=1 is back
-// but nvidia_drm.fbdev=1 deliberately is not.
+// driver itself is not in the initramfs to begin with.
 func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
 	if !nvidiaProprietaryDriverInUse(env) {
 		return false, nil
 	}
-	return addModulesToInitramfs(env, []string{"nvidia", "nvidia_modeset", "nvidia_drm"})
+	return addModulesToInitramfs(env, nvidiaModules)
+}
+
+const nvidiaModprobePath = "/etc/modprobe.d/odm-nvidia-drm.conf"
+
+// nvidiaModprobeConf sets the driver's own module parameters where modprobe
+// itself reads them, rather than relying only on the kernel command line.
+// mkinitramfs copies /etc/modprobe.d/*.conf into the initramfs, so these
+// apply to the modprobe that runs there — which is the one that matters,
+// since that is where the driver first loads. fbdev=1 is what makes
+// nvidia-drm provide /dev/fb0 itself instead of leaving Plymouth to find
+// an efifb that nvidia has already evicted.
+//
+// The nouveau lines are the important half. nouveau is the in-tree driver
+// for the same hardware, and it cannot coexist with the proprietary one:
+// its probe calls drm_aperture_remove_conflicting_pci_framebuffers() before
+// it does anything else, so it evicts simpledrm/efifb from the display, and
+// on hardware it cannot actually drive (an Ampere card with no firmware for
+// it) it then fails — leaving no working DRM device at all for the rest of
+// early boot. Confirmed live as the reason nothing rendered across four
+// consecutive attempts at this: an earlier version of this file listed
+// nouveau unconditionally in the initramfs module list, including on
+// machines running the proprietary driver, which poisoned every one of
+// those tests regardless of what else changed.
+const nvidiaModprobeConf = Header + `options nvidia-drm modeset=1 fbdev=1
+blacklist nouveau
+options nouveau modeset=0
+`
+
+func ensureNvidiaModprobeConf(env Env) (changed bool, err error) {
+	if !nvidiaProprietaryDriverInUse(env) {
+		return false, nil
+	}
+	existing, err := os.ReadFile(env.Path(nvidiaModprobePath))
+	if err == nil && string(existing) == nvidiaModprobeConf {
+		return false, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := env.WriteFile(nvidiaModprobePath, nvidiaModprobeConf, 0o644, "root", "root"); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // openSourceKmsModules gives Plymouth something to draw on for early Kernel
 // Mode Setting on the open-source drivers, the non-nvidia counterpart to
-// ensureNvidiaModulesInInitramfs above. amdgpu/i915/radeon/nouveau are
-// named here unconditionally — untested live to have the same class of bug
-// nvidia's proprietary driver turned out to have (see grub.go), and each
-// one small enough that listing it costs nothing on hardware that does not
-// have it.
+// ensureNvidiaModulesInInitramfs above. Each one is small enough that
+// listing it costs nothing on hardware that does not have it.
+//
+// nouveau is the exception, and is deliberately not in this list: it is the
+// in-tree driver for the same hardware the proprietary NVIDIA driver
+// claims, and the two cannot coexist. Listing it here unconditionally —
+// which an earlier version of this file did — force-loads it in the
+// initramfs even on machines running the proprietary driver, where a
+// modprobe blacklist does not stop it (a blacklist only blocks automatic
+// loading by alias; initramfs-tools runs an explicit modprobe for every
+// name in its own modules file). Its probe then evicts simpledrm/efifb
+// from the display before failing on hardware it cannot drive, leaving
+// nothing for Plymouth to render on at all. Confirmed live as the reason
+// four consecutive attempts at this setting rendered nothing, each of
+// which changed some other variable while this one quietly poisoned the
+// result. ensureOpenSourceKmsModulesInInitramfs below decides it per
+// machine instead, and removes a nouveau line an earlier agent wrote.
 //
 // An earlier version of this instead widened
 // /etc/initramfs-tools/initramfs.conf's MODULES= setting to "most",
@@ -275,10 +336,59 @@ func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
 // needed keeps the initrd within a few hundred kilobytes of what it already
 // was, the same bounded, one-file mechanism addModulesToInitramfs already
 // uses safely below.
-var openSourceKmsModules = []string{"amdgpu", "i915", "radeon", "nouveau"}
+var openSourceKmsModules = []string{"amdgpu", "i915", "radeon"}
 
+// ensureOpenSourceKmsModulesInInitramfs also takes nouveau back off a
+// machine that should not have it. Every version of this before now only
+// ever appended to the modules file and never removed anything, so a
+// machine that was given the nouveau line by an earlier agent keeps it
+// through every later rebuild unless something actually deletes it —
+// which is why simply dropping it from the list above is not enough on
+// its own to fix a machine already running.
 func ensureOpenSourceKmsModulesInInitramfs(env Env) (changed bool, err error) {
-	return addModulesToInitramfs(env, openSourceKmsModules)
+	added, err := addModulesToInitramfs(env, openSourceKmsModules)
+	if err != nil {
+		return added, err
+	}
+	if !nvidiaProprietaryDriverInUse(env) {
+		nouveauAdded, err := addModulesToInitramfs(env, []string{"nouveau"})
+		return added || nouveauAdded, err
+	}
+	removed, err := removeModulesFromInitramfs(env, []string{"nouveau"})
+	return added || removed, err
+}
+
+// removeModulesFromInitramfs deletes a module's own line from the file
+// addModulesToInitramfs writes, leaving every other line (including an
+// operator's own) exactly as it found it.
+func removeModulesFromInitramfs(env Env, modules []string) (changed bool, err error) {
+	existing, err := os.ReadFile(env.Path(initramfsModulesPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	drop := map[string]bool{}
+	for _, module := range modules {
+		drop[module] = true
+	}
+
+	var kept []string
+	for _, line := range strings.Split(string(existing), "\n") {
+		if drop[strings.TrimSpace(line)] {
+			changed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if !changed {
+		return false, nil
+	}
+	if err := env.WriteFile(initramfsModulesPath, strings.Join(kept, "\n"), 0o644, "root", "root"); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // storageModules covers real disk hardware and every common virtualised

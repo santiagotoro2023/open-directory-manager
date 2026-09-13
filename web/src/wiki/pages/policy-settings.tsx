@@ -500,23 +500,31 @@ user      root`}</Code>
           </Note>
           <Note>
             On a machine with an NVIDIA card using the proprietary driver, turning the splash on
-            also adds <C>nvidia-drm.modeset=1</C> to the kernel command line and lists{" "}
-            <C>nvidia</C>, <C>nvidia_modeset</C> and <C>nvidia_drm</C> in{" "}
-            <C>/etc/initramfs-tools/modules</C>, deliberately without{" "}
-            <C>nvidia_drm.fbdev=1</C> alongside it. This setting has a long history on real NVIDIA
-            hardware, all on the same machine: plain <C>GRUB_GFXPAYLOAD_LINUX=keep</C> alone
-            (relying only on the kernel&rsquo;s generic <C>simpledrm</C>/<C>efifb</C> driver, no
-            vendor driver at all) rendered nothing; <C>modeset=1</C> together with{" "}
-            <C>fbdev=1</C> also rendered nothing, and was confirmed to hit a real, reproducible
-            kernel <C>WARN_ON</C> inside NVIDIA&rsquo;s own <C>nvidia_drm.ko</C> (
-            <C>nv_drm_revoke_modeset_permission</C>) during Plymouth&rsquo;s drop-master handoff to
-            the login manager. <C>modeset=1</C> alone, before <C>fbdev=1</C> was ever added, is the
-            one combination ever actually seen to render something live — the <C>WARN_ON</C> fires
-            at the *end* of Plymouth&rsquo;s active window, not before it, and every machine that
-            hit it still reached a normal login screen afterward, so it does not rule out Plymouth
-            having already drawn its frames first. <C>fbdev=1</C> is treated as the suspect
-            variable and is not added back.
-            Every machine also gets <C>amdgpu</C>, <C>i915</C>, <C>radeon</C> and <C>nouveau</C>{" "}
+            adds <C>nvidia-drm.modeset=1 nvidia-drm.fbdev=1</C> to the kernel command line, lists{" "}
+            <C>nvidia</C>, <C>nvidia_modeset</C>, <C>nvidia_uvm</C> and <C>nvidia_drm</C> in{" "}
+            <C>/etc/initramfs-tools/modules</C>, and writes the same two module options plus a
+            nouveau blacklist to <C>/etc/modprobe.d/odm-nvidia-drm.conf</C> —{" "}
+            <C>mkinitramfs</C> copies that directory into the initramfs, which is the path that
+            actually applies when the driver first loads there. <C>fbdev=1</C> is what makes{" "}
+            <C>nvidia-drm</C> provide <C>/dev/fb0</C> itself rather than leaving Plymouth looking
+            for an <C>efifb</C> that nvidia has already evicted.
+            <br />
+            <br />
+            <strong>
+              It also takes <C>nouveau</C> back off such a machine, which matters more than any of
+              the above.
+            </strong>{" "}
+            nouveau is the in-tree driver for the same hardware and cannot coexist with the
+            proprietary one: its probe evicts <C>simpledrm</C>/<C>efifb</C> from the display before
+            anything else, then fails on hardware it has no firmware for, leaving nothing for
+            Plymouth to draw on regardless of how its parameters are set. A{" "}
+            <C>blacklist</C> line does not prevent this — a blacklist only blocks automatic loading
+            by modalias, and initramfs-tools runs an explicit <C>modprobe</C> for every name in its
+            own modules file — so the name has to be absent from that file entirely. An earlier
+            version listed it there unconditionally, including on proprietary-driver machines,
+            which is why four consecutive attempts at this setting each rendered nothing while a
+            different parameter was blamed each time.
+            Every machine also gets <C>amdgpu</C>, <C>i915</C> and <C>radeon</C>{" "}
             listed the same way in <C>/etc/initramfs-tools/modules</C> while the splash is on —
             named explicitly rather than by widening <C>MODULES=</C> to <C>most</C>, which used to
             be how this worked: that setting pulls in every module for every class of hardware the
