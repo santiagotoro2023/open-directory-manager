@@ -77,7 +77,7 @@ func TestOnlyTheBookmarksThisPolicyWroteAreRewritten(t *testing.T) {
 	if err := makeUnder(who, who.home+"/.config/gtk-3.0"); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeAs(who, who.home+"/"+gtkBookmarks,
+	if err := writeAs(who, who.home+"/.config/gtk-3.0/bookmarks",
 		"file:///home/ada/Notes Notes\nsmb://old/share Old # odm\n", 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestOnlyTheBookmarksThisPolicyWroteAreRewritten(t *testing.T) {
 	if err := writeBookmarks(who, []string{"smb://fs01/shared Shared"}); err != nil {
 		t.Fatal(err)
 	}
-	body := read(t, env, "/home/ada/"+gtkBookmarks)
+	body := read(t, env, "/home/ada/.config/gtk-3.0/bookmarks")
 	if !strings.Contains(body, "file:///home/ada/Notes Notes") {
 		t.Errorf("somebody's own bookmark was removed:\n%s", body)
 	}
@@ -94,5 +94,11 @@ func TestOnlyTheBookmarksThisPolicyWroteAreRewritten(t *testing.T) {
 	}
 	if !strings.Contains(body, "smb://fs01/shared Shared # odm") {
 		t.Errorf("the new place was not written:\n%s", body)
+	}
+
+	// Nautilus on Debian 13 is GTK4 and never reads the gtk-3.0 file at all.
+	gtk4 := read(t, env, "/home/ada/.config/gtk-4.0/bookmarks")
+	if !strings.Contains(gtk4, "smb://fs01/shared Shared # odm") {
+		t.Errorf("the place was not also written for GTK4 file managers:\n%s", gtk4)
 	}
 }

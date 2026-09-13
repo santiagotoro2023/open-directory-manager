@@ -157,6 +157,53 @@ func TestClearingAnUnsetBackgroundIsSkipped(t *testing.T) {
 	}
 }
 
+// A session on a seat is somebody sitting at this machine; restarting gdm3
+// would end whatever it is hosting for them.
+func TestALocalSessionIsActiveReadsTheSeatColumn(t *testing.T) {
+	env, runner := testEnv(t)
+	runner.output["loginctl"] = " 9 1000 alice seat0 1234 user   tty2 no -\n"
+	if !aLocalSessionIsActive(context.Background(), env) {
+		t.Error("a session on seat0 was not recognised as local")
+	}
+}
+
+// An SSH session, and systemd's own per-user manager session, both have no
+// seat and are not what a display-manager restart interrupts.
+func TestARemoteOrManagerSessionIsNotLocal(t *testing.T) {
+	env, runner := testEnv(t)
+	runner.output["loginctl"] = strings.Join([]string{
+		"10 1000 alice -     5678 user    pts/0 no -",
+		"11 1000 alice -     5679 manager -     no -",
+		"",
+	}, "\n")
+	if aLocalSessionIsActive(context.Background(), env) {
+		t.Error("a session with no seat was treated as local")
+	}
+}
+
+// The whole point of this guard is that a policy refresh must never end
+// somebody's session out from under them.
+func TestReloadGreeterShellSkipsTheRestartWhileSomebodyIsSignedIn(t *testing.T) {
+	env, runner := testEnv(t)
+	runner.output["loginctl"] = " 9 1000 alice seat0 1234 user   tty2 no -\n"
+	if reloadGreeterShell(context.Background(), env) {
+		t.Error("reported a restart while a local session is active")
+	}
+	if runner.ran("systemctl", "gdm3") {
+		t.Error("gdm3 was restarted out from under a signed-in session")
+	}
+}
+
+func TestReloadGreeterShellRestartsWhenNobodyIsSignedInLocally(t *testing.T) {
+	env, runner := testEnv(t)
+	if !reloadGreeterShell(context.Background(), env) {
+		t.Error("did not restart gdm3 with nobody signed in locally")
+	}
+	if !runner.ran("systemctl", "gdm3") {
+		t.Error("gdm3 was not restarted")
+	}
+}
+
 // The whole point of the signature is that an unchanged picture does not
 // rebuild the theme and restart the greeter on every ordinary policy poll.
 func TestAnUnchangedPictureIsNotRebuilt(t *testing.T) {

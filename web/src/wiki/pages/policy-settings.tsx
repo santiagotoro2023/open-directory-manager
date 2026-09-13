@@ -310,11 +310,21 @@ user      root`}</Code>
                 <>
                   Written as a dconf key, and — on GNOME, whose greeter otherwise ignores it and
                   takes its background from its own compiled shell theme — the theme is rebuilt
-                  with the picture in it and the greeter restarted to read it. Needs{" "}
-                  <C key="a">libglib2.0-dev-bin</C>, installed automatically if the machine does
-                  not have it; only a machine apt cannot install it on reports this as skipped,
-                  with the message and the account list still applying. A picture removed from
-                  the setting restores the distribution&rsquo;s own theme.
+                  with the picture in it. Needs <C key="a">libglib2.0-dev-bin</C>, installed
+                  automatically if the machine does not have it; only a machine apt cannot install
+                  it on reports this as skipped, with the message and the account list still
+                  applying. A picture removed from the setting restores the distribution&rsquo;s
+                  own theme.
+                </>,
+              ],
+              [
+                "When it takes effect",
+                <>
+                  Immediately, by restarting the greeter — unless somebody is signed in locally
+                  right now, in which case restarting it would end their session to show a picture
+                  nobody asked to log out for. In that case the rebuilt theme is left waiting and
+                  picked up the next time somebody signs in, or the machine restarts, whichever
+                  comes first.
                 </>,
               ],
               [

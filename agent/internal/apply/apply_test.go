@@ -1068,9 +1068,14 @@ func TestADriveIsLabelledByItsDisplayName(t *testing.T) {
 		drive); err != nil {
 		t.Fatalf("bookmark: %v", err)
 	}
-	body := read(t, env, "/home/alice/.config/gtk-3.0/bookmarks")
-	if !strings.Contains(body, "file:///mnt/firmendaten Daten") {
-		t.Errorf("not labelled with the display name:\n%s", body)
+	for _, path := range []string{
+		"/home/alice/.config/gtk-3.0/bookmarks",
+		"/home/alice/.config/gtk-4.0/bookmarks",
+	} {
+		body := read(t, env, path)
+		if !strings.Contains(body, "file:///mnt/firmendaten Daten") {
+			t.Errorf("%s: not labelled with the display name:\n%s", path, body)
+		}
 	}
 
 	// Renaming it does not leave the old label behind as a second entry.
@@ -1079,12 +1084,48 @@ func TestADriveIsLabelledByItsDisplayName(t *testing.T) {
 		drive); err != nil {
 		t.Fatalf("bookmark: %v", err)
 	}
-	body = read(t, env, "/home/alice/.config/gtk-3.0/bookmarks")
-	if strings.Count(body, "/mnt/firmendaten") != 1 {
-		t.Errorf("the drive is bookmarked twice:\n%s", body)
+	for _, path := range []string{
+		"/home/alice/.config/gtk-3.0/bookmarks",
+		"/home/alice/.config/gtk-4.0/bookmarks",
+	} {
+		body := read(t, env, path)
+		if strings.Count(body, "/mnt/firmendaten") != 1 {
+			t.Errorf("%s: the drive is bookmarked twice:\n%s", path, body)
+		}
+		if !strings.Contains(body, "Firmendaten") {
+			t.Errorf("%s: the new label was not written:\n%s", path, body)
+		}
 	}
-	if !strings.Contains(body, "Firmendaten") {
-		t.Errorf("the new label was not written:\n%s", body)
+}
+
+// GNOME's Nautilus is GTK4 on Debian 13 and GTK3 on Debian 12; each reads
+// its own sidebar bookmarks file and ignores the other's, so a drive
+// bookmarked on only one of them was invisible on whichever release that
+// was not.
+func TestADriveIsBookmarkedForBothGtk3AndGtk4(t *testing.T) {
+	env, _ := testEnv(t)
+	home := env.Path("/home/bob")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	who := account{home: home, uid: os.Getuid(), gid: os.Getgid()}
+	drive := policy.DriveMap{Name: "shared", UNC: "//fs01/shared", MountPoint: "/mnt/shared"}
+	if err := bookmark(who, drive); err != nil {
+		t.Fatalf("bookmark: %v", err)
+	}
+	if !strings.Contains(read(t, env, "/home/bob/.config/gtk-3.0/bookmarks"), "file:///mnt/shared") {
+		t.Error("not bookmarked for GTK3 file managers")
+	}
+	if !strings.Contains(read(t, env, "/home/bob/.config/gtk-4.0/bookmarks"), "file:///mnt/shared") {
+		t.Error("not bookmarked for GTK4 file managers, which is what Nautilus is on Debian 13")
+	}
+
+	unbookmark(who, drive.MountPoint)
+	if strings.Contains(read(t, env, "/home/bob/.config/gtk-3.0/bookmarks"), "/mnt/shared") {
+		t.Error("still bookmarked for GTK3 after removal")
+	}
+	if strings.Contains(read(t, env, "/home/bob/.config/gtk-4.0/bookmarks"), "/mnt/shared") {
+		t.Error("still bookmarked for GTK4 after removal")
 	}
 }
 

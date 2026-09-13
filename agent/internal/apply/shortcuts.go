@@ -18,8 +18,6 @@ import (
 // bookmarks file for the third, which is what puts a share in the sidebar of
 // Files, Nautilus, Thunar and Nemo alike.
 
-const gtkBookmarks = ".config/gtk-3.0/bookmarks"
-
 // DeployShortcuts writes what this person gets and removes what they no
 // longer do. Run from PAM at session open.
 func DeployShortcuts(
@@ -140,9 +138,18 @@ func bookmarkLine(shortcut policy.Shortcut) string {
 }
 
 // writeBookmarks replaces the lines this policy owns and leaves every other
-// line where it was.
+// line where it was, in every file a file manager might read them from.
 func writeBookmarks(who account, places []string) error {
-	path := filepath.Join(who.home, gtkBookmarks)
+	var last error
+	for _, path := range gtkBookmarkPaths(who.home) {
+		if err := writeBookmarksAt(who, path, places); err != nil {
+			last = err
+		}
+	}
+	return last
+}
+
+func writeBookmarksAt(who account, path string, places []string) error {
 	existing, _ := os.ReadFile(path)
 
 	const marker = " # odm"

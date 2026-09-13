@@ -230,9 +230,30 @@ func hasTicket(env Env, who account) bool {
 	return false
 }
 
+// gtkBookmarkPaths names every file a GTK-based file manager reads its
+// sidebar bookmarks from, for one person's home directory.
+//
+// GTK4 keeps its own copy under gtk-4.0, separate from the gtk-3.0 one GTK3
+// applications still use: Nautilus on Debian 13 is built on GTK4 and never
+// looks at gtk-3.0 for its own sidebar, while Debian 12's Nautilus is GTK3
+// and never looks at gtk-4.0 — CLAUDE.md §2 requires both releases work, and
+// a bookmark written to only one of them is invisible on whichever of the
+// two it was not.
+func gtkBookmarkPaths(home string) []string {
+	return []string{
+		filepath.Join(home, ".config", "gtk-3.0", "bookmarks"),
+		filepath.Join(home, ".config", "gtk-4.0", "bookmarks"),
+	}
+}
+
 // unbookmark takes a drive map back out of the file manager's sidebar.
 func unbookmark(who account, mountPoint string) {
-	path := filepath.Join(who.home, ".config", "gtk-3.0", "bookmarks")
+	for _, path := range gtkBookmarkPaths(who.home) {
+		removeBookmarkLine(who, path, mountPoint)
+	}
+}
+
+func removeBookmarkLine(who account, path, mountPoint string) {
 	existing, err := os.ReadFile(path)
 	if err != nil {
 		return
@@ -260,8 +281,17 @@ func unbookmark(who account, mountPoint string) {
 // look. A bookmark is what a file manager shows in the place a drive letter
 // occupies on Windows.
 func bookmark(who account, drive policy.DriveMap) error {
-	path := filepath.Join(who.home, ".config", "gtk-3.0", "bookmarks")
 	line := "file://" + drive.MountPoint + " " + drive.Label()
+	var last error
+	for _, path := range gtkBookmarkPaths(who.home) {
+		if err := setBookmarkLine(who, path, drive.MountPoint, line); err != nil {
+			last = fmt.Errorf("%s: adding it to the file manager: %w", drive.Name, err)
+		}
+	}
+	return last
+}
+
+func setBookmarkLine(who account, path, mountPoint, line string) error {
 	existing, err := os.ReadFile(path)
 	if err == nil {
 		for _, present := range strings.Split(string(existing), "\n") {
@@ -277,14 +307,14 @@ func bookmark(who account, drive policy.DriveMap) error {
 	}
 	// A label that changed leaves the old line behind, and the sidebar would
 	// then hold the same drive twice under two names.
-	unbookmark(who, drive.MountPoint)
+	removeBookmarkLine(who, path, mountPoint)
 	existing, _ = os.ReadFile(path)
 	body := string(existing)
 	if body != "" && !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
 	if err := os.WriteFile(path, []byte(body+line+"\n"), 0o644); err != nil {
-		return fmt.Errorf("%s: adding it to the file manager: %w", drive.Name, err)
+		return err
 	}
 	_ = os.Chown(path, who.uid, who.gid)
 	return nil

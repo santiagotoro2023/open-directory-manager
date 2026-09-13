@@ -126,8 +126,15 @@ func applyGreeterBackground(ctx context.Context, env Env, background, fit string
 	}
 	_ = env.WriteFile(shellThemeSignaturePath, signature+"\n", 0o600, "root", "root")
 
-	reloadGreeterShell(ctx, env)
-	return result{status: "success", reason: "the greeter's compiled theme now carries this picture"}
+	if reloadGreeterShell(ctx, env) {
+		return result{status: "success", reason: "the greeter's compiled theme now carries this picture"}
+	}
+	return result{
+		status: "success",
+		reason: "the greeter's compiled theme now carries this picture; somebody is signed in " +
+			"locally right now, so it takes effect at their next login rather than ending their " +
+			"session to show it immediately",
+	}
 }
 
 // restoreGreeterTheme puts the distribution's own theme back, for a machine
@@ -339,13 +346,49 @@ func installFile(env Env, src, dst string, mode os.FileMode) error {
 
 // reloadGreeterShell asks the greeter to start over so it reads the theme
 // this just installed, rather than the one it already had mapped into
-// memory. Not fatal: a machine between logins picks up the new theme at the
-// next one regardless.
-func reloadGreeterShell(ctx context.Context, env Env) {
+// memory. Reports whether it actually did.
+//
+// Skipped rather than forced through while somebody is signed in locally:
+// gdm3 is not just the greeter but the display manager hosting whatever
+// session it handed that person, and restarting it ends that session the
+// same way logging them out by hand would — a background policy refresh
+// must never do that to somebody mid-work. Not fatal either way: a machine
+// between logins picks up the new theme at the next one regardless.
+func reloadGreeterShell(ctx context.Context, env Env) bool {
 	if env.Run == nil {
-		return
+		return false
+	}
+	if aLocalSessionIsActive(ctx, env) {
+		return false
 	}
 	_, _ = env.Run.Run(ctx, "systemctl", "restart", "gdm3")
+	return true
+}
+
+// aLocalSessionIsActive reports whether somebody is signed in at this
+// machine's own seat right now, as opposed to over SSH or not at all.
+//
+// SESSION UID USER SEAT has been loginctl's own column order for as long as
+// list-sessions has existed, whatever columns later versions appended after
+// it, so the fourth field is read on trust without asking systemd for its
+// version first. A session with no seat is remote or a background one
+// (systemd's own per-user manager, in particular), and gdm3 does not own
+// either kind.
+func aLocalSessionIsActive(ctx context.Context, env Env) bool {
+	if env.Run == nil {
+		return false
+	}
+	out, err := env.Run.Run(ctx, "loginctl", "list-sessions", "--no-legend")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 4 && strings.HasPrefix(fields[3], "seat") {
+			return true
+		}
+	}
+	return false
 }
 
 // result is the same shape as policy.Result without the setting name, which
