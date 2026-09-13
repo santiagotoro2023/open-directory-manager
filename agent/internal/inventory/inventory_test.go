@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -252,5 +253,39 @@ func TestCollectReportsTheRunningAgentsOwnVersion(t *testing.T) {
 
 	if report.AgentVersion != "0.8.11" {
 		t.Errorf("AgentVersion = %q, wanted 0.8.11", report.AgentVersion)
+	}
+}
+
+// A machine with a long update backlog used to report nothing at all: the
+// control plane rejects the whole check-in over one list that is too long,
+// so the inventory, the sessions, the disk health and the agent's own
+// version all went with it, on a 422 that named a limit and not a field.
+func TestALongUpdateListDoesNotCostTheWholeReport(t *testing.T) {
+	report := Report{}
+	for i := 0; i < 530; i++ {
+		report.Updates = append(report.Updates, fmt.Sprintf("package-%d", i))
+	}
+	report.PendingUpdates = len(report.Updates)
+
+	report.bound()
+
+	if len(report.Updates) != 500 {
+		t.Errorf("Updates = %d items, wanted it trimmed to 500", len(report.Updates))
+	}
+	// The number that matters is counted before the trim, not derived from it.
+	if report.PendingUpdates != 530 {
+		t.Errorf("PendingUpdates = %d, wanted the real 530", report.PendingUpdates)
+	}
+}
+
+// Collect is careful to send an empty list rather than null for Disks; the
+// trim must not undo that by handing back a nil slice.
+func TestBoundLeavesShortListsExactlyAsTheyWere(t *testing.T) {
+	report := Report{Disks: []Disk{}}
+
+	report.bound()
+
+	if report.Disks == nil {
+		t.Error("an empty disk list became nil, which marshals as null")
 	}
 }

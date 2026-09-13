@@ -90,6 +90,24 @@ export function Content() {
                   <C key="d">odm-agent apply --force</C>.
                 </>,
               ],
+              [
+                <>
+                  A machine&rsquo;s inventory stopped updating, and the agent logs{" "}
+                  <C key="inv1">422</C>{" "}
+                  <C key="inv2">List should have at most 500 items</C>
+                </>,
+                <>
+                  Fixed in 0.10.16. The control plane bounds every list in a check-in and rejects
+                  the <em>whole</em> report when one is over, so a single long list cost the
+                  machine everything it was reporting — inventory, sessions, disk health, even its
+                  own agent version — and the console simply showed stale facts with no error
+                  against the machine. Seen on a client with 530 pending updates against a limit
+                  of 500. The agent now trims each list to what will be accepted before sending;
+                  counts that matter (pending updates, security updates, package count) are
+                  counted before the trim, so they stay accurate. Nothing to do but upgrade the
+                  client — the next check-in is complete again.
+                </>,
+              ],
             ]}
           />
         </Section>
@@ -986,6 +1004,42 @@ export function Content() {
                   <C key="pdt12">/etc/plymouth/plymouthd.conf</C> on machines with that driver, and
                   keeps the nvidia modules out of the initramfs so the firmware framebuffer
                   survives early boot. Upgrade to 0.10.15 or later and re-apply.
+                </>,
+              ],
+              [
+                <>
+                  An apply reports success, but says <C key="pr1">removed:</C>{" "}
+                  <C key="pr2">/etc/plymouth/plymouthd.conf</C>,{" "}
+                  <C key="pr3">/etc/initramfs-tools/modules</C> or{" "}
+                  <C key="pr4">/etc/modprobe.d/odm-nvidia-drm.conf</C> — and the boot splash stops
+                  working again every other refresh
+                </>,
+                <>
+                  Fixed in 0.10.16, and worth understanding because it silently undid several of
+                  the fixes above. The agent records which files it wrote, and at the end of every
+                  apply it deletes anything the <em>previous</em> apply wrote that this one did
+                  not — that is how removing a setting from a GPO removes the file it produced.
+                  The appliers for these three files check whether the contents are already
+                  correct and skip the write when they are, which is ordinarily good manners. Put
+                  together, the second consecutive apply of an <em>unchanged</em> policy wrote
+                  nothing, therefore claimed nothing, and deleted all three: the Plymouth
+                  configuration, the NVIDIA module options, and the machine&rsquo;s entire
+                  storage- and input-driver list. The next rebuild then produced an initramfs with
+                  no NVMe, no virtio and no keyboard driver in it. Latent since 0.10.3.
+                  <br />
+                  <br />
+                  The same mechanism had a worse case that had not fired yet: a rebuild that failed
+                  validation and was correctly rolled back wrote{" "}
+                  <C key="pr5">/boot/initrd.img-&lt;version&gt;</C> through the same call, claiming
+                  the running kernel&rsquo;s initramfs — so the next routine fifteen-minute poll,
+                  with no reason to write it again, would have deleted it outright. 0.10.16 makes
+                  files the system owns, the pre-rebuild rollback image, and everything under{" "}
+                  <C key="pr6">/boot</C> impossible to prune at all, and checks that on the way in{" "}
+                  <em>and</em> on the way out — a machine upgrading from an earlier agent carries
+                  the stale claim in the state file already on its disk, which on its own is
+                  enough to delete the file once, on the very upgrade that fixes this. Upgrade to
+                  0.10.16 and re-apply; a machine that already lost these files has them written
+                  back by that apply.
                 </>,
               ],
               [

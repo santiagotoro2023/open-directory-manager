@@ -242,6 +242,156 @@ func TestBootSplashOffRemovesTheMessageAndTouchesNothingElse(t *testing.T) {
 	}
 }
 
+// applyBootSplashTwice runs the setting the way the agent really does: a
+// fresh State per pass, and the previous pass's State pruned against the new
+// one at the end — which is the only arrangement in which the bug this
+// guards against can appear at all. Returns the paths the second pass
+// deleted.
+func applyBootSplashTwice(t *testing.T, env Env, g *policy.Grub) []string {
+	t.Helper()
+	applyBootSplash(context.Background(), g, env)
+
+	previous := env.State
+	env.State = NewState()
+	applyBootSplash(context.Background(), g, env)
+	return env.Prune(previous)
+}
+
+// A second apply of an unchanged policy must not delete what the first one
+// put there. Every file below is written by an applier that compares before
+// it writes and returns early when the contents are already right, so before
+// Env.Keep existed the second pass claimed none of them and the prune at the
+// end of it removed the lot — on a live client, an apply that reported
+// success took out the machine's plymouth configuration, its storage and
+// input module list, and the pictures the operator had uploaded, and said
+// nothing about it. Latent since 0.10.3.
+func TestASecondApplyDeletesNothingItStillWants(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	removed := applyBootSplashTwice(t, env, &policy.Grub{
+		BootSplash:       true,
+		SplashImage:      onePixelPNG,
+		SplashBackground: onePixelPNG,
+		SplashMessage:    "Loading Operating System...",
+	})
+
+	if len(removed) != 0 {
+		t.Errorf("a second apply of an unchanged policy deleted %v", removed)
+	}
+	for _, path := range []string{
+		plymouthConfPath,
+		initramfsModulesPath,
+		nvidiaModprobePath,
+		splashWatermarkPath,
+		splashBackgroundPath,
+		splashAssetSumPath,
+		splashMessagePath,
+		splashUnitPath,
+	} {
+		if _, err := os.Stat(env.Path(path)); err != nil {
+			t.Errorf("%s did not survive a second apply: %v", path, err)
+		}
+	}
+}
+
+// The same two passes must also not quietly undo the work of the first: a
+// prune that deletes /etc/initramfs-tools/modules takes the storage and
+// input drivers out with it, and the machine that boots next has no way to
+// find its root filesystem and no keyboard at the rescue prompt it lands in.
+func TestASecondApplyKeepsTheModulesThatLetTheMachineBoot(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplashTwice(t, env, &policy.Grub{BootSplash: true})
+
+	// By line, not by substring: "hid" is inside "usbhid", and a check that
+	// cannot tell those apart would pass with the line it is looking for
+	// gone.
+	listed := map[string]bool{}
+	for _, line := range strings.Split(read(t, env, initramfsModulesPath), "\n") {
+		listed[strings.TrimSpace(line)] = true
+	}
+	for _, module := range append(append([]string{}, storageModules...), inputModules...) {
+		if !listed[module] {
+			t.Errorf("%s was lost from the initramfs module list", module)
+		}
+	}
+}
+
+// A machine upgraded from an agent that did claim these carries that claim
+// in the state file already on its disk, and a stale claim is enough to
+// delete the file exactly once — on the very upgrade meant to fix this.
+func TestPruneNeverDeletesASystemFileAnOlderAgentClaimed(t *testing.T) {
+	env, _ := testEnv(t)
+	write(t, env, plymouthConfPath, "[Daemon]\nTheme=odm-boot\nDeviceTimeout=0\n")
+	write(t, env, initramfsModulesPath, "nvme\nxhci_hcd\n")
+
+	stale := NewState()
+	stale.Owned[plymouthConfPath] = true
+	stale.Owned[initramfsModulesPath] = true
+
+	if removed := env.Prune(stale); len(removed) != 0 {
+		t.Errorf("pruned system files an older agent had claimed: %v", removed)
+	}
+	for _, path := range []string{plymouthConfPath, initramfsModulesPath} {
+		if _, err := os.Stat(env.Path(path)); err != nil {
+			t.Errorf("%s was deleted on upgrade: %v", path, err)
+		}
+	}
+}
+
+// The most dangerous instance of the same bug. restoreInitrd writes
+// /boot/initrd.img-<version> when a rebuild fails validation, which claimed
+// the running kernel's initramfs — so the next ordinary refresh, having no
+// reason to write it again, deleted it. A machine that no longer boots, out
+// of a policy poll that changed nothing.
+func TestPruneNeverTouchesBootOrTheWayBack(t *testing.T) {
+	env, _ := testEnv(t)
+	initrd := "/boot/initrd.img-6.12.107+deb13-amd64"
+
+	if err := env.WriteFile(initrd, "restored from backup", 0o644, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if env.State.Owned[initrd] {
+		t.Error("writing the running kernel's initramfs claimed it for pruning")
+	}
+	write(t, env, initrdBackupPath, "the pre-rebuild image")
+
+	// Both claimed, as an agent from before this fix would have left them.
+	stale := NewState()
+	stale.Owned[initrd] = true
+	stale.Owned[initrdBackupPath] = true
+
+	if removed := env.Prune(stale); len(removed) != 0 {
+		t.Errorf("pruned this machine's ability to boot: %v", removed)
+	}
+	for _, path := range []string{initrd, initrdBackupPath} {
+		if _, err := os.Stat(env.Path(path)); err != nil {
+			t.Errorf("%s was deleted: %v", path, err)
+		}
+	}
+}
+
+// Turning the setting off still has to clean up what ODM's own files are:
+// the never-prune rule covers the system's files, not ODM's.
+func TestPruneStillRemovesOdmsOwnFiles(t *testing.T) {
+	env, _ := testEnv(t)
+	if err := env.WriteFile(nvidiaModprobePath, nvidiaModprobeConf, 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	previous := env.State
+	env.State = NewState()
+
+	if removed := env.Prune(previous); len(removed) != 1 || removed[0] != nvidiaModprobePath {
+		t.Errorf("ODM's own file was not cleaned up: %v", removed)
+	}
+}
+
 // Confirmed live, against real hardware: without nvidia-drm.modeset=1 and
 // the driver itself in the initramfs, the proprietary driver never takes
 // over kernel mode setting, and Plymouth has nothing to draw on for the

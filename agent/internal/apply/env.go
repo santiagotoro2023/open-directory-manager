@@ -113,6 +113,65 @@ func (e Env) Path(path string) string {
 	return filepath.Join(e.Root, path)
 }
 
+// neverPruned are paths ODM may write but must never delete on a later pass.
+//
+// Ownership is claimed by the act of writing, and Prune deletes anything the
+// previous pass claimed that this one did not write again. That is right for
+// a config file a policy generates whole, and wrong for two kinds of file
+// here: one the system owns and ODM only keeps particular lines inside, and
+// one that exists precisely so a bad change can be undone. Both are written
+// conditionally — only when the contents need changing, or only around a
+// rebuild — so on the very next pass they are unclaimed, and deleted.
+//
+// Seen live on a client: an apply that reported success removed
+// /etc/plymouth/plymouthd.conf and /etc/initramfs-tools/modules, taking the
+// machine's storage and input driver list with it, and said nothing about
+// having done so. Latent since 0.10.3, with those files silently alternating
+// between written and deleted on every other refresh.
+//
+// Nothing here is ever cleaned up when a policy stops asking for it, and
+// that is deliberate. /etc/initramfs-tools/modules is where the drivers that
+// let this machine find its root filesystem and accept a keystroke at a
+// rescue prompt are listed; taking those back out of a machine that has been
+// booting with them is exactly the "no way back" CLAUDE.md forbids for
+// anything boot-critical. A left-behind DeviceTimeout or module name costs a
+// few kilobytes and nothing else.
+var neverPruned = map[string]bool{
+	// The plymouth package's own configuration; ODM sets DeviceTimeout in it.
+	"/etc/plymouth/plymouthd.conf": true,
+	// The administrator's module list; ODM appends names to it.
+	"/etc/initramfs-tools/modules": true,
+	// The pre-rebuild copy of the initramfs — the way back from a rebuild
+	// that produced an unbootable image. It is removed deliberately once a
+	// rebuild is known good; a pass that finds it still there is a pass
+	// interrupted mid-rebuild, which is the one moment it must survive.
+	"/var/lib/odm/initrd-backup.img": true,
+}
+
+// neverPrune reports whether a path is one of those.
+func neverPrune(path string) bool {
+	if neverPruned[path] {
+		return true
+	}
+	// Everything under /boot is this machine's ability to start at all, and
+	// the kernel version in an initrd's name means no fixed list can cover
+	// it. restoreInitrd writes /boot/initrd.img-<version> when a rebuild
+	// fails validation, which claimed it — and left the next ordinary policy
+	// refresh, one that had no reason to write it again, deleting the
+	// running kernel's initramfs outright. Nothing a policy does should ever
+	// remove a file here.
+	return strings.HasPrefix(path, "/boot/")
+}
+
+// Keep claims a path this run still wants without rewriting it, for an
+// applier that compares before it writes and found nothing to change.
+//
+// Ownership is what survives to the next run, so "correct already, nothing
+// to do" and "no longer wanted, delete it" have to be told apart by
+// something other than whether a write happened — otherwise every applier
+// that avoids needless writes deletes its own output on the following pass.
+func (e Env) Keep(path string) { e.State.Own(path) }
+
 // WriteFile writes atomically: a temporary file in the same directory,
 // then a rename, so a reader never sees a half-written policy file.
 func (e Env) WriteFile(path, content string, mode os.FileMode, owner, group string) error {
@@ -144,7 +203,9 @@ func (e Env) WriteFile(path, content string, mode os.FileMode, owner, group stri
 	if err := os.Rename(temp.Name(), full); err != nil {
 		return err
 	}
-	e.State.Own(path)
+	if !neverPrune(path) {
+		e.State.Own(path)
+	}
 	return nil
 }
 
@@ -243,6 +304,14 @@ func (e Env) Prune(previous *State) []string {
 	}
 	for _, path := range previous.Sorted() {
 		if e.State.Owned[path] || e.State.Blocks[path] {
+			continue
+		}
+		// Checked against the previous state too, not only against what
+		// WriteFile claims today: a machine that ran an older agent has one
+		// of these recorded as ODM-owned in the state file already on its
+		// disk, and that stale claim is enough to delete the file exactly
+		// once — on the upgrade that fixes this.
+		if neverPrune(path) {
 			continue
 		}
 		if err := os.Remove(e.Path(path)); err == nil {

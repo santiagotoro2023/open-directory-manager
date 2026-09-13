@@ -388,6 +388,9 @@ func ensureNvidiaModprobeConf(env Env) (changed bool, err error) {
 	}
 	existing, err := os.ReadFile(env.Path(nvidiaModprobePath))
 	if err == nil && string(existing) == nvidiaModprobeConf {
+		// Still wanted, just already right. Without this the second
+		// consecutive apply deletes it: see Env.Keep.
+		env.Keep(nvidiaModprobePath)
 		return false, nil
 	}
 	if err != nil && !os.IsNotExist(err) {
@@ -736,6 +739,7 @@ func writeSplashTheme(env Env) (changed bool, err error) {
 
 	if current, readErr := os.ReadFile(env.Path(splashAssetSumPath)); readErr == nil &&
 		strings.TrimSpace(string(current)) == sum {
+		env.Keep(splashAssetSumPath)
 		return false, nil
 	}
 	if err := env.WriteFile(splashAssetSumPath, sum+"\n", 0o600, "root", "root"); err != nil {
@@ -786,6 +790,13 @@ func applyImageAsset(dest, image string, env Env) (changed bool, err error) {
 	sum := fmt.Sprintf("%x", sha256.Sum256(raw))
 	if current, readErr := os.ReadFile(env.Path(sumPath)); readErr == nil &&
 		strings.TrimSpace(string(current)) == sum {
+		// The picture itself, not only its signature: both were written by
+		// the pass that put it there, so both are deleted by the next pass
+		// unless this one says it still wants them. A theme directory whose
+		// background.png and watermark.png have quietly been removed is one
+		// that renders a bare spinner on the next rebuild.
+		env.Keep(dest)
+		env.Keep(sumPath)
 		return false, nil
 	}
 	if err := env.WriteFile(dest, string(raw), 0o644, "root", "root"); err != nil {
@@ -804,7 +815,12 @@ func applyImageAsset(dest, image string, env Env) (changed bool, err error) {
 // deleting a text file rather than disabling anything.
 func applySplashMessage(ctx context.Context, message string, env Env) []policy.Result {
 	var results []policy.Result
-	if _, err := os.Stat(env.Path(splashUnitPath)); err != nil {
+	if _, err := os.Stat(env.Path(splashUnitPath)); err == nil {
+		// Present and unchanging, but still wanted (Env.Keep): without this
+		// the pass after the one that installed it prunes it, leaving the
+		// enable symlink this made pointing at nothing.
+		env.Keep(splashUnitPath)
+	} else {
 		if err := env.WriteFile(splashUnitPath, splashUnit, 0o644, "root", "root"); err != nil {
 			return []policy.Result{policy.Fail("grub:splash_message", err)}
 		}

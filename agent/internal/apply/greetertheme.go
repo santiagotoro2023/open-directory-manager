@@ -103,6 +103,12 @@ func applyGreeterBackground(ctx context.Context, env Env, background, fit string
 	signature := signatureOf(image, fit)
 	if current, err := os.ReadFile(env.Path(shellThemeSignaturePath)); err == nil &&
 		strings.TrimSpace(string(current)) == signature {
+		// Still wanted, just already right (Env.Keep). Losing the signature
+		// here would not damage the theme — that is installed outside
+		// WriteFile and never pruned — but it would make the next pass
+		// believe it had never run, and rebuild and recompile the whole
+		// gresource on every other refresh forever.
+		env.Keep(shellThemeSignaturePath)
 		return result{status: "unchanged", reason: "the greeter's theme already carries this picture"}
 	}
 

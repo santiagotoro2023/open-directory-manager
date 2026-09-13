@@ -217,7 +217,46 @@ func Collect(ctx context.Context, env apply.Env) Report {
 	report.Addresses = LocalAddresses()
 	pending, security, names := PendingUpdates(ctx, env)
 	report.PendingUpdates, report.SecurityUpdates, report.Updates = pending, security, names
+	report.bound()
 	return report
+}
+
+// bound trims every list to what the control plane will accept.
+//
+// The control plane bounds each of these and rejects the whole report — not
+// the offending field — when one is over, so a single long list costs the
+// machine its entire check-in: no inventory, no sessions, no disk health, no
+// agent version, on a 422 whose message names a limit and not a field. Seen
+// live on a client with 530 pending updates against a limit of 500, which
+// had been silently reporting nothing since the day its update backlog
+// crossed that line.
+//
+// Trimming here rather than raising the limits keeps the control plane's
+// input bounded, which is the point of the limits. Little is lost either
+// way: every list whose length is the interesting part carries that length
+// as its own number — PendingUpdates, SecurityUpdates, PackageCount — and
+// those are counted before this runs, not derived from the trimmed list.
+func (r *Report) bound() {
+	r.LocalUsers = firstN(r.LocalUsers, 500)
+	r.Sessions = firstN(r.Sessions, 200)
+	r.Updates = firstN(r.Updates, 500)
+	r.Packages = firstN(r.Packages, 2000)
+	r.Events = firstN(r.Events, 500)
+	r.Logs = firstN(r.Logs, 500)
+	r.Addresses = firstN(r.Addresses, 32)
+	r.PrintDevices = firstN(r.PrintDevices, 200)
+	r.Volumes = firstN(r.Volumes, 64)
+	r.Disks = firstN(r.Disks, 32)
+}
+
+// firstN returns the list unchanged when it is already short enough, so a
+// nil slice stays nil — the control plane is sent null for a list it expects
+// otherwise, which Collect above is careful about for Disks.
+func firstN[T any](list []T, n int) []T {
+	if len(list) <= n {
+		return list
+	}
+	return list[:n]
 }
 
 func readFile(env apply.Env, path string) string {

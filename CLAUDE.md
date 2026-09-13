@@ -339,6 +339,31 @@ goal.
     already has it. Anything that writes a name into a persistent list on
     a machine needs the matching removal path written at the same time, or
     it cannot be taken back.
+- **A file the agent writes only when it needs changing is a file the
+  agent deletes on the pass after.** Ownership of a path is claimed by the
+  act of writing it, and the prune step at the end of every apply removes
+  whatever the previous pass claimed and this one did not. For an applier
+  that compares first and returns early when the contents are already
+  right, "correct already" and "no longer wanted" become the same thing,
+  and the second consecutive apply of an *unchanged* policy destroys the
+  first one's work. Found live, after nine releases of it going unnoticed:
+  one apply reported success while removing
+  `/etc/plymouth/plymouthd.conf`, `/etc/initramfs-tools/modules` and the
+  machine's whole storage and input driver list — and the same mechanism
+  had `restoreInitrd` claiming `/boot/initrd.img-<version>`, so a rebuild
+  that failed validation and was correctly rolled back left the *next*
+  routine fifteen-minute poll deleting the running kernel's initramfs.
+  Two rules come out of it:
+  - An applier that skips its write must still say the path is wanted
+    (`Env.Keep`). Not writing is not the same as not wanting.
+  - Some paths must never be prunable at all, whatever the state file
+    says: files the system owns and ODM only keeps lines inside, the
+    rollback copy taken before a risky change, and anything under `/boot`.
+    Enforce that in one predicate consulted by *both* the claiming side
+    and the pruning side — the pruning side matters on its own, because a
+    machine upgrading from a version that did claim these carries the
+    stale claim in the state file already on its disk, and that alone is
+    enough to delete the file once, on the very upgrade that fixes it.
 - **Ask the component itself before theorising about it.** The boot splash
   failed to render across six attempts, each with a different explanation
   — kernel parameters, module lists, driver versions, a theme script, a
