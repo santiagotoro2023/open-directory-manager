@@ -845,6 +845,30 @@ export function Content() {
                   validation check is one useful layer on top of it, never the guarantee by itself.
                   <br />
                   <br />
+                  <strong>0.10.5&rsquo;s generous module list still was not enough</strong> — the
+                  very next real rollout produced the exact same &ldquo;gave up waiting for root
+                  file system&rdquo; failure, on a machine whose keyboard did not even respond at
+                  the rescue prompt afterward. The actual cause was never which modules were listed:{" "}
+                  <C key="sbx1">odm-agent.service</C> deliberately sets{" "}
+                  <C key="sbx2">ProtectKernelModules=true</C>, and that hardening is inherited by
+                  anything the agent spawns as a direct child — including{" "}
+                  <C key="sbx3">update-initramfs</C>, triggered here through{" "}
+                  <C key="sbx4">plymouth-set-default-theme -R</C>. That hid{" "}
+                  <C key="sbx5">/usr/lib/modules</C> from the rebuild entirely, so every module this
+                  file correctly listed was silently absent from the actual result regardless, on
+                  every rebuild the agent itself triggered — while a manual rebuild from rescue
+                  media, outside any such sandbox, always worked, which is what made this look like
+                  a hardware problem rather than a process one for as long as it did.{" "}
+                  <C key="sbx6">lsinitramfs</C> still reported the result as a structurally valid
+                  archive throughout, since an archive missing files it should have had is not
+                  itself a corrupt one. 0.10.9 routes the rebuild (and the plymouth package install)
+                  through <C key="sbx7">Unsandboxed</C>, the same escape hatch this project already
+                  uses for package installs for exactly this reason, and adds basic keyboard modules
+                  (<C key="sbx8">usbhid</C>, <C key="sbx9">hid_generic</C>,{" "}
+                  <C key="sbx10">i8042</C>, <C key="sbx11">atkbd</C>) to the same unconditional list
+                  as the storage drivers, confirmed necessary live on the same machine.
+                  <br />
+                  <br />
                   <strong>When cleaning up an old kernel&rsquo;s files by hand under rescue
                   media, delete only what belongs to a version{" "}
                   <C key="bsx14">dpkg -l | grep linux-image</C> no longer lists.</strong>{" "}

@@ -412,6 +412,43 @@ func TestStorageModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
 	}
 }
 
+// Keyboard input at the rescue-shell stage matters as much as finding root
+// does — an operator locked out of typing at an "(initramfs)" prompt has no
+// recourse short of another full rescue-media session. Confirmed necessary
+// live, on the very machine this file's own storage-module fix was tested
+// against.
+func TestInputModulesAreAddedToTheInitramfsUnconditionally(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsModulesPath)
+	for _, module := range inputModules {
+		if !strings.Contains(body, module) {
+			t.Errorf("%s missing from initramfs modules:\n%s", module, body)
+		}
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("adding the input modules did not rebuild the initramfs")
+	}
+}
+
+func TestInputModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	runner.commands = nil
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("already-present input modules triggered a rebuild")
+	}
+}
+
 func TestOpenSourceKmsModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
 	env, runner := testEnv(t)
 	writePlymouthInstalledMarker(t, env)

@@ -236,6 +236,34 @@ goal.
   touches this category of configuration must carry all of these
   properties from its first commit, not as a follow-up once it breaks a
   fleet.
+- **A generous module list is worthless if the tool copying modules into
+  the initramfs cannot see them.** A third round of the same incident
+  above turned out not to be about which modules were listed at all:
+  `odm-agent.service` deliberately sets `ProtectKernelModules=true` (it
+  also removes `CAP_SYS_MODULE` from a process that has no business loading
+  a kernel module directly), and that hardening is inherited by anything
+  the agent spawns as a direct child — including `update-initramfs`,
+  triggered here via `plymouth-set-default-theme -R`. That hid
+  `/usr/lib/modules` from the rebuild, so every module this file correctly
+  listed was silently absent from the result regardless, on every rebuild
+  the agent itself triggered — while a manual rebuild from rescue media,
+  outside any such sandbox, always worked, which is what made this look
+  like a hardware-specific problem rather than a process one for as long as
+  it did. `lsinitramfs` still reported the result as a structurally valid
+  archive throughout, since an archive missing files it should have had is
+  not itself a corrupt one — confirming again that structural validation
+  (required above) is necessary and never sufficient on its own. This
+  project already has the right tool for this
+  (`Unsandboxed` in `agent/internal/apply/env.go`, used for package
+  installs since an early incident with the same shape — see its own
+  comment) — the mistake was not building a second sandbox-escape
+  mechanism, it was a new call site not using the existing one. Any command
+  this agent runs that needs a capability its own hardening
+  (`deploy/odm-agent.service`) deliberately removes — loading a
+  kernel module, an install script that assumes ordinary root, anything in
+  that shape — must go through `Unsandboxed`, not `env.Run.Run` directly; this is not
+  obvious from reading the failing code in isolation, only from reading the
+  service file's own hardening (`deploy/odm-agent.service`) alongside it.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

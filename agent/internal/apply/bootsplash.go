@@ -85,12 +85,18 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 
 	var results []policy.Result
 	if !plymouthInstalled(env) {
-		if out, err := env.Run.Run(ctx, "apt-get", "update", "-qq"); err != nil {
+		// Unsandboxed, like every other package install this agent runs
+		// (CLAUDE.md, ccache.go, rdpclient.go): odm-agent.service's own
+		// hardening is not inherited by a transient unit systemd-run starts
+		// fresh, but it is inherited by anything spawned directly as this
+		// service's own child. A plain env.Run.Run here silently ran
+		// plymouth's install under that hardening instead of escaping it.
+		if out, err := Unsandboxed(ctx, env, "apt-get", "update", "-qq"); err != nil {
 			return []policy.Result{policy.Fail("grub:splash",
 				fmt.Errorf("updating the package index: %w: %s", err, lastLine(out)))}
 		}
 		args := append([]string{"install", "-y", "--no-install-recommends"}, strings.Fields(splashPackages)...)
-		if out, err := env.Run.Run(ctx, "apt-get", args...); err != nil {
+		if out, err := Unsandboxed(ctx, env, "apt-get", args...); err != nil {
 			return []policy.Result{policy.Fail("grub:splash",
 				fmt.Errorf("installing plymouth: %w: %s", err, lastLine(out)))}
 		}
@@ -120,9 +126,13 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("storage modules: %w", err)))
 	}
+	inputModulesChanged, err := ensureInputModulesInInitramfs(env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("input modules: %w", err)))
+	}
 
 	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
-		nvidiaModulesChanged || kmsModulesChanged || storageModulesChanged
+		nvidiaModulesChanged || kmsModulesChanged || storageModulesChanged || inputModulesChanged
 	if needsRebuild {
 		// A rebuild that runs out of room on /boot can leave a truncated
 		// initrd behind — one that boots straight to an "(initramfs)" rescue
@@ -298,6 +308,24 @@ func ensureStorageModulesInInitramfs(env Env) (changed bool, err error) {
 	return addModulesToInitramfs(env, storageModules)
 }
 
+// inputModules covers keyboard input at the rescue-shell stage, not just
+// finding root — confirmed necessary live: a machine that dropped to an
+// "(initramfs)" prompt during this feature's own debugging had a keyboard
+// that did not respond there, on the very same rebuilt initramfs. An
+// operator locked out of typing at the one prompt meant to let them
+// diagnose a bad boot is left with no recourse at all short of another
+// full rescue-media session — the same category of "no way back" CLAUDE.md
+// already treats as unacceptable for this class of setting, just for input
+// instead of storage.
+var inputModules = []string{
+	"hid", "usbhid", "hid_generic",
+	"i8042", "atkbd",
+}
+
+func ensureInputModulesInInitramfs(env Env) (changed bool, err error) {
+	return addModulesToInitramfs(env, inputModules)
+}
+
 // addModulesToInitramfs force-includes the given modules regardless of the
 // machine's MODULES= mode — this file is read in addition to whatever that
 // setting already resolves to, not instead of it, so it never has to touch
@@ -376,10 +404,27 @@ const initrdBackupPath = "/var/lib/odm/initrd-backup.img"
 // check fails, rather than ever leaving a machine to find out at its next
 // boot. A rebuild that had to be restored is reported as failed — the
 // splash setting did not take effect — never as succeeded with an asterisk.
+//
+// The rebuild itself runs Unsandboxed. odm-agent.service sets
+// ProtectKernelModules=true (deliberately — it also removes CAP_SYS_MODULE
+// from a process that has no business loading one), and that hardening is
+// inherited by anything this service starts directly, hiding
+// /usr/lib/modules from it. update-initramfs, run as a direct child, could
+// not see the module files at all to copy them in — the module list in
+// this file was always correct, but every module named in it was silently
+// missing from the actual rebuilt archive regardless, since the tool doing
+// the copying could not read its own source directory. lsinitramfs still
+// reported the result as a structurally valid archive, since a cpio
+// archive missing files it should have had is not itself a corrupt one —
+// which is exactly how this passed validation and still could not find a
+// root filesystem, or accept keyboard input, at the next real boot. A
+// manual rebuild from rescue media, with no such sandbox, always produced
+// a working one; only a rebuild triggered by the agent itself was ever
+// affected.
 func rebuildInitramfsSafely(ctx context.Context, env Env) policy.Result {
 	backedUp, current := backupCurrentInitrd(ctx, env)
 
-	out, err := env.Run.Run(ctx, "plymouth-set-default-theme", splashTheme, "-R")
+	out, err := Unsandboxed(ctx, env, "plymouth-set-default-theme", splashTheme, "-R")
 	if err != nil {
 		// -R rebuilds the initramfs with this theme baked in; without it the
 		// theme is set for next time update-initramfs runs for some other
