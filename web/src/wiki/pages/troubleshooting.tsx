@@ -394,6 +394,27 @@ export function Content() {
                 </>,
               ],
               [
+                <>
+                  0.9.5 is installed, <C key="wc1">idmap config</C> is really in{" "}
+                  <C key="wc2">smb.conf</C>, but the share still answers{" "}
+                  <C key="wc3">NT_STATUS_ACCESS_DENIED</C> and{" "}
+                  <C key="wc4">wbinfo --user-groups</C> on the file server still fails with{" "}
+                  <C key="wc5">WBC_ERR_DOMAIN_NOT_FOUND</C>
+                </>,
+                <>
+                  A stale entry in winbindd&rsquo;s own on-disk idmap cache, left over from
+                  whatever tried to resolve that account before idmap config existed &mdash;
+                  winbindd cached the failure and keeps serving it back, and restarting the
+                  service does not clear a cache that lives on disk. On the file server:{" "}
+                  <C key="wc6">net cache flush</C>, or stop winbindd and delete{" "}
+                  <C key="wc7">/var/lib/samba/winbindd_cache.tdb</C> directly, then start it
+                  again. <C key="wc8">wbinfo -i DOMAIN\username</C> afterwards should show the
+                  same uid <C key="wc9">getent passwd username</C> does; if it still does not,
+                  the domain name in <C key="wc10">idmap config</C> does not match the workgroup
+                  smbd actually joined with &mdash; <C key="wc11">testparm -s</C> shows both.
+                </>,
+              ],
+              [
                 "Nothing at all was reported",
                 <>
                   The session hook did not run. <C key="ph">grep odm /etc/pam.d/common-session</C>{" "}
