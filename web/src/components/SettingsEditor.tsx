@@ -134,24 +134,67 @@ function safeFileName(name: string): string {
  * refused by the browser: every conversion failed the same way, with
  * nothing to explain why. data: is already explicitly allowed, so this
  * needs no change to the policy at all. */
+// Plymouth scales whatever it is given down to the boot framebuffer's own
+// resolution anyway (odm-boot.script's background_image.Scale(...)), so
+// nothing uploaded here needs to exceed a modest cap — and re-encoding a
+// photographic picture as lossless PNG can be many times its original
+// (lossy JPEG) size, easily past the 8,000,000-character limit the API
+// puts on a policy setting stored inline in every GPO (policy_schema.py).
+// A "4K wallpaper" picked as a background hit exactly that limit: correct
+// PNG data this time, simply too much of it.
+const MAX_SPLASH_DIMENSION = 1920;
+const MAX_ENCODED_LENGTH = 7_500_000; // headroom under the server's 8,000,000-character cap
+
+/** Plymouth's boot-time renderer only understands PNG — the early-boot
+ * environment has no JPEG (or other) decoder built in. An operator picking
+ * a JPEG background previously had its raw bytes uploaded under a ".png"
+ * name, which Plymouth's own Image() primitive silently failed to parse:
+ * nothing displayed, and nothing anywhere reported why. This decodes
+ * whatever format the browser itself can display and re-encodes it as a
+ * real PNG before it ever leaves the browser, so what reaches the agent is
+ * always genuine PNG data regardless of what the operator picked. Also
+ * downscales to a boot-splash-appropriate resolution first, halving further
+ * if the result is still too large, so this works for whatever resolution
+ * the original picture happened to be rather than only ones already small.
+ *
+ * Reads the file as a data: URL rather than URL.createObjectURL's blob:
+ * one — the console's own Content-Security-Policy (api/odm/security.py,
+ * _CONSOLE_CSP) sets img-src to 'self' data: deliberately, with no blob:,
+ * and a blob: URL assigned to an <img> under that policy is silently
+ * refused by the browser: every conversion failed the same way, with
+ * nothing to explain why. data: is already explicitly allowed, so this
+ * needs no change to the policy at all. */
 function readImageAsPng(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("could not get a 2D canvas context to convert this image"));
-          return;
+        const initialScale = Math.min(1, MAX_SPLASH_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight));
+        let width = img.naturalWidth * initialScale;
+        let height = img.naturalHeight * initialScale;
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(width));
+          canvas.height = Math.max(1, Math.round(height));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("could not get a 2D canvas context to convert this image"));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL("image/png");
+          const comma = dataUrl.indexOf(",");
+          const encoded = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+          if (encoded.length <= MAX_ENCODED_LENGTH) {
+            resolve(encoded);
+            return;
+          }
+          width /= 2;
+          height /= 2;
         }
-        ctx.drawImage(img, 0, 0);
-        const dataUrl = canvas.toDataURL("image/png");
-        const comma = dataUrl.indexOf(",");
-        resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
+        reject(new Error("this image is too large to store even scaled down; try a smaller picture"));
       };
       img.onerror = () => reject(new Error("could not decode this file as an image"));
       img.src = reader.result as string;

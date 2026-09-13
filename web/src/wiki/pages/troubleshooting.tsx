@@ -913,6 +913,25 @@ export function Content() {
                   file picker&rsquo;s own label where the file name would otherwise appear.
                 </>,
               ],
+              [
+                <>
+                  Saving after choosing a background or logo fails with{" "}
+                  <C key="sz1">String should have at most 8000000 characters</C>
+                </>,
+                <>
+                  A large photographic picture (a &ldquo;4K wallpaper&rdquo; background is exactly
+                  the case this showed up on) re-encoded as lossless PNG can be many times its
+                  original, lossy-compressed size — easily past the{" "}
+                  <C key="sz2">splash_background</C>/<C key="sz3">splash_image</C> length limit a
+                  GPO&rsquo;s stored settings enforce. Since Plymouth scales whatever it is given
+                  down to the boot framebuffer&rsquo;s own resolution anyway, uploading it at full
+                  resolution never bought anything to begin with. 0.10.8 downscales to at most
+                  1920 pixels on the longest side before encoding, and halves further, up to a
+                  few times, if the result is still too large — this should succeed for any
+                  ordinary photo. If it still fails after that, the picture is being rejected as
+                  genuinely too large to store even scaled down; try a smaller or simpler one.
+                </>,
+              ],
             ]}
           />
         </Section>
