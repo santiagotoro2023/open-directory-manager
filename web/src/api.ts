@@ -194,6 +194,8 @@ export interface PolicySettings {
     splash_message: string;
     splash_image: string;
     splash_image_name: string;
+    splash_background: string;
+    splash_background_name: string;
   };
   local_password_policy?: {
     minimum_length: number;

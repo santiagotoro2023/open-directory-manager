@@ -261,6 +261,9 @@ def test_grub_boot_splash_rejects_bad_input():
         {"grub": {"splash_image": "not valid base64!!"}},
         {"grub": {"splash_image": base64.b64encode(b"not an image").decode()}},
         {"grub": {"splash_image_name": "../../etc/passwd"}},
+        {"grub": {"splash_background": "not valid base64!!"}},
+        {"grub": {"splash_background": base64.b64encode(b"not an image").decode()}},
+        {"grub": {"splash_background_name": "../../etc/passwd"}},
     ):
         with pytest.raises(ValidationError):
             PolicySettings(**bad)
@@ -279,6 +282,18 @@ def test_grub_boot_splash_accepts_a_real_logo():
     assert settings.grub.boot_splash is True
     assert settings.grub.splash_message == "Starting up"
     assert settings.grub.splash_image_name == "logo.png"
+
+
+def test_grub_boot_splash_accepts_a_real_background():
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\nrest of a real file").decode()
+    settings = PolicySettings(
+        grub={
+            "boot_splash": True,
+            "splash_background": png,
+            "splash_background_name": "background.png",
+        }
+    )
+    assert settings.grub.splash_background_name == "background.png"
 
 
 def test_a_share_written_the_way_a_file_manager_shows_it_is_accepted():

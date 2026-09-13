@@ -436,10 +436,12 @@ type Grub struct {
 	TimeoutSeconds int  `json:"timeout_seconds"`
 	HideMenu       bool `json:"hide_menu"`
 
-	BootSplash      bool   `json:"boot_splash"`
-	SplashMessage   string `json:"splash_message"`
-	SplashImage     string `json:"splash_image"` // base64
-	SplashImageName string `json:"splash_image_name"`
+	BootSplash           bool   `json:"boot_splash"`
+	SplashMessage        string `json:"splash_message"`
+	SplashImage          string `json:"splash_image"` // base64
+	SplashImageName      string `json:"splash_image_name"`
+	SplashBackground     string `json:"splash_background"` // base64
+	SplashBackgroundName string `json:"splash_background_name"`
 }
 
 // AlwaysOnVpn holds a tunnel up whatever the person using the machine does.

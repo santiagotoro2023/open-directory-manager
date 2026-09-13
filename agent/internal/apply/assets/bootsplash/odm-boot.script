@@ -1,0 +1,107 @@
+# Managed by Open Directory Manager.
+#
+# Plymouth's own scripting language (CLAUDE.md §6 — Plymouth is the audited
+# mechanism reused here, this script only orchestrates it): every function
+# used below — Window.SetBackgroundTopColor, Image, Sprite, SetImage,
+# SetX/SetY/SetZ, Plymouth.SetRefreshFunction and Plymouth.SetMessageFunction
+# — is long-standing, documented Plymouth Script API, checked here against
+# Debian's own shipped theme (ceratopsian.script, in the plymouth-themes
+# package) rather than assumed. Nothing here reaches outside Plymouth's own
+# sandboxed drawing API: no file access, no shell, no network.
+#
+# background.png and watermark.png are optional — Image() returns a null
+# value Plymouth Script treats as false when a file does not exist, which is
+# how this tells "no logo chosen" from "logo chosen" without a file of its
+# own to check first.
+#
+# A variable set at the top level of this file is only visible by that name
+# at the top level; a function that reads or writes one has to say
+# global.name, or it creates a same-named local of its own instead and the
+# outer one never changes. Every reference to throbber_current_frame,
+# throbber_tick, throbber_sprite, throbber_frames and message_sprite below a
+# fun block is written the "global." way for exactly that reason.
+
+Window.SetBackgroundTopColor(0.09, 0.09, 0.11);
+Window.SetBackgroundBottomColor(0.09, 0.09, 0.11);
+
+background_image = Image("background.png");
+if (background_image) {
+    background_image = background_image.Scale(Window.GetWidth(), Window.GetHeight());
+    background_sprite = Sprite(background_image);
+    background_sprite.SetX(Window.GetX());
+    background_sprite.SetY(Window.GetY());
+    background_sprite.SetZ(-100);
+}
+
+logo_image = Image("watermark.png");
+if (logo_image) {
+    logo_sprite = Sprite(logo_image);
+    logo_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - logo_image.GetWidth() / 2);
+    logo_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.62 - logo_image.GetHeight() / 2);
+    logo_sprite.SetZ(10);
+}
+
+# A pre-rendered chasing-dots animation, generated once and shipped with the
+# agent rather than depending on another theme's own frame files being
+# present under some particular name — that is the one part of this drawn
+# without a live display to check it against, so it is images to composite,
+# not script logic to get right blind.
+throbber_frames[0] = Image("throbber-00.png");
+throbber_frames[1] = Image("throbber-01.png");
+throbber_frames[2] = Image("throbber-02.png");
+throbber_frames[3] = Image("throbber-03.png");
+throbber_frames[4] = Image("throbber-04.png");
+throbber_frames[5] = Image("throbber-05.png");
+throbber_frames[6] = Image("throbber-06.png");
+throbber_frames[7] = Image("throbber-07.png");
+throbber_frames[8] = Image("throbber-08.png");
+throbber_frames[9] = Image("throbber-09.png");
+throbber_frames[10] = Image("throbber-10.png");
+throbber_frames[11] = Image("throbber-11.png");
+throbber_frame_count = 12;
+throbber_current_frame = 0;
+throbber_tick = 0;
+
+throbber_sprite = Sprite(throbber_frames[0]);
+throbber_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - throbber_frames[0].GetWidth() / 2);
+throbber_sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - throbber_frames[0].GetHeight() / 2);
+throbber_sprite.SetZ(20);
+
+# Plymouth calls this up to fifty times a second (the same rate Debian's own
+# ceratopsian.script documents); advancing one frame every fourth tick is
+# what turns that into a steady turn instead of a flicker, the same
+# tick-counting idiom ceratopsian.script's own refresh_callback uses.
+fun refresh_callback() {
+    global.throbber_tick++;
+    if (global.throbber_tick < 4) {
+        return;
+    }
+    global.throbber_tick = 0;
+    global.throbber_current_frame++;
+    if (global.throbber_current_frame >= global.throbber_frame_count) {
+        global.throbber_current_frame = 0;
+    }
+    global.throbber_sprite.SetImage(global.throbber_frames[global.throbber_current_frame]);
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# The message a policy sets arrives through Plymouth's own display-message
+# command, the same one every other boot-time message on this system already
+# uses (fsck, cryptsetup) — SetMessageFunction is what actually receives it;
+# without a theme that registers one the command has nothing to draw with.
+message_sprite = 0;
+
+fun message_callback(text) {
+    message_image = Image.Text(text, 1, 1, 1);
+    if (global.message_sprite == 0) {
+        global.message_sprite = Sprite(message_image);
+        global.message_sprite.SetZ(20);
+    } else {
+        global.message_sprite.SetImage(message_image);
+    }
+    global.message_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - message_image.GetWidth() / 2);
+    global.message_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.78);
+}
+
+Plymouth.SetMessageFunction(message_callback);

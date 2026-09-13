@@ -1005,6 +1005,10 @@ class Grub(Strict):
     # is a complete, working splash without one.
     splash_image: Annotated[str, Field(max_length=8_000_000)] = ""
     splash_image_name: Annotated[str, Field(max_length=128)] = ""
+    # A full-screen picture behind the spinner. Optional; without one the
+    # splash is a solid colour, the same as the spinner alone would be.
+    splash_background: Annotated[str, Field(max_length=8_000_000)] = ""
+    splash_background_name: Annotated[str, Field(max_length=128)] = ""
 
     @field_validator("splash_message")
     @classmethod
@@ -1026,6 +1030,16 @@ class Grub(Strict):
     @field_validator("splash_image_name")
     @classmethod
     def _splash_image_name(cls, value: str) -> str:
+        return validate_image_name(value)
+
+    @field_validator("splash_background")
+    @classmethod
+    def _splash_background(cls, value: str) -> str:
+        return validate_image(value)
+
+    @field_validator("splash_background_name")
+    @classmethod
+    def _splash_background_name(cls, value: str) -> str:
         return validate_image_name(value)
 
 

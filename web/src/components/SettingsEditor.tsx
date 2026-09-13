@@ -2091,6 +2091,8 @@ function GrubEditor({
         splash_message: "",
         splash_image: "",
         splash_image_name: "",
+        splash_background: "",
+        splash_background_name: "",
         ...current,
         ...changes,
       },
@@ -2168,6 +2170,24 @@ function GrubEditor({
                   onChange={(e) => set({ splash_message: e.target.value })}
                 />
                 <small>Shown with the spinner. Empty means no message.</small>
+              </label>
+
+              <label className="field">
+                <span>Background</span>
+                <small>
+                  Fills the screen behind the spinner. Optional — without one the splash is a
+                  solid colour, the same as the spinner alone would be.
+                </small>
+                <FileInput
+                  accept="image/*"
+                  placeholder={current.splash_background_name || "No background chosen"}
+                  onChoose={async (file) =>
+                    set({
+                      splash_background: await readBase64(file),
+                      splash_background_name: safeFileName(file.name),
+                    })
+                  }
+                />
               </label>
 
               <label className="field">

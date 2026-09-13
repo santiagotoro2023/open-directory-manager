@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=ODM Boot
+Description=Open Directory Manager boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/odm-boot
+ScriptFile=/usr/share/plymouth/themes/odm-boot/odm-boot.script

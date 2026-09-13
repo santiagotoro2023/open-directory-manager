@@ -65,6 +65,11 @@ func TestBootSplashDoesNotRebuildWhenNothingChanged(t *testing.T) {
 	writePlymouthInstalledMarker(t, env)
 	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
 
+	// First pass: the theme's own signature has never been recorded, so this
+	// establishes the baseline and is expected to rebuild once.
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	runner.commands = nil
+
 	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
 
 	if runner.ran("plymouth-set-default-theme", "-R") {
@@ -114,6 +119,70 @@ func TestBootSplashWatermarkIsRemovedWhenCleared(t *testing.T) {
 	}
 	if !runner.ran("plymouth-set-default-theme", "-R") {
 		t.Error("removing the logo did not rebuild the initramfs")
+	}
+}
+
+func TestBootSplashBackgroundIsWrittenOnceAndDedupedAfter(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true, SplashBackground: onePixelPNG}, env)
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Fatal("a new background did not rebuild the initramfs")
+	}
+	if _, err := os.Stat(env.Path(splashBackgroundPath)); err != nil {
+		t.Fatalf("the background was not written: %v", err)
+	}
+	runner.commands = nil
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true, SplashBackground: onePixelPNG}, env)
+	if runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("the same background rebuilt the initramfs a second time")
+	}
+}
+
+func TestBootSplashBackgroundIsRemovedWhenCleared(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true, SplashBackground: onePixelPNG}, env)
+	runner.commands = nil
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if _, err := os.Stat(env.Path(splashBackgroundPath)); err == nil {
+		t.Error("the background file was left behind after the policy cleared it")
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("removing the background did not rebuild the initramfs")
+	}
+}
+
+// The theme itself — the script, its descriptor and every spin frame — is
+// what actually renders the splash; a machine that never received these
+// files would boot on Plymouth's fallback rather than this theme at all.
+func TestBootSplashWritesEveryThemeFile(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	names, err := splashAssetNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) == 0 {
+		t.Fatal("the embedded theme carries no files to check")
+	}
+	for _, name := range names {
+		if _, err := os.Stat(env.Path(splashThemeDir + "/" + name)); err != nil {
+			t.Errorf("%s was not written to the theme directory: %v", name, err)
+		}
+	}
+	if !runner.ran("plymouth-set-default-theme", splashTheme+" -R") {
+		t.Error("the theme was never set as the machine's default")
 	}
 }
 

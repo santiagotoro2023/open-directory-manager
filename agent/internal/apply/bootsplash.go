@@ -3,9 +3,13 @@ package apply
 import (
 	"context"
 	"crypto/sha256"
+	"embed"
 	"encoding/base64"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
+	"sort"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
@@ -17,26 +21,37 @@ import (
 // Plymouth is what every mainstream desktop Linux distribution already uses
 // for this — a spinner in place of the kernel and initramfs text a boot
 // otherwise shows on its way to the login screen — so this installs and
-// configures it rather than drawing anything of its own. Its "spinner"
-// theme, not a theme this writes, is what actually renders: it ships in
-// plymouth-themes, needs no custom boot-time code that could leave a machine
-// stuck on a black screen if it were wrong, and already supports the two
-// things an operator can brand it with — a small watermark logo, and a
-// status message shown through Plymouth's own display-message command.
-// A full custom background picture is deliberately not offered: Plymouth's
-// built-in themes have no config key for one, and a hand-written theme
-// script is boot-time code this cannot test against a real display before
-// it ships.
+// drives it rather than drawing anything outside Plymouth's own drawing API.
+// Its built-in themes cover a spinner, a solid background and a small
+// watermark logo, but have no setting for a full custom background picture,
+// so a full background is a small theme of this project's own — written
+// once, in Plymouth's own Script language, using only long-standing,
+// documented primitives every one of Plymouth's own bundled themes is built
+// from (Window.SetBackgroundTopColor, Image, Sprite, SetImage, SetX/SetY/
+// SetZ, Plymouth.SetRefreshFunction, Plymouth.SetDisplayMessageFunction).
+// Nothing in it reaches outside Plymouth's own sandboxed drawing API: no
+// file access, no shell, no network from the script itself. The one part of
+// this drawn without a real display to check it against — the spin
+// animation — is not script logic but a set of pre-rendered frames
+// generated once and shipped as plain image assets, the same as the logo or
+// background an operator uploads.
 const (
-	splashPackages      = "plymouth plymouth-themes"
-	splashTheme         = "spinner"
-	splashThemeDir      = "/usr/share/plymouth/themes/spinner"
-	splashWatermarkPath = splashThemeDir + "/watermark.png"
-	splashWatermarkSum  = "/var/lib/odm/boot-splash-watermark.sha256"
+	splashPackages = "plymouth plymouth-themes"
+	splashTheme    = "odm-boot"
+	splashThemeDir = "/usr/share/plymouth/themes/odm-boot"
+
+	splashWatermarkPath  = splashThemeDir + "/watermark.png"
+	splashBackgroundPath = splashThemeDir + "/background.png"
+	splashAssetSumPath   = "/var/lib/odm/boot-splash-assets.sha256"
 
 	splashMessagePath = "/etc/odm/boot-splash-message.txt"
 	splashUnitPath    = "/etc/systemd/system/odm-boot-message.service"
 )
+
+//go:embed assets/bootsplash
+var splashAssets embed.FS
+
+const splashAssetsRoot = "assets/bootsplash"
 
 // The unit is static and carries no operator-supplied text of its own — the
 // message lives in splashMessagePath instead, read through a command
@@ -80,13 +95,20 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 		}
 	}
 
-	needsRebuild := !themeIsSpinner(ctx, env)
-	watermarkChanged, err := applyWatermark(g.SplashImage, env)
+	themeChanged, err := writeSplashTheme(env)
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", err))
 	}
-	needsRebuild = needsRebuild || watermarkChanged
+	watermarkChanged, err := applyImageAsset(splashWatermarkPath, g.SplashImage, env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("splash logo: %w", err)))
+	}
+	backgroundChanged, err := applyImageAsset(splashBackgroundPath, g.SplashBackground, env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("splash background: %w", err)))
+	}
 
+	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged
 	if needsRebuild {
 		// -R rebuilds the initramfs with this theme baked in; without it the
 		// theme is set for next time update-initramfs runs for some other
@@ -131,43 +153,100 @@ func plymouthInstalled(env Env) bool {
 	return err == nil
 }
 
-// themeIsSpinner reports whether this machine's default theme is already
-// the one this sets, so an unchanged policy does not rebuild the initramfs
-// on every refresh — that rebuild is seconds long and not something to pay
-// on every fifteen-minute poll for a setting that has not changed.
-func themeIsSpinner(ctx context.Context, env Env) bool {
+// themeIsActive reports whether this machine's default theme is already the
+// one this sets, so an unchanged policy does not rebuild the initramfs on
+// every refresh — that rebuild is seconds long and not something to pay on
+// every fifteen-minute poll for a setting that has not changed.
+func themeIsActive(ctx context.Context, env Env) bool {
 	out, err := env.Run.Run(ctx, "plymouth-set-default-theme")
 	return err == nil && strings.TrimSpace(out) == splashTheme
 }
 
-// applyWatermark writes or removes the logo the spinner theme shows,
-// reporting whether it actually changed anything — which is what decides
-// whether the initramfs needs rebuilding, not merely whether an image was
-// supplied.
-func applyWatermark(image string, env Env) (changed bool, err error) {
+// writeSplashTheme installs this project's own theme — the script, its
+// descriptor and the pre-rendered spin frames, all embedded in the agent
+// binary — and reports whether any of it actually changed. A signature of
+// every embedded file together is what decides that, rather than each
+// file's own mtime, so an agent upgrade that changes the script is picked
+// up the same way a changed logo is: by rebuilding once, not on every pass.
+func writeSplashTheme(env Env) (changed bool, err error) {
+	names, err := splashAssetNames()
+	if err != nil {
+		return false, err
+	}
+
+	hash := sha256.New()
+	for _, name := range names {
+		content, err := splashAssets.ReadFile(path.Join(splashAssetsRoot, name))
+		if err != nil {
+			return false, fmt.Errorf("reading the bundled %s: %w", name, err)
+		}
+		hash.Write([]byte(name))
+		hash.Write(content)
+		if err := env.WriteFile(path.Join(splashThemeDir, name), string(content), 0o644, "root", "root"); err != nil {
+			return false, fmt.Errorf("writing %s: %w", name, err)
+		}
+	}
+	sum := fmt.Sprintf("%x", hash.Sum(nil))
+
+	if current, readErr := os.ReadFile(env.Path(splashAssetSumPath)); readErr == nil &&
+		strings.TrimSpace(string(current)) == sum {
+		return false, nil
+	}
+	if err := env.WriteFile(splashAssetSumPath, sum+"\n", 0o600, "root", "root"); err != nil {
+		return false, fmt.Errorf("recording the theme's signature: %w", err)
+	}
+	return true, nil
+}
+
+// splashAssetNames lists the embedded theme files by name, sorted so the
+// combined signature writeSplashTheme hashes them in does not depend on
+// filesystem iteration order.
+func splashAssetNames() ([]string, error) {
+	var names []string
+	err := fs.WalkDir(splashAssets, splashAssetsRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			names = append(names, strings.TrimPrefix(p, splashAssetsRoot+"/"))
+		}
+		return nil
+	})
+	sort.Strings(names)
+	return names, err
+}
+
+// applyImageAsset writes or removes one of the two pictures an operator may
+// upload — the logo or the background — reporting whether it actually
+// changed anything, which is what decides whether the initramfs needs
+// rebuilding rather than merely whether a picture was supplied. Shared
+// because the logo and the background are the same operation on two
+// different files: decode, compare against what is already there, write.
+func applyImageAsset(dest, image string, env Env) (changed bool, err error) {
+	sumPath := dest + ".sha256"
 	if image == "" {
-		if _, statErr := os.Stat(env.Path(splashWatermarkPath)); statErr != nil {
+		if _, statErr := os.Stat(env.Path(dest)); statErr != nil {
 			return false, nil
 		}
-		_ = os.Remove(env.Path(splashWatermarkPath))
-		_ = os.Remove(env.Path(splashWatermarkSum))
+		_ = os.Remove(env.Path(dest))
+		_ = os.Remove(env.Path(sumPath))
 		return true, nil
 	}
 
 	raw, decodeErr := base64.StdEncoding.DecodeString(image)
 	if decodeErr != nil {
-		return false, fmt.Errorf("splash logo: %w", decodeErr)
+		return false, fmt.Errorf("not valid base64: %w", decodeErr)
 	}
 	sum := fmt.Sprintf("%x", sha256.Sum256(raw))
-	if current, readErr := os.ReadFile(env.Path(splashWatermarkSum)); readErr == nil &&
+	if current, readErr := os.ReadFile(env.Path(sumPath)); readErr == nil &&
 		strings.TrimSpace(string(current)) == sum {
 		return false, nil
 	}
-	if err := env.WriteFile(splashWatermarkPath, string(raw), 0o644, "root", "root"); err != nil {
-		return false, fmt.Errorf("writing the splash logo: %w", err)
+	if err := env.WriteFile(dest, string(raw), 0o644, "root", "root"); err != nil {
+		return false, fmt.Errorf("writing %s: %w", dest, err)
 	}
-	if err := env.WriteFile(splashWatermarkSum, sum+"\n", 0o600, "root", "root"); err != nil {
-		return false, fmt.Errorf("recording the splash logo: %w", err)
+	if err := env.WriteFile(sumPath, sum+"\n", 0o600, "root", "root"); err != nil {
+		return false, fmt.Errorf("recording %s: %w", dest, err)
 	}
 	return true, nil
 }
