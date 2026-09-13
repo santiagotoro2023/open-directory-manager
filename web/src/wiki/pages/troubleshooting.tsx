@@ -958,10 +958,34 @@ export function Content() {
                   file), adds <C key="nvx9">nvidia_uvm</C> to the module set, and writes{" "}
                   <C key="nvx10">options nvidia-drm modeset=1 fbdev=1</C> to{" "}
                   <C key="nvx11">/etc/modprobe.d/</C>, which <C key="nvx12">mkinitramfs</C> copies
-                  into the initramfs so it applies where the driver actually loads. Upgrade to
-                  0.10.14 or later and re-apply. Verify with{" "}
-                  <C key="nvx13">lsinitramfs /boot/initrd.img-$(uname -r) | grep -c nouveau</C> —
-                  it must print <C key="nvx14">0</C>.
+                  into the initramfs so it applies where the driver actually loads.
+                  <br />
+                  <br />
+                  <strong>
+                    None of that was it either. The answer came from Plymouth&rsquo;s own debug
+                    log, and it is a Plymouth setting, not a driver problem.
+                  </strong>{" "}
+                  Capture it with <C key="pdt1">plymouth.debug=file:/run/plymouth-debug.log</C> on
+                  the kernel command line. On the machine this kept failing on it read: {" "}
+                  <C key="pdt2">Device timeout is set to 8.000000</C>, then{" "}
+                  <C key="pdt3">got add event for device /dev/fb0</C> followed immediately by{" "}
+                  <C key="pdt4">ignoring since we only handle subsystem graphics devices after
+                  timeout</C>, then an attempt on <C key="pdt5">/dev/dri/renderD128</C> —
+                  nvidia&rsquo;s <em>render node</em>, which has no modesetting at all, so{" "}
+                  <C key="pdt6">Could not get card resources</C> was the only possible outcome —
+                  and finally <C key="pdt7">got remove event for device /dev/fb0</C> as nvidia took
+                  the display. Plymouth claims a real DRM device as soon as it sees one, but will
+                  not claim a legacy <C key="pdt8">/dev/fb</C> framebuffer until{" "}
+                  <C key="pdt9">DeviceTimeout</C> (eight seconds by default) has elapsed, so a
+                  slow-probing GPU driver does not lose to a fallback. On a machine whose only
+                  early graphics device <em>is</em> a legacy framebuffer — no{" "}
+                  <C key="pdt10">simpledrm</C>, and the proprietary driver deliberately kept out of
+                  the initramfs — that rule leaves the splash with nothing to draw on for the
+                  entire window it exists to fill. 0.10.15 writes{" "}
+                  <C key="pdt11">DeviceTimeout=0</C> into{" "}
+                  <C key="pdt12">/etc/plymouth/plymouthd.conf</C> on machines with that driver, and
+                  keeps the nvidia modules out of the initramfs so the firmware framebuffer
+                  survives early boot. Upgrade to 0.10.15 or later and re-apply.
                 </>,
               ],
               [

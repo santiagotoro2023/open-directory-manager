@@ -299,9 +299,6 @@ func TestNouveauIsNeverInTheInitramfsWithTheProprietaryDriver(t *testing.T) {
 			t.Errorf("nouveau was force-loaded alongside the proprietary driver:\n%s", body)
 		}
 	}
-	if !strings.Contains(body, "nvidia_uvm") {
-		t.Errorf("nvidia_uvm missing from the nvidia module set:\n%s", body)
-	}
 }
 
 // A machine given the nouveau line by an earlier agent keeps it through
@@ -393,24 +390,98 @@ func TestGrubNeverAddsNvidiaModesetWithoutTheProprietaryDriver(t *testing.T) {
 	}
 }
 
-func TestNvidiaModulesAreAddedToTheInitramfsWhenTheDriverIsPresent(t *testing.T) {
+// The proprietary driver is kept out of the initramfs, and taken back out
+// of a machine an earlier agent put it into. Plymouth's own debug log is
+// what settled this: with those modules present the only devices it ever
+// sees are nvidia's render node (no modesetting, cannot work) and a card
+// node that arrives ten seconds into boot, and nvidia taking the display
+// is what removes the one framebuffer Plymouth can actually draw on.
+func TestNvidiaModulesAreRemovedFromTheInitramfs(t *testing.T) {
 	env, runner := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
 	writeNvidiaMarker(t, env)
-	if err := env.WriteFile(initramfsModulesPath, "# comment\n", 0o644, "root", "root"); err != nil {
+	if err := env.WriteFile(
+		initramfsModulesPath, "# comment\nnvidia\nnvidia_modeset\nnvidia_uvm\nnvidia_drm\nnvme\n",
+		0o644, "root", "root",
+	); err != nil {
 		t.Fatal(err)
 	}
 
 	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
 
 	body := read(t, env, initramfsModulesPath)
-	for _, module := range []string{"nvidia", "nvidia_modeset", "nvidia_drm"} {
-		if !strings.Contains(body, module) {
-			t.Errorf("%s missing from initramfs modules:\n%s", module, body)
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "nvidia") {
+			t.Errorf("%s left in the initramfs module list:\n%s", trimmed, body)
 		}
 	}
+	if !strings.Contains(body, "# comment") || !strings.Contains(body, "nvme") {
+		t.Errorf("removing the nvidia modules disturbed other lines:\n%s", body)
+	}
 	if !runner.ran("plymouth-set-default-theme", "-R") {
-		t.Error("adding the nvidia modules did not rebuild the initramfs")
+		t.Error("removing the nvidia modules did not rebuild the initramfs")
+	}
+}
+
+// The one that actually made the splash invisible: Plymouth will not claim
+// a legacy /dev/fb framebuffer until DeviceTimeout has elapsed (eight
+// seconds by default), and on this hardware that framebuffer is the only
+// device it can ever draw on.
+func TestPlymouthDeviceTimeoutIsZeroedWithTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	if err := env.WriteFile(
+		plymouthConfPath, "# comment\n[Daemon]\nTheme=odm-boot\n", 0o644, "root", "root",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, plymouthConfPath)
+	if !strings.Contains(body, "DeviceTimeout=0") {
+		t.Errorf("DeviceTimeout=0 missing:\n%s", body)
+	}
+	if !strings.Contains(body, "Theme=odm-boot") {
+		t.Errorf("the theme line was disturbed:\n%s", body)
+	}
+	if strings.Count(body, "DeviceTimeout=") != 1 {
+		t.Errorf("DeviceTimeout written more than once:\n%s", body)
+	}
+}
+
+func TestPlymouthDeviceTimeoutIsNotRewrittenOnceCorrect(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	runner.commands = nil
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("an already-correct DeviceTimeout triggered another rebuild")
+	}
+}
+
+// Elsewhere the wait is doing its job — a machine whose GPU driver is
+// merely slow to probe should not be downgraded a moment before its real
+// device appears.
+func TestPlymouthDeviceTimeoutIsLeftAloneWithoutTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if _, err := os.Stat(env.Path(plymouthConfPath)); err == nil {
+		body := read(t, env, plymouthConfPath)
+		if strings.Contains(body, "DeviceTimeout") {
+			t.Errorf("DeviceTimeout written on a machine with no nvidia driver:\n%s", body)
+		}
 	}
 }
 

@@ -339,6 +339,31 @@ goal.
     already has it. Anything that writes a name into a persistent list on
     a machine needs the matching removal path written at the same time, or
     it cannot be taken back.
+- **Ask the component itself before theorising about it.** The boot splash
+  failed to render across six attempts, each with a different explanation
+  — kernel parameters, module lists, driver versions, a theme script, a
+  kernel `WARN_ON` — and every one of them was wrong. Plymouth has a debug
+  log (`plymouth.debug=file:/path` on the kernel command line, or
+  `plymouth.debug` alone) that states plainly which renderer plugin it
+  loaded, which device nodes it opened, what it found on them and why it
+  rejected each one. One capture of it ended the whole thing in a single
+  read: Plymouth was offered `/dev/fb0` at 7.3s and discarded it with
+  "ignoring since we only handle subsystem graphics devices after
+  timeout", spent its attempt on nvidia's *render node*
+  (`/dev/dri/renderD128`, which has no modesetting and can only fail), and
+  lost `/dev/fb0` for good at 10.5s when nvidia took the display. Nothing
+  about any of that was guessable from the outside, and all of it was one
+  command away for hours. When a component is not doing what it should,
+  find out whether it can be asked directly before reasoning about what it
+  might be doing.
+  - The setting itself is worth knowing: Plymouth claims a real DRM device
+    the moment it sees one, but will not claim a legacy `/dev/fb`
+    framebuffer or a text console until `DeviceTimeout` (default eight
+    seconds) has elapsed, so that a slow-probing GPU driver does not lose
+    to a fallback. On a machine whose *only* early graphics device is a
+    legacy framebuffer — no `simpledrm`, proprietary driver not in the
+    initramfs — that rule means the splash has no device for the entire
+    window it exists to fill.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

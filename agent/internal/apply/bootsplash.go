@@ -122,6 +122,12 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("nvidia module options: %w", err)))
 	}
+	// Before the rebuild below, not after: this file is copied into the
+	// initramfs, so it only takes effect on the boot after it is baked in.
+	deviceTimeoutChanged, err := ensurePlymouthDeviceTimeout(env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("plymouth device timeout: %w", err)))
+	}
 	kmsModulesChanged, err := ensureOpenSourceKmsModulesInInitramfs(env)
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("kms modules: %w", err)))
@@ -136,8 +142,8 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	}
 
 	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
-		nvidiaModulesChanged || nvidiaModprobeChanged || kmsModulesChanged ||
-		storageModulesChanged || inputModulesChanged
+		nvidiaModulesChanged || nvidiaModprobeChanged || deviceTimeoutChanged ||
+		kmsModulesChanged || storageModulesChanged || inputModulesChanged
 	if needsRebuild {
 		// A rebuild that runs out of room on /boot can leave a truncated
 		// initrd behind — one that boots straight to an "(initramfs)" rescue
@@ -242,20 +248,112 @@ func nvidiaProprietaryDriverInUse(env Env) bool {
 
 const initramfsModulesPath = "/etc/initramfs-tools/modules"
 
-// nvidiaModules is the set the proprietary driver's own early kernel mode
-// setting needs present in the initramfs, in the order NVIDIA's own and
-// Arch's documented working configurations list them. nvidia_uvm was
-// missing from an earlier version of this list; both references name it.
+// nvidiaModules is the proprietary driver's own set. It is deliberately
+// kept *out* of the initramfs, and taken back out of machines an earlier
+// agent put it into — the opposite of what several earlier versions of
+// this file did, and of what NVIDIA's own documentation recommends in
+// general.
+//
+// Plymouth's own debug log, captured live on the hardware this kept
+// failing on, is what settled it. With these modules in the initramfs the
+// only graphics devices Plymouth ever sees are nvidia's, and they are
+// useless to it: nvidia publishes its render node first, so Plymouth spends
+// its one attempt on /dev/dri/renderD128 — a render node, which by
+// definition has no modesetting, so drmModeGetResources can only fail
+// ("Could not get card resources") — and by the time /dev/dri/card0
+// appears it is ten seconds into boot, with the login manager already
+// arriving. On top of that, nvidia taking the display is what *removes*
+// /dev/fb0, the one device on this machine Plymouth can actually draw on.
+//
+// Keeping them out leaves the firmware framebuffer alive for the whole of
+// early boot, which is the only configuration ever observed to render on
+// this hardware. The real driver still loads normally from the root
+// filesystem afterwards for the desktop session, and the kernel command
+// line keeps modeset=1/fbdev=1 for it (grub.go) — this changes only what
+// draws during the splash itself.
 var nvidiaModules = []string{"nvidia", "nvidia_modeset", "nvidia_uvm", "nvidia_drm"}
 
-// ensureNvidiaModulesInInitramfs is the other half of nvidia-drm.modeset=1 on
-// the kernel command line: mode setting has nothing to turn on early if the
-// driver itself is not in the initramfs to begin with.
 func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
 	if !nvidiaProprietaryDriverInUse(env) {
 		return false, nil
 	}
-	return addModulesToInitramfs(env, nvidiaModules)
+	return removeModulesFromInitramfs(env, nvidiaModules)
+}
+
+const plymouthConfPath = "/etc/plymouth/plymouthd.conf"
+
+// ensurePlymouthDeviceTimeout is the fix for the failure this whole
+// setting kept hitting, found in Plymouth's own debug log rather than
+// guessed at.
+//
+// Plymouth claims a real DRM device the moment it hears about one, but it
+// deliberately refuses to claim a legacy /dev/fb framebuffer or a text
+// console until DeviceTimeout seconds have passed — eight by default —
+// so that a machine whose GPU driver is simply slow to probe does not get
+// downgraded to text mode a moment before its real device shows up. On a
+// machine whose only early graphics device *is* a legacy framebuffer,
+// that same rule is fatal: the log shows /dev/fb0 offered at 7.3s and
+// discarded with "ignoring since we only handle subsystem graphics
+// devices after timeout", nvidia's useless render node tried at 9.2s, and
+// /dev/fb0 removed for good at 10.5s when nvidia took the display — the
+// splash never had a device to draw on for the entire boot.
+//
+// Zero here means "there is nothing worth waiting for on this machine,
+// use what you have": with the proprietary NVIDIA driver kept out of the
+// initramfs, no DRM device is going to appear during early boot at all,
+// so waiting for one only burns the window the splash exists to fill.
+// Only written on machines with that driver — anywhere else the wait is
+// doing its job and is left alone.
+func ensurePlymouthDeviceTimeout(env Env) (changed bool, err error) {
+	if !nvidiaProprietaryDriverInUse(env) {
+		return false, nil
+	}
+	existing, err := os.ReadFile(env.Path(plymouthConfPath))
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+
+	var kept []string
+	daemonSeen, timeoutSeen := false, false
+	for _, line := range strings.Split(string(existing), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "DeviceTimeout=") {
+			if trimmed == "DeviceTimeout=0" {
+				timeoutSeen = true
+				kept = append(kept, line)
+				continue
+			}
+			// Some other value: replace it rather than leave two.
+			kept = append(kept, "DeviceTimeout=0")
+			timeoutSeen = true
+			changed = true
+			continue
+		}
+		kept = append(kept, line)
+		if trimmed == "[Daemon]" {
+			daemonSeen = true
+		}
+	}
+	if timeoutSeen {
+		if !changed {
+			return false, nil
+		}
+	} else {
+		if !daemonSeen {
+			kept = append(kept, "[Daemon]")
+		}
+		kept = append(kept, "DeviceTimeout=0")
+		changed = true
+	}
+
+	body := strings.Join(kept, "\n")
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	if err := env.WriteFile(plymouthConfPath, body, 0o644, "root", "root"); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 const nvidiaModprobePath = "/etc/modprobe.d/odm-nvidia-drm.conf"
