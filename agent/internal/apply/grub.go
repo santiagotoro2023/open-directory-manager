@@ -65,27 +65,31 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		// in, rather than GRUB resetting to text mode first and the kernel
 		// switching back a moment later, which is the flash itself.
 		//
-		// Deliberately never asks a real GPU driver to take over kernel mode
-		// setting for this. An earlier version added nvidia-drm.modeset=1 (and
-		// later nvidia_drm.fbdev=1 alongside it) specifically to give the
-		// proprietary NVIDIA driver early KMS, on the reasoning that Plymouth
-		// otherwise had nothing to draw on. Confirmed live that this was the
-		// wrong fix for the wrong problem: with both parameters correctly
-		// applied, Plymouth's DRM renderer still rendered nothing at all —
-		// not a missing-driver problem, but a real, reproducible kernel WARN_ON
-		// inside NVIDIA's own nvidia_drm.ko (nv_drm_revoke_modeset_permission,
-		// hit during the exact drop-master handoff to the login manager),
-		// confirmed to have no module parameter or driver-version workaround
-		// available in Debian's own repos. "keep" alone already solves the
-		// actual problem without touching any vendor driver at all: the
-		// kernel's own generic, in-tree simpledrm/efifb driver picks up
-		// whatever graphics mode GRUB (via UEFI GOP) already negotiated and
-		// exposes it as a plain DRM device Plymouth's renderer can draw onto
-		// directly — no NVIDIA, AMD or Intel driver code involved during the
-		// splash at all, on any vendor's hardware. The real GPU driver still
-		// takes over normally once the desktop session itself starts; this
-		// only changes what draws the splash in between.
-		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", "quiet splash")
+		// nvidia-drm.modeset=1 alone — never nvidia_drm.fbdev=1 alongside it
+		// — on a machine with the proprietary NVIDIA driver. The full
+		// history, across several rounds of this on the same real hardware:
+		// plain GRUB_GFXPAYLOAD_LINUX=keep alone, relying only on the
+		// kernel's own generic simpledrm/efifb driver with no vendor driver
+		// involved at all, rendered nothing. modeset=1 combined with
+		// fbdev=1 also rendered nothing. modeset=1 by itself — before
+		// fbdev=1 was ever added, and before an unrelated sandboxing bug in
+		// this project's own agent was fixed (CLAUDE.md) — is the one
+		// combination ever actually seen to render something live. The
+		// kernel WARN_ON this project found inside NVIDIA's own
+		// nvidia_drm.ko (nv_drm_revoke_modeset_permission) fires during
+		// Plymouth's drop-master handoff at the *end* of its active window,
+		// not before it — a WARN_ON is not fatal, and every machine that
+		// hit it still reached a normal login screen afterward, so it does
+		// not rule out Plymouth having already drawn its frames
+		// successfully first. fbdev=1 is deliberately not re-added: it is
+		// the one variable that changed between a run that rendered
+		// something and runs that rendered nothing, which makes it the
+		// suspect, not modeset=1 itself.
+		cmdline := "quiet splash"
+		if nvidiaProprietaryDriverInUse(env) {
+			cmdline += " nvidia-drm.modeset=1"
+		}
+		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", cmdline)
 		body += "GRUB_GFXPAYLOAD_LINUX=keep\n"
 	}
 	if err := env.WriteFile(grubConfPath, body, 0o644, "root", "root"); err != nil {

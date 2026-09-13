@@ -298,6 +298,20 @@ goal.
   ability to debug or work around when it has its own bug, which is a
   reason to avoid depending on it early, not a reason to reach for its
   specific flags first.
+  **Addendum, same incident, same day**: the generic-only fix above was
+  then tried live and *also* rendered nothing on the same hardware —
+  `nvidia-drm.modeset=1` alone, tried before `fbdev=1` existed and before
+  an unrelated sandboxing bug in this project's own agent was fixed, is
+  the one combination ever actually seen to render something. It is back,
+  without `fbdev=1`, on that evidence. This is a provisional, evidence-led
+  reversal, not a retraction of the principle above: the actual lesson is
+  to keep changing exactly one variable at a time against real hardware
+  and trust what is observed over what is documented as standard practice,
+  in either direction. If `modeset=1` alone is later confirmed not to
+  render either, the honest conclusion is that this specific driver
+  version's DRM implementation cannot render a Plymouth theme on this
+  hardware at all, and the setting should stay off for machines with it
+  rather than clock up a fifth guess.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

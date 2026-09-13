@@ -242,20 +242,13 @@ func TestBootSplashOffRemovesTheMessageAndTouchesNothingElse(t *testing.T) {
 	}
 }
 
-// There is deliberately no NVIDIA-specific kernel mode-setting parameter
-// added at all any more — see the comment on openSourceKmsModules in
-// bootsplash.go for the full history: nvidia-drm.modeset=1, and later
-// nvidia_drm.fbdev=1 alongside it, both confirmed live to leave Plymouth's
-// DRM renderer drawing nothing, because of a real, reproducible kernel
-// WARN_ON inside NVIDIA's own nvidia_drm.ko, not fixable from the kernel
-// command line or any module parameter that driver exposes.
-// GRUB_GFXPAYLOAD_LINUX=keep alone (unconditional, see below) already gives
-// Plymouth a generic, vendor-neutral framebuffer to draw on via the
-// kernel's own simpledrm/efifb driver, on any hardware. This confirms that
-// stays true even on a machine that clearly has the proprietary driver.
-func TestGrubNeverAddsNvidiaSpecificParametersEvenWithTheDriverPresent(t *testing.T) {
-	env, _ := testEnv(t)
-	writePlymouthInstalledMarker(t, env)
+// Confirmed live, against real hardware: without nvidia-drm.modeset=1 and
+// the driver itself in the initramfs, the proprietary driver never takes
+// over kernel mode setting, and Plymouth has nothing to draw on for the
+// whole of early boot — the console stays on the plain firmware framebuffer
+// showing kernel and systemd text regardless of how correct the theme is.
+func writeNvidiaMarker(t *testing.T, env Env) {
+	t.Helper()
 	full := env.Path("/usr/bin/nvidia-smi")
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		t.Fatal(err)
@@ -263,6 +256,34 @@ func TestGrubNeverAddsNvidiaSpecificParametersEvenWithTheDriverPresent(t *testin
 	if err := os.WriteFile(full, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// modeset=1 is back, but nvidia_drm.fbdev=1 deliberately is not — see the
+// comment on ensureNvidiaModulesInInitramfs in bootsplash.go for why:
+// modeset=1 alone is the one combination ever seen live to actually render
+// something, and fbdev=1 is the one variable that changed between that run
+// and the runs that rendered nothing.
+func TestGrubAddsNvidiaModesetButNeverFbdev(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{BootSplash: true},
+	}, env)
+
+	body := read(t, env, grubConfPath)
+	if !strings.Contains(body, "nvidia-drm.modeset=1") {
+		t.Errorf("nvidia-drm.modeset=1 missing with the proprietary driver present:\n%s", body)
+	}
+	if strings.Contains(body, "fbdev") {
+		t.Errorf("nvidia_drm.fbdev=1 was added back despite being the suspect variable:\n%s", body)
+	}
+}
+
+func TestGrubNeverAddsNvidiaModesetWithoutTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
 
 	applyGrub(context.Background(), policy.Settings{
 		Grub: &policy.Grub{BootSplash: true},
@@ -270,26 +291,15 @@ func TestGrubNeverAddsNvidiaSpecificParametersEvenWithTheDriverPresent(t *testin
 
 	body := read(t, env, grubConfPath)
 	if strings.Contains(body, "nvidia") {
-		t.Errorf("an nvidia-specific parameter was added despite the known driver bug:\n%s", body)
-	}
-	if !strings.Contains(body, `GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"`) {
-		t.Errorf("the plain quiet splash cmdline is missing:\n%s", body)
-	}
-	if !strings.Contains(body, "GRUB_GFXPAYLOAD_LINUX=keep") {
-		t.Errorf("GRUB_GFXPAYLOAD_LINUX=keep is missing:\n%s", body)
+		t.Errorf("an nvidia-specific parameter was added on a machine with no nvidia driver:\n%s", body)
 	}
 }
 
-// No initramfs modules are specific to nvidia any more either — see the
-// same history above.
-func TestInitramfsModulesNeverIncludeNvidiaEvenWithTheDriverPresent(t *testing.T) {
-	env, _ := testEnv(t)
+func TestNvidiaModulesAreAddedToTheInitramfsWhenTheDriverIsPresent(t *testing.T) {
+	env, runner := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
-	full := env.Path("/usr/bin/nvidia-smi")
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(full, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	writeNvidiaMarker(t, env)
+	if err := env.WriteFile(initramfsModulesPath, "# comment\n", 0o644, "root", "root"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -297,8 +307,25 @@ func TestInitramfsModulesNeverIncludeNvidiaEvenWithTheDriverPresent(t *testing.T
 
 	body := read(t, env, initramfsModulesPath)
 	for _, module := range []string{"nvidia", "nvidia_modeset", "nvidia_drm"} {
+		if !strings.Contains(body, module) {
+			t.Errorf("%s missing from initramfs modules:\n%s", module, body)
+		}
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("adding the nvidia modules did not rebuild the initramfs")
+	}
+}
+
+func TestNvidiaModulesAreNotAddedWithoutTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsModulesPath)
+	for _, module := range []string{"nvidia", "nvidia_modeset", "nvidia_drm"} {
 		if strings.Contains(body, module) {
-			t.Errorf("%s added despite the known driver bug:\n%s", module, body)
+			t.Errorf("%s added on a machine with no nvidia driver:\n%s", module, body)
 		}
 	}
 }

@@ -114,6 +114,10 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("splash background: %w", err)))
 	}
+	nvidiaModulesChanged, err := ensureNvidiaModulesInInitramfs(env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("nvidia modules: %w", err)))
+	}
 	kmsModulesChanged, err := ensureOpenSourceKmsModulesInInitramfs(env)
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("kms modules: %w", err)))
@@ -128,7 +132,7 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	}
 
 	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
-		kmsModulesChanged || storageModulesChanged || inputModulesChanged
+		nvidiaModulesChanged || kmsModulesChanged || storageModulesChanged || inputModulesChanged
 	if needsRebuild {
 		// A rebuild that runs out of room on /boot can leave a truncated
 		// initrd behind — one that boots straight to an "(initramfs)" rescue
@@ -218,27 +222,43 @@ func themeIsActive(ctx context.Context, env Env) bool {
 	return err == nil && strings.TrimSpace(out) == splashTheme
 }
 
+// nvidiaProprietaryDriverInUse reports whether this machine's graphics are
+// driven by the closed nvidia driver rather than nouveau or anything else.
+// Checked by path rather than by asking the kernel, so a machine with no
+// command runner still has a filesystem this can look at.
+func nvidiaProprietaryDriverInUse(env Env) bool {
+	for _, marker := range []string{"/proc/driver/nvidia/version", "/usr/bin/nvidia-smi"} {
+		if _, err := os.Stat(env.Path(marker)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 const initramfsModulesPath = "/etc/initramfs-tools/modules"
 
+// ensureNvidiaModulesInInitramfs is the other half of nvidia-drm.modeset=1 on
+// the kernel command line: mode setting has nothing to turn on early if the
+// driver itself is not in the initramfs to begin with. update-initramfs
+// resolves nvidia_drm's own dependencies (nvidia_modeset, nvidia) the same
+// way modprobe does, so naming it is enough — the other two are listed
+// anyway, since a machine that already has one of them by some other means
+// should not end up missing another. See grub.go for why modeset=1 is back
+// but nvidia_drm.fbdev=1 deliberately is not.
+func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
+	if !nvidiaProprietaryDriverInUse(env) {
+		return false, nil
+	}
+	return addModulesToInitramfs(env, []string{"nvidia", "nvidia_modeset", "nvidia_drm"})
+}
+
 // openSourceKmsModules gives Plymouth something to draw on for early Kernel
-// Mode Setting on the open-source drivers. There is deliberately no NVIDIA
-// counterpart to this any more: an earlier version added
-// nvidia-drm.modeset=1 (and later nvidia_drm.fbdev=1) to give the
-// proprietary driver the same early KMS, and confirmed live that this was
-// the wrong fix — with both correctly applied, Plymouth's DRM renderer
-// still rendered nothing at all, because of a real, reproducible kernel
-// WARN_ON inside NVIDIA's own nvidia_drm.ko
-// (nv_drm_revoke_modeset_permission, hit during the drop-master handoff to
-// the login manager), with no module parameter or available driver version
-// found to work around it. GRUB_GFXPAYLOAD_LINUX=keep (grub.go) already
-// solves the actual problem without any vendor driver involved: the
-// kernel's own generic, in-tree simpledrm/efifb driver picks up whatever
-// mode GRUB already negotiated and gives Plymouth a plain DRM device to
-// draw onto directly, on any vendor's hardware, before that vendor's own
-// driver ever loads. amdgpu/i915/radeon/nouveau are still named here
-// unconditionally regardless, on the same reasoning as before — untested
-// live to have this same class of bug, and each one small enough that
-// listing it costs nothing on hardware that does not have it.
+// Mode Setting on the open-source drivers, the non-nvidia counterpart to
+// ensureNvidiaModulesInInitramfs above. amdgpu/i915/radeon/nouveau are
+// named here unconditionally — untested live to have the same class of bug
+// nvidia's proprietary driver turned out to have (see grub.go), and each
+// one small enough that listing it costs nothing on hardware that does not
+// have it.
 //
 // An earlier version of this instead widened
 // /etc/initramfs-tools/initramfs.conf's MODULES= setting to "most",
