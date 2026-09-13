@@ -521,6 +521,13 @@ user      root`}</Code>
             otherwise-harmless configuration, not something to unwind for a setting that only stops
             showing.
           </Note>
+          <Note>
+            Beyond the free-space check, every rebuild backs up the running kernel&rsquo;s own
+            initrd first and verifies the new one actually lists cleanly with{" "}
+            <C>lsinitramfs</C> before treating the change as applied. A failed check restores the
+            backup automatically and reports the setting as failed — whatever the underlying
+            cause — rather than ever leave a machine to find out at its next boot.
+          </Note>
         </Section>
 
         <Section title="System updates">

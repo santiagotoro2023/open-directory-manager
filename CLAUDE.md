@@ -181,6 +181,30 @@ goal.
 - Agent reports back a Resultant-Set-of-Policy status per applied setting
   (success/fail/skipped + reason) so RSoP is visible from the UI, not just
   inferred.
+- **Any setting that can affect whether a machine boots (kernel command
+  line, initramfs contents, boot loader configuration, disk/filesystem
+  layout) is held to a stricter standard than "the underlying tool
+  returned success," because RSoP reporting is worthless on a machine that
+  cannot boot far enough to send one.** A real incident (see Wiki →
+  Troubleshooting → Boot splash) shipped a graphical boot splash setting
+  that widened an initramfs module list fleet-wide, exhausted a small
+  `/boot` partition on some machines, and left them permanently unable to
+  mount root — a single GPO link took down every client it reached, with
+  no report of failure since none of them could boot far enough to send
+  one. For any applier in this category:
+  - Validate whatever it produced (e.g. an initramfs actually lists its
+    contents cleanly) before treating the change as applied — a tool's
+    zero exit status is not sufficient proof for something this
+    unrecoverable.
+  - Back up the artifact that must keep working on the very next boot
+    before touching it, and restore that backup automatically the moment
+    validation fails, reporting the setting as failed rather than applied.
+  - Check for resource exhaustion (disk space, in particular) before
+    starting a rebuild rather than discovering it mid-write.
+  This is not specific to the boot splash — any future applier that
+  touches this category of configuration must carry the same three
+  properties from its first commit, not as a follow-up once it breaks a
+  fleet once.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

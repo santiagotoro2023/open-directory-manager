@@ -805,17 +805,40 @@ export function Content() {
                   image that can never mount root again — this is exactly that symptom. 0.10.3
                   removes the <C key="bsx6">MODULES=most</C> widening entirely (naming the
                   handful of actual display drivers instead) and refuses to start a rebuild at
-                  all when <C key="bsx7">/boot</C> is low on free space. A machine already stuck
-                  at the <C key="bsx8">(initramfs)</C> prompt needs to be booted from rescue media
-                  to free up <C key="bsx9">/boot</C> (remove old kernels with{" "}
+                  all when <C key="bsx7">/boot</C> is low on free space. 0.10.4 goes further: every
+                  rebuild now backs up the running kernel&rsquo;s own initrd first, verifies the new
+                  one actually lists cleanly with <C key="bsx13">lsinitramfs</C> afterward, and
+                  automatically restores the backup and reports the setting as failed — never as
+                  applied — if that check fails, whatever the underlying cause. A machine already
+                  stuck at the <C key="bsx8">(initramfs)</C> prompt needs to be booted from rescue
+                  media to free up <C key="bsx9">/boot</C> (remove old kernels with{" "}
                   <C key="bsx10">apt autoremove</C>, or delete an old{" "}
                   <C key="bsx11">initrd.img-*</C> for a kernel that is no longer installed) and
                   run <C key="bsx12">update-initramfs -u</C> by hand — this cannot be fixed
                   remotely once a machine is in this state, since the agent itself cannot run
                   without a bootable system underneath it. Before re-applying the policy fleet-wide,
-                  update every machine&rsquo;s agent to 0.10.3 or later first, otherwise a machine
+                  update every machine&rsquo;s agent to 0.10.4 or later first, otherwise a machine
                   still on the old agent version can hit this again the next time it polls a
                   boot-splash policy with a change to apply.
+                  <br />
+                  <br />
+                  <strong>When cleaning up an old kernel&rsquo;s files by hand under rescue
+                  media, delete only what belongs to a version{" "}
+                  <C key="bsx14">dpkg -l | grep linux-image</C> no longer lists.</strong>{" "}
+                  A wildcard like <C key="bsx15">rm -rf vmlinuz-*</C> or{" "}
+                  <C key="bsx16">rm -rf initrd.img-*</C> deletes the kernel binaries and
+                  initrds for every installed kernel at once, including the one you are trying to
+                  boot — a strictly worse state than the one you started rescuing, since GRUB then
+                  has nothing to load at all rather than a bad initrd. If that already happened
+                  and the exact matching kernel package cannot be reinstalled (no cached{" "}
+                  <C key="bsx17">.deb</C> and no working network), <C key="bsx18">vmlinuz</C>,{" "}
+                  <C key="bsx19">config</C> and <C key="bsx20">System.map</C> for a given kernel
+                  version and architecture are byte-identical across every machine that installed
+                  the same package — copying them from another machine on the same release
+                  (matched by <C key="bsx21">uname -r</C>) works, and only{" "}
+                  <C key="bsx22">initrd.img</C> itself needs to be built locally with{" "}
+                  <C key="bsx23">update-initramfs -c -k &lt;version&gt;</C>, since it is specific to
+                  that machine&rsquo;s own hardware and module set.
                 </>,
               ],
               [

@@ -432,6 +432,113 @@ func TestSufficientBootSpace(t *testing.T) {
 	}
 }
 
+// The second line of defense (see the comment on rebuildInitramfsSafely in
+// bootsplash.go): even a rebuild that gets this far must not be trusted
+// blind. A validation failure must restore the last-known-good initrd and
+// report the setting as failed, never as applied.
+func TestRebuildRestoresThePreviousInitrdWhenValidationFails(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["uname"] = "6.1.0-test\n"
+	runner.fail["lsinitramfs"] = "cpio: premature end of file"
+	currentInitrd := "/boot/initrd.img-6.1.0-test"
+	if err := env.WriteFile(currentInitrd, "good initrd bytes", 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	found := false
+	for _, r := range results {
+		if r.Setting != "grub:splash" {
+			continue
+		}
+		found = true
+		if r.Status != "failed" {
+			t.Errorf("a rebuild that failed validation must not report success: %+v", r)
+		}
+		if !strings.Contains(r.Reason, "restored") {
+			t.Errorf("the failure reason should say the previous image was restored: %+v", r)
+		}
+	}
+	if !found {
+		t.Fatal("no grub:splash result reported")
+	}
+	if _, err := os.Stat(env.Path(initrdBackupPath)); err == nil {
+		t.Error("the backup should be cleaned up once it has been restored")
+	}
+}
+
+func TestRebuildKeepsTheNewInitrdWhenValidationPasses(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["uname"] = "6.1.0-test\n"
+	currentInitrd := "/boot/initrd.img-6.1.0-test"
+	if err := env.WriteFile(currentInitrd, "good initrd bytes", 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	for _, r := range results {
+		if r.Setting == "grub:splash" && r.Status != "success" {
+			t.Errorf("a rebuild that passed validation should report success: %+v", r)
+		}
+	}
+	if !runner.ran("lsinitramfs", "") {
+		t.Error("the rebuilt initrd was never validated")
+	}
+	if _, err := os.Stat(env.Path(initrdBackupPath)); err == nil {
+		t.Error("the backup should be cleaned up once the rebuild is confirmed good")
+	}
+}
+
+// A machine with no existing initrd for the running kernel yet (the very
+// first time the splash is turned on) has nothing to protect — this must
+// not be treated as a failure to back up.
+func TestRebuildSkipsValidationWhenThereIsNothingToRestore(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["uname"] = "6.1.0-test\n"
+	runner.fail["lsinitramfs"] = "should never be called"
+
+	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	for _, r := range results {
+		if r.Setting == "grub:splash" && r.Status != "success" {
+			t.Errorf("nothing to protect should not block the first-ever rebuild: %+v", r)
+		}
+	}
+	if runner.ran("lsinitramfs", "") {
+		t.Error("validation ran against a kernel that never had an initrd to protect")
+	}
+}
+
+// restoreInitrd is exercised directly, separately from the orchestration
+// above, since the fake command runner cannot simulate plymouth actually
+// overwriting the file — this proves the byte-for-byte copy-back itself.
+func TestRestoreInitrdCopiesTheBackupContentBack(t *testing.T) {
+	env, _ := testEnv(t)
+	currentPath := "/boot/initrd.img-6.1.0-test"
+	if err := env.WriteFile(currentPath, "corrupt truncated bytes", 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.WriteFile(initrdBackupPath, "good initrd bytes", 0o600, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restoreInitrd(env, currentPath); err != nil {
+		t.Fatalf("restoreInitrd: %v", err)
+	}
+
+	if got := read(t, env, currentPath); got != "good initrd bytes" {
+		t.Errorf("restored content = %q, want the backup's content", got)
+	}
+	if _, err := os.Stat(env.Path(initrdBackupPath)); err == nil {
+		t.Error("the backup file should be removed once restored")
+	}
+}
+
 func TestInitramfsModulesFileMissingIsNotAnError(t *testing.T) {
 	env, _ := testEnv(t)
 	writePlymouthInstalledMarker(t, env)

@@ -130,17 +130,8 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 		if ok, spaceErr := sufficientBootSpace(env); spaceErr == nil && !ok {
 			results = append(results, policy.Fail("grub:splash",
 				fmt.Errorf("not enough free space on /boot to safely rebuild the initramfs; leaving the existing boot image in place")))
-		} else if out, err := env.Run.Run(ctx, "plymouth-set-default-theme", splashTheme, "-R"); err != nil {
-			// -R rebuilds the initramfs with this theme baked in; without it
-			// the theme is set for next time update-initramfs runs for some
-			// other reason, and the machine boots on whatever theme it
-			// already had.
-			results = append(results, policy.Result{
-				Setting: "grub:splash", Status: "failed",
-				Reason: fmt.Sprintf("setting the boot splash theme: %v: %s", err, lastLine(out)),
-			})
 		} else {
-			results = append(results, policy.Ok("grub:splash"))
+			results = append(results, rebuildInitramfsSafely(ctx, env))
 		}
 	} else {
 		results = append(results, policy.Ok("grub:splash"))
@@ -293,6 +284,104 @@ func sufficientBootSpace(env Env) (bool, error) {
 		return false, err
 	}
 	return stat.Bavail*uint64(stat.Bsize) >= minBootFreeBytes, nil
+}
+
+// initrdBackupPath holds a copy of the currently-running kernel's initrd,
+// taken immediately before a rebuild and removed once a rebuild is confirmed
+// good. Kept under /var/lib/odm rather than /boot itself: a partition
+// already tight enough to matter should not carry a second copy of its own
+// biggest file, and a backup that lived in the exact directory a bad rebuild
+// might fill up would not be a backup at all.
+const initrdBackupPath = "/var/lib/odm/initrd-backup.img"
+
+// rebuildInitramfsSafely is the second line of defense after
+// sufficientBootSpace above: that check rules out the one specific cause
+// already confirmed live (this file's own history), but nothing about
+// initramfs generation guarantees a good result for every possible reason a
+// rebuild can go wrong — a killed process, a bad package, disk pressure from
+// something else entirely. The running kernel's own initrd is the one file
+// that must never end up broken, since it is what has to work on the very
+// next boot: backed up before the rebuild, the new one is verified with the
+// same tool a real login-vs-rescue-shell distinction depends on
+// (lsinitramfs, already this project's own documented way to check one:
+// Wiki → Troubleshooting → Boot splash), and restored immediately if that
+// check fails, rather than ever leaving a machine to find out at its next
+// boot. A rebuild that had to be restored is reported as failed — the
+// splash setting did not take effect — never as succeeded with an asterisk.
+func rebuildInitramfsSafely(ctx context.Context, env Env) policy.Result {
+	backedUp, current := backupCurrentInitrd(ctx, env)
+
+	out, err := env.Run.Run(ctx, "plymouth-set-default-theme", splashTheme, "-R")
+	if err != nil {
+		// -R rebuilds the initramfs with this theme baked in; without it the
+		// theme is set for next time update-initramfs runs for some other
+		// reason, and the machine boots on whatever theme it already had.
+		return policy.Result{
+			Setting: "grub:splash", Status: "failed",
+			Reason: fmt.Sprintf("setting the boot splash theme: %v: %s", err, lastLine(out)),
+		}
+	}
+
+	if !backedUp {
+		return policy.Ok("grub:splash")
+	}
+	if valid, checkErr := initrdIsValid(ctx, env, current); checkErr == nil && !valid {
+		if restoreErr := restoreInitrd(env, current); restoreErr != nil {
+			return policy.Fail("grub:splash", fmt.Errorf(
+				"the rebuilt initramfs failed validation and could not be restored from backup (%w) — "+
+					"this machine may not boot; rescue it before the next reboot", restoreErr))
+		}
+		return policy.Fail("grub:splash", fmt.Errorf(
+			"the rebuilt initramfs failed validation; restored the previous working image, nothing changed"))
+	}
+	_ = os.Remove(env.Path(initrdBackupPath))
+	return policy.Ok("grub:splash")
+}
+
+// backupCurrentInitrd preserves the running kernel's own initrd before a
+// rebuild touches it. Reports false with nothing backed up on a machine
+// that has no such file yet (the very first time the splash is turned on)
+// — there being nothing to protect is not itself a failure.
+func backupCurrentInitrd(ctx context.Context, env Env) (backedUp bool, currentPath string) {
+	kernelVersion, err := env.Run.Run(ctx, "uname", "-r")
+	if err != nil {
+		return false, ""
+	}
+	currentPath = "/boot/initrd.img-" + strings.TrimSpace(kernelVersion)
+	data, err := os.ReadFile(env.Path(currentPath))
+	if err != nil {
+		return false, currentPath
+	}
+	if err := env.WriteFile(initrdBackupPath, string(data), 0o600, "root", "root"); err != nil {
+		return false, currentPath
+	}
+	return true, currentPath
+}
+
+// initrdIsValid runs the same tool this project's own troubleshooting docs
+// already point an operator at to inspect an initrd's contents — a
+// truncated or otherwise corrupt archive fails to list, which is exactly
+// the failure mode a /boot space exhaustion (or any other rebuild problem)
+// produces.
+func initrdIsValid(ctx context.Context, env Env, path string) (bool, error) {
+	if _, err := os.Stat(env.Path(path)); err != nil {
+		return false, err
+	}
+	_, err := env.Run.Run(ctx, "lsinitramfs", env.Path(path))
+	return err == nil, nil
+}
+
+// restoreInitrd puts the pre-rebuild backup back in place of a rebuild that
+// failed validation, so a bad rebuild never reaches the next boot.
+func restoreInitrd(env Env, path string) error {
+	data, err := os.ReadFile(env.Path(initrdBackupPath))
+	if err != nil {
+		return err
+	}
+	if err := env.WriteFile(path, string(data), 0o644, "root", "root"); err != nil {
+		return err
+	}
+	return os.Remove(env.Path(initrdBackupPath))
 }
 
 // writeSplashTheme installs this project's own theme — the script, its
