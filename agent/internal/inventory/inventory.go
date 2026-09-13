@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -563,7 +564,31 @@ func CollectLogs(
 		entries = append(entries, more...)
 	}
 
-	return dedupe(entries), cursor
+	return newest(dedupe(entries), limit), cursor
+}
+
+// newest keeps the most recent entries and no more than limit of them.
+//
+// limit is per journalctl read, and there are five of them — the general
+// warning sweep plus one per named unit — so this could return six hundred
+// entries for a limit of two hundred. The control plane accepts five
+// hundred and rejects the entire check-in over the excess, which made this
+// self-sustaining on the machine it was found on: odm-agent logging the
+// rejection every seventy seconds kept its own unit's read full, which kept
+// the list over the limit, which guaranteed the next rejection. The machine
+// reported nothing for as long as it was running.
+//
+// Sorted before trimming because the entries arrive grouped by which read
+// produced them, not by time: cutting the tail off without sorting would
+// throw away whole units rather than old news.
+func newest(entries []LogEntry, limit int) []LogEntry {
+	if len(entries) <= limit {
+		return entries
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].OccurredAt.After(entries[j].OccurredAt)
+	})
+	return entries[:limit]
 }
 
 func runJournal(

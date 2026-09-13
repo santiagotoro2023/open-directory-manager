@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"odm.example.org/agent/internal/apply"
 )
@@ -287,5 +288,31 @@ func TestBoundLeavesShortListsExactlyAsTheyWere(t *testing.T) {
 
 	if report.Disks == nil {
 		t.Error("an empty disk list became nil, which marshals as null")
+	}
+}
+
+// limit is per journalctl read and there are five reads, so a machine with
+// busy logs shipped six hundred entries for a limit of two hundred — over
+// what the control plane accepts, which cost it the entire check-in.
+func TestLogsAreCappedAcrossEveryJournalRead(t *testing.T) {
+	entries := make([]LogEntry, 0, 600)
+	for i := 0; i < 600; i++ {
+		entries = append(entries, LogEntry{
+			Message:    fmt.Sprintf("line %d", i),
+			OccurredAt: time.Unix(int64(i), 0),
+		})
+	}
+
+	kept := newest(entries, 200)
+
+	if len(kept) != 200 {
+		t.Fatalf("kept %d entries, wanted 200", len(kept))
+	}
+	// The most recent, not whichever read happened to come first.
+	if kept[0].Message != "line 599" {
+		t.Errorf("kept[0] = %q, wanted the newest entry", kept[0].Message)
+	}
+	if kept[199].Message != "line 400" {
+		t.Errorf("kept[199] = %q, wanted the 200th newest", kept[199].Message)
 	}
 }
