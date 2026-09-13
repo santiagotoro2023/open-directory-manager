@@ -26,10 +26,29 @@ Window.SetBackgroundBottomColor(0.09, 0.09, 0.11);
 
 background_image = Image("background.png");
 if (background_image) {
-    background_image = background_image.Scale(Window.GetWidth(), Window.GetHeight());
+    # Scaled to cover the whole window while preserving the picture's own
+    # aspect ratio, rather than stretched to exactly match the window's
+    # dimensions the way this used to. A stretch is exactly what showed up
+    # as a picture visibly pulled out of shape whenever its own aspect
+    # ratio did not match the boot screen's actual resolution — which is
+    # routine, since an operator uploads whatever photo they have, not one
+    # cropped to this specific machine's own early-boot graphics mode.
+    # Covering means scaling by whichever of the two ratios is larger, so
+    # the window is always completely filled, then centering — anything
+    # beyond the window's own edges is simply off-screen, the same as a
+    # CSS "background-size: cover" would crop it.
+    width_scale = Window.GetWidth() / background_image.GetWidth();
+    height_scale = Window.GetHeight() / background_image.GetHeight();
+    cover_scale = width_scale;
+    if (height_scale > width_scale) {
+        cover_scale = height_scale;
+    }
+    scaled_width = background_image.GetWidth() * cover_scale;
+    scaled_height = background_image.GetHeight() * cover_scale;
+    background_image = background_image.Scale(scaled_width, scaled_height);
     background_sprite = Sprite(background_image);
-    background_sprite.SetX(Window.GetX());
-    background_sprite.SetY(Window.GetY());
+    background_sprite.SetX(Window.GetX() + (Window.GetWidth() - scaled_width) / 2);
+    background_sprite.SetY(Window.GetY() + (Window.GetHeight() - scaled_height) / 2);
     background_sprite.SetZ(-100);
 }
 

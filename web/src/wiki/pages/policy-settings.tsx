@@ -473,7 +473,7 @@ user      root`}</Code>
               ],
               [
                 "Background",
-                "Fills the screen behind the spinner. Optional — without one the splash is a solid colour, the same as the spinner alone would be.",
+                "Fills the screen behind the spinner, scaled to cover it while keeping its own proportions (cropped at the edges rather than stretched, the same as a CSS “background-size: cover”), so a picture whose own aspect ratio does not match a machine's actual boot resolution is not visibly pulled out of shape. Optional — without one the splash is a solid colour, the same as the spinner alone would be.",
               ],
               [
                 "Logo",
