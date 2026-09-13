@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -235,5 +236,21 @@ func TestSmartIsReadForWhatAnOperatorActsOn(t *testing.T) {
 	quiet, _ := ParseSmart(`{"model_name": "QEMU HARDDISK"}`)
 	if quiet.Health != "" {
 		t.Errorf("a drive with no SMART reads as %q", quiet.Health)
+	}
+}
+
+// The console reads a machine's agent version from this report, not from a
+// policy report, because this one is sent on every check-in and a policy
+// report is only sent when an apply actually changed something. An agent
+// that had in fact updated itself between two unchanged polls otherwise
+// never says so.
+func TestCollectReportsTheRunningAgentsOwnVersion(t *testing.T) {
+	env := envWith(t, map[string]string{})
+	env.Version = "0.8.11"
+
+	report := Collect(context.Background(), env)
+
+	if report.AgentVersion != "0.8.11" {
+		t.Errorf("AgentVersion = %q, wanted 0.8.11", report.AgentVersion)
 	}
 }

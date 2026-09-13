@@ -85,6 +85,11 @@ type Report struct {
 	// What the machine is, and what its disks think of themselves.
 	Hardware Hardware `json:"hardware"`
 	Disks    []Disk   `json:"disks"`
+	// The agent's own version, on every pass rather than only the ones that
+	// also apply something — an agent that replaced itself hours ago and a
+	// console still showing the version from before that is the same class
+	// of staleness reporting a second factor's enrolment once had.
+	AgentVersion string `json:"agent_version"`
 }
 
 // PrintDevice is one thing CUPS found: a URI it can print to and, when the
@@ -182,6 +187,7 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		LocalUsers:      localUsers(env),
 		Hardware:        hardware(env),
 		Disks:           []Disk{},
+		AgentVersion:    env.Version,
 	}
 	if booted, ok := bootTime(env); ok {
 		report.BootedAt = &booted

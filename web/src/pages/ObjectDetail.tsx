@@ -50,6 +50,7 @@ import {
 } from "../components/objectDialogs";
 import { MembershipTable } from "../components/Membership";
 import Select from "../components/Select";
+import { WATCH, useLive } from "../live";
 
 const ICONS = {
   user: User,
@@ -639,6 +640,12 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
     void load();
   }, [load]);
 
+  // The agent's own version, its recent tasks and what it last reported are
+  // all things that change from outside this page — another admin clicking
+  // Update, the machine's own fifteen-minute poll — so this reloads on its
+  // own rather than only when somebody presses a button.
+  useLive(WATCH.servers, load);
+
   async function ask(action: ComputerAction, pkg?: string, localUser?: NewLocalUser) {
     setBusy(true);
     setNotice(null);
@@ -917,190 +924,259 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
     <>
       {notice && <p className="muted">{notice}</p>}
 
-      <h3 className="section-title">Machine</h3>
-      <dl className="definition">
-        <dt>Host name</dt>
-        <dd className="mono">{facts.hostname}</dd>
-        <dt>Operating system</dt>
-        <dd>{facts.operating_system || "not reported"}</dd>
-        <dt>Kernel</dt>
-        <dd className="mono">{facts.kernel || "not reported"}</dd>
-        <dt>Booted</dt>
-        <dd>{when(facts.booted_at)}</dd>
-        <dt>Last reported</dt>
-        <dd>{when(facts.reported_at)}</dd>
-      </dl>
+      <div className="detail-cards">
+        <div className="detail-grid">
+          <div className="detail-card">
+            <h3 className="section-title">Agent</h3>
+            <dl className="definition">
+              <dt>Installed</dt>
+              <dd className="mono">
+                {detail.agent.installed || "not reported yet"}
+                {detail.agent.behind && <span className="badge"> behind</span>}
+              </dd>
+              <dt>Available</dt>
+              <dd className="mono">
+                {detail.agent.available || "this console has none to hand out"}
+              </dd>
+            </dl>
+            <div className="actions-row">
+              <button
+                type="button"
+                className={detail.agent.behind ? "primary" : "ghost"}
+                disabled={busy || !detail.agent.available}
+                onClick={() => void ask("agent-update")}
+              >
+                <RefreshCw size={15} aria-hidden="true" />
+                {detail.agent.behind
+                  ? `Update to ${detail.agent.available}`
+                  : "Reinstall the agent"}
+              </button>
+            </div>
+          </div>
 
-      {(facts.hardware?.model || facts.hardware?.cpu) && (
-        <>
-          <h3 className="section-title">Hardware</h3>
-          <dl className="definition">
-            <dt>Model</dt>
-            <dd>
-              {[facts.hardware.vendor, facts.hardware.model].filter(Boolean).join(" ") || "—"}
-              {facts.hardware.chassis ? ` (${facts.hardware.chassis})` : ""}
-            </dd>
-            {facts.hardware.serial && (
-              <>
-                <dt>Serial</dt>
-                <dd className="mono">{facts.hardware.serial}</dd>
-              </>
-            )}
-            <dt>Processor</dt>
-            <dd>
-              {facts.hardware.cpu || "—"}
-              {facts.hardware.cores ? ` · ${facts.hardware.cores} threads` : ""}
-            </dd>
-            <dt>Memory</dt>
-            <dd>
-              {facts.hardware.memory_mb
-                ? `${Math.round(facts.hardware.memory_mb / 1024)} GB`
-                : "—"}
-            </dd>
-            {facts.hardware.bios_version && (
-              <>
-                <dt>Firmware</dt>
-                <dd className="mono">
-                  {facts.hardware.bios_version}
-                  {facts.hardware.bios_date ? ` · ${facts.hardware.bios_date}` : ""}
+          <div className="detail-card">
+            <h3 className="section-title">This machine</h3>
+            <div className="actions-row">
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => void ask("policy-refresh")}
+              >
+                <RefreshCw size={15} aria-hidden="true" />
+                Re-apply policy
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => setPower("restart")}
+              >
+                <Power size={15} aria-hidden="true" />
+                Restart
+              </button>
+              <span className="spacer" />
+              <button
+                type="button"
+                className="danger"
+                disabled={busy}
+                onClick={() => setPower("shutdown")}
+              >
+                Shut down
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="detail-grid">
+          <div className="detail-card">
+            <h3 className="section-title">Machine</h3>
+            <dl className="definition">
+              <dt>Host name</dt>
+              <dd className="mono">{facts.hostname}</dd>
+              <dt>Operating system</dt>
+              <dd>{facts.operating_system || "not reported"}</dd>
+              <dt>Kernel</dt>
+              <dd className="mono">{facts.kernel || "not reported"}</dd>
+              <dt>Booted</dt>
+              <dd>{when(facts.booted_at)}</dd>
+              <dt>Last reported</dt>
+              <dd>{when(facts.reported_at)}</dd>
+            </dl>
+          </div>
+
+          {(facts.hardware?.model || facts.hardware?.cpu) && (
+            <div className="detail-card">
+              <h3 className="section-title">Hardware</h3>
+              <dl className="definition">
+                <dt>Model</dt>
+                <dd>
+                  {[facts.hardware.vendor, facts.hardware.model].filter(Boolean).join(" ") ||
+                    "—"}
+                  {facts.hardware.chassis ? ` (${facts.hardware.chassis})` : ""}
                 </dd>
-              </>
-            )}
-          </dl>
-        </>
-      )}
+                {facts.hardware.serial && (
+                  <>
+                    <dt>Serial</dt>
+                    <dd className="mono">{facts.hardware.serial}</dd>
+                  </>
+                )}
+                <dt>Processor</dt>
+                <dd>
+                  {facts.hardware.cpu || "—"}
+                  {facts.hardware.cores ? ` · ${facts.hardware.cores} threads` : ""}
+                </dd>
+                <dt>Memory</dt>
+                <dd>
+                  {facts.hardware.memory_mb
+                    ? `${Math.round(facts.hardware.memory_mb / 1024)} GB`
+                    : "—"}
+                </dd>
+                {facts.hardware.bios_version && (
+                  <>
+                    <dt>Firmware</dt>
+                    <dd className="mono">
+                      {facts.hardware.bios_version}
+                      {facts.hardware.bios_date ? ` · ${facts.hardware.bios_date}` : ""}
+                    </dd>
+                  </>
+                )}
+              </dl>
+            </div>
+          )}
+        </div>
 
-      {facts.disks && facts.disks.length > 0 && (
-        <>
-          <h3 className="section-title">Drives</h3>
+        {facts.disks && facts.disks.length > 0 && (
+          <div className="detail-card">
+            <h3 className="section-title">Drives</h3>
+            <table className="data compact">
+              <thead>
+                <tr>
+                  <th>Device</th>
+                  <th>Model</th>
+                  <th>Size</th>
+                  <th>Health</th>
+                  <th>Powered on</th>
+                  <th>Temperature</th>
+                </tr>
+              </thead>
+              <tbody>
+                {facts.disks.map((disk) => (
+                  <tr key={disk.device}>
+                    <td className="mono">{disk.device}</td>
+                    <td>
+                      {disk.model || "—"}
+                      {disk.serial && <p className="dn mono">{disk.serial}</p>}
+                    </td>
+                    <td>{disk.size_gb ? `${disk.size_gb} GB` : "—"}</td>
+                    <td>
+                      {disk.health === "passed" && <span className="badge ok">passed</span>}
+                      {disk.health === "failing" && (
+                        <span className="badge failure">failing</span>
+                      )}
+                      {!disk.health && <span className="muted">not reported</span>}
+                      {(disk.reallocated_sectors ?? 0) > 0 && (
+                        <span className="badge failure">
+                          {disk.reallocated_sectors} reallocated
+                        </span>
+                      )}
+                      {(disk.percentage_used ?? 0) >= 80 && (
+                        <span className="badge failure">
+                          {disk.percentage_used}% of life used
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {disk.power_on_hours
+                        ? `${Math.round(disk.power_on_hours / 24)} days`
+                        : "—"}
+                    </td>
+                    <td>{disk.temperature_c ? `${disk.temperature_c} °C` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="detail-card">
+          <EncryptionPanel dn={dn} />
+        </div>
+
+        <div className="detail-card">
+          <h3 className="section-title">Updates</h3>
+          <dl className="definition">
+            <dt>Waiting</dt>
+            <dd>
+              {facts.pending_updates === 0
+                ? "Up to date"
+                : `${facts.pending_updates} packages, ${facts.security_updates} from security`}
+            </dd>
+            <dt>Last checked</dt>
+            <dd>{when(facts.updates_checked_at)}</dd>
+          </dl>
+          {facts.updates.length > 0 && <p className="mono muted">{facts.updates.join(", ")}</p>}
+          <div className="actions-row">
+            <button
+              type="button"
+              className="ghost"
+              disabled={busy}
+              onClick={() => void ask("update-check")}
+            >
+              <RefreshCw size={15} aria-hidden="true" />
+              Check for updates
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={() => void ask("update-install")}
+            >
+              Install updates
+            </button>
+          </div>
+        </div>
+
+        <div className="detail-card">
+          <LocalAdministratorPanel dn={dn} />
+        </div>
+
+        <div className="detail-card">
+          <h3 className="section-title">Recent work</h3>
           <table className="data compact">
             <thead>
               <tr>
-                <th>Device</th>
-                <th>Model</th>
-                <th>Size</th>
-                <th>Health</th>
-                <th>Powered on</th>
-                <th>Temperature</th>
+                <th scope="col">Requested</th>
+                <th scope="col">What</th>
+                <th scope="col">State</th>
+                <th scope="col">Result</th>
               </tr>
             </thead>
             <tbody>
-              {facts.disks.map((disk) => (
-                <tr key={disk.device}>
-                  <td className="mono">{disk.device}</td>
+              {detail.tasks.map((task) => (
+                <tr key={task.id}>
+                  <td>{when(task.created_at)}</td>
+                  <td>{task.kind}</td>
                   <td>
-                    {disk.model || "—"}
-                    {disk.serial && <p className="dn mono">{disk.serial}</p>}
-                  </td>
-                  <td>{disk.size_gb ? `${disk.size_gb} GB` : "—"}</td>
-                  <td>
-                    {disk.health === "passed" && <span className="badge ok">passed</span>}
-                    {disk.health === "failing" && <span className="badge failure">failing</span>}
-                    {!disk.health && <span className="muted">not reported</span>}
-                    {(disk.reallocated_sectors ?? 0) > 0 && (
-                      <span className="badge failure">
-                        {disk.reallocated_sectors} reallocated
-                      </span>
-                    )}
-                    {(disk.percentage_used ?? 0) >= 80 && (
-                      <span className="badge failure">{disk.percentage_used}% of life used</span>
-                    )}
+                    <span className={`badge ${task.state === "done" ? "success" : ""}`}>
+                      {task.state}
+                    </span>
                   </td>
                   <td>
-                    {disk.power_on_hours
-                      ? `${Math.round(disk.power_on_hours / 24)} days`
-                      : "—"}
+                    <TaskOutput text={task.output ?? ""} />
                   </td>
-                  <td>{disk.temperature_c ? `${disk.temperature_c} °C` : "—"}</td>
                 </tr>
               ))}
+              {detail.tasks.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="empty">
+                    Nothing has been asked of this machine.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
-        </>
-      )}
-
-      <h3 className="section-title">Updates</h3>
-      <dl className="definition">
-        <dt>Waiting</dt>
-        <dd>
-          {facts.pending_updates === 0
-            ? "Up to date"
-            : `${facts.pending_updates} packages, ${facts.security_updates} from security`}
-        </dd>
-        <dt>Last checked</dt>
-        <dd>{when(facts.updates_checked_at)}</dd>
-      </dl>
-      {facts.updates.length > 0 && <p className="mono muted">{facts.updates.join(", ")}</p>}
-      <div className="actions-row">
-        <button
-          type="button"
-          className="ghost"
-          disabled={busy}
-          onClick={() => void ask("update-check")}
-        >
-          <RefreshCw size={15} aria-hidden="true" />
-          Check for updates
-        </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={busy}
-          onClick={() => void ask("update-install")}
-        >
-          Install updates
-        </button>
-      </div>
-
-      <EncryptionPanel dn={dn} />
-
-      <h3 className="section-title">Agent</h3>
-      <dl className="definition">
-        <dt>Installed</dt>
-        <dd className="mono">
-          {detail.agent.installed || "not reported yet"}
-          {detail.agent.behind && <span className="badge"> behind</span>}
-        </dd>
-        <dt>Available</dt>
-        <dd className="mono">{detail.agent.available || "this console has none to hand out"}</dd>
-      </dl>
-      <div className="actions-row">
-        <button
-          type="button"
-          className={detail.agent.behind ? "primary" : "ghost"}
-          disabled={busy || !detail.agent.available}
-          onClick={() => void ask("agent-update")}
-        >
-          <RefreshCw size={15} aria-hidden="true" />
-          {detail.agent.behind ? `Update to ${detail.agent.available}` : "Reinstall the agent"}
-        </button>
-      </div>
-
-      <LocalAdministratorPanel dn={dn} />
-
-      <h3 className="section-title">This machine</h3>
-      <div className="actions-row">
-        <button
-          type="button"
-          className="ghost"
-          disabled={busy}
-          onClick={() => void ask("policy-refresh")}
-        >
-          <RefreshCw size={15} aria-hidden="true" />
-          Re-apply policy
-        </button>
-        <button type="button" className="ghost" disabled={busy} onClick={() => setPower("restart")}>
-          <Power size={15} aria-hidden="true" />
-          Restart
-        </button>
-        <span className="spacer" />
-        <button
-          type="button"
-          className="danger"
-          disabled={busy}
-          onClick={() => setPower("shutdown")}
-        >
-          Shut down
-        </button>
+        </div>
       </div>
 
       {power && (
@@ -1129,41 +1205,6 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
           )}
         </Modal>
       )}
-
-      <h3 className="section-title">Recent work</h3>
-      <table className="data compact">
-        <thead>
-          <tr>
-            <th scope="col">Requested</th>
-            <th scope="col">What</th>
-            <th scope="col">State</th>
-            <th scope="col">Result</th>
-          </tr>
-        </thead>
-        <tbody>
-          {detail.tasks.map((task) => (
-            <tr key={task.id}>
-              <td>{when(task.created_at)}</td>
-              <td>{task.kind}</td>
-              <td>
-                <span className={`badge ${task.state === "done" ? "success" : ""}`}>
-                  {task.state}
-                </span>
-              </td>
-              <td>
-                <TaskOutput text={task.output ?? ""} />
-              </td>
-            </tr>
-          ))}
-          {detail.tasks.length === 0 && (
-            <tr>
-              <td colSpan={4} className="empty">
-                Nothing has been asked of this machine.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
     </>
   );
 }
@@ -1897,6 +1938,7 @@ function EncryptionPanel({ dn }: { dn: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+  useLive(WATCH.directory, load);
 
   if (error) {
     return (

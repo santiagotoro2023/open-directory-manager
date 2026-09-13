@@ -113,7 +113,9 @@ func runCheck(args []string) int {
 			len(document.AppliedGPOs), short(document.Serial), document.RefreshMinutes)
 	}
 
-	step("checking in", api.Inventory(ctx, inventory.Collect(ctx, apply.NewEnv(""))),
+	checkEnv := apply.NewEnv("")
+	checkEnv.Version = version
+	step("checking in", api.Inventory(ctx, inventory.Collect(ctx, checkEnv)),
 		"The console shows a machine as never seen until this succeeds.")
 
 	queued, err := api.Tasks(ctx)

@@ -555,6 +555,55 @@ async def test_a_machine_that_reports_only_its_inventory_counts_as_alive(fresh):
         assert agents.for_dn(contacts, "CN=WS-02,OU=Servers,DC=example,DC=org") is None
 
 
+async def _report_inventory(conn, dn, hostname, agent_version):
+    """The same upsert routes_agent.agent_inventory runs, trimmed to the
+    columns this test cares about — the rest take their table defaults."""
+    await conn.execute(
+        """
+        INSERT INTO computer_fact (computer_dn, hostname, agent_version, reported_at)
+        VALUES ($1, $2, $3, now())
+        ON CONFLICT (computer_dn) DO UPDATE SET
+            hostname      = excluded.hostname,
+            agent_version = CASE WHEN excluded.agent_version <> ''
+                                  THEN excluded.agent_version
+                                  ELSE computer_fact.agent_version END,
+            reported_at   = now()
+        """,
+        dn,
+        hostname,
+        agent_version,
+    )
+
+
+async def test_an_agent_version_is_not_blanked_by_a_report_that_omits_it(fresh):
+    """computer_fact is what the console reads an agent's version from — it is
+    rewritten on every check-in, unlike agent_report, which only gains a row
+    when a policy apply also ran something. An older agent, or one running
+    odm-agent check, sends no version at all, and that must not erase one a
+    newer pass already recorded — the same guard replication_at already has,
+    for the same reason.
+    """
+    dn = "CN=WS-01,CN=Computers,DC=example,DC=org"
+
+    async def stored(conn):
+        return await conn.fetchval(
+            "SELECT agent_version FROM computer_fact WHERE computer_dn = $1", dn
+        )
+
+    async with fresh.acquire() as conn:
+        await _report_inventory(conn, dn, "ws-01.example.org", "0.8.11")
+        assert await stored(conn) == "0.8.11"
+
+        # A report that says nothing about its version leaves the last known
+        # one alone rather than blanking it.
+        await _report_inventory(conn, dn, "ws-01.example.org", "")
+        assert await stored(conn) == "0.8.11"
+
+        # A newer version reported later still wins.
+        await _report_inventory(conn, dn, "ws-01.example.org", "0.8.12")
+        assert await stored(conn) == "0.8.12"
+
+
 async def test_a_policy_change_reaches_machines_only_when_the_domain_pushes(fresh):
     """Push is a domain setting and off by default: a policy edit must not
     queue work for every machine in the domain unless somebody turned it on.

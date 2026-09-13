@@ -2389,6 +2389,38 @@ ul.plain {
   flex-direction: column;
 }
 
+/* -------------------------------------------------------- detail cards -- */
+/* A computer object's Machine tab used to be one long, unbroken scroll —
+   identity facts, hardware, drives, updates, encryption, the agent, local
+   administrator and a history table, told apart only by a heading each. This
+   groups each concern into its own bordered card, so scanning it is finding
+   the right card rather than reading past everything before it. */
+
+.detail-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.detail-card {
+  padding: 16px 20px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.detail-card > .section-title:first-child {
+  margin-top: 0;
+}
+
+/* Short cards side by side on anything wider than a tablet; one column
+   below that, per the responsiveness floor every page here keeps to. */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
 .page-header h1 {
   display: flex;
   align-items: center;

@@ -151,7 +151,15 @@ async def computer_detail(
     # What this machine's agent is, and what this console would give it. The
     # version a machine is on decides which remote jobs work at all, so it
     # belongs beside the machine rather than in a report somewhere else.
-    installed = await pool.fetchval(
+    #
+    # Read from computer_fact first: it is rewritten on every check-in,
+    # whether or not that pass also applied a policy change, so it is never
+    # more than one poll interval stale. agent_report only gains a row when a
+    # policy apply actually ran something, which a machine whose policy has
+    # not changed in weeks does not do — however many times its own binary
+    # has been replaced since — and used to leave this showing whatever
+    # version was current the last time something else changed.
+    installed = (fact["agent_version"] if fact else "") or await pool.fetchval(
         """
         SELECT agent_version FROM agent_report
         WHERE lower(computer_dn) = lower($1) AND agent_version <> ''
