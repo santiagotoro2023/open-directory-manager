@@ -27,6 +27,7 @@ import { ContainerPicker } from "../components/Picker";
 import { SettingsEditor, halvesConfigured } from "../components/SettingsEditor";
 import { TemplateManager } from "../components/TemplateManager";
 import { FileInput } from "../components/FileInput";
+import { useUploadsPending } from "../uploadTracker";
 import Select from "../components/Select"
 
 type Tab = "settings" | "links" | "scope" | "history";
@@ -268,6 +269,11 @@ function GpoDetail({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  // A picture upload converts through a canvas before it is ready — real
+  // work, not instant — and Save must not fire in that gap, which used to
+  // let a save persist a setting without the image it looked like it just
+  // received.
+  const uploadsPending = useUploadsPending();
 
   const lines = (value: string) =>
     value
@@ -336,8 +342,13 @@ function GpoDetail({
           <Trash2 size={15} aria-hidden="true" />
           Delete
         </button>
-        <button type="button" className="primary" onClick={() => void save()} disabled={busy}>
-          Save
+        <button
+          type="button"
+          className="primary"
+          onClick={() => void save()}
+          disabled={busy || uploadsPending > 0}
+        >
+          {uploadsPending > 0 ? "Reading file…" : "Save"}
         </button>
       </div>
       <p className="mono muted">{gpo.guid}</p>

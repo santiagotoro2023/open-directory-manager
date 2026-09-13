@@ -880,6 +880,24 @@ export function Content() {
                   whenever a picture actually changes.
                 </>,
               ],
+              [
+                <>
+                  A boot-splash logo or background was uploaded and saved, but reopening the
+                  setting later shows &ldquo;No logo chosen&rdquo; / &ldquo;No background
+                  chosen&rdquo; again — the picture is simply gone
+                </>,
+                <>
+                  Fixed in 0.10.6: before then, the file picker marked a picture as
+                  &ldquo;chosen&rdquo; the instant a file was selected, while the actual work —
+                  decoding it and re-encoding it as PNG (see the row above) — was still running in
+                  the background. Clicking Save before that finished, easy to do on a large
+                  picture, persisted the setting without the image it looked like it had just
+                  received. 0.10.6&rsquo;s console actually waits for a picture to finish reading
+                  before Save can be clicked at all (the button reads &ldquo;Reading
+                  file&hellip;&rdquo; and is disabled meanwhile). This only prevents the race going
+                  forward — a setting already saved empty by it needs the picture uploaded again.
+                </>,
+              ],
             ]}
           />
         </Section>
