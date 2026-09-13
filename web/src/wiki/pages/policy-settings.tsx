@@ -500,13 +500,20 @@ user      root`}</Code>
           </Note>
           <Note>
             On a machine with an NVIDIA card using the proprietary driver, turning the splash on
-            also adds <C>nvidia-drm.modeset=1</C> to the kernel command line and lists{" "}
-            <C>nvidia</C>, <C>nvidia_modeset</C> and <C>nvidia_drm</C> in{" "}
-            <C>/etc/initramfs-tools/modules</C>. Confirmed live, on real NVIDIA hardware: without
-            both, the driver never takes over kernel mode setting, and Plymouth has nothing to
-            draw on for the whole of early boot regardless of how correct the theme is — the
-            console stays on the plain firmware framebuffer showing kernel and systemd text the
-            entire time, which is indistinguishable from the splash simply not being configured.
+            also adds <C>nvidia-drm.modeset=1</C> and <C>nvidia_drm.fbdev=1</C> to the kernel
+            command line and lists <C>nvidia</C>, <C>nvidia_modeset</C> and <C>nvidia_drm</C> in{" "}
+            <C>/etc/initramfs-tools/modules</C>. Confirmed live, on real NVIDIA hardware: without{" "}
+            <C>modeset=1</C> and the driver itself in the initramfs, the driver never takes over
+            kernel mode setting, and Plymouth has nothing to draw on for the whole of early boot
+            regardless of how correct the theme is — the console stays on the plain firmware
+            framebuffer showing kernel and systemd text the entire time, which is indistinguishable
+            from the splash simply not being configured. Confirmed live a second time:{" "}
+            <C>modeset=1</C> alone can still leave Plymouth with nothing to actually draw into —
+            the driver hands the display over, but Plymouth&rsquo;s own DRM renderer needs the
+            driver&rsquo;s fbdev emulation too, and without it every boot text line is correctly
+            suppressed while the graphical theme (spinner, background, logo, message — all of it)
+            simply never renders, with no error anywhere. <C>fbdev=1</C> is what closes that second
+            gap.
             Every machine also gets <C>amdgpu</C>, <C>i915</C>, <C>radeon</C> and <C>nouveau</C>{" "}
             listed the same way in <C>/etc/initramfs-tools/modules</C> while the splash is on —
             named explicitly rather than by widening <C>MODULES=</C> to <C>most</C>, which used to

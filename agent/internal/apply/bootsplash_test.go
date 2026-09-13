@@ -271,6 +271,13 @@ func TestGrubAddsNvidiaModesetOnlyWhenTheProprietaryDriverIsPresent(t *testing.T
 	if !strings.Contains(body, "nvidia-drm.modeset=1") {
 		t.Errorf("nvidia-drm.modeset=1 missing with the proprietary driver present:\n%s", body)
 	}
+	// Confirmed live: modeset=1 alone handed the display over, but
+	// Plymouth's own DRM renderer still had nothing it could actually draw
+	// into without the driver's fbdev emulation — no crash, no error
+	// anywhere, simply nothing ever rendered, all the way through to login.
+	if !strings.Contains(body, "nvidia_drm.fbdev=1") {
+		t.Errorf("nvidia_drm.fbdev=1 missing with the proprietary driver present:\n%s", body)
+	}
 }
 
 func TestGrubNeverAddsNvidiaModesetWithoutTheProprietaryDriver(t *testing.T) {

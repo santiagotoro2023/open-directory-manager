@@ -906,6 +906,28 @@ export function Content() {
               ],
               [
                 <>
+                  Nothing at all appears — no spinner, no background, no logo, no message — but
+                  boot text is correctly suppressed and the machine reaches login normally
+                  (NVIDIA)
+                </>,
+                <>
+                  Confirmed live, on real NVIDIA hardware, after everything else about the setup
+                  checked out: the agent&rsquo;s own report showed <C key="fbd1">grub:splash</C> as
+                  a clean success, the theme files and pictures were correctly present and
+                  validated in the rebuilt initramfs, and still nothing ever rendered, all the way
+                  through to the login screen. <C key="fbd2">nvidia-drm.modeset=1</C> hands the
+                  display over to the driver, but Plymouth&rsquo;s own DRM renderer separately
+                  needs the driver&rsquo;s fbdev emulation to actually get a usable framebuffer to
+                  draw into — without it, the handoff itself can succeed while Plymouth still has
+                  nothing it can render onto, with no crash and no error anywhere to explain why.
+                  0.10.11 adds <C key="fbd3">nvidia_drm.fbdev=1</C> alongside{" "}
+                  <C key="fbd4">modeset=1</C> for exactly this. Confirm with{" "}
+                  <C key="fbd5">cat /proc/cmdline</C> after upgrading and re-applying — both
+                  parameters should be present — then reboot once to see the theme for real.
+                </>,
+              ],
+              [
+                <>
                   A boot-splash logo or background was uploaded and saved, but reopening the
                   setting later shows &ldquo;No logo chosen&rdquo; / &ldquo;No background
                   chosen&rdquo; again — the picture is simply gone
