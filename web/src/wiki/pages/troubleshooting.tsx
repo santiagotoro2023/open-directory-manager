@@ -373,14 +373,24 @@ export function Content() {
                   <C key="nls3">NT_STATUS_NO_LOGON_SERVERS</C>
                 </>,
                 <>
-                  The SPN and keytab are fine &mdash; this is the file server itself failing to
-                  build a token for the ticket it received, almost always because it cannot reach
-                  a domain controller at that moment or its own machine trust is broken. On the
-                  file server: <C key="nls4">journalctl -u smbd -n 100</C> for the exact rejection,{" "}
-                  <C key="nls5">sudo net ads testjoin</C> to check its machine account,{" "}
-                  <C key="nls6">sssctl domain-status &lt;domain&gt;</C> for whether SSSD there is
-                  online, and <C key="nls7">timedatectl</C> for clock skew against the controller
-                  &mdash; Kerberos rejects a skew of more than five minutes outright.
+                  The file server&rsquo;s own log names this exactly:{" "}
+                  <C key="nls4">journalctl -u smbd</C> there shows{" "}
+                  <em>
+                    generate_pac_session_info: winbindd not running - but required as domain
+                    member
+                  </em>
+                  . smbd&rsquo;s Kerberos path calls into <C key="nls5">winbindd</C> to turn a
+                  ticket&rsquo;s PAC into a session token on every domain member accepting a
+                  connection, whatever else identity resolves through &mdash; SSSD doing
+                  everything else on this machine does not make it optional. Before 0.9.5 the
+                  file-server role never installed or started it. Upgrade to 0.9.5 or later and
+                  reinstall the File Server role on that machine from Server Roles, which installs{" "}
+                  <C key="nls6">winbind</C> and starts <C key="nls7">winbindd</C> alongside{" "}
+                  <C key="nls8">smbd</C>; then re-run <C key="nls9">odm-client-install</C> to
+                  rewrite <C key="nls10">smb.conf</C> with the matching{" "}
+                  <C key="nls11">idmap config</C>, which keeps the uid winbindd computes for a SID
+                  the same one SSSD already gave it &mdash; the one a share&rsquo;s access list
+                  was written against.
                 </>,
               ],
               [

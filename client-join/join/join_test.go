@@ -505,6 +505,30 @@ func TestJoinWritesAnSmbConfNetAdsWillAccept(t *testing.T) {
 	}
 }
 
+// smbd's own Kerberos path refuses every domain-member connection outright
+// without winbindd running to turn a ticket's PAC into a session token —
+// "winbindd not running - but required as domain member:
+// NT_STATUS_NO_LOGON_SERVERS" — no matter how well identity otherwise
+// resolves through SSSD alone. idmap_sss is what keeps the uid winbindd
+// computes for a SID the same one SSSD already gave it.
+func TestSmbConfConfiguresIdmapForWinbindd(t *testing.T) {
+	root := t.TempDir()
+	env := Env{Root: root}
+	options := Options{Domain: "corp.example.internal", Realm: "CORP.EXAMPLE.INTERNAL"}
+	if err := WriteSmbConf(options, "EXAMPLE", env); err != nil {
+		t.Fatal(err)
+	}
+	body := read(t, env, SmbConfPath)
+	for _, wanted := range []string{
+		"idmap config * : backend = tdb",
+		"idmap config EXAMPLE : backend = sss",
+	} {
+		if !strings.Contains(body, wanted) {
+			t.Errorf("smb.conf does not say %q:\n%s", wanted, body)
+		}
+	}
+}
+
 // The NetBIOS name is not always the realm's first label — corp.example.org
 // can be EXAMPLE — so the controller is asked, and answers when it can.
 func TestWorkgroupPrefersWhatTheControllerSays(t *testing.T) {

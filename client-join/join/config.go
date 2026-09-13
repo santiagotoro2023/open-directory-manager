@@ -32,6 +32,22 @@ const (
 //
 // Nothing wrote this file, so no client could ever join. realmd writes the
 // same three settings for the same reason.
+//
+// The idmap lines matter only where the file-server role also starts
+// winbindd — a plain client never runs it, and these sit unused. smbd's own
+// Kerberos path calls into winbindd to turn a ticket's PAC into a session
+// token, unconditionally, on every domain member accepting a connection:
+//
+//	generate_pac_session_info: winbindd not running - but required as
+//	domain member: NT_STATUS_NO_LOGON_SERVERS
+//
+// no matter how well identity otherwise resolves through SSSD alone. Once
+// winbindd is answering, idmap_sss — rather than the autonomous tdb default —
+// is what keeps the uid it computes for a SID identical to the one SSSD
+// already assigned that same SID: the one a share's POSIX ACL was written
+// against when the share was created. Different backends would each invent
+// their own numbering for the same account, and a file server's own access
+// checks would disagree with whatever created the files.
 func WriteSmbConf(options Options, workgroup string, env Env) error {
 	body := managed + fmt.Sprintf(`[global]
     workgroup = %s
@@ -43,9 +59,14 @@ func WriteSmbConf(options Options, workgroup string, env Env) error {
     client signing = mandatory
     client ipc signing = mandatory
 
+    idmap config * : backend = tdb
+    idmap config * : range = 3000-7999
+    idmap config %s : backend = sss
+    idmap config %s : range = 200000-2000200000
+
 # A file server adds its shares from here; joining leaves that alone.
 include = /etc/samba/odm-shares.conf
-`, workgroup, options.Realm, KeytabPath)
+`, workgroup, options.Realm, KeytabPath, workgroup, workgroup)
 
 	if err := env.Backup(SmbConfPath); err != nil {
 		return err
