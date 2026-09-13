@@ -72,21 +72,47 @@ def _run(*args: str) -> str:
     return completed.stdout
 
 
+def _add_spn(principal: str, account: str) -> None:
+    """Add a service principal name to an account, tolerating "already there".
+
+    A machine re-enrolling already has this from the run before, and that is
+    not a reason to fail the whole join — the same reasoning
+    create-api-service-account.sh uses for the console's own SPNs.
+    """
+    try:
+        _run("spn", "add", principal, account, KERBEROS)
+    except EnrolmentError:
+        pass
+
+
 def provision_machine(settings: Settings, hostname: str, container_dn: str) -> bytes:
     """Create or reset the host account and return its keytab.
 
     The account password is generated here, used once to set the account, and
     never leaves this function; what the client receives is the keytab
     derived from it.
+
+    `net ads join` — the credentialed path — registers HOST/ and cifs/ SPNs
+    for the machine as part of joining. Token enrolment skips that whole
+    protocol and creates the bare account here instead, so nothing else ever
+    added those SPNs: a member server enrolled this way had an account with
+    no service principal name at all, and every Kerberised service it tried
+    to host — a file share above all — had no ticket to accept. The KDC's
+    answer to a client asking for "cifs/<host>" was "Server not found in
+    Kerberos database", which a cifs mount reports as nothing mounting at
+    all, not as a naming problem. Registered here, and exported into the
+    keytab this hands back, a member file server works the same as one
+    joined by hand.
     """
     fqdn = validate_hostname(hostname)
     short = short_name(fqdn)
+    account = f"{short}$"
     password = machine_password()
 
     existing = _run("computer", "list", KERBEROS).splitlines()
     if short in {line.strip().rstrip("$") for line in existing}:
         # Re-enrolling a machine resets its account rather than failing.
-        _run("user", "setpassword", f"{short}$", f"--newpassword={password}", KERBEROS)
+        _run("user", "setpassword", account, f"--newpassword={password}", KERBEROS)
     else:
         _run(
             "computer",
@@ -95,18 +121,33 @@ def provision_machine(settings: Settings, hostname: str, container_dn: str) -> b
             f"--computerou={container_dn}",
             KERBEROS,
         )
-        _run("user", "setpassword", f"{short}$", f"--newpassword={password}", KERBEROS)
+        _run("user", "setpassword", account, f"--newpassword={password}", KERBEROS)
+
+    # Both forms: a share or a drive map may name the server either way, and
+    # whichever one a client asks a ticket for has to be the one the KDC
+    # actually knows about.
+    hostnames = dict.fromkeys((short, fqdn))
+    for service in ("host", "cifs"):
+        for name in hostnames:
+            _add_spn(f"{service}/{name}", account)
 
     with tempfile.TemporaryDirectory() as workspace:
         keytab = Path(workspace) / "machine.keytab"
-        _run(
-            "domain",
-            "exportkeytab",
-            str(keytab),
-            f"--principal={short}$@{settings.realm}",
-            "-k",
-            "yes",
-        )
+        principals = [f"{account}@{settings.realm}"]
+        principals += [
+            f"{service}/{name}@{settings.realm}"
+            for service in ("host", "cifs")
+            for name in hostnames
+        ]
+        for principal in principals:
+            _run(
+                "domain",
+                "exportkeytab",
+                str(keytab),
+                f"--principal={principal}",
+                "-k",
+                "yes",
+            )
         if not keytab.exists():
             raise EnrolmentError("samba-tool produced no keytab")
         return keytab.read_bytes()

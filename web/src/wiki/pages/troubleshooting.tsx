@@ -345,6 +345,20 @@ export function Content() {
                 "The share's own permissions, or the machine has no ticket for it. klist in the session says whether there is one.",
               ],
               [
+                'Nothing mounts, and the file server is not the domain controller',
+                <>
+                  A computer enrolled by token before this was fixed has no{" "}
+                  <C key="spn1">cifs/</C> service principal name, so the KDC answers &ldquo;Server
+                  not found in Kerberos database&rdquo; to every client asking for one &mdash; the
+                  mount fails silently and the drive never reaches the sidebar, while the share
+                  itself and its access list are perfectly correct. Upgrade the control plane, then
+                  re-run <C key="spn2">odm-client-install --otp</C> on the file server with a valid
+                  token: re-enrolling resets its account and adds the missing SPNs, and a fresh
+                  keytab comes down with it. A domain controller is unaffected, since its account
+                  already carries every service principal name from provisioning.
+                </>,
+              ],
+              [
                 "Nothing at all was reported",
                 <>
                   The session hook did not run. <C key="ph">grep odm /etc/pam.d/common-session</C>{" "}
