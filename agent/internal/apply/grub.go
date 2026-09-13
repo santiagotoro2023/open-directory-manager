@@ -34,12 +34,21 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		style = "hidden"
 	}
 	if s.Grub.BootSplash {
-		// A seamless splash and a visible boot menu are a contradiction —
-		// the whole point of turning this on is that nothing shows before
-		// the spinner, not even the menu for its own timeout window. An
-		// operator asking for the splash gets a hidden menu whether or not
-		// they separately asked for one.
-		timeout = 0
+		// A seamless splash still means a hidden menu, but never a
+		// zero-second one: a menu that cannot be reached in the instant
+		// after power-on cannot rescue a machine whose new boot
+		// configuration has a problem nothing caught ahead of time — which
+		// is exactly what happened here (CLAUDE.md's boot-splash incident
+		// notes). "hidden" style shows nothing and counts down silently for
+		// anyone not touching the keyboard, the same as before; any keypress
+		// during those two seconds still interrupts to the real menu, the
+		// same as any other GRUB screen always has. Two seconds against a
+		// splash that itself takes a moment to draw is not a length anyone
+		// not deliberately checking will ever notice. A larger explicit
+		// TimeoutSeconds is still honoured — this only raises a floor.
+		if timeout < 2 {
+			timeout = 2
+		}
 		style = "hidden"
 	}
 

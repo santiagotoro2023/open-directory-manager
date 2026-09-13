@@ -74,11 +74,12 @@ func TestBootSplashAddsQuietAndKeepsTheGraphicsMode(t *testing.T) {
 	}
 }
 
-// A seamless splash and a visible boot menu are a contradiction: an operator
-// who turned on the splash but left the menu on a countdown still gets a
-// hidden, instant boot, because the whole point is nothing shows before the
-// spinner — not even the menu, for however briefly its own timeout runs.
-func TestBootSplashForcesTheMenuHiddenRegardlessOfItsOwnSetting(t *testing.T) {
+// A seamless splash still forces the menu hidden regardless of the
+// operator's own HideMenu setting — the whole point is nothing shows
+// before the spinner. But a larger explicit timeout is still honoured: this
+// only ever raises a floor, never lowers a longer wait the operator asked
+// for.
+func TestBootSplashForcesTheMenuHiddenButKeepsALongerTimeout(t *testing.T) {
 	env, _ := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
 
@@ -87,11 +88,33 @@ func TestBootSplashForcesTheMenuHiddenRegardlessOfItsOwnSetting(t *testing.T) {
 	}, env)
 
 	body := read(t, env, grubConfPath)
-	if !strings.Contains(body, "GRUB_TIMEOUT=0") {
-		t.Errorf("the splash left a visible countdown:\n%s", body)
+	if !strings.Contains(body, "GRUB_TIMEOUT=10") {
+		t.Errorf("a longer explicit timeout was not kept:\n%s", body)
 	}
 	if !strings.Contains(body, "GRUB_TIMEOUT_STYLE=hidden") {
 		t.Errorf("the splash left the menu visible:\n%s", body)
+	}
+}
+
+// A menu with no time to reach it at all cannot rescue a machine whose new
+// boot configuration goes wrong in a way nothing caught ahead of time — see
+// CLAUDE.md's boot-splash incident notes. The splash never leaves the
+// window at zero, even when the operator's own setting (or its default) was
+// zero.
+func TestBootSplashNeverZeroesTheTimeoutEvenWhenAskedTo(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{TimeoutSeconds: 0, HideMenu: true, BootSplash: true},
+	}, env)
+
+	body := read(t, env, grubConfPath)
+	if strings.Contains(body, "GRUB_TIMEOUT=0") {
+		t.Errorf("the splash left no way to interrupt the boot at all:\n%s", body)
+	}
+	if !strings.Contains(body, "GRUB_TIMEOUT=2") {
+		t.Errorf("expected the two-second floor:\n%s", body)
 	}
 }
 

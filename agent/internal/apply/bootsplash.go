@@ -116,9 +116,13 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("kms modules: %w", err)))
 	}
+	storageModulesChanged, err := ensureStorageModulesInInitramfs(env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("storage modules: %w", err)))
+	}
 
 	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
-		nvidiaModulesChanged || kmsModulesChanged
+		nvidiaModulesChanged || kmsModulesChanged || storageModulesChanged
 	if needsRebuild {
 		// A rebuild that runs out of room on /boot can leave a truncated
 		// initrd behind — one that boots straight to an "(initramfs)" rescue
@@ -138,7 +142,41 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	}
 
 	results = append(results, applySplashMessage(ctx, g.SplashMessage, env)...)
+	if advisory := fallbackKernelAdvisory(env); advisory != nil {
+		results = append(results, *advisory)
+	}
 	return results
+}
+
+// fallbackKernelAdvisory is the other half of grub.go's two-second timeout
+// floor: that keeps GRUB's menu reachable, but a reachable menu with only
+// one kernel entry in it has nothing else to boot into. Reported, not
+// enforced — a single-kernel machine is a legitimate choice, not itself a
+// misconfiguration — so this shows up in RSoP for the operator to weigh,
+// the same audit trail CLAUDE.md already treats as a real security and
+// reliability control, not just a UX nicety.
+func fallbackKernelAdvisory(env Env) *policy.Result {
+	entries, err := os.ReadDir(env.Path("/boot"))
+	if err != nil {
+		return nil
+	}
+	kernels := 0
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "vmlinuz-") {
+			kernels++
+		}
+	}
+	if kernels > 1 {
+		return nil
+	}
+	return &policy.Result{
+		Setting: "grub:splash_fallback",
+		Status:  "success",
+		Reason: "only one kernel is installed on this machine, so GRUB's menu has no fallback entry " +
+			"to offer if this setting's rebuild has a problem no automated check caught. Keeping at " +
+			"least two kernels (Debian's own default, from before any local pruning) makes the boot " +
+			"menu — reachable with any keypress in the first two seconds of boot — a real way back.",
+	}
 }
 
 // disableBootSplash removes what this machine's own installer would have
@@ -228,6 +266,36 @@ var openSourceKmsModules = []string{"amdgpu", "i915", "radeon", "nouveau"}
 
 func ensureOpenSourceKmsModulesInInitramfs(env Env) (changed bool, err error) {
 	return addModulesToInitramfs(env, openSourceKmsModules)
+}
+
+// storageModules covers real disk hardware and every common virtualised
+// disk transport, unconditionally — the display-driver lists above are
+// gated on the specific hardware being detected, but a real incident
+// (documented in CLAUDE.md) shipped exactly that kind of narrow, detected
+// list for storage too, and it went wrong: the assumption that
+// MODULES=dep's own auto-detection could be trusted to include whatever
+// this specific machine's root filesystem needed was the same "trust the
+// tool" mistake this project's own rules now explicitly forbid for
+// anything boot-critical, just aimed at a different setting than the one
+// that failed the first time. Tried, in order, against this project's own
+// domain controller and file server: an LVM logical volume on a virtio-scsi
+// disk needed both sd_mod and virtio_scsi, neither of which a name like
+// "the NVMe one" would have predicted — which is exactly why this is a
+// fixed, generous list rather than another attempt to detect the right
+// answer per machine. Every module here is small; listing one this
+// particular machine does not need costs a few tens of kilobytes and is
+// skipped harmlessly by update-initramfs, the same as the nvidia modules
+// above already do when nvidia is not the actual hardware.
+var storageModules = []string{
+	"nvme", "nvme_core",
+	"ahci", "sd_mod", "sr_mod",
+	"virtio_blk", "virtio_scsi", "virtio_pci",
+	"mmc_block", "sdhci", "sdhci_pci",
+	"usb_storage", "uas", "xhci_hcd", "ehci_hcd",
+}
+
+func ensureStorageModulesInInitramfs(env Env) (changed bool, err error) {
+	return addModulesToInitramfs(env, storageModules)
 }
 
 // addModulesToInitramfs force-includes the given modules regardless of the

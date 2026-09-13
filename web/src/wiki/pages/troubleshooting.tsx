@@ -783,7 +783,7 @@ export function Content() {
                   0.10.2 adds that parameter (and the driver&rsquo;s own modules to the
                   initramfs) automatically whenever an NVIDIA card is detected; before that,
                   every other part of the splash could be completely correct and this would still
-                  happen. Upgrade to 0.10.3 or later and re-apply. On any other card, check{" "}
+                  happen. Upgrade to 0.10.5 or later and re-apply. On any other card, check{" "}
                   <C key="bs2">grep -E &apos;amdgpu|i915|radeon|nouveau&apos;
                   /etc/initramfs-tools/modules</C> lists them — 0.10.3 adds these explicitly,
                   since they are what give early graphics on a non-NVIDIA machine.
@@ -817,9 +817,32 @@ export function Content() {
                   run <C key="bsx12">update-initramfs -u</C> by hand — this cannot be fixed
                   remotely once a machine is in this state, since the agent itself cannot run
                   without a bootable system underneath it. Before re-applying the policy fleet-wide,
-                  update every machine&rsquo;s agent to 0.10.4 or later first, otherwise a machine
-                  still on the old agent version can hit this again the next time it polls a
+                  update every machine&rsquo;s agent to 0.10.5 or later first, otherwise a machine
+                  still on an older agent version can hit this again the next time it polls a
                   boot-splash policy with a change to apply.
+                  <br />
+                  <br />
+                  <strong>0.10.4&rsquo;s own fix was not the end of it.</strong> Its validation —
+                  the new initrd has to list cleanly with <C key="bsx13b">lsinitramfs</C> — caught a
+                  corrupt archive, but a clean, valid archive can still be missing the one driver a
+                  specific machine actually needs to find its own root filesystem, and nothing about
+                  a clean listing proves that driver is in it. That is exactly what happened next: an
+                  initrd that passed validation and still could not mount an NVMe root, because the
+                  display-driver module list was detected per machine but storage was left to{" "}
+                  <C key="bsx13c">MODULES=dep</C>&rsquo;s own auto-detection, untested against the
+                  case that actually mattered. 0.10.5 stops trying to detect the right storage driver
+                  per machine at all — a fixed, generous list (<C key="bsx13d">nvme</C>,{" "}
+                  <C key="bsx13e">ahci</C>, <C key="bsx13f">virtio_blk</C>,{" "}
+                  <C key="bsx13g">virtio_scsi</C>, and the rest of the common real and virtualised
+                  disk transports) is now always included, the same reasoning as the display-driver
+                  list but aimed at the category of driver that actually has to work for a boot to
+                  succeed at all. It also stops treating a hidden, zero-second GRUB menu as
+                  acceptable: a splash now always leaves at least two seconds where any keypress
+                  still reaches the real menu, and reports an advisory (not a failure — it is a
+                  legitimate choice) when only one kernel is installed, since a menu with nothing
+                  else in it is not actually a way back. That combination — a generous module list,
+                  a reachable menu, and a genuine fallback kernel — is the real safety net; the
+                  validation check is one useful layer on top of it, never the guarantee by itself.
                   <br />
                   <br />
                   <strong>When cleaning up an old kernel&rsquo;s files by hand under rescue

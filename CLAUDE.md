@@ -185,26 +185,57 @@ goal.
   line, initramfs contents, boot loader configuration, disk/filesystem
   layout) is held to a stricter standard than "the underlying tool
   returned success," because RSoP reporting is worthless on a machine that
-  cannot boot far enough to send one.** A real incident (see Wiki →
-  Troubleshooting → Boot splash) shipped a graphical boot splash setting
-  that widened an initramfs module list fleet-wide, exhausted a small
-  `/boot` partition on some machines, and left them permanently unable to
-  mount root — a single GPO link took down every client it reached, with
-  no report of failure since none of them could boot far enough to send
-  one. For any applier in this category:
+  cannot boot far enough to send one.** Two real incidents in a row (see
+  Wiki → Troubleshooting → Boot splash) made this concrete, back to back:
+  first, a graphical boot splash setting widened an initramfs module list
+  fleet-wide, exhausted a small `/boot` partition on some machines, and
+  left them permanently unable to mount root; the fix for that replaced the
+  wide setting with a narrow, hardware-*detected* module list and a
+  structural validity check (the new initramfs archive lists cleanly) —
+  and the very next rollout bricked a machine anyway, because the detected
+  list covered display drivers but nothing about storage, and a clean,
+  valid archive that is missing the one driver a specific machine's root
+  filesystem needs is still an archive that cannot boot. Neither incident
+  was a fluke; both were the same mistake — trusting a tool, or a "smart"
+  per-machine detection step, to get something right that has no room to
+  be wrong — aimed at two different settings. For any applier in this
+  category:
   - Validate whatever it produced (e.g. an initramfs actually lists its
     contents cleanly) before treating the change as applied — a tool's
     zero exit status is not sufficient proof for something this
-    unrecoverable.
+    unrecoverable. Understand this as a weak, structural check only
+    (catches corruption, not "will this specific machine actually boot")
+    — treat it as one layer, never as sufficient on its own.
   - Back up the artifact that must keep working on the very next boot
     before touching it, and restore that backup automatically the moment
     validation fails, reporting the setting as failed rather than applied.
   - Check for resource exhaustion (disk space, in particular) before
     starting a rebuild rather than discovering it mid-write.
-  This is not specific to the boot splash — any future applier that
-  touches this category of configuration must carry the same three
+  - Prefer a generous, unconditional, hand-picked list of what a category
+    of hardware might need over a "detect what this machine has and
+    include only that" step, for anything the machine must have to boot at
+    all. Detection can be wrong in ways nobody anticipated (a storage
+    stack of LVM-on-top-of-a-SCSI-emulated-disk needing both the disk
+    driver and the transport driver, neither the obviously "detected" one);
+    a module nobody's machine needs costs a few tens of kilobytes and is
+    skipped harmlessly, so err toward including more, not toward guessing
+    precisely.
+  - Never let this category of setting remove the operator's own way back.
+    A machine is not actually protected by a validation step that might
+    itself be wrong — it is protected by GRUB's menu staying reachable (a
+    boot timeout must never be driven all the way to zero, even for a
+    "seamless" experience — a couple of seconds' delay is invisible to
+    everyone who does not need it, and it is the only thing that helps the
+    one machine that does) and by at least one other complete, working
+    kernel remaining on disk to select from that menu if the new one fails
+    for a reason nothing here caught. No static check can prove a rebuilt
+    boot artifact will actually boot on every real machine — a genuine,
+    reachable fallback is the part of this that is actually guaranteed,
+    not a nice-to-have layered on top of "we validated it."
+  None of this is specific to the boot splash — any future applier that
+  touches this category of configuration must carry all of these
   properties from its first commit, not as a follow-up once it breaks a
-  fleet once.
+  fleet.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

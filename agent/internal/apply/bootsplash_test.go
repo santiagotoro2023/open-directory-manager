@@ -376,6 +376,42 @@ func TestOpenSourceKmsModulesAreAddedToTheInitramfs(t *testing.T) {
 	}
 }
 
+// Storage drivers are force-included unconditionally, unlike the display
+// drivers above — the incident this whole file now guards against was a
+// narrow, "detected" module list for exactly this category, and it missed
+// what a real machine actually needed. See the comment on storageModules.
+func TestStorageModulesAreAddedToTheInitramfsUnconditionally(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsModulesPath)
+	for _, module := range storageModules {
+		if !strings.Contains(body, module) {
+			t.Errorf("%s missing from initramfs modules:\n%s", module, body)
+		}
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("adding the storage modules did not rebuild the initramfs")
+	}
+}
+
+func TestStorageModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	runner.commands = nil
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("already-present storage modules triggered a rebuild")
+	}
+}
+
 func TestOpenSourceKmsModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
 	env, runner := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
@@ -548,6 +584,48 @@ func TestInitramfsModulesFileMissingIsNotAnError(t *testing.T) {
 	for _, r := range results {
 		if r.Status == "failed" {
 			t.Errorf("a machine with no initramfs-tools config should not fail: %+v", r)
+		}
+	}
+}
+
+// A menu GRUB will actually show (see the two-second floor in grub.go) is
+// only a real way back if there is a second kernel in it to choose. This is
+// reported, not enforced: a single-kernel machine may be a deliberate
+// choice, but the operator should see the risk in RSoP either way.
+func TestFallbackKernelAdvisoryFiresWithOnlyOneKernel(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	if err := env.WriteFile("/boot/vmlinuz-6.12.107+deb13-amd64", "x", 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	found := false
+	for _, r := range results {
+		if r.Setting == "grub:splash_fallback" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected an advisory about the missing fallback kernel")
+	}
+}
+
+func TestFallbackKernelAdvisoryIsQuietWithTwoKernels(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	for _, name := range []string{"vmlinuz-6.12.107+deb13-amd64", "vmlinuz-6.12.94+deb13-amd64"} {
+		if err := env.WriteFile("/boot/"+name, "x", 0o644, "root", "root"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	for _, r := range results {
+		if r.Setting == "grub:splash_fallback" {
+			t.Errorf("unexpected fallback advisory with two kernels present: %+v", r)
 		}
 	}
 }

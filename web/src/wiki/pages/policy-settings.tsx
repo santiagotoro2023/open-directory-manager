@@ -526,7 +526,22 @@ user      root`}</Code>
             initrd first and verifies the new one actually lists cleanly with{" "}
             <C>lsinitramfs</C> before treating the change as applied. A failed check restores the
             backup automatically and reports the setting as failed — whatever the underlying
-            cause — rather than ever leave a machine to find out at its next boot.
+            cause — rather than ever leave a machine to find out at its next boot. That check only
+            catches a corrupt archive, though, not a valid one missing the one driver a specific
+            machine needs to find its own root filesystem — every real and common virtualised
+            storage transport (<C>nvme</C>, <C>ahci</C>, <C>virtio_blk</C>, <C>virtio_scsi</C> and
+            more) is therefore listed the same unconditional way as the display drivers above,
+            rather than left to auto-detection for the one category of driver that actually has to
+            work for a boot to succeed at all.
+          </Note>
+          <Note>
+            The hidden menu this setting also drives (see Boot loader wait and menu visibility
+            below) never actually reaches zero seconds, even when the operator&rsquo;s own timeout
+            is zero: at least two seconds always remain where any keypress reaches GRUB&rsquo;s real
+            menu, since a menu that cannot be reached at all cannot help the one machine a rebuild
+            went wrong on for a reason nothing here anticipated. If only one kernel is installed —
+            leaving that menu with nowhere else to go — RSoP carries an advisory saying so; this is
+            reported, not blocked, since a single-kernel machine can be a deliberate choice.
           </Note>
         </Section>
 

@@ -47,9 +47,13 @@ if (logo_image) {
         logo_scale = logo_max_width / logo_image.GetWidth();
         logo_image = logo_image.Scale(logo_image.GetWidth() * logo_scale, logo_image.GetHeight() * logo_scale);
     }
+    # Above the spinner, not below it: the spinner sits at vertical center
+    # (see throbber_sprite below), so the logo is placed above that center
+    # line with a small gap, the same stacking order a splash screen with
+    # both a brand mark and a loading indicator normally reads as.
     logo_sprite = Sprite(logo_image);
     logo_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - logo_image.GetWidth() / 2);
-    logo_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.62 - logo_image.GetHeight() / 2);
+    logo_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.40 - logo_image.GetHeight());
     logo_sprite.SetZ(10);
 }
 
@@ -58,6 +62,12 @@ if (logo_image) {
 # theme's own frame files being present under some particular name. That is
 # the one part of this drawn without a live display to check it against, so
 # it is images to composite, not script logic to get right blind.
+#
+# 36 frames (10 degrees apart) rather than the original 12 (30 degrees
+# apart): a hand-off between two out of only twelve positions around the
+# ring reads as a series of jumps rather than a turn, especially on the
+# large, near-full-screen render size this theme uses. Three times the
+# angular resolution is what makes it read as continuous motion.
 throbber_frames[0] = Image("throbber-00.png");
 throbber_frames[1] = Image("throbber-01.png");
 throbber_frames[2] = Image("throbber-02.png");
@@ -70,7 +80,31 @@ throbber_frames[8] = Image("throbber-08.png");
 throbber_frames[9] = Image("throbber-09.png");
 throbber_frames[10] = Image("throbber-10.png");
 throbber_frames[11] = Image("throbber-11.png");
-throbber_frame_count = 12;
+throbber_frames[12] = Image("throbber-12.png");
+throbber_frames[13] = Image("throbber-13.png");
+throbber_frames[14] = Image("throbber-14.png");
+throbber_frames[15] = Image("throbber-15.png");
+throbber_frames[16] = Image("throbber-16.png");
+throbber_frames[17] = Image("throbber-17.png");
+throbber_frames[18] = Image("throbber-18.png");
+throbber_frames[19] = Image("throbber-19.png");
+throbber_frames[20] = Image("throbber-20.png");
+throbber_frames[21] = Image("throbber-21.png");
+throbber_frames[22] = Image("throbber-22.png");
+throbber_frames[23] = Image("throbber-23.png");
+throbber_frames[24] = Image("throbber-24.png");
+throbber_frames[25] = Image("throbber-25.png");
+throbber_frames[26] = Image("throbber-26.png");
+throbber_frames[27] = Image("throbber-27.png");
+throbber_frames[28] = Image("throbber-28.png");
+throbber_frames[29] = Image("throbber-29.png");
+throbber_frames[30] = Image("throbber-30.png");
+throbber_frames[31] = Image("throbber-31.png");
+throbber_frames[32] = Image("throbber-32.png");
+throbber_frames[33] = Image("throbber-33.png");
+throbber_frames[34] = Image("throbber-34.png");
+throbber_frames[35] = Image("throbber-35.png");
+throbber_frame_count = 36;
 throbber_current_frame = 0;
 throbber_tick = 0;
 
@@ -80,12 +114,13 @@ throbber_sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - throbber_frames[0]
 throbber_sprite.SetZ(20);
 
 # Plymouth calls this up to fifty times a second (the same rate Debian's own
-# ceratopsian.script documents); advancing one frame every fourth tick is
-# what turns that into a steady turn instead of a flicker, the same
-# tick-counting idiom ceratopsian.script's own refresh_callback uses.
+# ceratopsian.script documents). Advancing one frame every second tick with
+# 36 frames is a full turn in a little under a second and a half — brisk
+# enough to read as active, slow enough that individual frames do not blur
+# together into flicker.
 fun refresh_callback() {
     global.throbber_tick++;
-    if (global.throbber_tick < 4) {
+    if (global.throbber_tick < 2) {
         return;
     }
     global.throbber_tick = 0;

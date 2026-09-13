@@ -118,6 +118,41 @@ function safeFileName(name: string): string {
   return cleaned || "background";
 }
 
+/** Plymouth's boot-time renderer only understands PNG — the early-boot
+ * environment has no JPEG (or other) decoder built in. An operator picking
+ * a JPEG background previously had its raw bytes uploaded under a ".png"
+ * name, which Plymouth's own Image() primitive silently failed to parse:
+ * nothing displayed, and nothing anywhere reported why. This decodes
+ * whatever format the browser itself can display and re-encodes it as a
+ * real PNG before it ever leaves the browser, so what reaches the agent is
+ * always genuine PNG data regardless of what the operator picked. */
+function readImageAsPng(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      URL.revokeObjectURL(url);
+      if (!ctx) {
+        reject(new Error("could not get a 2D canvas context to convert this image"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      const dataUrl = canvas.toDataURL("image/png");
+      const comma = dataUrl.indexOf(",");
+      resolve(comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("could not decode this file as an image"));
+    };
+    img.src = url;
+  });
+}
+
 /** Base64, for a file too large for readBase64's byte-by-byte loop to be
  * worth trying — a software package routinely runs to tens of megabytes,
  * where building the string one character at a time is slow enough to be
@@ -2183,7 +2218,7 @@ function GrubEditor({
                   placeholder={current.splash_background_name || "No background chosen"}
                   onChoose={async (file) =>
                     set({
-                      splash_background: await readBase64(file),
+                      splash_background: await readImageAsPng(file),
                       splash_background_name: safeFileName(file.name),
                     })
                   }
@@ -2201,7 +2236,7 @@ function GrubEditor({
                   placeholder={current.splash_image_name || "No logo chosen"}
                   onChoose={async (file) =>
                     set({
-                      splash_image: await readBase64(file),
+                      splash_image: await readImageAsPng(file),
                       splash_image_name: safeFileName(file.name),
                     })
                   }
