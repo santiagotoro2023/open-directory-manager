@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,13 @@ import (
 
 	"odm.example.org/agent/internal/apply"
 )
+
+type recordingRunner struct{ commands [][]string }
+
+func (r *recordingRunner) Run(_ context.Context, name string, args ...string) (string, error) {
+	r.commands = append(r.commands, append([]string{name}, args...))
+	return "", nil
+}
 
 // The interval is a domain setting, and a machine that misreads it stops
 // asking the control plane anything at all. Every route into it has to end
@@ -146,5 +154,55 @@ func TestAFailedRunIsTriedAgainSoon(t *testing.T) {
 	}
 	if got := afterFailures(time.Minute, 5); got != time.Minute {
 		t.Fatalf("backoff should never exceed a short interval, got %s", got)
+	}
+}
+
+// sssd re-registers this machine's own DNS on every restart; the agent's
+// job is only noticing an address changed and asking for that restart, on
+// its own ordinary inventory pass rather than waiting for sssd's slower
+// periodic refresh or a network reconnect that a static re-address never
+// triggers.
+func TestRefreshDynamicDnsRestartsSssdOnlyWhenTheAddressChanges(t *testing.T) {
+	env := apply.NewEnv(t.TempDir())
+	runner := &recordingRunner{}
+	env.Run = runner
+
+	// The very first pass has nothing to compare against: joining already
+	// left sssd with a correct registration, so this establishes a baseline
+	// rather than restarting for no reason.
+	refreshDynamicDNS(context.Background(), env, []string{"10.0.0.5"})
+	if len(runner.commands) != 0 {
+		t.Fatalf("the first pass ever restarted sssd: %v", runner.commands)
+	}
+
+	// Unchanged: still nothing to do.
+	refreshDynamicDNS(context.Background(), env, []string{"10.0.0.5"})
+	if len(runner.commands) != 0 {
+		t.Fatalf("an unchanged address restarted sssd: %v", runner.commands)
+	}
+
+	// The address this machine reports differs from last time.
+	refreshDynamicDNS(context.Background(), env, []string{"10.0.0.9"})
+	if len(runner.commands) != 1 || strings.Join(runner.commands[0], " ") != "systemctl try-restart sssd" {
+		t.Fatalf("an address change did not restart sssd: %v", runner.commands)
+	}
+
+	// Settled on the new address: no repeated restart on the next pass.
+	refreshDynamicDNS(context.Background(), env, []string{"10.0.0.9"})
+	if len(runner.commands) != 1 {
+		t.Fatalf("restarted sssd again for an address already reported: %v", runner.commands)
+	}
+}
+
+func TestRefreshDynamicDnsIgnoresAddressOrder(t *testing.T) {
+	env := apply.NewEnv(t.TempDir())
+	runner := &recordingRunner{}
+	env.Run = runner
+
+	refreshDynamicDNS(context.Background(), env, []string{"10.0.0.5", "10.0.0.6"})
+	refreshDynamicDNS(context.Background(), env, []string{"10.0.0.6", "10.0.0.5"})
+
+	if len(runner.commands) != 0 {
+		t.Fatalf("the same addresses in a different order restarted sssd: %v", runner.commands)
 	}
 }

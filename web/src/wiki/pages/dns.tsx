@@ -24,7 +24,9 @@ export function Content() {
           type <C>A</C>, data <C>10.10.0.20</C>.
         </Example>
         <Example title="Add a reverse zone">
-          <strong>New zone</strong> → <C>10.in-addr.arpa</C>. Then add <C>PTR</C> records inside it.
+          <strong>New zone</strong> → Reverse lookup → <C>10.10.0.0/24</C>. Every address the
+          forward zones already have an A record for on that network gets its PTR record
+          immediately; nothing needs typing in by hand.
         </Example>
         <Example title="Add an alias">
           <strong>New record</strong> → name <C>files</C>, type <C>CNAME</C>, data{" "}
@@ -48,6 +50,12 @@ export function Content() {
             When a reverse zone exists, adding an <C>A</C> record offers to create the matching
             pointer record with it. Without a reverse zone the forward record is created on its own
             and the console says so.
+          </p>
+          <p>
+            Creating a reverse zone backfills it in the same step: every A record already sitting
+            in a forward zone whose address falls inside the new zone&rsquo;s network gets its
+            matching PTR record right away, rather than leaving an empty zone to fill in by hand.
+            The console says how many it found.
           </p>
         </Section>
 
@@ -105,9 +113,19 @@ export function Content() {
 
         <Section title="Dynamic updates">
           <p>
-            Zones created by provisioning accept secure dynamic updates, so domain members register
-            themselves and the DHCP service can register the computers it gives addresses to. The
-            zone list marks which zones have this enabled.
+            Zones created by provisioning accept secure dynamic updates, and every domain member
+            registers itself into them, forward and reverse — over GSS-TSIG with its own Kerberos
+            identity, the same mechanism a Windows domain member uses. The zone list marks which
+            zones have updates enabled; a reverse zone needs to exist before a machine&rsquo;s PTR
+            record can land anywhere.
+          </p>
+          <p>
+            A machine re-registers on every reconnect and on a periodic refresh, and its agent
+            also asks it to redo so immediately whenever the address it is reporting in its own
+            inventory changes — a hand-edited static address does not always trigger a reconnect
+            on its own, and this is what keeps a record from answering for an address nobody has
+            used in hours. Addresses DHCP hands out are written in as leases are issued, the same
+            way.
           </p>
         </Section>
 

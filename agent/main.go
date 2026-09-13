@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,6 +34,7 @@ import (
 const version = "0.9.6"
 
 const serialPath = "/var/lib/odm/last-serial"
+const addressesPath = "/var/lib/odm/last-addresses"
 
 // How often to apply policy, and where the domain's answer is kept.
 //
@@ -767,6 +769,7 @@ func runQueued(
 // its policy, and saying nothing about that would be worse than saying this.
 func reportInventory(ctx context.Context, api *client.Client, env apply.Env) {
 	report := inventory.Collect(ctx, env)
+	refreshDynamicDNS(ctx, env, report.Addresses)
 	if err := api.Inventory(ctx, report); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent: reporting inventory:", err)
 		return
@@ -778,6 +781,50 @@ func reportInventory(ctx context.Context, api *client.Client, env apply.Env) {
 		if err := os.MkdirAll(filepath.Dir(full), 0o750); err == nil {
 			_ = os.WriteFile(full, []byte(report.LogCursor), 0o600)
 		}
+	}
+}
+
+// refreshDynamicDNS asks sssd to re-register this machine's own DNS records
+// the moment its address changes, rather than leaving a stale forward or
+// reverse record answering until sssd's own periodic refresh gets to it.
+//
+// sssd's AD provider already does the real work here: dyndns_update and
+// dyndns_update_ptr (set at join time) make it register both records itself,
+// over GSS-TSIG with its own Kerberos identity — the same mechanism a
+// Windows domain member uses, not anything reimplemented here. It re-runs
+// that registration on every provider start, and a network reconnect
+// normally triggers one on its own. A hand-edited static address on a
+// machine that never otherwise reconnects does not, which is exactly how a
+// file server keeps answering to an address nobody has used in an hour: the
+// record was never wrong from sssd's side, sssd just never knew to redo it.
+// Restarting is what asks for that redo now, the moment this machine's own
+// next inventory pass notices its address is not what it was last time.
+func refreshDynamicDNS(ctx context.Context, env apply.Env, current []string) {
+	if env.Run == nil {
+		return
+	}
+	sorted := append([]string(nil), current...)
+	sort.Strings(sorted)
+	joined := strings.Join(sorted, ",")
+
+	full := env.Path(addressesPath)
+	previous, err := os.ReadFile(full)
+	hadBaseline := err == nil
+
+	if mkdirErr := os.MkdirAll(filepath.Dir(full), 0o750); mkdirErr == nil {
+		_ = os.WriteFile(full, []byte(joined), 0o600)
+	}
+
+	// No baseline is a freshly joined or freshly upgraded machine, not a
+	// change: joining already left sssd with a correct registration, and
+	// restarting it again here would only delay this same pass for nothing.
+	if !hadBaseline || string(previous) == joined {
+		return
+	}
+
+	fmt.Println("this machine's address changed; asking sssd to re-register its DNS records")
+	if _, err := env.Run.Run(ctx, "systemctl", "try-restart", "sssd"); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: could not restart sssd to refresh DNS:", err)
 	}
 }
 

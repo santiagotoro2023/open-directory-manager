@@ -712,6 +712,24 @@ export function Content() {
                 "The Leases tab is empty while a scope reports addresses in use",
                 "Upgrade the control plane.",
               ],
+              [
+                "A machine's own record still answers to an address it no longer has",
+                <>
+                  Before 0.9.7 a domain member never registered its own DNS record at all — it
+                  only ever got one from provisioning, DHCP, or an operator typing it in by hand,
+                  and a static re-address left that record answering for the old address until
+                  someone fixed it themselves. Upgrade the machine and re-run{" "}
+                  <C key="dd1">odm-client-install</C> (or reboot it, or{" "}
+                  <C key="dd2">systemctl restart sssd</C>) to have it register itself the first
+                  time; every pass after that keeps it current on its own, and its agent asks for
+                  an immediate re-registration the moment its own reported address changes rather
+                  than waiting on sssd's periodic refresh.
+                </>,
+              ],
+              [
+                "Deleting a zone did nothing, or there was no way to",
+                "Upgrade the control plane; before 0.9.7 zone deletion always failed with “no such option: --force” before samba-tool touched the zone, and there was no delete action in the console to hit it with in the first place. Right-click the zone in DNS to delete it now.",
+              ],
             ]}
           />
         </Section>

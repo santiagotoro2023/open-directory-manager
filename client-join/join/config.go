@@ -161,6 +161,17 @@ krb5_realm = %s
 krb5_store_password_if_offline = true
 cache_credentials = true
 
+# This machine registers its own forward and reverse DNS records, over
+# GSS-TSIG with its own Kerberos identity — the same mechanism a Windows
+# domain member uses to keep its own A and PTR records current, not
+# anything ODM invents. Without this a static address change, or a DHCP
+# lease that hands out a new one, leaves the domain's DNS answering with
+# whatever address this machine had the day it joined until someone notices
+# and fixes the record by hand.
+dyndns_update = true
+dyndns_update_ptr = true
+dyndns_refresh_interval = 3600
+
 # Where the ticket goes, matching default_ccache_name in krb5.conf. SSSD
 # decides this for the sessions it opens and ignores krb5.conf, so the two
 # have to be written together or a drive map cannot be mounted.

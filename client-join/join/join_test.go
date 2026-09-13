@@ -253,6 +253,28 @@ func TestSssdConfIsNotReadableByOthers(t *testing.T) {
 	}
 }
 
+// A domain member's own dynamic DNS is what keeps its forward and reverse
+// records current after a static re-address or a new DHCP lease, over
+// GSS-TSIG with its own Kerberos identity — the same mechanism a Windows
+// domain member uses, not anything ODM reimplements. Without this a machine
+// whose address changed keeps answering to whatever it was the day it
+// joined until someone notices and fixes the record by hand.
+func TestSssdRegistersItsOwnForwardAndReverseDns(t *testing.T) {
+	env, _ := testEnv(t)
+	o := options()
+	_ = o.Validate()
+	if err := WriteSssdConf(o, env); err != nil {
+		t.Fatal(err)
+	}
+
+	body := read(t, env, SssdConfPath)
+	for _, want := range []string{"dyndns_update = true", "dyndns_update_ptr = true"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("sssd.conf missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestNameServiceAddsSssExactlyOnce(t *testing.T) {
 	env, _ := testEnv(t)
 	if err := env.WriteFile(NsswitchPath, "passwd:         files\ngroup:          files\nhosts:          files dns\n", 0o644); err != nil {
