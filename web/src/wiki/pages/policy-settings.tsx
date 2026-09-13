@@ -498,6 +498,22 @@ user      root`}</Code>
             splash off the same way stops it showing but leaves Plymouth installed — this asked
             for the splash to stop, not for a package removed.
           </Note>
+          <Note>
+            On a machine with an NVIDIA card using the proprietary driver, turning the splash on
+            also adds <C>nvidia-drm.modeset=1</C> to the kernel command line and lists{" "}
+            <C>nvidia</C>, <C>nvidia_modeset</C> and <C>nvidia_drm</C> in{" "}
+            <C>/etc/initramfs-tools/modules</C>. Confirmed live, on real NVIDIA hardware: without
+            both, the driver never takes over kernel mode setting, and Plymouth has nothing to
+            draw on for the whole of early boot regardless of how correct the theme is — the
+            console stays on the plain firmware framebuffer showing kernel and systemd text the
+            entire time, which is indistinguishable from the splash simply not being configured.
+            Every machine also gets <C>MODULES=most</C> in{" "}
+            <C>/etc/initramfs-tools/initramfs.conf</C> while the splash is on — Debian&rsquo;s own
+            default, and what bundles amdgpu, i915 and every other open-source driver into the
+            initramfs, which is where early graphics on a non-NVIDIA machine actually come from.
+            Neither is undone when the splash is turned back off: both are otherwise-harmless
+            configuration, not something to unwind for a setting that only stops showing.
+          </Note>
         </Section>
 
         <Section title="System updates">

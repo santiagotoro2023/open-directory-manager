@@ -55,7 +55,17 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		// side — the kernel inherits the same graphics mode GRUB was already
 		// in, rather than GRUB resetting to text mode first and the kernel
 		// switching back a moment later, which is the flash itself.
-		body += "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash\"\n"
+		cmdline := "quiet splash"
+		if nvidiaProprietaryDriverInUse(env) {
+			// Confirmed live: without this, the proprietary driver never
+			// takes over kernel mode setting, so Plymouth has nothing to
+			// draw on for the whole of early boot regardless of how correct
+			// the theme is — the console stays on the firmware's own plain
+			// framebuffer, showing kernel and systemd text the entire time,
+			// on exactly the hardware this setting exists to hide that from.
+			cmdline += " nvidia-drm.modeset=1"
+		}
+		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", cmdline)
 		body += "GRUB_GFXPAYLOAD_LINUX=keep\n"
 	}
 	if err := env.WriteFile(grubConfPath, body, 0o644, "root", "root"); err != nil {

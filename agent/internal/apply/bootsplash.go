@@ -28,7 +28,7 @@ import (
 // once, in Plymouth's own Script language, using only long-standing,
 // documented primitives every one of Plymouth's own bundled themes is built
 // from (Window.SetBackgroundTopColor, Image, Sprite, SetImage, SetX/SetY/
-// SetZ, Plymouth.SetRefreshFunction, Plymouth.SetDisplayMessageFunction).
+// SetZ, Plymouth.SetRefreshFunction, Plymouth.SetMessageFunction).
 // Nothing in it reaches outside Plymouth's own sandboxed drawing API: no
 // file access, no shell, no network from the script itself. The one part of
 // this drawn without a real display to check it against — the spin
@@ -107,8 +107,17 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	if err != nil {
 		results = append(results, policy.Fail("grub:splash", fmt.Errorf("splash background: %w", err)))
 	}
+	nvidiaModulesChanged, err := ensureNvidiaModulesInInitramfs(env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("nvidia modules: %w", err)))
+	}
+	modulesModeChanged, err := ensureInitramfsModulesMost(env)
+	if err != nil {
+		results = append(results, policy.Fail("grub:splash", fmt.Errorf("initramfs module set: %w", err)))
+	}
 
-	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged
+	needsRebuild := !themeIsActive(ctx, env) || themeChanged || watermarkChanged || backgroundChanged ||
+		nvidiaModulesChanged || modulesModeChanged
 	if needsRebuild {
 		// -R rebuilds the initramfs with this theme baked in; without it the
 		// theme is set for next time update-initramfs runs for some other
@@ -160,6 +169,107 @@ func plymouthInstalled(env Env) bool {
 func themeIsActive(ctx context.Context, env Env) bool {
 	out, err := env.Run.Run(ctx, "plymouth-set-default-theme")
 	return err == nil && strings.TrimSpace(out) == splashTheme
+}
+
+// nvidiaProprietaryDriverInUse reports whether this machine's graphics are
+// driven by the closed nvidia driver rather than nouveau or anything else —
+// confirmed live against real hardware to matter: without it, Plymouth is
+// never given a display to draw on at all, and every kernel and systemd
+// message this setting exists to hide keeps showing on the console's plain
+// firmware framebuffer for the whole of early boot, whatever the theme
+// itself says. Checked by path rather than by asking the kernel, so a
+// machine with no command runner still has a filesystem this can look at.
+func nvidiaProprietaryDriverInUse(env Env) bool {
+	for _, marker := range []string{"/proc/driver/nvidia/version", "/usr/bin/nvidia-smi"} {
+		if _, err := os.Stat(env.Path(marker)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+const initramfsModulesPath = "/etc/initramfs-tools/modules"
+
+// ensureNvidiaModulesInInitramfs is the other half of nvidia-drm.modeset=1 on
+// the kernel command line: mode setting has nothing to turn on early if the
+// driver itself is not in the initramfs to begin with. update-initramfs
+// resolves nvidia_drm's own dependencies (nvidia_modeset, nvidia) the same
+// way modprobe does, so naming it is enough — the other two are listed
+// anyway, since a machine that already has one of them by some other means
+// should not end up missing another.
+func ensureNvidiaModulesInInitramfs(env Env) (changed bool, err error) {
+	if !nvidiaProprietaryDriverInUse(env) {
+		return false, nil
+	}
+	existing, err := os.ReadFile(env.Path(initramfsModulesPath))
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	present := map[string]bool{}
+	for _, line := range strings.Split(string(existing), "\n") {
+		present[strings.TrimSpace(line)] = true
+	}
+
+	body := string(existing)
+	for _, module := range []string{"nvidia", "nvidia_modeset", "nvidia_drm"} {
+		if present[module] {
+			continue
+		}
+		if body != "" && !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+		body += module + "\n"
+		changed = true
+	}
+	if !changed {
+		return false, nil
+	}
+	if err := env.WriteFile(initramfsModulesPath, body, 0o644, "root", "root"); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+const initramfsConfPath = "/etc/initramfs-tools/initramfs.conf"
+
+// ensureInitramfsModulesMost is what makes early graphics work at all on
+// whatever card a machine happens to have, nvidia or not: Debian's default
+// already bundles every open-source kernel driver (amdgpu, i915 and the
+// rest) into the initramfs under MODULES=most, which is where a card other
+// than nvidia's early Kernel Mode Setting actually comes from — nothing
+// specific to any one vendor needs to be named for those, only this. Left
+// alone if a machine already has some other value set on purpose; only ever
+// widened to "most", never narrowed, and only while the splash itself is on.
+func ensureInitramfsModulesMost(env Env) (changed bool, err error) {
+	existing, err := os.ReadFile(env.Path(initramfsConfPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil // no initramfs-tools here; nothing for this to widen
+		}
+		return false, err
+	}
+
+	lines := strings.Split(string(existing), "\n")
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || !strings.HasPrefix(trimmed, "MODULES=") {
+			continue
+		}
+		found = true
+		if trimmed == "MODULES=most" {
+			return false, nil
+		}
+		lines[i] = "MODULES=most"
+	}
+	if !found {
+		lines = append(lines, "MODULES=most")
+	}
+
+	if err := env.WriteFile(initramfsConfPath, strings.Join(lines, "\n"), 0o644, "root", "root"); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // writeSplashTheme installs this project's own theme — the script, its

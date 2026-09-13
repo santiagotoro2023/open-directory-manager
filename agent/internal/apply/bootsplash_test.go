@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"odm.example.org/agent/internal/policy"
@@ -237,6 +238,160 @@ func TestBootSplashOffRemovesTheMessageAndTouchesNothingElse(t *testing.T) {
 	for _, r := range results {
 		if r.Status == "failed" {
 			t.Errorf("unexpected failure: %+v", r)
+		}
+	}
+}
+
+// Confirmed live, against real hardware: without nvidia-drm.modeset=1 and
+// the driver itself in the initramfs, the proprietary driver never takes
+// over kernel mode setting, and Plymouth has nothing to draw on for the
+// whole of early boot — the console stays on the plain firmware framebuffer
+// showing kernel and systemd text regardless of how correct the theme is.
+func writeNvidiaMarker(t *testing.T, env Env) {
+	t.Helper()
+	full := env.Path("/usr/bin/nvidia-smi")
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGrubAddsNvidiaModesetOnlyWhenTheProprietaryDriverIsPresent(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{BootSplash: true},
+	}, env)
+
+	body := read(t, env, grubConfPath)
+	if !strings.Contains(body, "nvidia-drm.modeset=1") {
+		t.Errorf("nvidia-drm.modeset=1 missing with the proprietary driver present:\n%s", body)
+	}
+}
+
+func TestGrubNeverAddsNvidiaModesetWithoutTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{BootSplash: true},
+	}, env)
+
+	body := read(t, env, grubConfPath)
+	if strings.Contains(body, "nvidia-drm.modeset") {
+		t.Errorf("nvidia-drm.modeset was added on a machine with no nvidia driver:\n%s", body)
+	}
+}
+
+func TestNvidiaModulesAreAddedToTheInitramfsWhenTheDriverIsPresent(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	if err := env.WriteFile(initramfsModulesPath, "# comment\n", 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsModulesPath)
+	for _, module := range []string{"nvidia", "nvidia_modeset", "nvidia_drm"} {
+		if !strings.Contains(body, module) {
+			t.Errorf("%s missing from initramfs modules:\n%s", module, body)
+		}
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("adding the nvidia modules did not rebuild the initramfs")
+	}
+}
+
+func TestNvidiaModulesAreNotTouchedWithoutTheProprietaryDriver(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if _, err := os.Stat(env.Path(initramfsModulesPath)); err == nil {
+		t.Error("initramfs modules file was created on a machine with no nvidia driver")
+	}
+}
+
+func TestNvidiaModulesAlreadyPresentDoNotForceARebuild(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+	if err := env.WriteFile(
+		initramfsModulesPath, "nvidia\nnvidia_modeset\nnvidia_drm\n", 0o644, "root", "root",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// First pass establishes every other baseline (the theme's own
+	// signature); only after that is "nothing changed" a meaningful check.
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	runner.commands = nil
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("already-present nvidia modules triggered a rebuild")
+	}
+}
+
+// MODULES=most is what bundles amdgpu, i915 and every other open-source
+// driver into the initramfs — the reason a non-nvidia machine gets early
+// graphics at all. Widened whenever the splash is on, whatever GPU is
+// actually in the machine, since Plymouth needs early KMS from whichever
+// driver applies regardless of vendor.
+func TestInitramfsModulesModeIsWidenedToMost(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	if err := env.WriteFile(initramfsConfPath, "MODULES=dep\n", 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, initramfsConfPath)
+	if !strings.Contains(body, "MODULES=most") || strings.Contains(body, "MODULES=dep") {
+		t.Errorf("MODULES was not widened to most:\n%s", body)
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("widening MODULES did not rebuild the initramfs")
+	}
+}
+
+func TestInitramfsModulesAlreadyMostIsLeftAloneAndDoesNotForceARebuild(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+	if err := env.WriteFile(initramfsConfPath, "MODULES=most\n", 0o644, "root", "root"); err != nil {
+		t.Fatal(err)
+	}
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	runner.commands = nil
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	if runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("MODULES already being most triggered a rebuild")
+	}
+}
+
+func TestInitramfsModulesFileMissingIsNotAnError(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	results := applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	for _, r := range results {
+		if r.Status == "failed" {
+			t.Errorf("a machine with no initramfs-tools config should not fail: %+v", r)
 		}
 	}
 }

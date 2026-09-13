@@ -766,6 +766,49 @@ export function Content() {
           />
         </Section>
 
+        <Section title="Boot splash">
+          <Reference
+            headers={["Symptom", "Check"]}
+            rows={[
+              [
+                <>
+                  The agent reports success, but the machine still shows GRUB for a moment and
+                  kernel/systemd text instead of the spinner, from the very start of boot
+                </>,
+                <>
+                  Confirmed live: on a machine with an NVIDIA card using the proprietary driver,
+                  this is what happens without <C key="bs1">nvidia-drm.modeset=1</C> on the kernel
+                  command line — the driver never takes over kernel mode setting, so Plymouth has
+                  nothing to draw on for the whole of early boot, whatever the theme says.
+                  0.10.2 adds that parameter (and the driver&rsquo;s own modules to the
+                  initramfs) automatically whenever an NVIDIA card is detected; before that,
+                  every other part of the splash could be completely correct and this would still
+                  happen. Upgrade to 0.10.2 or later and re-apply. On any other card, check{" "}
+                  <C key="bs2">grep MODULES /etc/initramfs-tools/initramfs.conf</C> says{" "}
+                  <C key="bs3">most</C> — 0.10.2 sets this too, since it is what bundles
+                  amdgpu, i915 and every other open-source driver into the initramfs.
+                </>,
+              ],
+              [
+                "The spinner shows, but a background or logo does not appear",
+                <>
+                  <C key="bs4">plymouth-set-default-theme</C> with no arguments should print{" "}
+                  <C key="bs5">odm-boot</C>; if it prints something else, the theme was never set
+                  as the machine&rsquo;s default and the agent report for{" "}
+                  <C key="bs6">grub:splash</C> says why. If it does say{" "}
+                  <C key="bs7">odm-boot</C>, check the picture actually made it into the current
+                  initramfs: <C key="bs8">lsinitramfs /boot/initrd.img-$(uname -r) | grep
+                  odm-boot</C> should list <C key="bs9">background.png</C> or{" "}
+                  <C key="bs10">watermark.png</C>. If it is missing there but present under{" "}
+                  <C key="bs11">/usr/share/plymouth/themes/odm-boot/</C>, the initramfs was never
+                  rebuilt after the picture was set — re-apply the policy, which rebuilds it
+                  whenever a picture actually changes.
+                </>,
+              ],
+            ]}
+          />
+        </Section>
+
         <Section title="Certificates">
           <Reference
             headers={["Symptom", "Check"]}
