@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.9.7_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.10.0_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -139,8 +139,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 |---|---|
 | Directory | Users, groups, computers and organizational units — create, edit, move, delete, bulk CSV import, one action that offboards a leaver, one change applied to a selection of objects, and groups whose membership is a query rather than a list |
 | Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering, item-level targeting, a full change history with one-button rollback, modelling a link before making it, export/import as portable JSON, and settings filed into collapsible folders so a long list stays navigable |
-| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen (including a background picture that actually appears at GNOME's greeter, not only in the setting), desktop background, browser policy, apt package deployment, a `.deb` uploaded directly for software with no apt repository to reach, graphics drivers detected from the hardware or named directly, unattended updates, always-on VPN, remote desktop session rules, default applications per file type, the dash layout per user or group (optionally left alone once seeded, for someone free to rearrange their own), desktop shortcuts and file-manager bookmarks, fonts and the desktop theme, the local password policy, boot loader wait and menu visibility, a graphical boot splash with a logo and message in place of
-Debian's own kernel and initramfs text, kernel parameters, power and screen-lock behaviour, removable-storage rules, a second factor at the machine, an allowlist for what may be installed, what the first sign-in shows, agent updates, and a local administrator whose password each machine rotates itself — removed from a machine the moment the policy stops naming one. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
+| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen (including a background picture that actually appears at GNOME's greeter, not only in the setting), desktop background, browser policy, apt package deployment, a `.deb` uploaded directly for software with no apt repository to reach, graphics drivers detected from the hardware or named directly, unattended updates, always-on VPN, remote desktop session rules, default applications per file type, the dash layout per user or group (optionally left alone once seeded, for someone free to rearrange their own), desktop shortcuts and file-manager bookmarks, fonts and the desktop theme, the local password policy, boot loader wait and menu visibility, a graphical boot splash with a logo and message in place of Debian's own kernel and initramfs text, kernel parameters, power and screen-lock behaviour, removable-storage rules, a second factor at the machine, an allowlist for what may be installed, what the first sign-in shows, agent updates, and a local administrator whose password each machine rotates itself — removed from a machine the moment the policy stops naming one. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
 | Roaming profiles | A home directory on a share that follows the person between desktops and session hosts, as a disk image per person or a directory. The same mechanism a remote desktop collection uses, so one profile can serve both |
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
@@ -246,7 +245,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.9.7   # -> dist/odm-client_0.9.7_amd64.deb
+bash packaging/deb/build-in-container.sh 0.10.0   # -> dist/odm-client_0.10.0_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on
