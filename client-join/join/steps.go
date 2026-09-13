@@ -97,6 +97,19 @@ func addCifsKeytabEntries(ctx context.Context, options Options, env Env) {
 	}
 }
 
+// reloadSmbd picks up a keytab or smb.conf a join just changed. Best effort,
+// and only when smbd is already running: a plain client carries no
+// file-server role and no such unit, and systemctl simply says so.
+func reloadSmbd(ctx context.Context, options Options, env Env) {
+	if options.DryRun || env.Run == nil {
+		return
+	}
+	if _, err := env.Run.Run(ctx, "systemctl", "is-active", "--quiet", "smbd"); err != nil {
+		return
+	}
+	_, _ = env.Run.Run(ctx, "systemctl", "reload-or-restart", "smbd")
+}
+
 // Enrolment is what the control plane returns for a redeemed token.
 type Enrolment struct {
 	Realm            string `json:"realm"`

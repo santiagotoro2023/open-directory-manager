@@ -394,6 +394,35 @@ func TestACifsSPNThatCannotBeAddedDoesNotFailTheJoin(t *testing.T) {
 	}
 }
 
+func TestReloadSmbdWhenItIsRunning(t *testing.T) {
+	// A rejoin just rewrote smb.conf and the keytab; an smbd already running
+	// on this machine keeps both in memory until told otherwise.
+	env, runner := testEnv(t)
+	reloadSmbd(context.Background(), options(), env)
+	if !runner.ran("systemctl", "reload-or-restart smbd") {
+		t.Error("a running smbd was not reloaded")
+	}
+}
+
+func TestReloadSmbdDoesNothingWithoutTheFileServerRole(t *testing.T) {
+	env, runner := testEnv(t)
+	runner.failArgs["is-active"] = "Unit smbd.service could not be found."
+	reloadSmbd(context.Background(), options(), env)
+	if runner.ran("systemctl", "reload-or-restart smbd") {
+		t.Error("smbd was reloaded on a machine with no file-server role")
+	}
+}
+
+func TestReloadSmbdIsSkippedOnADryRun(t *testing.T) {
+	env, runner := testEnv(t)
+	o := options()
+	o.DryRun = true
+	reloadSmbd(context.Background(), o, env)
+	if len(runner.commands) != 0 {
+		t.Errorf("a dry run touched systemctl: %v", runner.commands)
+	}
+}
+
 func TestAFailedJoinIsReportedNotIgnored(t *testing.T) {
 	env, runner := testEnv(t)
 	runner.fail["net"] = "Failed to join domain: Preauthentication failed"

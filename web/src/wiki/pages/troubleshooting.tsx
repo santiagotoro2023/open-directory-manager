@@ -360,7 +360,27 @@ export function Content() {
                   server (with <C key="spn2b">--otp</C> or the admin credential, whichever it
                   joined with) to add the missing SPN and keytab entry to its existing account. A
                   domain controller is unaffected, since its account already carries every service
-                  principal name from provisioning.
+                  principal name from provisioning. On 0.9.3, restart{" "}
+                  <C key="spn3">smbd</C> on the file server by hand afterwards &mdash; a rejoin
+                  rewrites the keytab on disk but an already-running <C key="spn3b">smbd</C> keeps
+                  the old one in memory until told otherwise; 0.9.4 does this restart itself.
+                </>,
+              ],
+              [
+                <>
+                  A Kerberos ticket for <C key="nls1">cifs/&lt;server&gt;</C> is issued, but the
+                  mount still fails, or <C key="nls2">smbclient -k</C> against the share answers{" "}
+                  <C key="nls3">NT_STATUS_NO_LOGON_SERVERS</C>
+                </>,
+                <>
+                  The SPN and keytab are fine &mdash; this is the file server itself failing to
+                  build a token for the ticket it received, almost always because it cannot reach
+                  a domain controller at that moment or its own machine trust is broken. On the
+                  file server: <C key="nls4">journalctl -u smbd -n 100</C> for the exact rejection,{" "}
+                  <C key="nls5">sudo net ads testjoin</C> to check its machine account,{" "}
+                  <C key="nls6">sssctl domain-status &lt;domain&gt;</C> for whether SSSD there is
+                  online, and <C key="nls7">timedatectl</C> for clock skew against the controller
+                  &mdash; Kerberos rejects a skew of more than five minutes outright.
                 </>,
               ],
               [

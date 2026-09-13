@@ -212,6 +212,14 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		result.Method = "credential"
 	}
 
+	// A join is often a rejoin, on a machine already carrying the
+	// file-server role: WriteSmbConf and the keytab both just changed
+	// underneath an smbd that may already be running, and it keeps its old
+	// keytab and configuration in memory until told otherwise. Without this,
+	// a share stays unreachable with the fresh cifs/ keytab entry sitting
+	// unused on disk, and nothing about the join says a restart is needed.
+	reloadSmbd(ctx, options, env)
+
 	progress("Configuring identity and authentication", SssdConfPath)
 	if err := WriteSssdConf(options, env); err != nil {
 		return nil, err
