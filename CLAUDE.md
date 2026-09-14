@@ -389,6 +389,21 @@ goal.
     legacy framebuffer — no `simpledrm`, proprietary driver not in the
     initramfs — that rule means the splash has no device for the entire
     window it exists to fill.
+  - **And "ask the component" includes reading its source for what a
+    value means before writing that value.** The fix for the above was
+    `DeviceTimeout=0`, on the reasoning — stated in a code comment as
+    fact — that zero would mean "use what you have". It was never
+    checked. Plymouth arms that wait with
+    `ply_event_loop_watch_for_timeout`, whose first lines are
+    `assert (seconds > 0.0)`; zero killed `plymouthd` a millisecond after
+    it started, on every boot, for two releases, and the text console
+    that resulted looked exactly like the failure it was meant to fix. It
+    was found by installing `systemd-coredump` and reading the backtrace,
+    which took one reboot; the source that would have prevented it was
+    one `curl` away. When assigning a value to a setting of a component
+    this project does not own, especially an edge value like zero, find
+    the line of its code that consumes it. A value that is not documented
+    is not therefore free to mean what would be convenient.
 - Concrete per-category implementation:
   - **Drive maps**: agent renders a `systemd` `.mount`/`.automount` unit (or
     an `autofs` map entry) per resolved share, using `cifs` with

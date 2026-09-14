@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -327,7 +328,7 @@ func TestASecondApplyKeepsTheModulesThatLetTheMachineBoot(t *testing.T) {
 // delete the file exactly once — on the very upgrade meant to fix this.
 func TestPruneNeverDeletesASystemFileAnOlderAgentClaimed(t *testing.T) {
 	env, _ := testEnv(t)
-	write(t, env, plymouthConfPath, "[Daemon]\nTheme=odm-boot\nDeviceTimeout=0\n")
+	write(t, env, plymouthConfPath, "[Daemon]\nTheme=odm-boot\n"+plymouthDeviceTimeout+"\n")
 	write(t, env, initramfsModulesPath, "nvme\nxhci_hcd\n")
 
 	stale := NewState()
@@ -574,11 +575,10 @@ func TestNvidiaModulesAreRemovedFromTheInitramfs(t *testing.T) {
 	}
 }
 
-// The one that actually made the splash invisible: Plymouth will not claim
-// a legacy /dev/fb framebuffer until DeviceTimeout has elapsed (eight
-// seconds by default), and on this hardware that framebuffer is the only
-// device it can ever draw on.
-func TestPlymouthDeviceTimeoutIsZeroedWithTheProprietaryDriver(t *testing.T) {
+// Plymouth will not claim a legacy /dev/fb framebuffer until DeviceTimeout
+// has elapsed (eight seconds by default), and on this hardware that
+// framebuffer is the only device it can ever draw on.
+func TestPlymouthDeviceTimeoutIsShortenedWithTheProprietaryDriver(t *testing.T) {
 	env, _ := testEnv(t)
 	writePlymouthInstalledMarker(t, env)
 	writeNvidiaMarker(t, env)
@@ -591,8 +591,8 @@ func TestPlymouthDeviceTimeoutIsZeroedWithTheProprietaryDriver(t *testing.T) {
 	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
 
 	body := read(t, env, plymouthConfPath)
-	if !strings.Contains(body, "DeviceTimeout=0") {
-		t.Errorf("DeviceTimeout=0 missing:\n%s", body)
+	if !strings.Contains(body, plymouthDeviceTimeout+"\n") {
+		t.Errorf("%s missing:\n%s", plymouthDeviceTimeout, body)
 	}
 	if !strings.Contains(body, "Theme=odm-boot") {
 		t.Errorf("the theme line was disturbed:\n%s", body)
@@ -964,5 +964,50 @@ func TestFallbackKernelAdvisoryIsQuietWithTwoKernels(t *testing.T) {
 		if r.Setting == "grub:splash_fallback" {
 			t.Errorf("unexpected fallback advisory with two kernels present: %+v", r)
 		}
+	}
+}
+
+// Plymouth arms its device wait with ply_event_loop_watch_for_timeout,
+// which begins with assert (seconds > 0.0). 0.10.15 wrote DeviceTimeout=0
+// and every boot after it killed plymouthd a millisecond in — twice, once
+// in the initramfs and once from the root filesystem — leaving a text
+// console and "Result: core-dump" against plymouth-start.service. The
+// value is pinned as a positive number here so that nothing can put a zero
+// back, whatever the reasoning.
+func TestPlymouthDeviceTimeoutIsAPositiveNumber(t *testing.T) {
+	_, value, found := strings.Cut(plymouthDeviceTimeout, "=")
+	if !found {
+		t.Fatalf("%q is not a key=value line", plymouthDeviceTimeout)
+	}
+	seconds, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		t.Fatalf("%q does not parse as a number: %v", value, err)
+	}
+	if !(seconds > 0) {
+		t.Errorf("DeviceTimeout=%v aborts plymouthd: ply-event-loop.c asserts seconds > 0", seconds)
+	}
+}
+
+// A machine that ran 0.10.15 or 0.10.16 carries the zero on disk and in
+// its initramfs. The next apply has to replace it, not treat it as
+// already-correct, and rebuild so the initramfs picks the new value up.
+func TestPlymouthDeviceTimeoutZeroFromAnEarlierAgentIsReplaced(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+	write(t, env, plymouthConfPath, "[Daemon]\nTheme=odm-boot\nDeviceTimeout=0\n")
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+
+	body := read(t, env, plymouthConfPath)
+	if strings.Contains(body, "DeviceTimeout=0\n") {
+		t.Errorf("the zero that crashes plymouthd was left in place:\n%s", body)
+	}
+	if !strings.Contains(body, plymouthDeviceTimeout+"\n") {
+		t.Errorf("%s not written:\n%s", plymouthDeviceTimeout, body)
+	}
+	if !runner.ran("plymouth-set-default-theme", "-R") {
+		t.Error("replacing the value did not rebuild the initramfs it is baked into")
 	}
 }

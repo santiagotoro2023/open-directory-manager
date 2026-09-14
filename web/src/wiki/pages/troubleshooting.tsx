@@ -999,11 +999,37 @@ export function Content() {
                   early graphics device <em>is</em> a legacy framebuffer — no{" "}
                   <C key="pdt10">simpledrm</C>, and the proprietary driver deliberately kept out of
                   the initramfs — that rule leaves the splash with nothing to draw on for the
-                  entire window it exists to fill. 0.10.15 writes{" "}
-                  <C key="pdt11">DeviceTimeout=0</C> into{" "}
+                  entire window it exists to fill. 0.10.17 writes a short{" "}
+                  <C key="pdt11">DeviceTimeout</C> into{" "}
                   <C key="pdt12">/etc/plymouth/plymouthd.conf</C> on machines with that driver, and
                   keeps the nvidia modules out of the initramfs so the firmware framebuffer
-                  survives early boot. Upgrade to 0.10.15 or later and re-apply.
+                  survives early boot. Upgrade to 0.10.17 or later and re-apply — not 0.10.15 or
+                  0.10.16, for the reason in the next row.
+                </>,
+              ],
+              [
+                <>
+                  On 0.10.15 or 0.10.16: still a text console, and{" "}
+                  <C key="pdz1">systemctl status plymouth-start.service</C> shows{" "}
+                  <C key="pdz2">Result: core-dump</C>, <C key="pdz3">signal=ABRT</C>
+                </>,
+                <>
+                  Those two versions wrote <C key="pdz4">DeviceTimeout=0</C>, on the reasoning
+                  that zero would mean &ldquo;use what you have&rdquo;. It does not. Plymouth arms
+                  that wait with a call whose first lines are{" "}
+                  <C key="pdz5">assert (seconds &gt; 0.0)</C>{" "}
+                  (<C key="pdz6">src/libply/ply-event-loop.c</C>, the same in Debian 12&rsquo;s
+                  22.02 and Debian 13&rsquo;s 24.004), so plymouthd aborted about a millisecond
+                  after starting — in the initramfs, and then again when{" "}
+                  <C key="pdz7">plymouth-start.service</C> retried from the root filesystem — on
+                  every boot. Found by installing <C key="pdz8">systemd-coredump</C> and reading{" "}
+                  <C key="pdz9">coredumpctl info plymouthd</C>: the backtrace is{" "}
+                  <C key="pdz10">main &rarr; libply &rarr; abort</C>, and Plymouth&rsquo;s own debug
+                  log ends on the trace line immediately before that call. The theme itself was
+                  never at fault: run by hand on a text console (
+                  <C key="pdz11">plymouthd --no-daemon --debug --mode=boot</C>, then{" "}
+                  <C key="pdz12">plymouth show-splash</C>) it renders. 0.10.17 writes a positive
+                  value and replaces a zero an earlier agent left; upgrade and re-apply.
                 </>,
               ],
               [

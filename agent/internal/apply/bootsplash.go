@@ -298,12 +298,31 @@ const plymouthConfPath = "/etc/plymouth/plymouthd.conf"
 // /dev/fb0 removed for good at 10.5s when nvidia took the display — the
 // splash never had a device to draw on for the entire boot.
 //
-// Zero here means "there is nothing worth waiting for on this machine,
-// use what you have": with the proprietary NVIDIA driver kept out of the
-// initramfs, no DRM device is going to appear during early boot at all,
-// so waiting for one only burns the window the splash exists to fill.
-// Only written on machines with that driver — anywhere else the wait is
-// doing its job and is left alone.
+// The value must be greater than zero. An earlier version of this wrote
+// DeviceTimeout=0 on the reasoning that zero would mean "use what you
+// have" — a meaning invented rather than read. Plymouth arms the wait with
+// ply_event_loop_watch_for_timeout, whose first lines are
+//
+//	assert (seconds > 0.0);
+//
+// (src/libply/ply-event-loop.c, in 22.02 and 24.004 alike), and the arming
+// call is the last thing ply_device_manager_watch_devices does before
+// plymouthd enters its event loop. Zero therefore aborted plymouthd about a
+// millisecond after it started, on every boot, twice — once in the
+// initramfs and once more when plymouth-start.service tried again from the
+// root filesystem — and the machine booted straight to the text console
+// with "Result: core-dump" against the unit. Seen live, with the backtrace
+// (main → libply → abort; the device-manager frame is a tail call and does
+// not appear) and a debug log that ends on the trace line immediately
+// before that call.
+//
+// With the proprietary NVIDIA driver kept out of the initramfs there is
+// nothing to wait for anyway, so the timeout is simply how long the splash
+// takes to appear. One second is short enough not to register and leaves
+// no doubt about the parse. Only written on machines with that driver —
+// anywhere else the default wait is doing its job and is left alone.
+const plymouthDeviceTimeout = "DeviceTimeout=1"
+
 func ensurePlymouthDeviceTimeout(env Env) (changed bool, err error) {
 	if !nvidiaProprietaryDriverInUse(env) {
 		return false, nil
@@ -318,13 +337,13 @@ func ensurePlymouthDeviceTimeout(env Env) (changed bool, err error) {
 	for _, line := range strings.Split(string(existing), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "DeviceTimeout=") {
-			if trimmed == "DeviceTimeout=0" {
+			if trimmed == plymouthDeviceTimeout {
 				timeoutSeen = true
 				kept = append(kept, line)
 				continue
 			}
 			// Some other value: replace it rather than leave two.
-			kept = append(kept, "DeviceTimeout=0")
+			kept = append(kept, plymouthDeviceTimeout)
 			timeoutSeen = true
 			changed = true
 			continue
@@ -342,7 +361,7 @@ func ensurePlymouthDeviceTimeout(env Env) (changed bool, err error) {
 		if !daemonSeen {
 			kept = append(kept, "[Daemon]")
 		}
-		kept = append(kept, "DeviceTimeout=0")
+		kept = append(kept, plymouthDeviceTimeout)
 		changed = true
 	}
 
