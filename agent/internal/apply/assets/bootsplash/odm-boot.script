@@ -52,6 +52,11 @@ if (background_image) {
     background_sprite.SetZ(-100);
 }
 
+# Where the spinner's top edge goes: centred on the screen unless a logo
+# takes the centre, in which case the logo block below moves it down to sit
+# beneath the logo. 48 is half the spinner frames' 96px height.
+throbber_y = Window.GetY() + Window.GetHeight() / 2 - 48;
+
 logo_image = Image("watermark.png");
 if (logo_image) {
     # An operator-uploaded logo arrives at whatever resolution it was
@@ -66,14 +71,16 @@ if (logo_image) {
         logo_scale = logo_max_width / logo_image.GetWidth();
         logo_image = logo_image.Scale(logo_image.GetWidth() * logo_scale, logo_image.GetHeight() * logo_scale);
     }
-    # Above the spinner, not below it: the spinner sits at vertical center
-    # (see throbber_sprite below), so the logo is placed above that center
-    # line with a small gap, the same stacking order a splash screen with
-    # both a brand mark and a loading indicator normally reads as.
+    # The logo is the centre of the screen and the spinner hangs beneath it.
+    # A brand mark dead centre with a loading indicator under it is the
+    # order a splash screen with both reads as; an earlier version gave the
+    # spinner the exact centre and pushed the logo up above it, which read
+    # as the spinner being the point.
     logo_sprite = Sprite(logo_image);
     logo_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - logo_image.GetWidth() / 2);
-    logo_sprite.SetY(Window.GetY() + Window.GetHeight() * 0.40 - logo_image.GetHeight());
+    logo_sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - logo_image.GetHeight() / 2);
     logo_sprite.SetZ(10);
+    throbber_y = Window.GetY() + Window.GetHeight() / 2 + logo_image.GetHeight() / 2 + Window.GetHeight() * 0.05;
 }
 
 # A pre-rendered rotating-arc spinner (a fading ring, not discrete dots) —
@@ -129,7 +136,7 @@ throbber_tick = 0;
 
 throbber_sprite = Sprite(throbber_frames[0]);
 throbber_sprite.SetX(Window.GetX() + Window.GetWidth() / 2 - throbber_frames[0].GetWidth() / 2);
-throbber_sprite.SetY(Window.GetY() + Window.GetHeight() / 2 - throbber_frames[0].GetHeight() / 2);
+throbber_sprite.SetY(throbber_y);
 throbber_sprite.SetZ(20);
 
 # Plymouth calls this up to fifty times a second (the same rate Debian's own
