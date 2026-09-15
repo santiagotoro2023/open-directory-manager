@@ -1193,9 +1193,14 @@ fs.protected_symlinks                1`}</Code>
                   set up, or a console the machine cannot reach all fall through to the code —
                   so somebody with both never loses the way in, and somebody with only a phone is
                   refused rather than let through when it cannot be asked. Needs phone approvals
-                  on the domain controller (Wiki &rarr; Operations &rarr; Phone approvals) and each
-                  person subscribing their phone from the console&rsquo;s Second factor dialog.
+                  on the domain controller (Wiki &rarr; Health and backups &rarr; Phone approvals);
+                  each person is walked through subscribing their phone at their next sign-in,
+                  the same way as the code, and then through a backup code.
                 </>,
+              ],
+              [
+                "Notification server address, as phones reach it",
+                "Shown only for the phone method. Empty uses the domain controller's own name, which is right on the office network. When port 8444 is forwarded through a router, the public name and port (https only) — the walkthrough then shows that address, and the buttons on the phone answer through it. See Health and backups → Phone approvals from anywhere.",
               ],
               [
                 "Walk people through setting one up",

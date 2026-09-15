@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -53,18 +54,43 @@ func runEnrolFactor(args []string) int {
 	}
 	defer api.Close()
 
+	// The phone first, where the policy asks for it. The control plane says
+	// so by accepting the request; a policy that asks for a code instead, or
+	// a domain with no notification server, refuses it and the code is the
+	// whole of the walkthrough.
+	// One reader of the terminal for the whole walkthrough: two readers on
+	// the same input race, and the one waiting for a phone tap would eat the
+	// code typed for the step after it.
+	lines := stdinLines()
+
+	phoneDone := false
+	if outcome := enrolPhone(ctx, api, *username, lines); outcome != phoneNotAsked {
+		if outcome == phoneFailed {
+			return 1
+		}
+		phoneDone = true
+	}
+
 	start, err := api.BeginSecondFactor(ctx, *username)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		return 1
 	}
 	if start.AlreadyEnrolled {
-		fmt.Println("A second factor is already set up for this account.")
+		if !phoneDone {
+			fmt.Println("A second factor is already set up for this account.")
+		}
 		return 0
 	}
 
 	fmt.Println()
-	fmt.Println("  Set up your second factor")
+	if phoneDone {
+		fmt.Println("  Now a backup code, for when the phone is not to hand")
+		fmt.Println()
+		fmt.Println("  If the phone does not answer, this code is what you are asked for.")
+	} else {
+		fmt.Println("  Set up your second factor")
+	}
 	fmt.Println()
 	fmt.Println("  Scan this with your authenticator app or password manager.")
 	fmt.Println()
@@ -75,11 +101,10 @@ func runEnrolFactor(args []string) int {
 	fmt.Println("     ", spaced(start.Secret))
 	fmt.Println()
 
-	reader := bufio.NewReader(os.Stdin)
 	for attempt := 1; attempt <= 3; attempt++ {
 		fmt.Print("  Enter the 6-digit code it shows: ")
-		line, err := reader.ReadString('\n')
-		if err != nil {
+		line, ok := <-lines
+		if !ok {
 			fmt.Fprintln(os.Stderr, "\nodm-agent: nothing to read; run 'odm-agent enrol-factor' again")
 			return 1
 		}
@@ -98,7 +123,7 @@ func runEnrolFactor(args []string) int {
 				}
 				fmt.Println()
 				fmt.Print("  Press enter once you have written them down. ")
-				_, _ = reader.ReadString('\n')
+				<-lines
 			}
 			return 0
 		}
@@ -133,4 +158,102 @@ func spaced(secret string) string {
 		out.WriteRune(r)
 	}
 	return out.String()
+}
+
+// How setting a phone up went.
+type phoneOutcome int
+
+const (
+	phoneNotAsked phoneOutcome = iota // the policy asks for a code, not a phone
+	phoneDone                         // the phone tapped Confirm, or was set up already
+	phoneFailed                       // nobody tapped in time, or the console went away
+)
+
+// enrolPhone walks somebody through subscribing their phone and waits for the
+// tap that proves the right phone is listening. The topic is shown once, on
+// this screen, exactly as a code's secret is; nothing is written down.
+func enrolPhone(
+	ctx context.Context, api *client.Client, username string, lines <-chan string,
+) phoneOutcome {
+	enrolment, err := api.PushEnrol(ctx, username, "begin")
+	if err != nil {
+		var unavailable client.PushUnavailable
+		if errors.As(err, &unavailable) {
+			return phoneNotAsked
+		}
+		fmt.Fprintln(os.Stderr, "odm-agent:", err)
+		return phoneFailed
+	}
+	if enrolment.AlreadyEnrolled {
+		return phoneDone
+	}
+
+	fmt.Println()
+	fmt.Println("  Set up sign-in approvals on your phone")
+	fmt.Println()
+	fmt.Println("  1. Install the ntfy app (Play Store, F-Droid or the App Store).")
+	fmt.Println("  2. In the app: + , then \"Subscribe to topic\", then \"Use another server\".")
+	fmt.Println("     Server: ", enrolment.ServerURL)
+	fmt.Println("     Topic:  ", enrolment.Topic)
+	fmt.Println("     Or scan this to open the topic on the phone and choose Subscribe:")
+	fmt.Println()
+	printQR(ctx, enrolment.SubscribeURL)
+	fmt.Println()
+	fmt.Println("     If the app warns about the certificate, review it and choose to trust it.")
+	fmt.Println("  3. Tap Confirm on the notification that arrives.")
+	fmt.Println()
+	fmt.Println("  Waiting for the tap. Press r then enter to send the notification again.")
+
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Fprintln(os.Stderr, "  Nobody tapped Confirm in time. Sign in again to try again.")
+			return phoneFailed
+		case line, ok := <-lines:
+			if !ok {
+				// The terminal went away. A nil channel is never ready, so
+				// the poll carries on alone rather than spinning here.
+				lines = nil
+				continue
+			}
+			// A keystroke means "send it again"; the poll runs regardless.
+			if strings.TrimSpace(strings.ToLower(line)) == "r" {
+				if _, err := api.PushEnrol(ctx, username, "resend"); err == nil {
+					fmt.Println("  Sent again.")
+				}
+			}
+		case <-ticker.C:
+		}
+		state, err := api.PushEnrol(ctx, username, "poll")
+		if err != nil {
+			continue
+		}
+		if state.Confirmed || state.AlreadyEnrolled {
+			fmt.Println()
+			fmt.Println("  Phone set up. Sign-ins will ask for your approval there.")
+			return phoneDone
+		}
+	}
+}
+
+// stdinLines hands out what is typed, one line at a time, for as long as the
+// terminal is open. Closed when it is not.
+func stdinLines() <-chan string {
+	lines := make(chan string)
+	go func() {
+		defer close(lines)
+		reader := bufio.NewReader(os.Stdin)
+		for {
+			line, err := reader.ReadString('\n')
+			if line != "" {
+				lines <- line
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return lines
 }

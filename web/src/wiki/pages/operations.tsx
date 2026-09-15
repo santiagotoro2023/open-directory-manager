@@ -207,42 +207,50 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
             <strong>Second factor</strong> setting says <em>Approval on the phone</em>, signing in
             sends the person&rsquo;s phone an <strong>Approve</strong> / <strong>Deny</strong>{" "}
             notification and waits up to a minute; the code stays as the fallback whenever the
-            phone does not answer.
+            phone does not answer. The login screen says &ldquo;Approve the sign-in on your
+            phone&rdquo; while it waits.
           </p>
           <p>
-            The notifications go through <strong>ntfy</strong> — an open notification server and
-            app — which <C>deploy/setup.sh</C> installs on the domain controller beside the control
-            plane, on port <C>8444</C>, with the console&rsquo;s own certificate. Nothing leaves
-            the domain: no vendor push service, no account with anyone. A pinned release is
-            downloaded from ntfy&rsquo;s own GitHub releases and verified against its published
-            checksum; a controller without a route to fetch it comes up without phone approvals
-            and says so, and{" "}
+            The notifications go through <strong>ntfy</strong> &mdash; an open notification
+            server and app &mdash; which <C>deploy/setup.sh</C> installs on the domain controller
+            beside the control plane, on port <C>8444</C>, with the console&rsquo;s own
+            certificate. Nothing leaves the domain: no vendor push service, no account with
+            anyone. A pinned release is downloaded from ntfy&rsquo;s own GitHub releases and
+            verified against its published checksum; a controller without a route to fetch it
+            comes up without phone approvals and says so, and{" "}
             <C>deploy/install-phone-approvals.sh --console-fqdn &lt;console&gt;</C> adds them
             later.
           </p>
+          <p>
+            <strong>Nobody has to visit the console.</strong> The administrator sets the policy;
+            everything else happens at the machine, the same way a code is set up. Somebody the
+            policy covers who has no phone set up is walked through it at their next sign-in
+            &mdash; on a text login or over SSH right there, in a graphical session in a
+            full-screen window as the desktop starts that cannot be clicked away &mdash; and
+            then through a backup code, for when the phone is not to hand.
+          </p>
           <Steps>
             <li>
-              The phone has to trust the console&rsquo;s certificate, the same as a browser does.
-              On Android the ntfy app asks the first time it meets an untrusted certificate and
-              lets the person review and trust it there (also Settings &rarr; Advanced &rarr; Manage
-              certificates), so a self-signed console certificate works. With the certificate
-              authority role, issuing the console&rsquo;s certificate from it and installing the
-              domain&rsquo;s root certificate on phones (Android: Settings &rarr; Security &rarr;
-              Install a certificate &rarr; CA certificate) avoids the prompt.
+              Set the policy: <strong>Second factor</strong> &rarr; <strong>How</strong> &rarr;{" "}
+              <em>Approval on the phone</em>. Leave the server address empty on the office
+              network; see the next section for reaching phones anywhere.
             </li>
             <li>
-              Each person opens <strong>Second factor</strong> from their name in the console,
-              chooses <strong>Set up my phone</strong>, and subscribes the ntfy app to the server
-              and topic shown. The topic is the secret: it is long, random, and shown once.
+              At the person&rsquo;s next sign-in the walkthrough shows the server, the topic and
+              a QR code. They install the <strong>ntfy</strong> app, add the subscription
+              (<strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
+              <em>Use another server</em>) and, if the app warns about the certificate, review
+              and trust it there. The topic is the secret: long, random, shown once.
             </li>
             <li>
-              They tap <strong>Send the confirmation</strong> and then <strong>Confirm</strong> on
-              the notification. That tap is what finishes enrolling — the same reason a code
-              enrolment is not finished until a code from the device is accepted.
+              They tap <strong>Confirm</strong> on the notification that arrives. That tap is
+              what finishes enrolling &mdash; the same reason a code enrolment is not finished
+              until a code from the device is accepted. Pressing <C>r</C> in the walkthrough
+              sends it again.
             </li>
             <li>
-              In the policy object, set the second factor&rsquo;s <strong>How</strong> to{" "}
-              <em>Approval on the phone</em>.
+              The walkthrough continues into the backup code (scan, type the six digits, keep the
+              recovery codes) and the sign-in completes. From then on, a tap.
             </li>
           </Steps>
           <Reference
@@ -254,7 +262,11 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               ["Logs", <C key="pa4">journalctl -u ntfy</C>],
               [
                 "Every ask and answer",
-                "Audit log, actions auth.second_factor.push.ask / .approved / .denied.",
+                "Audit log, actions auth.second_factor.push.begin / .ask / .approved / .denied / .enrol.",
+              ],
+              [
+                "Removing a phone",
+                "The person, from Second factor under their own name in the console; or an administrator, from the user object. Their next sign-in walks them through setting one up again.",
               ],
             ]}
           />
@@ -267,7 +279,82 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
           <Note>
             Google Authenticator and similar apps cannot receive these. They are code generators
             with no channel for a server to reach them; only an app built to receive
-            notifications can, which is what ntfy is.
+            notifications can, which is what ntfy is. The console&rsquo;s own Second factor dialog
+            can also set a phone up, for somebody who prefers to do it there.
+          </Note>
+        </Section>
+
+        <Section title="Phone approvals from anywhere">
+          <p>
+            On the office network a phone reaches the controller by its name. Away from it &mdash;
+            on mobile data, at home &mdash; the notification cannot arrive unless the server is
+            reachable from the internet. That takes one forwarded port and one policy field, and
+            nothing else changes: the topic stays the secret, and publishing stays the control
+            plane&rsquo;s alone.
+          </p>
+          <Steps>
+            <li>
+              <strong>A name phones can resolve.</strong> A DNS name that points at the
+              router&rsquo;s public address: a hostname at the domain&rsquo;s registrar, or a
+              dynamic-DNS name if the address changes. Say <C>odm.example.org</C>.
+            </li>
+            <li>
+              <strong>Forward the port.</strong> On the router, forward TCP <C>8444</C> from the
+              internet to the controller&rsquo;s address on the office network, same port. Only
+              that port: the console on <C>8443</C>, LDAP, Kerberos and SMB stay inside. If the
+              router does not offer a fixed lease for the controller, give the controller a
+              static address first.
+            </li>
+            <li>
+              <strong>Put the name on the certificate.</strong> A phone checks the name it
+              connected to against the certificate it is shown. With the certificate authority
+              role, issue the console&rsquo;s certificate with <C>odm.example.org</C> as an extra
+              name (<strong>Certificates</strong> &rarr; the console&rsquo;s certificate &rarr;
+              additional names) and install the domain&rsquo;s root on the phones; ntfy restarts
+              itself when the console certificate changes. Without the authority, the ntfy app
+              still offers to trust the certificate it is shown the first time it meets it &mdash;
+              the person reviews and accepts it during the walkthrough.
+            </li>
+            <li>
+              <strong>Tell the policy.</strong> <strong>Second factor</strong> &rarr;{" "}
+              <strong>Notification server address, as phones reach it</strong> &rarr;{" "}
+              <C>https://odm.example.org:8444</C>. From then on the walkthrough shows that
+              address, and phones already subscribed keep working because a subscription is a
+              server plus a topic &mdash; anyone set up before the change re-adds the
+              subscription with the new server, or is walked through it again after removing the
+              old one.
+            </li>
+            <li>
+              <strong>Check it from outside.</strong> On a phone on mobile data, open{" "}
+              <C>https://odm.example.org:8444/v1/health</C> in the browser: it should answer{" "}
+              <C>{"{\"healthy\":true}"}</C>. If it does not, the forward or the name is wrong,
+              not ODM.
+            </li>
+          </Steps>
+          <Reference
+            headers={["Question", "Answer"]}
+            rows={[
+              [
+                "What is exposed?",
+                "ntfy alone, over TLS, on the one port. It accepts subscriptions to any topic name (nobody can guess one), refuses every publish without the control plane's token — except to the answer topics, which anyone may write to but only the control plane may read. The console itself is never exposed for this.",
+              ],
+              [
+                "How does the answer get back?",
+                "The Approve and Deny buttons publish one word to a topic named after the sign-in's token, on the same server the phone already reaches. The control plane reads it from inside. A token answers exactly one sign-in, once, within a minute.",
+              ],
+              [
+                "Can the address be an IP?",
+                "Yes, https://203.0.113.5:8444 works, but a certificate is issued to a name, so a name is what the phone will trust cleanly.",
+              ],
+              [
+                "Two controllers?",
+                "Phone approvals live on the controller the control plane runs on. Forward to that one.",
+              ],
+            ]}
+          />
+          <Note>
+            Forward 8444 and nothing else. The console on 8443, LDAP, Kerberos and SMB have no
+            part in this and stay inside.
           </Note>
         </Section>
 

@@ -268,7 +268,11 @@ type SecondFactor struct {
 	Enabled bool `json:"enabled"`
 	// "code" (the default) or "push": approved on a phone, with the code
 	// asked for instead when the phone does not answer.
-	Method            string   `json:"method"`
+	Method string `json:"method"`
+	// Where phones reach the notification server when that is not the
+	// controller's own name (a port forwarded through a router). Empty uses
+	// the controller's.
+	PushServerURL     string   `json:"push_server_url"`
 	SelfEnrol         bool     `json:"self_enrol"`
 	Services          []string `json:"services"`
 	RequirePrincipals []string `json:"require_principals"`

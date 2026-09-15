@@ -3788,11 +3788,27 @@ function SecondFactorEditor({
             <small>
               Approval sends the phone an Approve / Deny notification and waits up to a minute.
               No answer, a phone that is not set up, or a console the machine cannot reach all
-              fall back to asking for the code. Needs phone approvals set up on the domain
-              controller (Wiki &rarr; Operations) and people subscribing their phone from the
-              console&rsquo;s Second factor dialog.
+              fall back to asking for the code. Somebody without a phone set up is walked
+              through it at their next sign-in, the same way as the code. Needs phone approvals
+              on the domain controller (Wiki &rarr; Operations &rarr; Phone approvals).
             </small>
           </div>
+          {current.method === "push" && (
+            <label className="field">
+              <span>Notification server address, as phones reach it</span>
+              <input
+                placeholder="https://odm.example.org:8444"
+                value={current.push_server_url ?? ""}
+                onChange={(e) => set({ push_server_url: e.target.value })}
+              />
+              <small>
+                Leave empty to use the domain controller&rsquo;s own name, which works on the
+                office network. Set it when port 8444 is forwarded through a router so phones
+                are reached anywhere: the public name (or address) and port, https only. See
+                Wiki &rarr; Operations &rarr; Phone approvals from anywhere.
+              </small>
+            </label>
+          )}
           <div className="field">
             <span>Asked for</span>
             {FACTOR_SERVICES.map(([key, label]) => (

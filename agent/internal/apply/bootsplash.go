@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -163,6 +164,7 @@ func applyBootSplash(ctx context.Context, g *policy.Grub, env Env) []policy.Resu
 	}
 
 	results = append(results, applySplashMessage(ctx, g.SplashMessage, env)...)
+	results = append(results, applyShutdownSplash(ctx, env, nvidiaProprietaryDriverInUse(env))...)
 	if advisory := fallbackKernelAdvisory(env); advisory != nil {
 		results = append(results, *advisory)
 	}
@@ -208,6 +210,7 @@ func fallbackKernelAdvisory(env Env) *policy.Result {
 // actually keeps it from showing.
 func disableBootSplash(env Env) []policy.Result {
 	var results []policy.Result
+	results = append(results, applyShutdownSplash(context.Background(), env, false)...)
 	if _, err := os.Stat(env.Path(splashMessagePath)); err == nil {
 		if err := os.Remove(env.Path(splashMessagePath)); err != nil {
 			results = append(results, policy.Fail("grub:splash", err))
@@ -859,4 +862,63 @@ func applySplashMessage(ctx context.Context, message string, env Env) []policy.R
 		return append(results, policy.Fail("grub:splash_message", err))
 	}
 	return results
+}
+
+// shutdownSplashUnits are Plymouth's own units for drawing the theme while
+// the machine shuts down, reboots, halts or kexecs.
+var shutdownSplashUnits = []string{
+	"plymouth-poweroff.service", "plymouth-reboot.service",
+	"plymouth-halt.service", "plymouth-kexec.service",
+}
+
+// shutdownSplashMarker records that this masked those units, so they are
+// only ever unmasked by the thing that masked them and never an operator's
+// own mask.
+const shutdownSplashMarker = "/var/lib/odm/shutdown-splash-masked"
+
+// applyShutdownSplash keeps Plymouth out of shutdown on machines running the
+// proprietary NVIDIA driver, and puts it back everywhere else.
+//
+// Seen live: rebooting from the desktop left the theme frozen on screen —
+// background, logo and a spinner that no longer turned — until a key was
+// pressed, and the machine sat like that for most of a minute. The client's
+// own logs show why the picture froze: as the desktop released the display,
+// nvidia_drm's nv_drm_revoke_modeset_permission fired its WARN_ON for Xorg,
+// for gdbus, and then for plymouthd itself the moment it took the device to
+// draw the shutdown splash. That handoff is the driver's, not Plymouth's or
+// this theme's, and it is the same WARN_ON this setting hit at boot. Boot is
+// where a splash earns its place; a shutdown takes seconds, and on this
+// driver the splash is what turns those seconds into a frozen picture. So on
+// these machines the shutdown units are masked, and the console shows
+// whatever systemd has to say instead — which, if a shutdown ever stalls,
+// is the stall's own name rather than a picture of nothing.
+func applyShutdownSplash(ctx context.Context, env Env, mask bool) []policy.Result {
+	marker := env.Path(shutdownSplashMarker)
+	_, masked := os.Stat(marker)
+	if mask == (masked == nil) {
+		return nil
+	}
+	if env.Run == nil {
+		return nil
+	}
+	verb := "unmask"
+	if mask {
+		verb = "mask"
+	}
+	args := append([]string{verb}, shutdownSplashUnits...)
+	if out, err := env.Run.Run(ctx, "systemctl", args...); err != nil {
+		return []policy.Result{policy.Fail("grub:splash_shutdown",
+			fmt.Errorf("%s plymouth's shutdown units: %w: %s", verb, err, lastLine(out)))}
+	}
+	if mask {
+		_ = os.MkdirAll(filepath.Dir(marker), 0o755)
+		_ = os.WriteFile(marker, []byte("masked by the boot splash setting\n"), 0o644)
+		return []policy.Result{{
+			Setting: "grub:splash_shutdown", Status: "success",
+			Reason: "the splash is not shown while this machine shuts down: on the proprietary " +
+				"NVIDIA driver the display handoff at shutdown froze it on screen until a key was pressed",
+		}}
+	}
+	_ = os.Remove(marker)
+	return []policy.Result{policy.Ok("grub:splash_shutdown")}
 }

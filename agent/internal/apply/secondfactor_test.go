@@ -249,13 +249,13 @@ func TestAServiceTheMachineDoesNotHaveIsNotAFailure(t *testing.T) {
 
 func TestTheUsersFileIsEmptiedRatherThanRemovedWhenNobodyIsEnrolled(t *testing.T) {
 	env, _ := testEnv(t)
-	if err := WriteOathUsers(env, nil, nil); err != nil {
+	if err := WriteOathUsers(env, nil, nil, "code"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(env.Path(oathUsersFile)); err != nil {
 		t.Fatal("the file pam_oath reads must exist even when it is empty")
 	}
-	if err := WriteOathUsers(env, []string{"HOTP/T30/6 bob - ff", "HOTP/T30/6 ada - ee"}, nil); err != nil {
+	if err := WriteOathUsers(env, []string{"HOTP/T30/6 bob - ff", "HOTP/T30/6 ada - ee"}, nil, "code"); err != nil {
 		t.Fatal(err)
 	}
 	body := read(t, env, oathUsersFile)
@@ -368,7 +368,7 @@ func TestWhoHasEnrolledIsReadableAndTheirSecretsAreNot(t *testing.T) {
 	if err := WriteOathUsers(env, []string{
 		"HOTP/T30/6 ada - 3132333435363738393031323334353637383930",
 		"HOTP/T30/6 grace - 3132333435363738393031323334353637383931",
-	}, nil); err != nil {
+	}, nil, "code"); err != nil {
 		t.Fatal(err)
 	}
 	names := read(t, env, enrolledList)
@@ -383,7 +383,7 @@ func TestWhoHasEnrolledIsReadableAndTheirSecretsAreNot(t *testing.T) {
 		t.Errorf("the secrets are not root-only: %v %v", info.Mode().Perm(), err)
 	}
 	// And somebody who stops being enrolled leaves the list.
-	if err := WriteOathUsers(env, nil, nil); err != nil {
+	if err := WriteOathUsers(env, nil, nil, "code"); err != nil {
 		t.Fatal(err)
 	}
 	if read(t, env, enrolledList) != "" {
@@ -614,5 +614,46 @@ func TestThePushHelperMapsPamServicesAndRefusesNoUser(t *testing.T) {
 	}
 	if !strings.Contains(script, "push-factor --user") {
 		t.Error("the helper does not run the agent's push-factor command")
+	}
+}
+
+// "Enrolled" means "finished what the policy asks for". Asked for a phone,
+// somebody with a code alone is still walked through setting the phone up
+// — while the guard, which reads the code file too, asks them for the code
+// meanwhile.
+func TestTheEnrolledListFollowsTheMethod(t *testing.T) {
+	env, _ := testEnv(t)
+	lines := []string{"HOTP/T30/6 ada - ff", "HOTP/T30/6 bob - ee"}
+	phones := []string{"bob", "Grace"}
+
+	if err := WriteOathUsers(env, lines, phones, "code"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, env, enrolledList); got != "ada\nbob\n" {
+		t.Errorf("code method: enrolled should be the people with a code, got %q", got)
+	}
+	if err := WriteOathUsers(env, lines, phones, "push"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, env, enrolledList); got != "bob\ngrace\n" {
+		t.Errorf("push method: enrolled should be the people with a phone, got %q", got)
+	}
+	// The code file is the code file regardless: ada keeps hers.
+	if !strings.Contains(read(t, env, oathUsersFile), "ada") {
+		t.Error("switching method dropped a code enrolment")
+	}
+}
+
+func TestTheMethodIsReadableFromTheConfTheGuardReads(t *testing.T) {
+	env, _ := testEnv(t)
+	withPam(t, env, "sshd")
+	if got := SecondFactorMethod(env); got != "" {
+		t.Errorf("no setting yet, got %q", got)
+	}
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, Method: "push", Services: []string{"ssh"}},
+	}, env)
+	if got := SecondFactorMethod(env); got != "push" {
+		t.Errorf("method not recorded: %q", got)
 	}
 }

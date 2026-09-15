@@ -28,6 +28,7 @@ thing: approved, or not.
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -70,32 +71,16 @@ def expiry(settings: Settings, now: datetime | None = None) -> datetime:
     return now + timedelta(seconds=settings.push_timeout_seconds)
 
 
-def subscribe_url(settings: Settings, topic: str) -> str:
+def server_url(settings: Settings, override: str = "") -> str:
+    """Where phones reach the server: a policy's own external address when it
+    names one (a port forwarded through a router), else the controller's."""
+    return (override or settings.ntfy_public_url or settings.ntfy_url or "").rstrip("/")
+
+
+def subscribe_url(settings: Settings, topic: str, override: str = "") -> str:
     """What the person types into the ntfy app: the server, then the topic."""
-    base = (settings.ntfy_public_url or settings.ntfy_url or "").rstrip("/")
-    return f"{base}/{topic}"
+    return f"{server_url(settings, override)}/{topic}"
 
-
-def answer_url(settings: Settings, token: str, decision: str) -> str:
-    """Where a button on the phone sends its answer."""
-    return f"{settings.console_url}/api/v1/push/{token}/{decision}"
-
-
-def _action(label: str, url: str) -> str:
-    # ntfy's action syntax: type, label, url, then options. clear=true takes
-    # the notification off the phone once it has been answered, so a stale
-    # "Approve?" is not left lying around to be tapped later.
-    return f"http, {label}, {url}, method=POST, clear=true"
-
-
-def actions_header(settings: Settings, token: str) -> str:
-    """The two buttons, in ntfy's header format."""
-    return "; ".join(
-        [
-            _action("Approve", answer_url(settings, token, "approve")),
-            _action("Deny", answer_url(settings, token, "deny")),
-        ]
-    )
 
 
 def sign_in_message(principal: str, hostname: str, service: str) -> tuple[str, str]:
@@ -155,13 +140,21 @@ def publish(
 
 
 def ask_to_sign_in(
-    settings: Settings, topic: str, token: str, principal: str, hostname: str, service: str
+    settings: Settings,
+    topic: str,
+    token: str,
+    principal: str,
+    hostname: str,
+    service: str,
+    override: str = "",
 ) -> None:
     title, body = sign_in_message(principal, hostname, service)
-    publish(settings, topic, title, body, actions=actions_header(settings, token))
+    publish(settings, topic, title, body, actions=actions_header(settings, token, override))
 
 
-def ask_to_confirm_phone(settings: Settings, topic: str, token: str, principal: str) -> None:
+def ask_to_confirm_phone(
+    settings: Settings, topic: str, token: str, principal: str, override: str = ""
+) -> None:
     """The enrolment's own proof of possession: a button on the phone.
 
     Tapping it is what finishes enrolling — the same reason a TOTP enrolment
@@ -173,6 +166,163 @@ def ask_to_confirm_phone(settings: Settings, topic: str, token: str, principal: 
         f"Confirm this phone for {principal}",
         "Tap Confirm to finish setting up sign-in approvals for your account. "
         "If you did not just do this, ignore it.",
-        actions=_action("Confirm", answer_url(settings, token, "approve")),
+        actions=_action("Confirm", answer_url(settings, token, override), "approved"),
         priority="default",
     )
+
+
+# ------------------------------------------------------------- answers ----
+# A phone answers by publishing one word to a topic named after the token —
+# through the same server it subscribes to, so the one forwarded port is
+# enough for approvals from anywhere, and the console itself is never
+# exposed. The server's access rules make those topics write-only for
+# everyone and readable by the control plane's account alone, so nobody can
+# see how a sign-in was answered, and nobody can answer one without the
+# token, which was only ever sent to the one phone.
+
+ANSWER_PREFIX = "odm-answer-"
+
+
+def answer_topic(token: str) -> str:
+    return ANSWER_PREFIX + token
+
+
+def answer_url(settings: Settings, token: str, override: str = "") -> str:
+    """Where a button on the phone sends its answer: the answer topic, on the
+    server the phone already reaches."""
+    return f"{server_url(settings, override)}/{answer_topic(token)}"
+
+
+def _action(label: str, url: str, body: str) -> str:
+    # ntfy's action syntax: type, label, url, then options. clear=true takes
+    # the notification off the phone once it has been answered, so a stale
+    # "Approve?" is not left lying around to be tapped later.
+    return f"http, {label}, {url}, method=POST, body={body}, clear=true"
+
+
+def actions_header(settings: Settings, token: str, override: str = "") -> str:
+    """The two buttons, in ntfy's header format."""
+    url = answer_url(settings, token, override)
+    return "; ".join([_action("Approve", url, "approved"), _action("Deny", url, "denied")])
+
+
+def read_answer(settings: Settings, token: str) -> str | None:
+    """The phone's answer to one token, if it has given one: "approved",
+    "denied", or None. Read from the server's cache over the loopback,
+    with the control plane's own account. Blocking."""
+    if not configured(settings) or not settings.ntfy_url:
+        raise PushUnavailable("phone approvals are not set up (ODM_NTFY_URL is unset)")
+    url = f"{settings.ntfy_url.rstrip('/')}/{answer_topic(token)}/json"
+    try:
+        with _client(settings) as client:
+            response = client.get(url, params={"poll": "1", "since": "all"})
+    except httpx.HTTPError as exc:
+        raise PushError(f"could not reach the notification server: {exc}") from exc
+    if response.status_code >= 400:
+        raise PushError(f"the notification server refused the read: {response.status_code}")
+    for line in response.text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("event") != "message":
+            continue
+        word = str(event.get("message", "")).strip().lower()
+        if word in ("approved", "denied"):
+            return word
+    return None
+
+
+async def settle_enrolment(
+    conn: Any, settings: Settings, principal_sid: str, source_ip: str | None
+) -> bool:
+    """Finish an enrolment whose phone has tapped Confirm, and say whether it
+    is finished. Called wherever somebody is waiting to know."""
+    from fastapi.concurrency import run_in_threadpool
+
+    from . import audit
+
+    row = await conn.fetchrow(
+        "SELECT principal, confirm_token, confirmed_at FROM push_enrolment "
+        "WHERE principal_sid = $1",
+        principal_sid,
+    )
+    if row is None:
+        return False
+    if row["confirmed_at"]:
+        return True
+    if not row["confirm_token"]:
+        return False
+    try:
+        answer = await run_in_threadpool(read_answer, settings, row["confirm_token"])
+    except PushError:
+        return False
+    if answer != "approved":
+        return False
+    await conn.execute(
+        "UPDATE push_enrolment SET confirmed_at = now(), confirm_token = NULL, "
+        "updated_at = now() WHERE principal_sid = $1",
+        principal_sid,
+    )
+    await audit.record(
+        conn,
+        actor=row["principal"],
+        actor_sid=principal_sid,
+        source_ip=source_ip,
+        action="auth.second_factor.push.enrol",
+        outcome="success",
+        object_type="session",
+        detail="a phone was confirmed for sign-in approvals",
+    )
+    return True
+
+
+async def settle_challenge(conn: Any, settings: Settings, challenge_id: str) -> str:
+    """The answer so far to one sign-in: pending, approved, denied or
+    expired — reading the phone's answer off the server if it has not been
+    recorded yet, and recording it."""
+    from fastapi.concurrency import run_in_threadpool
+
+    from . import audit
+
+    row = await conn.fetchrow(
+        """
+        SELECT token, decision, expires_at, principal, principal_sid, machine_dn, hostname,
+               service
+        FROM push_challenge WHERE id = $1::uuid
+        """,
+        challenge_id,
+    )
+    if row is None:
+        return "missing"
+    if row["decision"]:
+        return str(row["decision"])
+    if row["expires_at"] < datetime.now(row["expires_at"].tzinfo):
+        return "expired"
+    try:
+        answer = await run_in_threadpool(read_answer, settings, row["token"])
+    except PushError:
+        return "pending"
+    if answer is None:
+        return "pending"
+    await conn.execute(
+        "UPDATE push_challenge SET decision = $2, decided_at = now() "
+        "WHERE id = $1::uuid AND decision IS NULL",
+        challenge_id,
+        answer,
+    )
+    await audit.record(
+        conn,
+        actor=row["principal"],
+        actor_sid=row["principal_sid"],
+        source_ip=None,
+        action=f"auth.second_factor.push.{answer}",
+        outcome="success" if answer == "approved" else "denied",
+        object_type="session",
+        object_dn=row["machine_dn"],
+        detail=f"{row['service']} sign-in at {row['hostname']} {answer} from the phone",
+    )
+    return answer

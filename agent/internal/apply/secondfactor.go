@@ -201,6 +201,7 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 		"# secrets are in " + oathUsersFile + ", which is root's alone. Written\n" +
 		"# root-only, the graphical prompt read nothing and said nothing, and\n" +
 		"# a person signing in for the first time was never asked at all.\n" +
+		"METHOD=" + factor.Method + "\n" +
 		"SERVICES=" + strings.Join(factor.Services, ",") + "\n" +
 		"REQUIRE=" + strings.Join(factor.RequirePrincipals, ",") + "\n" +
 		"EXEMPT=" + strings.Join(factor.ExemptPrincipals, ",") + "\n" +
@@ -265,8 +266,8 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 // WriteOathUsers puts the enrolments this machine is entitled to see into the
 // file pam_oath reads. Called by the agent after it has fetched them, not by
 // an applier: they are not policy, they are the people the policy names.
-func WriteOathUsers(env Env, lines, phones []string) error {
-	if err := writeEnrolled(env, lines, phones); err != nil {
+func WriteOathUsers(env Env, lines, phones []string, method string) error {
+	if err := writeEnrolled(env, lines, phones, method); err != nil {
 		return err
 	}
 	if len(lines) == 0 {
@@ -279,31 +280,37 @@ func WriteOathUsers(env Env, lines, phones []string) error {
 	return env.WriteFile(oathUsersFile, strings.Join(sorted, "\n")+"\n", 0o600, "root", "root")
 }
 
-// writeEnrolled records who has a second factor, and only that. A phone
-// counts the same as a code here: the point of the list is "leave this
-// person alone, they are enrolled", whichever way they are asked.
+// writeEnrolled records who has finished setting up what the policy asks
+// for, and only that: the point of the list is "leave this person alone",
+// and what "finished" means depends on the method. Asked for a code, it is
+// the people with a code. Asked for a phone, it is the people with a phone
+// — somebody with a code alone is asked for it meanwhile (the guard reads
+// the code file too), but is still walked through setting the phone up.
 //
 // The prompt that walks somebody through setting one up runs as them, in
 // their own session, and has to know whether to say anything at all. It
 // cannot read the file pam_oath reads — that one holds everybody's shared
 // secret and is root-only for good reason — so the names are written beside
 // it where a person can read them.
-func writeEnrolled(env Env, lines, phones []string) error {
+func writeEnrolled(env Env, lines, phones []string, method string) error {
 	seen := map[string]bool{}
-	names := make([]string, 0, len(lines)+len(phones))
-	for _, line := range lines {
-		// HOTP/T30/6 <user> - <secret>
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && !seen[fields[1]] {
-			seen[fields[1]] = true
-			names = append(names, fields[1])
+	var names []string
+	if method == "push" {
+		for _, name := range phones {
+			name = strings.ToLower(strings.TrimSpace(name))
+			if name != "" && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
 		}
-	}
-	for _, name := range phones {
-		name = strings.ToLower(strings.TrimSpace(name))
-		if name != "" && !seen[name] {
-			seen[name] = true
-			names = append(names, name)
+	} else {
+		for _, line := range lines {
+			// HOTP/T30/6 <user> - <secret>
+			fields := strings.Fields(line)
+			if len(fields) >= 2 && !seen[fields[1]] {
+				seen[fields[1]] = true
+				names = append(names, fields[1])
+			}
 		}
 	}
 	sort.Strings(names)
@@ -785,4 +792,21 @@ func oathLinePresent(env Env, path string) (bool, error) {
 		return false, err
 	}
 	return strings.Contains(string(body), oathMarker), nil
+}
+
+// SecondFactorMethod reads the method from the conf the applier last wrote,
+// for the commands that run without a policy document to hand — the sync
+// PAM's guard runs before every sign-in. Empty when the setting is not on
+// this machine, which every caller treats as "code".
+func SecondFactorMethod(env Env) string {
+	body, err := os.ReadFile(env.Path(secondFactorPam))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		if value, found := strings.CutPrefix(strings.TrimSpace(line), "METHOD="); found {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

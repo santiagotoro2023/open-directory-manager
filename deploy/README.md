@@ -26,6 +26,7 @@ framework, from **Server Roles** in the console.
 | `install-session-host-role.sh` | Any joined server | xrdp and a desktop — XFCE, GNOME or KDE Plasma |
 | `install-remote-desktop-broker-role.sh` | Any joined server | haproxy, returning people to the host they were on |
 | `install-time-role.sh` | Usually a controller | chrony, serving the domain |
+| `install-phone-approvals.sh` | The control-plane host | ntfy, for a second factor approved on a phone; run by `setup.sh`, and again by hand if a controller had no route to fetch it |
 | `install-agent.sh` | An already-joined machine | The policy agent alone |
 | `import-configuration.py` | The control-plane host | Makes this domain the one in a configuration export |
 | `uninstall.sh` | Any of the above | Removes everything the scripts above put on this machine |
@@ -205,6 +206,19 @@ Install it from **Server Roles** in the console. Add the printed
 into a group policy object linked at the domain head, so agents install it
 into `/usr/local/share/ca-certificates` and run `update-ca-certificates` on
 their next refresh.
+
+### 7a. Phone approvals (installed by setup, on the controller)
+
+`setup.sh` installs [ntfy](https://ntfy.sh) beside the control plane: HTTPS
+for phones on port `8444` with the console's own certificate, plain HTTP on
+the loopback alone for the control plane to publish through, a pinned
+release verified against its published checksum. Nothing else is needed on
+the office network. To reach phones anywhere, forward TCP `8444` from the
+router to the controller and put the public name in the policy's
+**Notification server address** — the console's Wiki, under **Health and
+backups → Phone approvals from anywhere**, walks through it. A controller
+that could not fetch the release comes up without phone approvals and says
+so; `install-phone-approvals.sh --console-fqdn <name>` adds them later.
 
 ### 8. DHCP role (optional, added after the base install)
 

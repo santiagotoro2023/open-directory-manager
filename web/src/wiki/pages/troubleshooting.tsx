@@ -1097,6 +1097,29 @@ export function Content() {
               ],
               [
                 <>
+                  Restarting or shutting down leaves the splash frozen on screen — background,
+                  logo, a spinner that no longer turns — until a key is pressed
+                </>,
+                <>
+                  Fixed in 0.10.21 on machines with the proprietary NVIDIA driver, by keeping
+                  Plymouth out of shutdown there. The client&rsquo;s own logs showed what froze it:
+                  as the desktop released the display, nvidia_drm&rsquo;s{" "}
+                  <C key="ss1">nv_drm_revoke_modeset_permission</C> fired its warning for Xorg, for
+                  gdbus, and then for plymouthd itself the moment it took the device to draw the
+                  shutdown splash. That handoff is the driver&rsquo;s, and boot is where a splash
+                  earns its place; a shutdown takes seconds. So on those machines the agent masks{" "}
+                  <C key="ss2">plymouth-poweroff</C>, <C key="ss3">plymouth-reboot</C>,{" "}
+                  <C key="ss4">plymouth-halt</C> and <C key="ss5">plymouth-kexec</C>, records that
+                  it did, and unmasks them the moment the setting is turned off. The console then
+                  shows whatever systemd has to say during shutdown — usually nothing, and if a
+                  shutdown ever stalls, the name of the stop job that is stalling rather than a
+                  picture of nothing. If it does stall,{" "}
+                  <C key="ss6">journalctl -b -1 -o short-monotonic | grep -iE "stop job|timed out"</C>{" "}
+                  says which.
+                </>,
+              ],
+              [
+                <>
                   A boot-splash logo or background was uploaded and saved, but reopening the
                   setting later shows &ldquo;No logo chosen&rdquo; / &ldquo;No background
                   chosen&rdquo; again — the picture is simply gone

@@ -428,6 +428,47 @@ func (c *Client) BeginSecondFactor(ctx context.Context, username string) (
 	return start, err
 }
 
+// PushEnrolment is what the control plane hands back while somebody sets a
+// phone up at a machine.
+type PushEnrolment struct {
+	AlreadyEnrolled bool   `json:"already_enrolled"`
+	Confirmed       bool   `json:"confirmed"`
+	ServerURL       string `json:"server_url"`
+	SubscribeURL    string `json:"subscribe_url"`
+	Topic           string `json:"topic"`
+}
+
+// PushEnrol begins, polls or re-sends a phone enrolment for the person
+// setting one up at this machine. PushUnavailable means the policy does not
+// use phone approval or the domain has none — set up a code instead.
+func (c *Client) PushEnrol(ctx context.Context, username, action string) (PushEnrolment, error) {
+	payload, _ := json.Marshal(map[string]string{"username": username, "action": action})
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+"/api/v1/agent/second-factor/push/enrol", bytes.NewReader(payload),
+	)
+	if err != nil {
+		return PushEnrolment{}, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return PushEnrolment{}, err
+	}
+	defer response.Body.Close()
+	switch response.StatusCode {
+	case http.StatusOK:
+	case http.StatusForbidden, http.StatusServiceUnavailable:
+		return PushEnrolment{}, PushUnavailable{Reason: why(response)}
+	default:
+		return PushEnrolment{}, fmt.Errorf("%s", why(response))
+	}
+	var enrolment PushEnrolment
+	if err := json.NewDecoder(response.Body).Decode(&enrolment); err != nil {
+		return PushEnrolment{}, fmt.Errorf("decode push enrolment: %w", err)
+	}
+	return enrolment, nil
+}
+
 // ConfirmSecondFactor proves the device works and finishes the enrolment.
 func (c *Client) ConfirmSecondFactor(ctx context.Context, username, code string) (
 	SecondFactorDone, error,

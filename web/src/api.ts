@@ -135,6 +135,7 @@ export interface PolicySettings {
   second_factor?: {
     enabled: boolean;
     method?: "code" | "push";
+    push_server_url?: string;
     self_enrol: boolean;
     services: string[];
     require_principals: string[];

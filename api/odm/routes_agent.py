@@ -219,7 +219,7 @@ async def _may_enrol(
     sid = str(user.get("objectSid") or "")
     if not sid:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "that account has no identifier")
-    return {"sid": sid, "principal": account}
+    return {"sid": sid, "principal": account, "factor": factor}
 
 
 @router.post("/second-factor/enrol")
@@ -326,6 +326,105 @@ async def agent_confirm_second_factor(
 # The machine asks; the phone answers; the machine polls for the answer. The
 # machine never learns the topic, the token, or anything about the phone —
 # only "approved" or not, for a question it asked itself.
+#
+# Setting the phone up is the one exception, and it is the same shape as
+# setting a code up at the machine: the person is at a machine they have just
+# authenticated to, being walked through it, and the topic has to reach them
+# somehow. It is shown once, on that screen, exactly as a code's secret is.
+
+
+class PushEnrolRequest(BaseModel):
+    username: Annotated[str, Field(min_length=1, max_length=256)]
+    # begin: issue (or re-show) an unconfirmed topic and send the phone its
+    # Confirm button. poll: say whether the phone has tapped it yet.
+    # resend: send the button again to the same topic.
+    action: Annotated[str, Field(pattern="^(begin|poll|resend)$")] = "begin"
+
+
+@router.post("/second-factor/push/enrol")
+async def agent_enrol_push(
+    body: PushEnrolRequest,
+    request: Request,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Set a phone up for somebody, at the machine.
+
+    Refused unless a policy on this machine uses phone approval and lets
+    people set up their own second factor; then the same rules as a code —
+    the account is one the policy covers and exists in the directory.
+    """
+    who = await _may_enrol(machine, pool, settings, body.username)
+    factor = who["factor"]
+    if factor.get("method") != "push":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "no policy on this machine uses phone approval"
+        )
+    if not push.configured(settings):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "phone approvals are not set up on this domain"
+        )
+    external = str(factor.get("push_server_url") or "")
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT topic, confirm_token, confirmed_at FROM push_enrolment "
+            "WHERE principal_sid = $1",
+            who["sid"],
+        )
+        if row is not None and row["confirmed_at"]:
+            return {"already_enrolled": True, "confirmed": True}
+        if body.action == "poll":
+            source = request.client.host if request.client else None
+            done = await push.settle_enrolment(conn, settings, who["sid"], source)
+            return {"already_enrolled": False, "confirmed": done}
+
+        # begin re-uses an unconfirmed topic so a person who scanned it and
+        # then lost the window carries on where they stopped; a new one is
+        # only issued when there is none.
+        topic = row["topic"] if row is not None else push.new_topic()
+        token = push.new_token()
+        if row is not None and row["confirm_token"]:
+            token = row["confirm_token"]
+        await conn.execute(
+            """
+            INSERT INTO push_enrolment (principal_sid, principal, topic, confirm_token)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (principal_sid) DO UPDATE
+                SET topic = excluded.topic, confirm_token = excluded.confirm_token,
+                    updated_at = now()
+            """,
+            who["sid"],
+            who["principal"],
+            topic,
+            token,
+        )
+        try:
+            await run_in_threadpool(
+                push.ask_to_confirm_phone, settings, topic, token, who["principal"], external
+            )
+        except push.PushError as exc:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+        if body.action == "begin":
+            await audit.record(
+                conn,
+                actor=who["principal"],
+                actor_sid=who["sid"],
+                source_ip=request.client.host if request.client else None,
+                action="auth.second_factor.push.begin",
+                outcome="success",
+                object_type="session",
+                object_dn=machine.dn,
+                detail=f"began setting up a phone at {machine.hostname}",
+            )
+    return {
+        "already_enrolled": False,
+        "confirmed": False,
+        "server_url": push.server_url(settings, external),
+        "subscribe_url": push.subscribe_url(settings, topic, external),
+        "topic": topic,
+    }
 
 
 class PushBeginRequest(BaseModel):
@@ -411,6 +510,7 @@ async def agent_begin_push(
                 account,
                 machine.hostname,
                 body.service,
+                str(factor.get("push_server_url") or ""),
             )
         except push.PushError as exc:
             await conn.execute("DELETE FROM push_challenge WHERE id = $1", challenge_id)
@@ -434,27 +534,21 @@ async def agent_poll_push(
     challenge_id: str,
     machine: Machine = Depends(require_machine),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """The answer so far: pending, approved, denied or expired.
 
     Only for a question this machine asked. A machine cannot learn how some
     other machine's sign-in was answered, let alone reuse it.
     """
-    row = await pool.fetchrow(
-        """
-        SELECT decision, expires_at, decided_at
-        FROM push_challenge WHERE id = $1::uuid AND machine_dn = $2
-        """,
-        challenge_id,
-        machine.dn,
-    )
-    if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such sign-in")
-    if row["decision"]:
-        return {"decision": row["decision"]}
-    if row["expires_at"] < datetime.now(row["expires_at"].tzinfo):
-        return {"decision": "expired"}
-    return {"decision": "pending"}
+    async with pool.acquire() as conn:
+        owner = await conn.fetchval(
+            "SELECT machine_dn FROM push_challenge WHERE id = $1::uuid", challenge_id
+        )
+        if owner != machine.dn:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such sign-in")
+        decision = await push.settle_challenge(conn, settings, challenge_id)
+    return {"decision": decision}
 
 
 @router.get("/binary")

@@ -1011,3 +1011,48 @@ func TestPlymouthDeviceTimeoutZeroFromAnEarlierAgentIsReplaced(t *testing.T) {
 		t.Error("replacing the value did not rebuild the initramfs it is baked into")
 	}
 }
+
+// On the proprietary NVIDIA driver the shutdown splash froze on screen until
+// a key was pressed (the driver's own WARN_ON on the display handoff, seen in
+// the client's logs for Xorg, gdbus and then plymouthd in turn). The splash
+// is for boot; on that driver it stays out of shutdown, and comes back the
+// moment the setting is turned off.
+func TestTheShutdownSplashIsMaskedOnlyOnTheProprietaryDriverAndOnlyOnce(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	writeNvidiaMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	if !runner.ran("systemctl", "mask plymouth-poweroff.service plymouth-reboot.service") {
+		t.Errorf("the shutdown units were not masked: %v", runner.commands)
+	}
+	if _, err := os.Stat(env.Path(shutdownSplashMarker)); err != nil {
+		t.Error("no record was kept of having masked them, so nothing could ever unmask them")
+	}
+
+	runner.commands = nil
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	if runner.ran("systemctl", "mask") {
+		t.Error("masked again on a pass where nothing changed")
+	}
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: false}, env)
+	if !runner.ran("systemctl", "unmask plymouth-poweroff.service") {
+		t.Errorf("turning the splash off did not give the shutdown splash back: %v", runner.commands)
+	}
+	if _, err := os.Stat(env.Path(shutdownSplashMarker)); err == nil {
+		t.Error("the record outlived the mask")
+	}
+}
+
+func TestTheShutdownSplashIsLeftAloneWithoutTheProprietaryDriver(t *testing.T) {
+	env, runner := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+	runner.output["plymouth-set-default-theme"] = splashTheme + "\n"
+
+	applyBootSplash(context.Background(), &policy.Grub{BootSplash: true}, env)
+	if runner.ran("systemctl", "mask") || runner.ran("systemctl", "unmask") {
+		t.Errorf("touched plymouth's shutdown units on a machine with no nvidia driver: %v", runner.commands)
+	}
+}

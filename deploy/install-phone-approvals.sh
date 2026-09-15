@@ -141,6 +141,14 @@ if [[ ! -s "$TOKEN_FILE" ]]; then
 fi
 chown root:root "$TOKEN_FILE"
 chmod 0600 "$TOKEN_FILE"
+
+# Where a phone sends its answer: a topic named after the sign-in's token.
+# Write-only for everyone — a phone can answer but nobody can read how a
+# sign-in was answered — and the control plane's account, being admin, reads
+# it. That keeps the whole exchange on this one port, so a port forwarded
+# through a router is enough for approvals from anywhere and the console is
+# never exposed for it.
+ntfy access everyone 'odm-answer-*' write-only >/dev/null
 chown ntfy:ntfy /var/lib/ntfy/user.db* 2>/dev/null || true
 
 # -------------------------------------------------------------- service ----

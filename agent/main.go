@@ -32,7 +32,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.10.20"
+const version = "0.10.21"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -236,7 +236,8 @@ func runSyncSecondFactor(args []string) int {
 		fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		return 1
 	}
-	if err := apply.WriteOathUsers(apply.NewEnv(*root), lines, phones); err != nil {
+	env := apply.NewEnv(*root)
+	if err := apply.WriteOathUsers(env, lines, phones, apply.SecondFactorMethod(env)); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		return 1
 	}
@@ -442,7 +443,7 @@ func fetchSecondFactor(
 		// stack is a machine nobody can sign in to.
 		return []policy.Result{policy.Fail("second_factor:enrolments", err)}
 	}
-	if err := apply.WriteOathUsers(env, lines, phones); err != nil {
+	if err := apply.WriteOathUsers(env, lines, phones, settings.SecondFactor.Method); err != nil {
 		return []policy.Result{policy.Fail("second_factor:enrolments", err)}
 	}
 	return []policy.Result{policy.Ok("second_factor:enrolments")}
@@ -911,7 +912,7 @@ func refreshDynamicDNS(ctx context.Context, env apply.Env, current []string) {
 // self-update runs under the binary being replaced; the new one then starts,
 // finds the serial matching and nothing newer on offer, and says "policy
 // unchanged" on every poll until somebody happens to edit a policy object.
-// Seen live: 0.10.20 shipped a fix to a file its predecessor had written
+// Seen live: 0.10.21 shipped a fix to a file its predecessor had written
 // wrongly, was installed on every machine within a minute, and rewrote that
 // file on none of them.
 func lastSerial(env apply.Env) string {

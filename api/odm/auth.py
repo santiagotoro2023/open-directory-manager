@@ -571,14 +571,21 @@ async def remove_enrolment(
 
 @router.get("/second-factor/push")
 async def push_state(
+    request: Request,
     session: Session = Depends(current_session),
     pool: asyncpg.Pool = Depends(get_pool),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    row = await pool.fetchrow(
-        "SELECT topic, confirmed_at FROM push_enrolment WHERE principal_sid = $1",
-        session.principal_sid,
-    )
+    async with pool.acquire() as conn:
+        # The phone answers through the notification server; asking here is
+        # what turns its tap into "enrolled" while the dialog is watching.
+        await push.settle_enrolment(
+            conn, settings, session.principal_sid, request.client.host if request.client else None
+        )
+        row = await conn.fetchrow(
+            "SELECT topic, confirmed_at FROM push_enrolment WHERE principal_sid = $1",
+            session.principal_sid,
+        )
     pending = bool(row and not row["confirmed_at"])
     return {
         "available": push.configured(settings),

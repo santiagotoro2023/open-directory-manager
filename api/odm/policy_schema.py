@@ -791,6 +791,12 @@ class SecondFactor(Strict):
     # the way in, and a person with only a phone is refused rather than let
     # through when it cannot be asked.
     method: Literal["code", "push"] = "code"
+    # Where phones reach the notification server, when that is not the
+    # domain controller's own name — a port forwarded through a router, so a
+    # phone off the office network still gets asked. Empty uses the name the
+    # controller's setup recorded. https only: the Approve link travels over
+    # this, and a link is all approval takes.
+    push_server_url: Annotated[str, Field(max_length=256)] = ""
     # Whether somebody with no second factor is walked through setting one up
     # at the machine, rather than being sent to an administrator. On by
     # default: the alternative is a person who cannot sign in and a ticket.
@@ -817,6 +823,16 @@ class SecondFactor(Strict):
         for principal in value:
             if not PRINCIPAL_RE.match(principal):
                 raise ValueError(f"{principal!r} is not a user or %group")
+        return value
+
+    @field_validator("push_server_url")
+    @classmethod
+    def _push_server_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if not value:
+            return ""
+        if not value.startswith("https://") or any(c.isspace() for c in value):
+            raise ValueError("the notification server address must be an https:// URL")
         return value
 
 
