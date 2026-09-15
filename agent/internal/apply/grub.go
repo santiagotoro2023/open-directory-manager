@@ -93,6 +93,17 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		if nvidiaProprietaryDriverInUse(env) {
 			cmdline += " nvidia-drm.modeset=1 nvidia-drm.fbdev=1"
 		}
+		if s.Grub.Silent {
+			// Everything, not only errors. Seen live: the second between the
+			// desktop ending and the machine restarting still showed the kernel's
+			// own last words ("watchdog did not stop", "Restarting system") and
+			// systemd's. loglevel=0 prints nothing short of a panic — a panic
+			// raises the level itself and is always shown. systemd's status
+			// lines are off in the initramfs and on the root filesystem alike,
+			// udev's too, and the console's cursor does not blink on a black
+			// screen. All of it is still in the journal.
+			cmdline += silentCmdline
+		}
 		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", cmdline)
 		// The graphics mode GRUB sets is the one GRUB_GFXPAYLOAD_LINUX=keep
 		// hands the kernel, and on a machine whose real driver stays out of
@@ -133,3 +144,7 @@ const grubGfxModes = "3840x2160,2560x1440,2560x1080,1920x1200,1920x1080,1680x105
 // plymouthDebugDropIn is the file the troubleshooting page has an operator
 // write to capture Plymouth's own log across a boot.
 const plymouthDebugDropIn = "/etc/default/grub.d/99-plymouth-debug.cfg"
+
+// silentCmdline is what "nothing but the splash" adds to the kernel line.
+const silentCmdline = " loglevel=0 systemd.show_status=false rd.systemd.show_status=false" +
+	" udev.log_level=0 rd.udev.log_level=0 vt.global_cursor_default=0"

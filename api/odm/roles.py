@@ -473,13 +473,43 @@ def installer_arguments(role: Role, config: dict[str, str]) -> list[str]:
     return command
 
 
-def stage_console_certificate(settings, certificate_pem: str, private_key_pem: str) -> None:
-    """Write the console's new certificate where the helper will find it."""
-    if not private_key_pem:
-        raise RoleError("no private key was generated for the console certificate")
+def _staging() -> Path:
     staging = Path(STAGING_DIR)
     staging.mkdir(parents=True, exist_ok=True)
     staging.chmod(0o700)
+    return staging
+
+
+def stage_console_key(settings, private_key_pem: str) -> None:
+    """Keep a private key for a certificate somebody else is going to sign,
+    until the signed certificate arrives to go with it."""
+    key_file = _staging() / "console.key"
+    key_file.touch(mode=0o600, exist_ok=True)
+    key_file.chmod(0o600)
+    key_file.write_text(private_key_pem, encoding="ascii")
+    # A certificate left from an earlier install must not be picked up with
+    # this new key: the pair would not match, and the helper would refuse it.
+    (_staging() / "console.crt").unlink(missing_ok=True)
+
+
+def staged_console_key(settings) -> str | None:
+    """The key from a signing request made here, if one is waiting."""
+    key_file = Path(STAGING_DIR) / "console.key"
+    if not key_file.is_file() or (Path(STAGING_DIR) / "console.crt").is_file():
+        return None
+    return key_file.read_text(encoding="ascii")
+
+
+def stage_console_certificate(settings, certificate_pem: str, private_key_pem: str) -> None:
+    """Write the console's new certificate where the helper will find it.
+
+    With no key given, the one a signing request made here left behind is
+    the key — that is the whole point of the request."""
+    if not private_key_pem:
+        private_key_pem = staged_console_key(settings) or ""
+    if not private_key_pem:
+        raise RoleError("no private key was generated for the console certificate")
+    staging = _staging()
 
     key_file = staging / "console.key"
     key_file.touch(mode=0o600, exist_ok=True)

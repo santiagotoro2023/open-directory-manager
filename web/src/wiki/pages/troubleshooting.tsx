@@ -1097,6 +1097,24 @@ export function Content() {
               ],
               [
                 <>
+                  The ntfy app refuses the subscription with &ldquo;Trust anchor for certification
+                  path not found&rdquo;
+                </>,
+                <>
+                  The phone does not trust the console&rsquo;s certificate — self-signed, or from
+                  the domain&rsquo;s own authority — and on this path the app offers no prompt to
+                  trust it. Since 0.10.23 the walkthrough puts the certificate first: download it
+                  from <C key="ta1">https://&lt;console&gt;:8443/api/v1/ca/trust.crt</C> on the
+                  phone (continue past the browser&rsquo;s warning), then ntfy &rarr;{" "}
+                  <em>Settings</em> &rarr; <em>Advanced</em> &rarr; <em>Manage certificates</em> &rarr;{" "}
+                  <em>Add trusted certificate</em> &rarr; the downloaded file, then subscribe
+                  again. To never see the step, give the console a certificate phones already
+                  trust: Certificates &rarr; Signing request, signed by a public authority, then
+                  Upload a certificate.
+                </>,
+              ],
+              [
+                <>
                   The policy was switched from the code to approval on the phone, but sign-in
                   still asks for a code
                 </>,

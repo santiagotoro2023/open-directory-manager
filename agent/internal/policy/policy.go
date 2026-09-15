@@ -444,6 +444,7 @@ type Grub struct {
 	HideMenu       bool `json:"hide_menu"`
 
 	BootSplash           bool   `json:"boot_splash"`
+	Silent               bool   `json:"silent"`
 	SplashMessage        string `json:"splash_message"`
 	SplashImage          string `json:"splash_image"` // base64
 	SplashImageName      string `json:"splash_image_name"`

@@ -171,3 +171,45 @@ def test_revocation_list_names_the_revoked_serials(initialised):
 def test_an_empty_revocation_list_is_still_valid(initialised):
     crl = x509.load_pem_x509_crl(ca.build_crl(initialised, []).encode())
     assert len(list(crl)) == 0
+
+
+# ---------------------------------------------------- foreign material ----
+
+
+def test_a_signing_request_carries_its_names_and_keeps_its_key_apart(initialised):
+    key_pem, csr_pem = ca.make_request("odm.example.org", ["odm.corp.example.internal"], "Example")
+    assert "BEGIN PRIVATE KEY" in key_pem
+    assert "BEGIN CERTIFICATE REQUEST" in csr_pem
+    assert "PRIVATE" not in csr_pem
+
+    issued = ca.issue_from_request(initialised, csr_pem, profile="console", validity_days=30)
+    assert issued.subject == "odm.example.org"
+    assert "odm.corp.example.internal" in issued.sans
+    # The key was never here to hand back.
+    assert issued.private_key_pem is None
+    # And the certificate is for that key: the pair checks out.
+    info = ca.check_pair(issued.certificate_pem, key_pem)
+    assert "odm.example.org" in info["names"] and not info["self_signed"]
+
+
+def test_a_request_with_a_broken_signature_is_refused(initialised):
+    _key, csr_pem = ca.make_request("a.example.org", [], "Example")
+    tampered = csr_pem.replace("A", "B", 1)
+    with pytest.raises(ca.CaError):
+        ca.issue_from_request(initialised, tampered)
+
+
+def test_a_key_that_is_not_the_certificates_is_refused(initialised):
+    issued = ca.issue(initialised, common_name="a.example.org", profile="server")
+    other = ca.issue(initialised, common_name="b.example.org", profile="server")
+    with pytest.raises(ca.CaError):
+        ca.check_pair(issued.certificate_pem, other.private_key_pem)
+    # Without a key there is nothing to mismatch; the certificate is described.
+    assert ca.check_pair(issued.certificate_pem, None)["names"] == ["a.example.org"]
+
+
+def test_the_root_recognises_what_it_issued(initialised):
+    issued = ca.issue(initialised, common_name="a.example.org", profile="server")
+    assert ca.issued_here(initialised, issued.certificate_pem)
+    assert not ca.is_self_signed(issued.certificate_pem)
+    assert ca.is_self_signed(ca.root_pem(initialised))

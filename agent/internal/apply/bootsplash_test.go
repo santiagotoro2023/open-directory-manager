@@ -1056,3 +1056,31 @@ func TestTheShutdownSplashIsLeftAloneWithoutTheProprietaryDriver(t *testing.T) {
 		t.Errorf("touched plymouth's shutdown units on a machine with no nvidia driver: %v", runner.commands)
 	}
 }
+
+// "Nothing but the splash" is the operator's own choice, off by default,
+// because what it hides is what a stuck boot has to say for itself.
+func TestSilentBootIsOptInAndHidesEverythingShortOfAPanic(t *testing.T) {
+	env, _ := testEnv(t)
+	writePlymouthInstalledMarker(t, env)
+
+	applyGrub(context.Background(), policy.Settings{Grub: &policy.Grub{BootSplash: true}}, env)
+	if strings.Contains(read(t, env, grubConfPath), "loglevel=0") {
+		t.Error("the splash alone silenced the kernel")
+	}
+
+	applyGrub(context.Background(), policy.Settings{
+		Grub: &policy.Grub{BootSplash: true, Silent: true},
+	}, env)
+	body := read(t, env, grubConfPath)
+	for _, want := range []string{
+		"loglevel=0", "systemd.show_status=false", "rd.systemd.show_status=false",
+		"vt.global_cursor_default=0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("silent boot is missing %s:\n%s", want, body)
+		}
+	}
+	if !strings.Contains(body, "quiet splash") {
+		t.Errorf("silent boot dropped the splash itself:\n%s", body)
+	}
+}

@@ -424,6 +424,8 @@ async def agent_enrol_push(
         "server_url": push.server_url(settings, external),
         "subscribe_url": push.subscribe_url(settings, topic, external),
         "topic": topic,
+        "trust": await run_in_threadpool(push.trust_state, settings),
+        "trust_url": push.trust_url(settings),
     }
 
 

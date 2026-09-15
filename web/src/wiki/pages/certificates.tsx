@@ -243,6 +243,36 @@ export function Content() {
             expired, keeps a copy of the previous pair, installs the new one, and restarts the
             service. The console is briefly unavailable.
           </p>
+          <p>
+            The same certificate serves the phone-approval server beside the console (it reads the
+            same files, and restarts itself when they change), so whatever is installed here is
+            what phones see too.
+          </p>
+          <Reference
+            headers={["Way", "When"]}
+            rows={[
+              [
+                "Replace console certificate",
+                "Issued here, from the domain's authority. Publish the root first; phones need the root installed (Settings → Security → Install a certificate → CA certificate on Android), and browsers likewise.",
+              ],
+              [
+                "Signing request",
+                "For an authority other than this domain's — a public one, a company one. The key is made and kept here; only the request leaves. Works with no authority here at all. Add the public name phones use if approvals from outside the office are wanted; the console's domain alias is added on its own.",
+              ],
+              [
+                "Upload a certificate",
+                "A certificate somebody else issued, pasted as PEM with its chain after it and its private key — or without a key, when it answers a signing request made here. It must name the console's domain alias, which every joined machine looks for; the helper refuses a pair that does not match or a certificate already expired.",
+              ],
+              [
+                "Sign a request",
+                "The other direction: a request somebody else made, signed by this authority. For a key that lives on a web server or an appliance this console never sees. The names come from the request; the profile decides the rest.",
+              ],
+              [
+                <C key="tc">/api/v1/ca/trust.crt</C>,
+                "The certificate a phone or a browser has to trust, as a download that needs no sign-in: the domain's root when there is one, otherwise the console's own self-signed certificate. What the phone-approval walkthrough points phones at.",
+              ],
+            ]}
+          />
           <Note>
             Publish the root first. A browser that does not trust the authority will warn about the
             new certificate exactly as it warned about the self-signed one.

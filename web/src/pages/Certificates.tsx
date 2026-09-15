@@ -19,7 +19,9 @@ export function Certificates() {
   const [certificates, setCertificates] = useState<IssuedCertificate[]>([]);
   const [includeRevoked, setIncludeRevoked] = useState(false);
   const [tab, setTab] = useState<"issued" | "trusted" | "profiles">("issued");
-  const [dialog, setDialog] = useState<"issue" | "console" | null>(null);
+  const [dialog, setDialog] = useState<
+    "issue" | "console" | "console-request" | "console-upload" | "sign" | null
+  >(null);
   const [issued, setIssued] = useState<IssuedCertificate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -98,6 +100,32 @@ export function Certificates() {
           <ShieldCheck size={15} aria-hidden="true" />
           Create the certificate authority
         </button>
+
+        <h3 className="section-title">Console certificate</h3>
+        <p className="muted">
+          The console — and the phone-approval server beside it — serve a self-signed certificate
+          until one is installed. Without an authority here, bring one from elsewhere: create a
+          signing request for your own authority to sign, then upload what comes back.
+        </p>
+        <div className="actions-row">
+          <button type="button" className="ghost" onClick={() => setDialog("console-request")}>
+            Create a signing request
+          </button>
+          <button type="button" className="ghost" onClick={() => setDialog("console-upload")}>
+            Upload a certificate
+          </button>
+        </div>
+        {dialog === "console-request" && <ConsoleRequestDialog onClose={() => setDialog(null)} />}
+        {dialog === "console-upload" && (
+          <ConsoleUploadDialog
+            onClose={() => setDialog(null)}
+            onApplied={(message) => {
+              setDialog(null);
+              setNotice(message);
+            }}
+          />
+        )}
+        {notice && <p className="muted">{notice}</p>}
         <p className="muted">
           Requires the certificate-authority role and ODM_CA_DIR in the secrets file.
         </p>
@@ -128,6 +156,15 @@ export function Certificates() {
         </button>
         <button type="button" className="ghost" onClick={() => setDialog("console")}>
           Replace console certificate
+        </button>
+        <button type="button" className="ghost" onClick={() => setDialog("console-request")}>
+          Signing request
+        </button>
+        <button type="button" className="ghost" onClick={() => setDialog("console-upload")}>
+          Upload a certificate
+        </button>
+        <button type="button" className="ghost" onClick={() => setDialog("sign")}>
+          Sign a request
         </button>
         <button type="button" className="primary" onClick={() => setDialog("issue")}>
           <Plus size={15} aria-hidden="true" />
@@ -286,6 +323,26 @@ export function Certificates() {
           }}
         />
       )}
+      {dialog === "console-request" && <ConsoleRequestDialog onClose={() => setDialog(null)} />}
+      {dialog === "console-upload" && (
+        <ConsoleUploadDialog
+          onClose={() => setDialog(null)}
+          onApplied={(message) => {
+            setDialog(null);
+            setNotice(message);
+          }}
+        />
+      )}
+      {dialog === "sign" && (
+        <SignDialog
+          onClose={() => setDialog(null)}
+          onSigned={(certificate) => {
+            setDialog(null);
+            setIssued(certificate);
+            void load();
+          }}
+        />
+      )}
       {issued && <MaterialDialog certificate={issued} onClose={() => setIssued(null)} />}
     </main>
   );
@@ -388,14 +445,18 @@ function MaterialDialog({
   return (
     <Modal title="Issued" submitLabel="Done" onClose={onClose} onSubmit={onClose}>
       <p className="muted">
-        Copy both parts now. The private key is not stored and cannot be shown again.
+        {certificate.private_key_pem
+          ? "Copy both parts now. The private key is not stored and cannot be shown again."
+          : "The key stays wherever the request was made; this is the certificate for it."}
       </p>
       <Field label="Certificate">
         <textarea readOnly rows={8} className="mono" value={certificate.certificate_pem ?? ""} />
       </Field>
-      <Field label="Private key">
-        <textarea readOnly rows={8} className="mono" value={certificate.private_key_pem ?? ""} />
-      </Field>
+      {certificate.private_key_pem && (
+        <Field label="Private key">
+          <textarea readOnly rows={8} className="mono" value={certificate.private_key_pem} />
+        </Field>
+      )}
       <p className="mono muted">Serial {certificate.serial}</p>
     </Modal>
   );
@@ -829,6 +890,217 @@ function ProfileDialog({
           <option value="3072">3072-bit RSA</option>
           <option value="4096">4096-bit RSA</option>
         </Select>
+      </Field>
+    </Modal>
+  );
+}
+
+/** A signing request for the console's certificate, for another authority to sign. */
+function ConsoleRequestDialog({ onClose }: { onClose: () => void }) {
+  const [commonName, setCommonName] = useState(window.location.hostname);
+  const [sans, setSans] = useState("");
+  const [csr, setCsr] = useState<{ csr_pem: string; names: string[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title="Signing request for the console certificate"
+      submitLabel={csr ? "Done" : "Create the request"}
+      busy={busy}
+      error={error}
+      wide
+      onClose={onClose}
+      onSubmit={async () => {
+        if (csr) {
+          onClose();
+          return;
+        }
+        setBusy(true);
+        setError(null);
+        try {
+          setCsr(
+            await api.ca.consoleCertificateRequest({
+              common_name: commonName,
+              sans: sans
+                .split(/[\s,]+/)
+                .map((value) => value.trim())
+                .filter(Boolean),
+            }),
+          );
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {csr ? (
+        <>
+          <p className="muted">
+            Have this signed by your authority — a public one, or your company&rsquo;s — then come
+            back to <strong>Upload a certificate</strong> with the signed certificate and no key:
+            the key was made here and is waiting for it. Names in the request:{" "}
+            {csr.names.join(", ")}.
+          </p>
+          <Field label="Certificate signing request">
+            <textarea readOnly rows={12} className="mono" value={csr.csr_pem} />
+          </Field>
+        </>
+      ) : (
+        <>
+          <p className="muted">
+            For a certificate issued by an authority other than this domain&rsquo;s. The private
+            key is made here and never leaves; only the request does. The name every joined
+            machine looks for the console at is added on its own. Add the public name phones use
+            if approvals from outside the office are wanted.
+          </p>
+          <Field label="Common name" hint="The name operators use to reach the console">
+            <input value={commonName} required onChange={(e) => setCommonName(e.target.value)} />
+          </Field>
+          <Field label="Additional names" hint="Comma or space separated">
+            <input value={sans} onChange={(e) => setSans(e.target.value)} />
+          </Field>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/** A certificate somebody else issued, installed as the console's own. */
+function ConsoleUploadDialog({
+  onClose,
+  onApplied,
+}: {
+  onClose: () => void;
+  onApplied: (message: string) => void;
+}) {
+  const [certificate, setCertificate] = useState("");
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title="Upload a certificate for the console"
+      submitLabel="Install"
+      busy={busy}
+      error={error}
+      wide
+      onClose={onClose}
+      onSubmit={async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          const result = await api.ca.consoleCertificateUpload({
+            certificate_pem: certificate,
+            private_key_pem: key,
+          });
+          onApplied(
+            `Staged for ${result.names.join(", ")} (issued by ${result.issuer}). ${result.note}.`,
+          );
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <p className="muted">
+        Installs it as the console&rsquo;s certificate and the notification server&rsquo;s (they
+        serve the same files); both restart. Paste the certificate in PEM form, with any
+        intermediate certificates after it. Paste the private key too — or leave it empty if
+        the certificate answers a signing request made here, whose key is already waiting. It
+        must name the console&rsquo;s domain alias as well, which every joined machine looks for.
+      </p>
+      <Field label="Certificate (PEM), chain after it">
+        <textarea
+          rows={10}
+          className="mono"
+          required
+          value={certificate}
+          onChange={(e) => setCertificate(e.target.value)}
+          placeholder="-----BEGIN CERTIFICATE-----"
+        />
+      </Field>
+      <Field label="Private key (PEM)" hint="Empty: use the key from a signing request made here">
+        <textarea
+          rows={6}
+          className="mono"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="-----BEGIN PRIVATE KEY-----"
+        />
+      </Field>
+    </Modal>
+  );
+}
+
+/** Somebody else's request, signed by this authority. */
+function SignDialog({
+  onClose,
+  onSigned,
+}: {
+  onClose: () => void;
+  onSigned: (certificate: IssuedCertificate) => void;
+}) {
+  const [csr, setCsr] = useState("");
+  const [profile, setProfile] = useState("server");
+  const [days, setDays] = useState(397);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Modal
+      title="Sign a certificate request"
+      submitLabel="Sign"
+      busy={busy}
+      error={error}
+      wide
+      onClose={onClose}
+      onSubmit={async () => {
+        setBusy(true);
+        setError(null);
+        try {
+          onSigned(await api.ca.sign({ csr_pem: csr, profile, validity_days: days }));
+        } catch (err) {
+          setError(err instanceof ApiError ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <p className="muted">
+        For a key that lives somewhere this console never sees — a web server, an appliance. The
+        names come from the request; the profile decides what the certificate may be used for,
+        exactly as when issuing here. The result is a certificate alone: the key stays wherever
+        the request was made.
+      </p>
+      <Field label="Certificate signing request (PEM)">
+        <textarea
+          rows={10}
+          className="mono"
+          required
+          value={csr}
+          onChange={(e) => setCsr(e.target.value)}
+          placeholder="-----BEGIN CERTIFICATE REQUEST-----"
+        />
+      </Field>
+      <Field label="Profile">
+        <Select value={profile} onChange={(e) => setProfile(e.target.value)}>
+          <option value="server">server</option>
+          <option value="client">client</option>
+          <option value="console">console</option>
+        </Select>
+      </Field>
+      <Field label="Validity in days">
+        <input
+          type="number"
+          min={1}
+          max={1825}
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value))}
+        />
       </Field>
     </Modal>
   );

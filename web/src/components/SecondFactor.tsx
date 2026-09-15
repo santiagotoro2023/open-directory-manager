@@ -240,6 +240,8 @@ function PhoneApproval({ onError }: { onError: (message: string | null) => void 
     subscribe_url: string | null;
     topic: string | null;
     server_url: string;
+    trust: "self-signed" | "domain-ca" | "public";
+    trust_url: string;
   } | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -327,6 +329,20 @@ function PhoneApproval({ onError }: { onError: (message: string | null) => void 
             <li>
               Install the <strong>ntfy</strong> app (F-Droid, Google Play or the App Store).
             </li>
+            {state.trust !== "public" && (
+              <li>
+                Trust{" "}
+                {state.trust === "domain-ca"
+                  ? "the domain's root certificate"
+                  : "the console's certificate"}{" "}
+                on the phone first — the app refuses an unknown one with &ldquo;Trust anchor for
+                certification path not found&rdquo;. Open{" "}
+                <a href={state.trust_url}>{state.trust_url}</a> on the phone (continue past the
+                browser&rsquo;s warning), then in ntfy: <em>Settings</em> &rarr; <em>Advanced</em>{" "}
+                &rarr; <em>Manage certificates</em> &rarr; <em>Add trusted certificate</em> &rarr;
+                the downloaded file.
+              </li>
+            )}
             <li>
               In the app: <strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
               <em>Use another server</em>, then enter the server and the topic below — or scan

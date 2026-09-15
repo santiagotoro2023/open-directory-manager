@@ -32,6 +32,11 @@ PUBLIC = {
     # withdrawn has no session and cannot be given one, and the list says
     # only which certificates are no longer valid.
     ("GET", "/crl/odm.crl"),
+    # The certificate a phone must trust before it can be asked to approve a
+    # sign-in — the domain's root, or the console's own where there is no
+    # authority. Public because a certificate is, and because the phone asking
+    # has nothing to authenticate with yet.
+    ("GET", "/api/v1/ca/trust.crt"),
 }
 
 

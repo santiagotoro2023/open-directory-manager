@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import socket
+from pathlib import Path
 from typing import Annotated, Any
 
 import asyncpg
@@ -614,3 +615,203 @@ async def remove_trusted(
     ) as entry:
         entry.before = {"name": row["name"], "fingerprint": row["fingerprint"]}
         await pool.execute("DELETE FROM trust_anchor WHERE id = $1::uuid", id)
+
+
+# ---------------------------------------------------- foreign material ----
+# A request somebody else made for this authority to sign; a request made
+# here for somebody else to sign; and a certificate and key brought from
+# wherever an operator got them. The last two need no authority at all —
+# a domain with no CA still has a console certificate to replace.
+
+
+class SignRequest(BaseModel):
+    csr_pem: Annotated[str, Field(min_length=1, max_length=32_768)]
+    profile: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{1,30}$")] = "server"
+    validity_days: Annotated[int, Field(ge=1, le=ca.MAX_VALIDITY_DAYS)] = ca.DEFAULT_VALIDITY_DAYS
+
+
+@router.post("/sign", status_code=201, dependencies=[Depends(requires("ca.issue"))])
+async def sign_request(
+    body: SignRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Sign a certificate signing request with this authority.
+
+    For a key that lives somewhere this console never sees — a web server,
+    an appliance, a colleague's laptop. The names come from the request; the
+    profile decides everything else, exactly as when issuing here.
+    """
+    purposes: list[str] | None = None
+    if body.profile not in ca.PROFILES:
+        row = await pool.fetchrow(
+            "SELECT purposes FROM certificate_profile WHERE name = $1", body.profile
+        )
+        if row is None:
+            raise objects.ObjectError(f"unknown certificate profile {body.profile!r}")
+        purposes = list(row["purposes"])
+    async with _audit_context(
+        request, session, pool, "ca.sign", object_type="certificate", object_dn="request"
+    ) as entry:
+        issued = await run_in_threadpool(
+            lambda: ca.issue_from_request(
+                settings,
+                body.csr_pem,
+                profile=body.profile,
+                validity_days=body.validity_days,
+                purposes=purposes,
+            )
+        )
+        await _record(pool, issued, session.principal)
+        entry.object_dn = issued.subject
+        entry.after = {"serial": issued.serial, "not_after": str(issued.not_after)}
+        return {
+            "serial": issued.serial,
+            "subject": issued.subject,
+            "sans": issued.sans,
+            "profile": issued.profile,
+            "not_before": issued.not_before,
+            "not_after": issued.not_after,
+            "fingerprint": issued.fingerprint,
+            "certificate_pem": issued.certificate_pem,
+            "private_key_pem": None,
+        }
+
+
+class ConsoleRequestRequest(BaseModel):
+    common_name: Annotated[str, Field(min_length=1, max_length=253)]
+    sans: Annotated[list[Annotated[str, Field(max_length=253)]], Field(default_factory=list,
+                                                                      max_length=32)]
+
+
+@router.post("/console-certificate/request", status_code=201,
+             dependencies=[Depends(requires_domain_admin())])
+async def console_certificate_request(
+    body: ConsoleRequestRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """A signing request for the console's certificate, for another authority
+    to sign — a public one, a company one. The key is made here and kept
+    here; when the signed certificate comes back, upload it with no key and
+    the two are joined."""
+    convention = f"odm.{settings.domain}"
+    sans = list(body.sans)
+    if convention not in {body.common_name, *sans}:
+        sans.append(convention)
+    async with _audit_context(
+        request, session, pool, "ca.console_certificate.request", object_type="certificate",
+        object_dn=body.common_name,
+    ) as entry:
+        key_pem, csr_pem = await run_in_threadpool(
+            ca.make_request, body.common_name, sans, settings.domain
+        )
+        await run_in_threadpool(roles.stage_console_key, settings, key_pem)
+        entry.after = {"names": [body.common_name, *sans]}
+    return {"csr_pem": csr_pem, "names": [body.common_name, *sans]}
+
+
+class ConsoleUploadRequest(BaseModel):
+    certificate_pem: Annotated[str, Field(min_length=1, max_length=65_536)]
+    # Empty means "the key from the request made here".
+    private_key_pem: Annotated[str, Field(default="", max_length=32_768)] = ""
+
+
+@router.post("/console-certificate/upload", status_code=202,
+             dependencies=[Depends(requires_domain_admin())])
+async def console_certificate_upload(
+    body: ConsoleUploadRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Install a certificate somebody else issued as the console's own — and
+    the notification server's, which serves the same files.
+
+    A certificate with a chain is given whole, leaf first. It must name
+    odm.<domain> as well as whatever else it names: that is the name every
+    joined machine looks for the console at, and a certificate without it
+    turns every agent into "certificate is valid for <name>, not odm.<domain>".
+    """
+    convention = f"odm.{settings.domain}"
+    key_pem = body.private_key_pem or await run_in_threadpool(roles.staged_console_key, settings)
+    if not key_pem:
+        raise objects.ObjectError(
+            "no private key: give the key with the certificate, or create the signing "
+            "request here first so the key is already waiting"
+        )
+    info = await run_in_threadpool(ca.check_pair, body.certificate_pem, key_pem)
+    if convention.lower() not in {name.lower() for name in info["names"]}:
+        raise objects.ObjectError(
+            f"the certificate must also name {convention}, which is where every joined "
+            "machine looks for the console; add it as an alternative name"
+        )
+    async with _audit_context(
+        request, session, pool, "ca.console_certificate.upload", object_type="certificate",
+        object_dn=info["names"][0],
+    ) as entry:
+        await run_in_threadpool(
+            roles.stage_console_certificate, settings, body.certificate_pem, key_pem
+        )
+        entry.after = {
+            "names": info["names"],
+            "issuer": info["issuer"],
+            "not_after": str(info["not_after"]),
+        }
+    async with pool.acquire() as conn:
+        await tasks.enqueue(
+            conn,
+            node_fqdn=socket.getfqdn(),
+            kind="console-certificate",
+            payload={},
+            subject=info["names"][0],
+            requested_by=session.principal,
+        )
+    return {
+        "names": info["names"],
+        "issuer": info["issuer"],
+        "not_after": info["not_after"],
+        "chain": info["chain"],
+        "applied": False,
+        "note": "queued for the agent on this controller; the console and the notification "
+        "server restart to pick up the new certificate",
+    }
+
+
+# The certificate a phone has to trust before it can be asked anything, as a
+# file the phone's browser can download. Public: a certificate is public by
+# nature, and the phone asking has nothing to authenticate with yet. The
+# domain's root when there is one — that is the anchor everything here
+# chains to — else the console's own certificate, which is what a
+# self-signed setup has.
+CONSOLE_CERTIFICATE = "/etc/odm/tls/api.crt"
+
+
+@router.get("/trust.crt")
+async def trust_anchor(settings: Settings = Depends(get_settings)) -> Response:
+    if ca.initialised(settings):
+        pem = await run_in_threadpool(ca.root_pem, settings)
+        name = "odm-root-ca.crt"
+    else:
+        try:
+            pem = await run_in_threadpool(
+                lambda: Path(CONSOLE_CERTIFICATE).read_text(encoding="ascii")
+            )
+        except OSError as exc:
+            raise objects.NotFound("the console has no certificate on disk") from exc
+        name = "odm-console.crt"
+    # Served as a plain download rather than as a certificate type: handed a
+    # certificate type, a phone's browser passes it straight to the system's
+    # installer, which refuses anything that is not an authority — and a
+    # self-signed console certificate is not one. A file in Downloads is what
+    # both the ntfy app's own import and the system installer can take.
+    return Response(
+        content=pem,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )

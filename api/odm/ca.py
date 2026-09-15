@@ -222,8 +222,11 @@ def issue(
     validity_days: int = DEFAULT_VALIDITY_DAYS,
     purposes: Sequence[str] | None = None,
     key_size: int = LEAF_KEY_SIZE,
+    public_key: Any = None,
 ) -> Issued:
-    """Issue a leaf certificate with a freshly generated key.
+    """Issue a leaf certificate with a freshly generated key — or, given a
+    public key from somebody else's signing request, for that key, in which
+    case no private key is ever here to hand back.
 
     purposes overrides what the profile name would have meant, which is how a
     profile an operator defined is issued from: the name is still recorded, so
@@ -245,7 +248,10 @@ def issue(
     all_names = [common_name, *[n for n in (sans or []) if n]]
 
     ca_key, ca_cert = _load(settings)
-    key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
+    key = None if public_key is not None else rsa.generate_private_key(
+        public_exponent=65537, key_size=key_size
+    )
+    subject_key = public_key if public_key is not None else key.public_key()
     now = dt.datetime.now(dt.UTC)
 
     usage = [PURPOSES[name] for name in purposes]
@@ -260,7 +266,7 @@ def issue(
             )
         )
         .issuer_name(ca_cert.subject)
-        .public_key(key.public_key())
+        .public_key(subject_key)
         .serial_number(x509.random_serial_number())
         .not_valid_before(now - dt.timedelta(minutes=5))
         .not_valid_after(now + dt.timedelta(days=validity_days))
@@ -306,7 +312,9 @@ def issue(
             serialization.Encoding.PEM,
             serialization.PrivateFormat.PKCS8,
             serialization.NoEncryption(),
-        ).decode("ascii"),
+        ).decode("ascii")
+        if key is not None
+        else None,
     )
 
 
@@ -408,3 +416,145 @@ def inspect_pem(certificate_pem: str) -> dict[str, Any]:
         "not_after": certificate.not_valid_after_utc,
         "is_ca": is_ca,
     }
+
+
+# ------------------------------------------------------- foreign material ----
+# Certificates that did not start here: a request somebody else will sign, a
+# request somebody else made for this authority to sign, and a certificate
+# and key an operator brings from wherever they got them.
+
+
+def _names_of(certificate_or_request: Any) -> list[str]:
+    """Common name and every subject alternative name, as plain strings."""
+    names: list[str] = []
+    for attribute in certificate_or_request.subject.get_attributes_for_oid(NameOID.COMMON_NAME):
+        names.append(str(attribute.value))
+    try:
+        san = certificate_or_request.extensions.get_extension_for_class(
+            x509.SubjectAlternativeName
+        ).value
+    except x509.ExtensionNotFound:
+        return names
+    names.extend(str(name) for name in san.get_values_for_type(x509.DNSName))
+    names.extend(str(name) for name in san.get_values_for_type(x509.IPAddress))
+    return names
+
+
+def make_request(common_name: str, sans: list[str], organisation: str) -> tuple[str, str]:
+    """A fresh private key and a signing request for it, both as PEM.
+
+    For a certificate somebody else is going to sign — a public authority,
+    a company one. The key stays on the console; only the request travels.
+    """
+    common_name = validate_name(common_name)
+    all_names = [common_name, *[n for n in sans if n]]
+    key = rsa.generate_private_key(public_exponent=65537, key_size=LEAF_KEY_SIZE)
+    request = (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(
+            x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, common_name[:64]),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, organisation[:64]),
+                ]
+            )
+        )
+        .add_extension(_san(all_names), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+    return (
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode("ascii"),
+        request.public_bytes(serialization.Encoding.PEM).decode("ascii"),
+    )
+
+
+def issue_from_request(
+    settings: Settings,
+    csr_pem: str,
+    *,
+    profile: str = "server",
+    validity_days: int = DEFAULT_VALIDITY_DAYS,
+    purposes: Sequence[str] | None = None,
+) -> Issued:
+    """Sign somebody else's request with this authority.
+
+    The names come from the request; the extensions, the usage and the
+    lifetime come from the profile, exactly as for a certificate issued
+    here — a request is a public key with a name attached, not a say in
+    what the certificate may be used for.
+    """
+    try:
+        request = x509.load_pem_x509_csr(csr_pem.encode("ascii", "replace"))
+    except (ValueError, TypeError) as exc:
+        raise CaError(f"not a signing request: {exc}") from exc
+    if not request.is_signature_valid:
+        raise CaError("the request's own signature does not verify")
+    names = _names_of(request)
+    if not names:
+        raise CaError("the request names nothing")
+    return issue(
+        settings,
+        common_name=names[0],
+        sans=names[1:],
+        profile=profile,
+        validity_days=validity_days,
+        purposes=purposes,
+        public_key=request.public_key(),
+    )
+
+
+def check_pair(certificate_pem: str, private_key_pem: str | None) -> dict[str, Any]:
+    """Whether a certificate and a key belong together, and what the
+    certificate is. The first PEM block is the leaf; anything after it is a
+    chain and is kept with it."""
+    try:
+        blocks = x509.load_pem_x509_certificates(certificate_pem.encode("ascii", "replace"))
+    except (ValueError, TypeError) as exc:
+        raise CaError(f"not a certificate: {exc}") from exc
+    if not blocks:
+        raise CaError("no certificate in what was given")
+    leaf = blocks[0]
+    if private_key_pem:
+        try:
+            key = serialization.load_pem_private_key(
+                private_key_pem.encode("ascii", "replace"), password=None
+            )
+        except (ValueError, TypeError) as exc:
+            raise CaError(f"not a private key: {exc}") from exc
+        expected = leaf.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        actual = key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        if expected != actual:
+            raise CaError("that private key does not belong to that certificate")
+    now = dt.datetime.now(dt.UTC)
+    if leaf.not_valid_after_utc < now:
+        raise CaError("that certificate has already expired")
+    return {
+        "names": _names_of(leaf),
+        "not_after": leaf.not_valid_after_utc,
+        "issuer": leaf.issuer.rfc4514_string(),
+        "self_signed": leaf.issuer == leaf.subject,
+        "chain": len(blocks) - 1,
+    }
+
+
+def is_self_signed(certificate_pem: str) -> bool:
+    try:
+        leaf = x509.load_pem_x509_certificate(certificate_pem.encode("ascii", "replace"))
+    except (ValueError, TypeError):
+        return False
+    return leaf.issuer == leaf.subject
+
+
+def issued_here(settings: Settings, certificate_pem: str) -> bool:
+    """Whether this authority signed that certificate."""
+    _key, root = _load(settings)
+    leaf = x509.load_pem_x509_certificate(certificate_pem.encode("ascii", "replace"))
+    return leaf.issuer == root.subject

@@ -436,6 +436,10 @@ type PushEnrolment struct {
 	ServerURL       string `json:"server_url"`
 	SubscribeURL    string `json:"subscribe_url"`
 	Topic           string `json:"topic"`
+	// What the phone has to do about the certificate first: "self-signed",
+	// "domain-ca" or "public" (nothing).
+	Trust    string `json:"trust"`
+	TrustURL string `json:"trust_url"`
 }
 
 // PushEnrol begins, polls or re-sends a phone enrolment for the person

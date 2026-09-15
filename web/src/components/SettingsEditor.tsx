@@ -2249,6 +2249,21 @@ function GrubEditor({
 
           {current.boot_splash && (
             <>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={current.silent ?? false}
+                  onChange={(e) => set({ silent: e.target.checked })}
+                />
+                Nothing but the splash — no text of any kind at boot or shutdown
+              </label>
+              <p className="muted">
+                Hides what the splash alone does not: the kernel&rsquo;s own last lines as the
+                machine restarts, systemd&rsquo;s status lines, the cursor. A panic still shows,
+                and everything is still in the journal. Off by default because it also hides the
+                reason a boot is stuck; the GRUB menu (any key in the first two seconds) is the
+                way to see it — remove &ldquo;quiet splash&rdquo; from the line for one boot.
+              </p>
               <label className="field">
                 <span>Message</span>
                 <input

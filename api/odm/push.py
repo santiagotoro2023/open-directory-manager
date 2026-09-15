@@ -437,3 +437,41 @@ def methods_no_longer_asked_for(old: dict | None, new: dict | None) -> set[str]:
         return {"code", "push"}
     before, after = old.get("method") or "code", new.get("method") or "code"
     return {before} if before != after else set()
+
+
+# ---------------------------------------------------------------- trust ----
+# A phone checks the certificate it is shown against what it already trusts.
+# A self-signed console certificate, or one from the domain's own authority,
+# is trusted by nobody's phone until somebody installs it — and the ntfy app
+# does not offer to trust it on the way in when a link opens it, so the
+# walkthrough has to say so, first.
+
+CONSOLE_CERTIFICATE = "/etc/odm/tls/api.crt"
+
+
+def trust_state(settings: Settings) -> str:
+    """What a phone has to do about the certificate: "self-signed" (install
+    the console's own), "domain-ca" (install the domain's root), or
+    "public" (nothing)."""
+    from pathlib import Path
+
+    from . import ca
+
+    try:
+        pem = Path(CONSOLE_CERTIFICATE).read_text(encoding="ascii")
+    except OSError:
+        return "self-signed"
+    if ca.is_self_signed(pem):
+        return "self-signed"
+    if ca.initialised(settings):
+        try:
+            ours = ca.issued_here(settings, pem)
+        except (OSError, ValueError, TypeError, ca.CaError):
+            ours = False
+        if ours:
+            return "domain-ca"
+    return "public"
+
+
+def trust_url(settings: Settings) -> str:
+    return f"{settings.console_url}/api/v1/ca/trust.crt"

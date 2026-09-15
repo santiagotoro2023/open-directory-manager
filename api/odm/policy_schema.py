@@ -1022,6 +1022,13 @@ class Grub(Strict):
     # and a kernel command-line change, not something every machine should
     # get without being asked.
     boot_splash: bool = False
+    # Nothing but the splash, ever: no kernel message of any level short of a
+    # panic, no systemd status line at boot or shutdown, no cursor. Off by
+    # default even with the splash on, because everything it hides is
+    # something an operator diagnosing a boot wants to see — and GRUB's menu
+    # stays the way to see it, by taking "quiet splash" off the line for one
+    # boot.
+    silent: bool = False
     # Shown on top of the spinner for as long as it is on screen. Optional;
     # an empty message is simply no message.
     splash_message: Annotated[str, Field(max_length=128)] = ""

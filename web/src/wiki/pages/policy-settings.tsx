@@ -468,6 +468,23 @@ user      root`}</Code>
                 </>,
               ],
               [
+                "Nothing but the splash",
+                <>
+                  Under the splash, off by default. The splash alone leaves three things visible:
+                  kernel errors in the second before it has a device (already hidden by the
+                  splash&rsquo;s own <C key="s1">loglevel=3</C>), the kernel&rsquo;s last lines as the
+                  machine restarts (&ldquo;watchdog did not stop&rdquo;, &ldquo;Restarting
+                  system&rdquo;), and systemd&rsquo;s status lines when a boot or shutdown has
+                  something to say. This hides all of it: <C key="s2">loglevel=0</C> (a panic
+                  still shows; it raises the level itself), <C key="s3">systemd.show_status=false</C>{" "}
+                  in the initramfs and on the root filesystem, udev quiet, and no cursor on the
+                  black screen. Everything is still in the journal. Off by default because what
+                  it hides is exactly what somebody diagnosing a stuck boot wants to see — the
+                  GRUB menu, any key in the first two seconds, is how to see it: edit the entry
+                  and take <C key="s4">quiet splash</C> off the line for that one boot.
+                </>,
+              ],
+              [
                 "Message",
                 "Shown with the spinner, through Plymouth's own display-message mechanism. Empty means no message. Can be changed without touching the machine's boot configuration at all — it is a text file the spinner reads at boot, not part of the kernel command line or the initramfs.",
               ],

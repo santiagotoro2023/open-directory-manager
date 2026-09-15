@@ -597,7 +597,9 @@ async def push_state(
         # hands over.
         "subscribe_url": push.subscribe_url(settings, row["topic"]) if pending else None,
         "topic": row["topic"] if pending else None,
-        "server_url": (settings.ntfy_public_url or settings.ntfy_url or "").rstrip("/"),
+        "server_url": push.server_url(settings),
+        "trust": await run_in_threadpool(push.trust_state, settings),
+        "trust_url": push.trust_url(settings),
     }
 
 

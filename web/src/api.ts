@@ -193,6 +193,7 @@ export interface PolicySettings {
     timeout_seconds: number;
     hide_menu: boolean;
     boot_splash: boolean;
+    silent?: boolean;
     splash_message: string;
     splash_image: string;
     splash_image_name: string;
@@ -1578,6 +1579,8 @@ export const api = {
         subscribe_url: string | null;
         topic: string | null;
         server_url: string;
+        trust: "self-signed" | "domain-ca" | "public";
+        trust_url: string;
       }>("/auth/second-factor/push"),
 
     pushBegin: () =>
@@ -1915,6 +1918,21 @@ export const api = {
         "/ca/console-certificate",
         json(body),
       ),
+
+    // For another authority to sign; the key stays here.
+    consoleCertificateRequest: (body: { common_name: string; sans: string[] }) =>
+      request<{ csr_pem: string; names: string[] }>("/ca/console-certificate/request", json(body)),
+
+    // A certificate somebody else issued, with its key — or without one, to
+    // join the key a request made here left waiting.
+    consoleCertificateUpload: (body: { certificate_pem: string; private_key_pem: string }) =>
+      request<{ names: string[]; issuer: string; chain: number; applied: boolean; note: string }>(
+        "/ca/console-certificate/upload",
+        json(body),
+      ),
+
+    sign: (body: { csr_pem: string; profile: string; validity_days: number }) =>
+      request<IssuedCertificate>("/ca/sign", json(body)),
 
     rootUrl: "/api/v1/ca/root",
 

@@ -239,14 +239,19 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               network; see the next section for reaching phones anywhere.
             </li>
             <li>
-              At the person&rsquo;s next sign-in the walkthrough shows the server, the topic and
-              a QR code. They install the <strong>ntfy</strong> app and either scan the code
-              with the phone&rsquo;s camera (it opens the app on its subscribe dialog) or add the
-              subscription by hand (<strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
-              <em>Use another server</em>, then the server and topic shown). If the app warns
-              about the certificate, they review and trust it there. The topic is the secret:
-              long, random, shown once. It must be the app that subscribes — the server no
-              longer has a web page to subscribe from, precisely so a Confirm tapped in a
+              At the person&rsquo;s next sign-in the walkthrough shows the certificate to trust
+              (when the console&rsquo;s is self-signed or from the domain&rsquo;s own authority),
+              then the server, the topic and a QR code. They install the <strong>ntfy</strong>{" "}
+              app; if a certificate step is shown, they scan its code to download the file
+              (continuing past the browser&rsquo;s warning) and add it in ntfy under{" "}
+              <em>Settings</em> &rarr; <em>Advanced</em> &rarr; <em>Manage certificates</em> &rarr;{" "}
+              <em>Add trusted certificate</em> — the app refuses an unknown certificate outright
+              (&ldquo;Trust anchor for certification path not found&rdquo;) and offers no way
+              past it. Then they scan the subscription code with the phone&rsquo;s camera (it
+              opens the app on its subscribe dialog) or add it by hand (<strong>+</strong> &rarr;{" "}
+              <em>Subscribe to topic</em> &rarr; <em>Use another server</em>, then the server and
+              topic shown). The topic is the secret: long, random, shown once. It must be the app
+              that subscribes — the server has no web page, precisely so a Confirm tapped in a
               browser cannot enrol a phone that is not listening.
             </li>
             <li>

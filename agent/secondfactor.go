@@ -183,7 +183,26 @@ func enrolPhone(
 	fmt.Println("  Set up sign-in approvals on your phone")
 	fmt.Println()
 	fmt.Println("  1. Install the ntfy app (Play Store, F-Droid or the App Store).")
-	fmt.Println("  2. In the app: + , then \"Subscribe to topic\", then \"Use another server\".")
+	if enrolment.Trust != "public" {
+		// The app refuses a certificate it does not know with a bare error
+		// ("Trust anchor for certification path not found") and offers no
+		// way past it on this path, so the certificate goes in first.
+		what := "the console's certificate"
+		if enrolment.Trust == "domain-ca" {
+			what = "the domain's root certificate"
+		}
+		fmt.Println("  2. Trust " + what + " on the phone. Scan this to download it")
+		fmt.Println("     (the browser will warn about the site; continue), then in ntfy:")
+		fmt.Println("     Settings > Advanced > Manage certificates > Add trusted certificate,")
+		fmt.Println("     and choose the downloaded file.")
+		fmt.Println()
+		printQR(ctx, enrolment.TrustURL)
+		fmt.Println()
+		fmt.Println("     ", enrolment.TrustURL)
+		fmt.Println("  3. In the app: + , then \"Subscribe to topic\", then \"Use another server\".")
+	} else {
+		fmt.Println("  2. In the app: + , then \"Subscribe to topic\", then \"Use another server\".")
+	}
 	fmt.Println("     Server: ", enrolment.ServerURL)
 	fmt.Println("     Topic:  ", enrolment.Topic)
 	fmt.Println("     Or scan this with the phone's camera: it opens the ntfy app on the subscribe dialog.")
@@ -191,8 +210,7 @@ func enrolPhone(
 	printQR(ctx, enrolment.SubscribeURL)
 	fmt.Println()
 	fmt.Println("     If scanning does nothing, enter the server and topic above by hand.")
-	fmt.Println("     If the app warns about the certificate, review it and choose to trust it.")
-	fmt.Println("  3. Tap Confirm on the notification that arrives.")
+	fmt.Println("  Then tap Confirm on the notification that arrives.")
 	fmt.Println()
 	fmt.Println("  Waiting for the tap. Press r then enter to send the notification again.")
 
