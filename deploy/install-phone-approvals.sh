@@ -112,6 +112,19 @@ CONF
 chown root:ntfy /etc/ntfy/server.yml
 chmod 0640 /etc/ntfy/server.yml
 
+# The server has to have run once before its user database exists — the
+# CLI refuses to create the first user against a file that is not there —
+# so it is started before the account is made, and the account takes
+# effect without a restart.
+systemctl daemon-reload
+systemctl enable --now ntfy.service >/dev/null 2>&1
+systemctl restart ntfy.service
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [[ -s /var/lib/ntfy/user.db ]] && break
+    sleep 1
+done
+[[ -s /var/lib/ntfy/user.db ]] || { echo "ntfy did not create its user database; see journalctl -u ntfy" >&2; exit 1; }
+
 # The one account that may publish, and its token for the control plane.
 # Created once; the token is kept beside the console's other secrets and put
 # back into the settings file on every run, so an upgrade run of setup.sh
@@ -128,7 +141,7 @@ if [[ ! -s "$TOKEN_FILE" ]]; then
 fi
 chown root:root "$TOKEN_FILE"
 chmod 0600 "$TOKEN_FILE"
-chown ntfy:ntfy /var/lib/ntfy/user.db 2>/dev/null || true
+chown ntfy:ntfy /var/lib/ntfy/user.db* 2>/dev/null || true
 
 # -------------------------------------------------------------- service ----
 # Restarted when the console's certificate changes hands (the console can
@@ -149,8 +162,6 @@ Type=oneshot
 ExecStart=/bin/systemctl restart ntfy.service
 UNIT
 systemctl daemon-reload
-systemctl enable --now ntfy.service >/dev/null 2>&1
-systemctl restart ntfy.service
 systemctl enable --now ntfy-certificate.path >/dev/null 2>&1
 
 # ------------------------------------------------------------- settings ----
