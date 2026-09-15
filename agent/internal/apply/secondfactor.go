@@ -576,8 +576,23 @@ open_terminal() {
     return 1
 }
 
+# GNOME opens on its activities overview at every sign-in, and a window
+# opened behind the overview is a window nobody sees: the walkthrough sat
+# there, full screen, out of focus, looking like nothing had happened. The
+# shell exposes whether the overview is up as a writable property; it is
+# put down before the window opens and again a moment after, which is what
+# leaves the newest window — this one — in front.
+hide_overview() {
+    command -v gdbus >/dev/null 2>&1 || return 0
+    gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
+        --method org.freedesktop.DBus.Properties.Set org.gnome.Shell OverviewActive \
+        "<false>" >/dev/null 2>&1 || true
+}
+
 ATTEMPT=1
-while [ "$ATTEMPT" -le 3 ]; do
+while [ "" -le 3 ]; do
+    hide_overview
+    ( sleep 2; hide_overview; sleep 3; hide_overview ) &
     if ! open_terminal; then
         # No terminal on this desktop, or none that would start. Say what has
         # to happen rather than silently letting somebody past.
