@@ -437,7 +437,9 @@ def _names_of(certificate_or_request: Any) -> list[str]:
         return names
     names.extend(str(name) for name in san.get_values_for_type(x509.DNSName))
     names.extend(str(name) for name in san.get_values_for_type(x509.IPAddress))
-    return names
+    # The common name is in the alternative names as well, by our own issue()
+    # and by convention; once is enough.
+    return list(dict.fromkeys(names))
 
 
 def make_request(common_name: str, sans: list[str], organisation: str) -> tuple[str, str]:
