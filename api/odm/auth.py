@@ -600,6 +600,7 @@ async def push_state(
         "server_url": push.server_url(settings),
         "trust": await run_in_threadpool(push.phone_trust, settings),
         "trust_url": push.trust_url(settings),
+        "fingerprint": await run_in_threadpool(push.certificate_fingerprint, settings),
     }
 
 

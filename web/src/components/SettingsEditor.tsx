@@ -3821,8 +3821,9 @@ function SecondFactorEditor({
               <small>
                 Leave empty to use the domain controller&rsquo;s own name, which works on the
                 office network. Set it when port 8444 is forwarded through a router so phones
-                are reached anywhere: the public name (or address) and port, https only. See
-                Wiki &rarr; Operations &rarr; Phone approvals from anywhere.
+                are reached anywhere: the public name or address and port, https only — the
+                console&rsquo;s own self-signed certificate is fine, the app asks once and pins
+                it. See Wiki &rarr; Health and backups &rarr; Phone approvals from anywhere.
               </small>
             </label>
           )}

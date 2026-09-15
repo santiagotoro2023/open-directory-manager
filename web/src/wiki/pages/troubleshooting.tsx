@@ -1101,16 +1101,19 @@ export function Content() {
                   path not found&rdquo;
                 </>,
                 <>
-                  The phone does not trust the console&rsquo;s certificate — self-signed, or from
-                  the domain&rsquo;s own authority — and on this path the app offers no prompt to
-                  trust it. Since 0.10.23 the walkthrough puts the certificate first: download it
-                  from <C key="ta1">https://&lt;console&gt;:8443/api/v1/ca/trust.crt</C> on the
-                  phone (continue past the browser&rsquo;s warning), then ntfy &rarr;{" "}
-                  <em>Settings</em> &rarr; <em>Advanced</em> &rarr; <em>Manage certificates</em> &rarr;{" "}
-                  <em>Add trusted certificate</em> &rarr; the downloaded file, then subscribe
-                  again. To never see the step, give the console a certificate phones already
-                  trust: Certificates &rarr; Signing request, signed by a public authority, then
-                  Upload a certificate.
+                  The subscription was added by scanning the code on a phone that had never
+                  trusted this server. The ntfy app (its own source says so) asks whether to
+                  trust an unknown certificate only in its subscribe dialog; a link skips the
+                  question and fails with this error. Delete that subscription, then do it the
+                  dialog way once: <strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
+                  <em>Use another server</em>, the server and topic the walkthrough shows, tap
+                  Subscribe, compare the fingerprint, tap <strong>Trust</strong>. The app pins
+                  the certificate for that server, and every later code scans straight in.
+                  Needs app version 1.24 or later. A certificate from a public authority
+                  (Certificates &rarr; Signing request, then Upload) removes the question
+                  entirely; the certificate is also downloadable without a sign-in from{" "}
+                  <C key="ta1">https://&lt;console&gt;:8443/api/v1/ca/trust.crt</C> for the
+                  app&rsquo;s Manage certificates, if ever wanted.
                 </>,
               ],
               [

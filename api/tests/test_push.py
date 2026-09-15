@@ -23,8 +23,8 @@ def test_a_topic_is_one_ntfy_accepts_and_nobody_guesses():
     for topic in seen:
         assert push.TOPIC_RE.match(topic), topic
         assert topic.startswith(push.TOPIC_PREFIX)
-        # 18 random bytes, base64: at least 24 characters of entropy.
-        assert len(topic) >= len(push.TOPIC_PREFIX) + 24
+        # 12 random bytes, base64: 16 characters, 96 bits.
+        assert len(topic) >= len(push.TOPIC_PREFIX) + 16
 
 
 def test_the_phone_subscribes_to_the_public_name_not_the_loopback():
@@ -119,6 +119,11 @@ def test_phones_use_plain_http_until_the_certificate_is_one_they_trust(monkeypat
     assert push.server_url(settings) == "http://odm.corp.example.internal:8445"
     assert push.subscribe_url(settings, "odm-abc").startswith("ntfyhttp://")
     assert push.phone_trust(settings) == "public"
+    # Without the plain address, a self-signed certificate over HTTPS is one
+    # the app asks about in its subscribe dialog: "prompt", never a link.
+    settings.ntfy_plain_url = None
+    assert push.server_url(settings) == "https://odm.corp.example.internal:8444"
+    assert push.phone_trust(settings) == "prompt"
 
     monkeypatch.setattr(push, "trust_state", lambda _settings: "public")
     assert push.server_url(settings) == "https://odm.corp.example.internal:8444"

@@ -426,6 +426,7 @@ async def agent_enrol_push(
         "topic": topic,
         "trust": await run_in_threadpool(push.phone_trust, settings, external),
         "trust_url": push.trust_url(settings),
+        "fingerprint": await run_in_threadpool(push.certificate_fingerprint, settings),
     }
 
 

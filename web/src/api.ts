@@ -1579,8 +1579,9 @@ export const api = {
         subscribe_url: string | null;
         topic: string | null;
         server_url: string;
-        trust: "self-signed" | "domain-ca" | "public";
+        trust: "prompt" | "public";
         trust_url: string;
+        fingerprint: string;
       }>("/auth/second-factor/push"),
 
     pushBegin: () =>

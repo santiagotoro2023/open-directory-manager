@@ -58,8 +58,10 @@ def configured(settings: Settings) -> bool:
 
 
 def new_topic() -> str:
-    """A topic nobody could guess. 18 bytes is 144 bits, which is plenty."""
-    return TOPIC_PREFIX + secrets.token_urlsafe(18)
+    """A topic nobody could guess, and somebody could type: twelve bytes is
+    sixteen characters and 96 bits, which is plenty for a name that is only
+    ever tried by a phone."""
+    return TOPIC_PREFIX + secrets.token_urlsafe(12)
 
 
 def new_token() -> str:
@@ -464,11 +466,30 @@ CONSOLE_CERTIFICATE = "/etc/odm/tls/api.crt"
 
 def phone_trust(settings: Settings, override: str = "") -> str:
     """What a phone has to do about the certificate on the address it will
-    actually use: nothing over plain HTTP or a public certificate, else
-    install one."""
+    actually use. "public": nothing (a publicly trusted certificate, or plain
+    HTTP), and a link can open the app straight onto the subscription.
+    "prompt": the app asks once whether to trust it, in its own subscribe
+    dialog — and only there; a link skips the question and fails silently,
+    so the walkthrough shows no link and walks through the dialog instead."""
     if server_url(settings, override).startswith("http://"):
         return "public"
-    return trust_state(settings)
+    return "public" if trust_state(settings) == "public" else "prompt"
+
+
+def certificate_fingerprint(settings: Settings) -> str:
+    """SHA-256 of the console's certificate, the way the app shows it when
+    it asks — so a person can compare before tapping Trust."""
+    from pathlib import Path
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+
+    try:
+        pem = Path(CONSOLE_CERTIFICATE).read_text(encoding="ascii")
+        leaf = x509.load_pem_x509_certificate(pem.encode("ascii", "replace"))
+    except (OSError, ValueError, TypeError):
+        return ""
+    return leaf.fingerprint(hashes.SHA256()).hex(":").upper()
 
 
 def trust_state(settings: Settings) -> str:

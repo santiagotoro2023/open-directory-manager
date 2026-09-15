@@ -239,20 +239,19 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               network; see the next section for reaching phones anywhere.
             </li>
             <li>
-              At the person&rsquo;s next sign-in the walkthrough shows the certificate to trust
-              (when the console&rsquo;s is self-signed or from the domain&rsquo;s own authority),
-              then the server, the topic and a QR code. They install the <strong>ntfy</strong>{" "}
-              app; if a certificate step is shown, they scan its code to download the file
-              (continuing past the browser&rsquo;s warning) and add it in ntfy under{" "}
-              <em>Settings</em> &rarr; <em>Advanced</em> &rarr; <em>Manage certificates</em> &rarr;{" "}
-              <em>Add trusted certificate</em> — the app refuses an unknown certificate outright
-              (&ldquo;Trust anchor for certification path not found&rdquo;) and offers no way
-              past it. Then they scan the subscription code with the phone&rsquo;s camera (it
-              opens the app on its subscribe dialog) or add it by hand (<strong>+</strong> &rarr;{" "}
-              <em>Subscribe to topic</em> &rarr; <em>Use another server</em>, then the server and
-              topic shown). The topic is the secret: long, random, shown once. It must be the app
-              that subscribes — the server has no web page, precisely so a Confirm tapped in a
-              browser cannot enrol a phone that is not listening.
+              At the person&rsquo;s next sign-in the walkthrough shows the server, the topic and,
+              with a self-signed console, the certificate&rsquo;s fingerprint. They install the{" "}
+              <strong>ntfy</strong> app (1.24 or later), <strong>+</strong> &rarr;{" "}
+              <em>Subscribe to topic</em> &rarr; <em>Use another server</em>, enter the two, and
+              tap Subscribe. With a self-signed certificate the app says it does not know it,
+              shows the fingerprint, and offers <strong>Trust</strong>: one tap, once — the app
+              pins that certificate for that server from then on. That question is asked only
+              in the app&rsquo;s own subscribe dialog; a link that opens the app skips it and
+              fails silently — so on a phone's first time it is the dialog, and every time
+              after, the code the walkthrough shows opens the app straight onto the
+              subscription. The topic is the secret: sixteen random characters, shown once. It must
+              be the app that subscribes — the server has no web page, precisely so a Confirm
+              tapped in a browser cannot enrol a phone that is not listening.
             </li>
             <li>
               They tap <strong>Confirm</strong> on the notification that arrives. That tap is
@@ -290,15 +289,11 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
           <Note>
             Anyone who knows a topic&rsquo;s name can read it, and nobody but the control plane can
             publish to one: ntfy is configured read-only by default with a single publishing
-            account. Phones reach it over plain HTTP on port 8445 for as long as the
-            console&rsquo;s certificate is one no phone trusts on its own (self-signed, or from
-            the domain&rsquo;s own authority) — nobody installs a certificate on a phone by hand,
-            and that is the only way the feature is real on such a domain. The trade is that
-            the topic name and each sign-in&rsquo;s one-shot answer cross the local network in
-            the clear, so somebody on that network who also knows the password could approve
-            their own sign-in; it remains a second factor against everyone else. Give the
-            console a certificate phones already trust (Certificates &rarr; Signing request,
-            signed publicly, then Upload) and phones switch to HTTPS on 8444 by themselves.
+            account. Approvals travel over TLS only; the plain-HTTP listener exists on the
+            loopback address alone, for the control plane on the same machine. (Setting{" "}
+            <C key="pl1">ODM_NTFY_PLAIN_URL</C> and opening the listener is possible for a network
+            that wants no certificate question at all, and puts every approval on that network in
+            the clear — not something to forward through a router.)
           </Note>
           <Note>
             Google Authenticator and similar apps cannot receive these. They are code generators
@@ -332,14 +327,12 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               static address first.
             </li>
             <li>
-              <strong>Put the name on the certificate.</strong> A phone checks the name it
-              connected to against the certificate it is shown. With the certificate authority
-              role, issue the console&rsquo;s certificate with <C>odm.example.org</C> as an extra
-              name (<strong>Certificates</strong> &rarr; the console&rsquo;s certificate &rarr;
-              additional names) and install the domain&rsquo;s root on the phones; ntfy restarts
-              itself when the console certificate changes. Without the authority, the ntfy app
-              still offers to trust the certificate it is shown the first time it meets it &mdash;
-              the person reviews and accepts it during the walkthrough.
+              <strong>The certificate needs no change.</strong> The ntfy app pins the
+              certificate it was told to trust and skips hostname checking for a pinned one, so
+              the console&rsquo;s self-signed certificate, made for the internal name, works
+              through the public address exactly as it does inside. A certificate from a public
+              authority (Certificates &rarr; Signing request, then Upload) removes the Trust
+              question altogether and lets the walkthrough show a code to scan.
             </li>
             <li>
               <strong>Tell the policy.</strong> <strong>Second factor</strong> &rarr;{" "}
