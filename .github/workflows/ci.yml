@@ -316,9 +316,64 @@ jobs:
           path: dist/*.deb
           if-no-files-found: error
 
+  ntfy-app:
+    name: ntfy for Android (with the deep-link trust prompt)
+    # The phone half of phone approvals. The store build of ntfy asks whether
+    # to trust a self-signed server only in its own subscribe dialog; scanning
+    # the code the walkthrough shows adds the subscription without asking and
+    # fails. This project's fix (upstream PR binwiederhier/ntfy-android#188)
+    # is built here from the commit deploy/ntfy-android.ref names, signed with
+    # one key kept as a repository secret so an installed copy updates in
+    # place from release to release, and attached to every release beside the
+    # client package. Only on a release: it is a five-minute build of somebody
+    # else's code, and nothing in this tree changes what it produces.
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The pinned fork commit
+        id: ref
+        run: echo "sha=$(tr -d '[:space:]' < deploy/ntfy-android.ref)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: santiagotoro2023/ntfy-android
+          ref: ${{ steps.ref.outputs.sha }}
+          path: ntfy-android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build, align and sign
+        env:
+          KEYSTORE_B64: ${{ secrets.NTFY_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.NTFY_KEYSTORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ntfy-android
+          chmod +x gradlew
+          ./gradlew --no-daemon -q assembleFdroidRelease
+          UNSIGNED="$(ls app/build/outputs/apk/fdroid/release/*.apk | head -1)"
+          VERSION="$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -1)"
+          TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > ../ntfy-odm.jks
+          mkdir -p ../dist
+          "$TOOLS/zipalign" -f 4 "$UNSIGNED" ../dist/aligned.apk
+          "$TOOLS/apksigner" sign --ks ../ntfy-odm.jks --ks-key-alias odm \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" --key-pass "pass:$KEYSTORE_PASSWORD" \
+            --out "../dist/ntfy-odm_${VERSION}.apk" ../dist/aligned.apk
+          rm -f ../dist/aligned.apk ../ntfy-odm.jks
+          "$TOOLS/apksigner" verify "../dist/ntfy-odm_${VERSION}.apk"
+          ls -la ../dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ntfy-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
   release:
     name: publish odm-client.deb
-    needs: [api, installed, web, go, client-package]
+    needs: [api, installed, web, go, client-package, ntfy-app]
     if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-latest
     permissions:
@@ -353,6 +408,10 @@ jobs:
         with:
           name: odm-client-deb
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: ntfy-apk
+          path: dist
       - name: Attach it to the release
         uses: softprops/action-gh-release@v2
         with:
@@ -361,7 +420,9 @@ jobs:
           # from the version the step above verified, with exactly one "v".
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          files: dist/*.deb
+          files: |
+            dist/*.deb
+            dist/*.apk
           fail_on_unmatched_files: true
           # Whoever downloads this is standing at a machine they want joined,
           # not reading the repository.
@@ -381,3 +442,10 @@ jobs:
             or `--force` as root.
 
             Debian 12 and 13, amd64.
+
+            `ntfy-odm_*.apk` is ntfy for Android with this project's deep-link
+            trust prompt (upstream PR binwiederhier/ntfy-android#188): install
+            it on phones, and scanning the code a sign-in walkthrough shows
+            opens the app straight onto the subscription and asks once whether
+            to trust the server. Signed with one key across releases, so it
+            updates in place.

@@ -245,11 +245,11 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               <em>Subscribe to topic</em> &rarr; <em>Use another server</em>, enter the two, and
               tap Subscribe. With a self-signed certificate the app says it does not know it,
               shows the fingerprint, and offers <strong>Trust</strong>: one tap, once — the app
-              pins that certificate for that server from then on. That question is asked only
-              in the app&rsquo;s own subscribe dialog; a link that opens the app skips it and
-              fails silently — so on a phone's first time it is the dialog, and every time
-              after, the code the walkthrough shows opens the app straight onto the
-              subscription. The topic is the secret: sixteen random characters, shown once. It must
+              pins that certificate for that server from then on. The store build asks that
+              question only in its own subscribe dialog, and a scanned code skips it; the build
+              of ntfy attached to every ODM release (<C>ntfy-odm_*.apk</C>, this project's fix,
+              offered upstream) asks it on a scanned code too — with that build a person scans
+              the code, taps Trust, taps Confirm, and is done. The topic is the secret: sixteen random characters, shown once. It must
               be the app that subscribes — the server has no web page, precisely so a Confirm
               tapped in a browser cannot enrol a phone that is not listening.
             </li>

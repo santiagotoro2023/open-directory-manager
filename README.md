@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.10.25_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.10.26_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -154,7 +154,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, re-issues the console's own certificate, and withdraws one to a revocation list every issued certificate points at |
 | Passwords | The local password policy for accounts that live on a machine itself, set as a policy-object setting; helpdesk resets. The domain's own password rules are set with `samba-tool domain passwordsettings`, the way any AD-compatible tool sets them, rather than duplicated as console state |
 | Pictures | A person's picture set on their account and shown by every machine they sign in to, at the login screen and in the desktop |
-| Sign-in | A second factor, enrolled once with a QR code and asked for at the console and at the machine alike — on screen, over SSH, at sudo or over remote desktop — or approved with a tap on the phone instead: an Approve / Deny notification through a self-hosted [ntfy](https://ntfy.sh) server that the domain controller's setup installs,, nothing leaving the domain. The policy object is the source of truth: a method it stops asking for takes its enrolments with it, and an administrator can reset one account's second factor from its right-click menu or every account's from the Overview. Somebody who has not enrolled is walked through it at their next sign-in, full screen, and cannot get past it; the phone is set up the same way, and a policy can name the public address phones use when port 8444 is forwarded through a router |
+| Sign-in | A second factor, enrolled once with a QR code and asked for at the console and at the machine alike — on screen, over SSH, at sudo or over remote desktop — or approved with a tap on the phone instead: an Approve / Deny notification through a self-hosted [ntfy](https://ntfy.sh) server that the domain controller's setup installs (every release also ships a build of the ntfy Android app that trusts a self-signed server on a scanned code),, nothing leaving the domain. The policy object is the source of truth: a method it stops asking for takes its enrolments with it, and an administrator can reset one account's second factor from its right-click menu or every account's from the Overview. Somebody who has not enrolled is walked through it at their next sign-in, full screen, and cannot get past it; the phone is set up the same way, and a policy can name the public address phones use when port 8444 is forwarded through a router |
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
 | Delegation | Roles and permissions scoped to an organizational unit, including a read-only role that sees everything and changes nothing |
 | Domain controllers | Which controllers exist, which are read-only, and replication between them; a default organizational unit for a computer that joins without naming one itself |
@@ -245,7 +245,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.10.25   # -> dist/odm-client_0.10.25_amd64.deb
+bash packaging/deb/build-in-container.sh 0.10.26   # -> dist/odm-client_0.10.26_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on
