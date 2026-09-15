@@ -223,11 +223,12 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
           <Steps>
             <li>
               The phone has to trust the console&rsquo;s certificate, the same as a browser does.
-              With the certificate authority role, issue the console&rsquo;s certificate from it
-              and install the domain&rsquo;s root certificate on the phone (Android: Settings
-              &rarr; Security &rarr; Install a certificate &rarr; CA certificate; iOS: install the
-              profile, then trust it under Certificate Trust Settings). A self-signed console
-              certificate cannot be trusted by a phone.
+              On Android the ntfy app asks the first time it meets an untrusted certificate and
+              lets the person review and trust it there (also Settings &rarr; Advanced &rarr; Manage
+              certificates), so a self-signed console certificate works. With the certificate
+              authority role, issuing the console&rsquo;s certificate from it and installing the
+              domain&rsquo;s root certificate on phones (Android: Settings &rarr; Security &rarr;
+              Install a certificate &rarr; CA certificate) avoids the prompt.
             </li>
             <li>
               Each person opens <strong>Second factor</strong> from their name in the console,
