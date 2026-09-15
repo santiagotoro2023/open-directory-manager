@@ -342,14 +342,50 @@ async def settle_challenge(conn: Any, settings: Settings, challenge_id: str) -> 
 # walkthrough sets up whatever the policy asks for next time they sign in.
 
 
-def _name_filter(wanted: Any) -> tuple[str, list[Any]]:
-    """A WHERE clause over principal for the accounts a policy covers."""
+def _covered(wanted: Any) -> tuple[str, list[str] | None]:
+    """How a policy's coverage selects rows: everyone, everyone but these
+    names, or only these names. Static statements below, one per shape, so
+    every statement here is one PostgreSQL can be shown whole."""
     if wanted is None:
-        return "TRUE", []
+        return "all", None
     names = sorted(str(name).lower() for name in set(wanted) if isinstance(name, str))
     if type(wanted).__name__ == "_AllExcept":
-        return "lower(split_part(principal, '@', 1)) <> ALL($1::text[])", [names]
-    return "lower(split_part(principal, '@', 1)) = ANY($1::text[])", [names]
+        return "except", names
+    return "only", names
+
+
+_DELETE = {
+    ("code", "all"): "DELETE FROM totp_enrolment",
+    ("code", "except"): (
+        "DELETE FROM totp_enrolment "
+        "WHERE lower(split_part(principal, '@', 1)) <> ALL($1::text[])"
+    ),
+    ("code", "only"): (
+        "DELETE FROM totp_enrolment WHERE lower(split_part(principal, '@', 1)) = ANY($1::text[])"
+    ),
+    ("push", "all"): "DELETE FROM push_enrolment",
+    ("push", "except"): (
+        "DELETE FROM push_enrolment "
+        "WHERE lower(split_part(principal, '@', 1)) <> ALL($1::text[])"
+    ),
+    ("push", "only"): (
+        "DELETE FROM push_enrolment WHERE lower(split_part(principal, '@', 1)) = ANY($1::text[])"
+    ),
+    ("asked", "all"): "DELETE FROM push_challenge",
+    ("asked", "except"): (
+        "DELETE FROM push_challenge "
+        "WHERE lower(split_part(principal, '@', 1)) <> ALL($1::text[])"
+    ),
+    ("asked", "only"): (
+        "DELETE FROM push_challenge WHERE lower(split_part(principal, '@', 1)) = ANY($1::text[])"
+    ),
+}
+
+
+async def _delete(conn: Any, what: str, shape: str, names: list[str] | None) -> int:
+    statement = _DELETE[(what, shape)]
+    status = await (conn.execute(statement) if names is None else conn.execute(statement, names))
+    return int(status.split()[-1]) if status else 0
 
 
 async def retire_enrolments(
@@ -366,21 +402,13 @@ async def retire_enrolments(
     covers, and say how many went. One audit entry for the lot."""
     from . import audit
 
-    clause, args = _name_filter(wanted)
+    shape, names = _covered(wanted)
     removed: dict[str, int] = {}
     if "code" in methods:
-        status = await conn.execute(
-            f"DELETE FROM totp_enrolment WHERE {clause}", *args  # noqa: S608 - fixed clauses
-        )
-        removed["code"] = int(status.split()[-1]) if status else 0
+        removed["code"] = await _delete(conn, "code", shape, names)
     if "push" in methods:
-        status = await conn.execute(
-            f"DELETE FROM push_enrolment WHERE {clause}", *args  # noqa: S608 - fixed clauses
-        )
-        removed["push"] = int(status.split()[-1]) if status else 0
-        await conn.execute(
-            f"DELETE FROM push_challenge WHERE {clause}", *args  # noqa: S608 - fixed clauses
-        )
+        removed["push"] = await _delete(conn, "push", shape, names)
+        await _delete(conn, "asked", shape, names)
     if any(removed.values()):
         await audit.record(
             conn,

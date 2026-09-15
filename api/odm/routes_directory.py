@@ -1099,11 +1099,14 @@ async def reset_user_second_factor(
     ) as entry:
         removed = {}
         async with pool.acquire() as conn:
-            for method, table in (("code", "totp_enrolment"), ("phone", "push_enrolment")):
-                status = await conn.execute(
-                    f"DELETE FROM {table} WHERE principal_sid = $1", sid  # noqa: S608 - fixed names
-                )
-                removed[method] = int(status.split()[-1]) if status else 0
+            status = await conn.execute(
+                "DELETE FROM totp_enrolment WHERE principal_sid = $1", sid
+            )
+            removed["code"] = int(status.split()[-1]) if status else 0
+            status = await conn.execute(
+                "DELETE FROM push_enrolment WHERE principal_sid = $1", sid
+            )
+            removed["phone"] = int(status.split()[-1]) if status else 0
             await conn.execute("DELETE FROM push_challenge WHERE principal_sid = $1", sid)
         gone = ", ".join(method for method, count in removed.items() if count)
         entry.detail = f"{name}: removed {gone}" if gone else f"{name}: nothing was enrolled"
