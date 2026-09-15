@@ -60,6 +60,10 @@ VOLATILE_TABLES = frozenset(
         # A second factor is enrolled by the person holding the device. It
         # cannot be moved to another domain and must not be copied out of one.
         "totp_enrolment",
+        # The same for a phone: the topic is what reaches it, and the
+        # questions waiting on it are of no use to any other domain.
+        "push_enrolment",
+        "push_challenge",
         # Every token is a way in that outlives the file it is written to.
         "join_token",
     }

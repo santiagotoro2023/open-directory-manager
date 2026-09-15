@@ -2984,3 +2984,67 @@ td.row-actions {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A folded-away part of a form (Collapsible). The marker is the same
+   hand-drawn triangle the settings folders use, for the same reason. */
+.collapsible {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-recessed);
+}
+
+.collapsible > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-sm);
+}
+
+.collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  flex: none;
+  border-style: solid;
+  border-width: 4px 0 4px 5px;
+  border-color: transparent transparent transparent var(--text-muted);
+  transition: transform 0.1s ease;
+}
+
+.collapsible[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.collapsible > summary:hover {
+  background: #eef2ff;
+}
+
+.collapsible-title {
+  font-weight: 600;
+}
+
+.collapsible-summary {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapsible-body {
+  padding: 4px 12px 12px;
+}
+
+/* Numbered instructions inside a dialog (setting up a phone). */
+ol.steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}

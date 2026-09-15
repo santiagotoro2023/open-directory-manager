@@ -41,7 +41,7 @@ ASSUME_YES="no"
 IMPORT_FILE=""
 
 STEP=0
-STEPS=9
+STEPS=10
 CURRENT="starting up"
 
 usage() {
@@ -590,6 +590,24 @@ ok "PostgreSQL database created and migrated"
 
 # ---------------------------------------------------------------- step 7 --
 
+step "Installing phone approvals"
+
+PHONE_LOG="/var/log/odm-phone-approvals-install.log"
+
+# ntfy, for the second factor a policy can ask to have approved on a phone
+# instead of typed from one. Part of the controller so a domain has it from
+# the moment it exists; optional in the sense that a controller with no route
+# to fetch it still comes up, and the code method carries on regardless.
+if "$HERE/install-phone-approvals.sh" --console-fqdn "$CONSOLE_FQDN" \
+        --service-group "$SERVICE_USER" --secrets-file "$SECRETS_FILE" >>"$PHONE_LOG" 2>&1; then
+    ok "Phone approvals ready on https://$CONSOLE_FQDN:8444 (ntfy)"
+else
+    warn "Phone approvals could not be set up (see $PHONE_LOG). The code method still works;"
+    warn "run $HERE/install-phone-approvals.sh --console-fqdn $CONSOLE_FQDN later to add them."
+fi
+
+# ---------------------------------------------------------------- step 8 --
+
 step "Building the console"
 
 if [[ "$SKIP_CONSOLE" == "yes" ]]; then
@@ -624,7 +642,7 @@ fi
 
 ok "Console step complete"
 
-# ---------------------------------------------------------------- step 8 --
+# ---------------------------------------------------------------- step 9 --
 
 step "Starting Open Directory Manager"
 
@@ -682,7 +700,7 @@ for _ in $(seq 1 30); do
     sleep 2
 done
 
-# ---------------------------------------------------------------- step 9 --
+# --------------------------------------------------------------- step 10 --
 
 step "Installing the policy agent on this controller"
 

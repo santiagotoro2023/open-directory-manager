@@ -249,13 +249,13 @@ func TestAServiceTheMachineDoesNotHaveIsNotAFailure(t *testing.T) {
 
 func TestTheUsersFileIsEmptiedRatherThanRemovedWhenNobodyIsEnrolled(t *testing.T) {
 	env, _ := testEnv(t)
-	if err := WriteOathUsers(env, nil); err != nil {
+	if err := WriteOathUsers(env, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(env.Path(oathUsersFile)); err != nil {
 		t.Fatal("the file pam_oath reads must exist even when it is empty")
 	}
-	if err := WriteOathUsers(env, []string{"HOTP/T30/6 bob - ff", "HOTP/T30/6 ada - ee"}); err != nil {
+	if err := WriteOathUsers(env, []string{"HOTP/T30/6 bob - ff", "HOTP/T30/6 ada - ee"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	body := read(t, env, oathUsersFile)
@@ -368,7 +368,7 @@ func TestWhoHasEnrolledIsReadableAndTheirSecretsAreNot(t *testing.T) {
 	if err := WriteOathUsers(env, []string{
 		"HOTP/T30/6 ada - 3132333435363738393031323334353637383930",
 		"HOTP/T30/6 grace - 3132333435363738393031323334353637383931",
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	names := read(t, env, enrolledList)
@@ -383,7 +383,7 @@ func TestWhoHasEnrolledIsReadableAndTheirSecretsAreNot(t *testing.T) {
 		t.Errorf("the secrets are not root-only: %v %v", info.Mode().Perm(), err)
 	}
 	// And somebody who stops being enrolled leaves the list.
-	if err := WriteOathUsers(env, nil); err != nil {
+	if err := WriteOathUsers(env, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if read(t, env, enrolledList) != "" {
@@ -526,5 +526,93 @@ func TestTheEnrolledListIsNotUnderTheAgentsPrivateDirectory(t *testing.T) {
 	}
 	if !strings.HasPrefix(enrolledList, filepath.Dir(secondFactorPam)+"/") {
 		t.Errorf("%s is not beside %s, which the session prompt already reads", enrolledList, secondFactorPam)
+	}
+}
+
+// With the phone asked first: the guard jumps over both lines, the phone's
+// line jumps over the code on approval only, and the code stays as the
+// fallback. A refusal on the phone is not a hard failure by itself — pam_exec
+// cannot say why a helper exited non-zero, and "no answer" and "no console"
+// exit the same way — so it ends the sign-in by leaving a code to type.
+func TestThePhoneIsAskedBeforeTheCodeAndTheCodeRemainsTheFallback(t *testing.T) {
+	env, _ := testEnv(t)
+	withPam(t, env, "gdm-password", "sshd")
+
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, Method: "push", Services: []string{"login", "ssh"}},
+	}, env)
+
+	for _, service := range []string{"gdm-password", "sshd"} {
+		body := read(t, env, "/etc/pam.d/"+service)
+		guard := strings.Index(body, factorGuard)
+		phone := strings.Index(body, pushHelper)
+		code := strings.Index(body, "pam_oath.so")
+		if guard < 0 || phone < 0 || code < 0 {
+			t.Fatalf("%s is missing a line:\n%s", service, body)
+		}
+		if !(guard < phone && phone < code) {
+			t.Errorf("%s: guard, phone, code is the order; got\n%s", service, body)
+		}
+		if !strings.Contains(body, "success=2 default=ignore] pam_exec.so quiet "+factorGuard) {
+			t.Errorf("%s: the guard must jump over both the phone and the code:\n%s", service, body)
+		}
+		if !strings.Contains(body, "success=1 default=ignore] pam_exec.so quiet stdout "+pushHelper) {
+			t.Errorf("%s: an approval must skip the code and nothing else:\n%s", service, body)
+		}
+		if strings.Contains(body, "requisite pam_exec.so") || strings.Contains(body, "required pam_exec.so") {
+			t.Errorf("%s: the phone's answer must never be a hard refusal on its own:\n%s", service, body)
+		}
+	}
+	if _, err := os.Stat(env.Path(pushHelper)); err != nil {
+		t.Error("the phone helper was named in the stack and never written")
+	}
+}
+
+// Changing the method on a machine that already has the lines rewrites them
+// rather than leaving two guards with different jumps.
+func TestSwitchingTheMethodRewritesTheLines(t *testing.T) {
+	env, _ := testEnv(t)
+	withPam(t, env, "sshd")
+	run := func(method string) string {
+		applySecondFactor(context.Background(), policy.Settings{
+			SecondFactor: &policy.SecondFactor{Enabled: true, Method: method, Services: []string{"ssh"}},
+		}, env)
+		return read(t, env, "/etc/pam.d/sshd")
+	}
+
+	first := run("code")
+	if strings.Contains(first, pushHelper) {
+		t.Fatalf("the code method wrote the phone line:\n%s", first)
+	}
+	second := run("push")
+	if !strings.Contains(second, pushHelper) || strings.Count(second, factorGuard) != 1 {
+		t.Errorf("switching to the phone did not rewrite the block cleanly:\n%s", second)
+	}
+	third := run("code")
+	if strings.Contains(third, pushHelper) || strings.Count(third, factorGuard) != 1 ||
+		!strings.Contains(third, "success=1 default=ignore") {
+		t.Errorf("switching back did not restore the two-line block:\n%s", third)
+	}
+	if third != first {
+		t.Errorf("a round trip should leave the stack as it was:\n--- before\n%s\n--- after\n%s", first, third)
+	}
+}
+
+// The helper is shell that PAM runs as root; it must name the service the
+// way the control plane spells it and never run with no account.
+func TestThePushHelperMapsPamServicesAndRefusesNoUser(t *testing.T) {
+	script := pushHelperScript()
+	for pam, want := range map[string]string{
+		"sshd": "ssh", "sudo": "sudo", "xrdp-sesman": "remote-desktop", "gdm-password": "login",
+	} {
+		if !strings.Contains(script, pam+") SERVICE="+want) && !(want == "login" && strings.Contains(script, "*) SERVICE=login")) {
+			t.Errorf("%s is not mapped to %s:\n%s", pam, want, script)
+		}
+	}
+	if !strings.Contains(script, `[ -n "${PAM_USER:-}" ] || exit 1`) {
+		t.Error("the helper must fail closed with no account name")
+	}
+	if !strings.Contains(script, "push-factor --user") {
+		t.Error("the helper does not run the agent's push-factor command")
 	}
 }

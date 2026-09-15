@@ -201,6 +201,75 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
           </Note>
         </Section>
 
+        <Section title="Phone approvals">
+          <p>
+            A second factor answered with a tap instead of a typed code. Where a policy&rsquo;s{" "}
+            <strong>Second factor</strong> setting says <em>Approval on the phone</em>, signing in
+            sends the person&rsquo;s phone an <strong>Approve</strong> / <strong>Deny</strong>{" "}
+            notification and waits up to a minute; the code stays as the fallback whenever the
+            phone does not answer.
+          </p>
+          <p>
+            The notifications go through <strong>ntfy</strong> — an open notification server and
+            app — which <C>deploy/setup.sh</C> installs on the domain controller beside the control
+            plane, on port <C>8444</C>, with the console&rsquo;s own certificate. Nothing leaves
+            the domain: no vendor push service, no account with anyone. A pinned release is
+            downloaded from ntfy&rsquo;s own GitHub releases and verified against its published
+            checksum; a controller without a route to fetch it comes up without phone approvals
+            and says so, and{" "}
+            <C>deploy/install-phone-approvals.sh --console-fqdn &lt;console&gt;</C> adds them
+            later.
+          </p>
+          <Steps>
+            <li>
+              The phone has to trust the console&rsquo;s certificate, the same as a browser does.
+              With the certificate authority role, issue the console&rsquo;s certificate from it
+              and install the domain&rsquo;s root certificate on the phone (Android: Settings
+              &rarr; Security &rarr; Install a certificate &rarr; CA certificate; iOS: install the
+              profile, then trust it under Certificate Trust Settings). A self-signed console
+              certificate cannot be trusted by a phone.
+            </li>
+            <li>
+              Each person opens <strong>Second factor</strong> from their name in the console,
+              chooses <strong>Set up my phone</strong>, and subscribes the ntfy app to the server
+              and topic shown. The topic is the secret: it is long, random, and shown once.
+            </li>
+            <li>
+              They tap <strong>Send the confirmation</strong> and then <strong>Confirm</strong> on
+              the notification. That tap is what finishes enrolling — the same reason a code
+              enrolment is not finished until a code from the device is accepted.
+            </li>
+            <li>
+              In the policy object, set the second factor&rsquo;s <strong>How</strong> to{" "}
+              <em>Approval on the phone</em>.
+            </li>
+          </Steps>
+          <Reference
+            headers={["What", "Where"]}
+            rows={[
+              ["Server", <C key="pa1">/etc/ntfy/server.yml</C>],
+              ["Publishing token (root only)", <C key="pa2">/etc/ntfy/odm-token</C>],
+              ["Control plane settings", <C key="pa3">ODM_NTFY_* in /etc/odm/odm.env</C>],
+              ["Logs", <C key="pa4">journalctl -u ntfy</C>],
+              [
+                "Every ask and answer",
+                "Audit log, actions auth.second_factor.push.ask / .approved / .denied.",
+              ],
+            ]}
+          />
+          <Note>
+            Anyone who knows a topic&rsquo;s name can read it, and nobody but the control plane can
+            publish to one: ntfy is configured read-only by default with a single publishing
+            account. Approvals travel over TLS only; the plain-HTTP listener exists on the
+            loopback address alone, for the control plane on the same machine.
+          </Note>
+          <Note>
+            Google Authenticator and similar apps cannot receive these. They are code generators
+            with no channel for a server to reach them; only an app built to receive
+            notifications can, which is what ntfy is.
+          </Note>
+        </Section>
+
         <Section title="Configuration export">
           <p>
             <strong>Overview</strong> → <strong>Configuration</strong> →{" "}

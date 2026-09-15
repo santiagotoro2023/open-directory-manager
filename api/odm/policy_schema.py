@@ -783,6 +783,14 @@ class SecondFactor(Strict):
     """
 
     enabled: bool = True
+    # How it is asked for. "code" is a six-digit code from an authenticator
+    # app, checked on the machine itself. "push" sends an Approve/Deny
+    # notification to the person's phone and waits for the answer, and asks
+    # for the code instead when no answer comes — a phone in a drawer, a
+    # console the machine cannot reach — so a person with both never loses
+    # the way in, and a person with only a phone is refused rather than let
+    # through when it cannot be asked.
+    method: Literal["code", "push"] = "code"
     # Whether somebody with no second factor is walked through setting one up
     # at the machine, rather than being sent to an administrator. On by
     # default: the alternative is a person who cannot sign in and a ticket.

@@ -99,6 +99,21 @@ class Settings(BaseSettings):
     kea_password: str | None = None
     kea_ca_cert: Path | None = None
 
+    # --- Phone approvals (ntfy) ---
+    # A second factor answered on a phone. setup.sh installs ntfy beside the
+    # control plane on a domain controller and writes these; unset, the
+    # push method reports itself unavailable and the code method carries on.
+    # ntfy_url is where this control plane publishes to (the loopback side);
+    # ntfy_public_url is what a phone subscribes to, so it carries the name
+    # on the certificate rather than an address.
+    ntfy_url: str | None = None
+    ntfy_public_url: str | None = None
+    ntfy_token: str | None = None
+    ntfy_ca_cert: Path | None = None
+    # How long a sign-in waits for the phone before the code is asked for
+    # instead.
+    push_timeout_seconds: int = 60
+
     # --- Certificate authority ---
     # The directory the certificate-authority role creates. It used to default
     # to nothing, so a role installed from the console reported itself "not
@@ -164,7 +179,7 @@ class Settings(BaseSettings):
             raise ValueError("ldap_uri must use ldaps://")
         return v
 
-    @field_validator("kea_url")
+    @field_validator("kea_url", "ntfy_url")
     @classmethod
     def _kea_transport(cls, v: str | None) -> str | None:
         """Plaintext only over the loopback, where there is no wire to sniff."""
@@ -175,7 +190,7 @@ class Settings(BaseSettings):
         host = v.removeprefix("http://").split("/")[0].split(":")[0]
         if v.startswith("http://") and host in ("127.0.0.1", "::1", "localhost"):
             return v
-        raise ValueError("kea_url must use https, or http on the loopback address")
+        raise ValueError("kea_url and ntfy_url must use https, or http on the loopback address")
 
     @model_validator(mode="after")
     def _defaults(self) -> Settings:

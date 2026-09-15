@@ -49,6 +49,7 @@ from . import (
     routes_packages,
     routes_policy,
     routes_printers,
+    routes_push,
     routes_radius,
     routes_rbac,
     routes_recyclebin,
@@ -182,6 +183,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_events.router)
     app.include_router(routes_join.router)
     app.include_router(routes_audit.router)
+    app.include_router(routes_push.router)
 
     # The revocation list, where the certificates this domain issues say it
     # is. Unauthenticated on purpose: a client checking whether a certificate

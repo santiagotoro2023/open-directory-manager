@@ -32,6 +32,14 @@ PUBLIC = {
     # withdrawn has no session and cannot be given one, and the list says
     # only which certificates are no longer valid.
     ("GET", "/crl/odm.crl"),
+    # A phone answering "approve this sign-in?". The phone has no session and
+    # no keytab; what proves the tap came from the right phone is that the
+    # token in the link was only ever sent to that phone. A token answers one
+    # question, once, within a minute, and the answer is audited.
+    ("POST", "/api/v1/push/{token}/approve"),
+    ("GET", "/api/v1/push/{token}/approve"),
+    ("POST", "/api/v1/push/{token}/deny"),
+    ("GET", "/api/v1/push/{token}/deny"),
 }
 
 

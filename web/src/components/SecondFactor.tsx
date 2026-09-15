@@ -162,8 +162,8 @@ export function SecondFactorDialog({ onClose }: { onClose: () => void }) {
       ) : (
         <>
           <p>
-            A code from your phone or password manager, as well as your password. It protects this
-            console only — signing in to a workstation is unaffected.
+            A code from your phone or password manager, as well as your password. The same
+            enrolment is used wherever a policy asks for a second factor at a machine.
           </p>
           <div className="actions-row">
             <button type="button" className="primary" disabled={busy} onClick={() => void begin()}>
@@ -172,6 +172,7 @@ export function SecondFactorDialog({ onClose }: { onClose: () => void }) {
           </div>
         </>
       )}
+      {!recovery && !setup && <PhoneApproval onError={setError} />}
     </Modal>
   );
 }
@@ -219,5 +220,169 @@ function QrCode({ value }: { value: string }) {
         ),
       )}
     </svg>
+  );
+}
+
+/**
+ * Approval on a phone, beside the code.
+ *
+ * The same two steps as a code: a topic is issued and the phone is
+ * subscribed to it, and it only counts once the phone has answered a
+ * notification — the tap on Confirm is the proof that the right phone is
+ * listening. The state is polled while that is pending, so the dialog
+ * notices the tap without anybody pressing anything here.
+ */
+function PhoneApproval({ onError }: { onError: (message: string | null) => void }) {
+  const [state, setState] = useState<{
+    available: boolean;
+    enrolled: boolean;
+    pending: boolean;
+    subscribe_url: string | null;
+    topic: string | null;
+    server_url: string;
+  } | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setState(await api.auth2fa.pushState());
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : String(err));
+    }
+  }, [onError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // While the phone has yet to answer, look again every couple of seconds.
+  useEffect(() => {
+    if (!state?.pending) return undefined;
+    const timer = window.setInterval(() => void load(), 2000);
+    return () => window.clearInterval(timer);
+  }, [state?.pending, load]);
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    onError(null);
+    try {
+      await action();
+      await load();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!state) return null;
+  if (!state.available && !state.enrolled && !state.pending) {
+    return (
+      <>
+        <h3 className="section-title">Approval on your phone</h3>
+        <p className="muted">
+          Not set up on this domain. It needs the notification server that the domain
+          controller&rsquo;s setup installs — see Wiki &rarr; Operations &rarr; Phone approvals.
+        </p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h3 className="section-title">Approval on your phone</h3>
+      {state.enrolled ? (
+        <>
+          <p>
+            Where a policy asks for it, signing in sends your phone an Approve / Deny
+            notification instead of asking for a code. The code still works as the fallback.
+          </p>
+          <Field
+            label="Code from the app"
+            hint="Required to remove the phone when you also have a code enrolled"
+          >
+            <input
+              inputMode="numeric"
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+          <div className="actions-row">
+            <button
+              type="button"
+              className="danger"
+              disabled={busy}
+              onClick={() => void run(() => api.auth2fa.pushRemove(code))}
+            >
+              Remove this phone
+            </button>
+          </div>
+        </>
+      ) : state.pending && state.subscribe_url ? (
+        <>
+          <ol className="steps">
+            <li>
+              Install the <strong>ntfy</strong> app (F-Droid, Google Play or the App Store).
+            </li>
+            <li>
+              In the app: <strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
+              <em>Use another server</em>, then enter the server and the topic below — or scan
+              this to open the topic on the phone and choose <em>Subscribe</em>.
+            </li>
+            <li>Tap <strong>Confirm</strong> on the notification that arrives.</li>
+          </ol>
+          <div className="qr">
+            <QrCode value={state.subscribe_url} />
+          </div>
+          <Field label="Server">
+            <input className="mono" value={state.server_url} readOnly />
+          </Field>
+          <Field label="Topic" hint="This is the secret: anyone who knows it receives your approvals">
+            <input className="mono" value={state.topic ?? ""} readOnly />
+          </Field>
+          <div className="actions-row">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await api.auth2fa.pushTest();
+                  setSent(true);
+                })
+              }
+            >
+              {sent ? "Send the confirmation again" : "Send the confirmation"}
+            </button>
+            <span className="muted">Waiting for the phone&hellip;</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <p>
+            Approve sign-ins with a tap instead of typing a code. Uses the ntfy app on your
+            phone; the code stays as the fallback when the phone does not answer.
+          </p>
+          <div className="actions-row">
+            <button
+              type="button"
+              className="primary"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await api.auth2fa.pushBegin();
+                  setSent(false);
+                })
+              }
+            >
+              Set up my phone
+            </button>
+          </div>
+        </>
+      )}
+    </>
   );
 }

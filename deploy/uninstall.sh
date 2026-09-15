@@ -606,6 +606,18 @@ if [[ "$HAS_API" == "yes" ]]; then
     ok "Control plane and console removed"
 fi
 
+# Phone approvals (ntfy), installed beside the control plane by setup.sh.
+if pkg_present ntfy || [[ -f /etc/ntfy/odm-token ]]; then
+    say "Phone approvals (ntfy)"
+    maybe systemctl disable --now ntfy-certificate.path ntfy
+    run rm -f /etc/systemd/system/ntfy-certificate.path /etc/systemd/system/ntfy-certificate.service
+    run rm -rf /etc/ntfy /var/lib/ntfy /var/cache/ntfy
+    if [[ "$PURGE_PACKAGES" == "yes" ]] && pkg_present ntfy; then
+        run apt-get purge -y ntfy >/dev/null
+    fi
+    ok "Phone approvals removed"
+fi
+
 maybe systemctl daemon-reload
 
 if [[ "$HAS_POSTGRES_DB" == "yes" ]]; then

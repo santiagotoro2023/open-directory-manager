@@ -265,7 +265,10 @@ type FirstRun struct {
 }
 
 type SecondFactor struct {
-	Enabled           bool     `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// "code" (the default) or "push": approved on a phone, with the code
+	// asked for instead when the phone does not answer.
+	Method            string   `json:"method"`
 	SelfEnrol         bool     `json:"self_enrol"`
 	Services          []string `json:"services"`
 	RequirePrincipals []string `json:"require_principals"`

@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
 import { ChoiceList, SUPPORTED_RELEASES } from "./ChoiceList";
+import { Collapsible } from "./Collapsible";
 import { CollectionPicker, PrinterPicker, SharePicker } from "./ResourcePicker";
 import { InfoPanel } from "./DocsLink";
 import { LocalAccountList } from "./LocalAccountPicker";
@@ -3184,8 +3185,15 @@ function EntryDialog({
       ))}
 
       {targetable && (
-        <>
-          <h3 className="section-title">Applies to</h3>
+        /* Folded unless something is set: every targetable entry carries
+           these fields, and empty filters in plain view read as required. */
+        <Collapsible
+          title="Applies to"
+          summary={
+            targeting ? "Only some of the machines the policy object reaches" : "Wherever the policy object applies"
+          }
+          open={Boolean(targeting)}
+        >
           <p className="muted">
             Leave this empty and the entry applies wherever the policy object does. Anything set
             here narrows that further — it can never widen it.
@@ -3194,7 +3202,7 @@ function EntryDialog({
             value={targeting}
             onChange={(next) => setDraft((was) => ({ ...was, targeting: next ?? undefined }))}
           />
-        </>
+        </Collapsible>
       )}
     </Modal>
   );
@@ -3757,6 +3765,34 @@ function SecondFactorEditor({
             />
             Ask for a second factor
           </label>
+          <div className="field">
+            <span>How</span>
+            <label className="checkbox">
+              <input
+                type="radio"
+                name="second-factor-method"
+                checked={(current.method ?? "code") === "code"}
+                onChange={() => set({ method: "code" })}
+              />
+              A code from an authenticator app
+            </label>
+            <label className="checkbox">
+              <input
+                type="radio"
+                name="second-factor-method"
+                checked={current.method === "push"}
+                onChange={() => set({ method: "push" })}
+              />
+              Approval on the phone, with the code as the fallback
+            </label>
+            <small>
+              Approval sends the phone an Approve / Deny notification and waits up to a minute.
+              No answer, a phone that is not set up, or a console the machine cannot reach all
+              fall back to asking for the code. Needs phone approvals set up on the domain
+              controller (Wiki &rarr; Operations) and people subscribing their phone from the
+              console&rsquo;s Second factor dialog.
+            </small>
+          </div>
           <div className="field">
             <span>Asked for</span>
             {FACTOR_SERVICES.map(([key, label]) => (

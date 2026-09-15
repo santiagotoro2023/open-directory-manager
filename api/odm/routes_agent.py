@@ -24,7 +24,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from . import agentupdate, audit, ca, objects, routes_dc, rsop, sites, tasks, totp
+from . import agentupdate, audit, ca, objects, push, routes_dc, rsop, sites, tasks, totp
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -159,7 +159,20 @@ async def agent_second_factor(
     rows = await pool.fetch(
         "SELECT principal, secret FROM totp_enrolment WHERE confirmed_at IS NOT NULL"
     )
-    return {"users": totp.oath_users(rows, wanted)}
+    # Who has a phone enrolled, by name only — no topic, no token. The
+    # machine needs to know they count as enrolled (so the grace period and
+    # the enrolment walkthrough leave them alone) and nothing else.
+    phones = await pool.fetch(
+        "SELECT principal FROM push_enrolment WHERE confirmed_at IS NOT NULL"
+    )
+    push_users = sorted(
+        account
+        for account in (
+            str(row["principal"]).split("@")[0].split("\\")[-1].lower() for row in phones
+        )
+        if wanted is None or account in wanted
+    )
+    return {"users": totp.oath_users(rows, wanted), "push_users": push_users}
 
 
 class MachineEnrolRequest(BaseModel):
@@ -307,6 +320,141 @@ async def agent_confirm_second_factor(
             detail=f"enrolled at {machine.hostname}",
         )
     return {"recovery_codes": codes}
+
+
+# ------------------------------------------------------- phone approvals ----
+# The machine asks; the phone answers; the machine polls for the answer. The
+# machine never learns the topic, the token, or anything about the phone —
+# only "approved" or not, for a question it asked itself.
+
+
+class PushBeginRequest(BaseModel):
+    username: Annotated[str, Field(min_length=1, max_length=256)]
+    service: Annotated[str, Field(pattern="^(login|ssh|sudo|remote-desktop)$")] = "login"
+
+
+@router.post("/second-factor/push")
+async def agent_begin_push(
+    body: PushBeginRequest,
+    request: Request,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Ask the person's phone whether this sign-in is theirs.
+
+    Refused, with a reason the machine can act on, when the policy on this
+    machine does not use the push method, when phone approvals are not set
+    up on this deployment, or when this person has no phone enrolled — in
+    every one of those cases the machine falls back to asking for a code,
+    and this is what tells it to.
+    """
+    account = body.username.split("@")[0].split("\\")[-1]
+    async with _bound(settings, write=False) as conn:
+        document = await rsop.build(pool, settings, conn, machine.dn)
+        factor = (document.get("settings") or {}).get("second_factor") or {}
+        if not factor.get("enabled") or factor.get("method") != "push":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "no policy on this machine uses phone approval"
+            )
+        if body.service not in (factor.get("services") or []):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, f"the policy does not ask for it on {body.service}"
+            )
+        try:
+            user = await run_in_threadpool(objects.find_user, conn, settings, account)
+        except objects.NotFound as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"no account named {account}") from exc
+    sid = str(user.get("objectSid") or "")
+    if not push.configured(settings):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "phone approvals are not set up on this domain"
+        )
+
+    async with pool.acquire() as conn:
+        enrolment = await conn.fetchrow(
+            "SELECT topic FROM push_enrolment "
+            "WHERE principal_sid = $1 AND confirmed_at IS NOT NULL",
+            sid,
+        )
+        if enrolment is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"{account} has no phone enrolled")
+        token = push.new_token()
+        # Answered or not, a question is of no further use a day later; the
+        # audit log is the record, not this table.
+        await conn.execute(
+            "DELETE FROM push_challenge WHERE expires_at < now() - interval '1 day'"
+        )
+        challenge_id = await conn.fetchval(
+            """
+            INSERT INTO push_challenge
+                (token, principal_sid, principal, machine_dn, hostname, service, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id
+            """,
+            token,
+            sid,
+            account,
+            machine.dn,
+            machine.hostname,
+            body.service,
+            push.expiry(settings),
+        )
+        # Sent from inside the transaction's view but after the row exists:
+        # an answer that arrives before the row would have nothing to land on.
+        try:
+            await run_in_threadpool(
+                push.ask_to_sign_in,
+                settings,
+                enrolment["topic"],
+                token,
+                account,
+                machine.hostname,
+                body.service,
+            )
+        except push.PushError as exc:
+            await conn.execute("DELETE FROM push_challenge WHERE id = $1", challenge_id)
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+        await audit.record(
+            conn,
+            actor=account,
+            actor_sid=sid,
+            source_ip=request.client.host if request.client else None,
+            action="auth.second_factor.push.ask",
+            outcome="success",
+            object_type="session",
+            object_dn=machine.dn,
+            detail=f"asked the phone about a {body.service} sign-in at {machine.hostname}",
+        )
+    return {"id": str(challenge_id), "timeout_seconds": settings.push_timeout_seconds}
+
+
+@router.get("/second-factor/push/{challenge_id}")
+async def agent_poll_push(
+    challenge_id: str,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """The answer so far: pending, approved, denied or expired.
+
+    Only for a question this machine asked. A machine cannot learn how some
+    other machine's sign-in was answered, let alone reuse it.
+    """
+    row = await pool.fetchrow(
+        """
+        SELECT decision, expires_at, decided_at
+        FROM push_challenge WHERE id = $1::uuid AND machine_dn = $2
+        """,
+        challenge_id,
+        machine.dn,
+    )
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such sign-in")
+    if row["decision"]:
+        return {"decision": row["decision"]}
+    if row["expires_at"] < datetime.now(row["expires_at"].tzinfo):
+        return {"decision": "expired"}
+    return {"decision": "pending"}
 
 
 @router.get("/binary")

@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"flag"
 	"fmt"
 	"math/big"
@@ -31,7 +32,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.10.19"
+const version = "0.10.20"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -75,6 +76,8 @@ func main() {
 		os.Exit(runEnrolFactor(os.Args[2:]))
 	case "sync-second-factor":
 		os.Exit(runSyncSecondFactor(os.Args[2:]))
+	case "push-factor":
+		os.Exit(runPushFactor(os.Args[2:]))
 	case "--version", "-v", "version":
 		fmt.Println("odm-agent", version)
 	default:
@@ -92,6 +95,7 @@ func usage() {
   profile --user NAME [--release] attach that person's roaming profile
   enrol-factor --user NAME        set up a second factor for that account
   sync-second-factor              refresh who may hold one, without applying policy
+  push-factor --user NAME         ask that person's phone to approve a sign-in (run by PAM)
   --version                       print the version
 
   --force is the equivalent of gpupdate /force: apply even when the policy
@@ -116,6 +120,76 @@ func runApply(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// runPushFactor asks a person's phone whether a sign-in is theirs, and waits
+// for the answer. Run by PAM through /usr/lib/odm/second-factor-push, as
+// root, with the sign-in held open meanwhile.
+//
+// Exit 0 means approved and nothing else does. PAM cannot tell a refusal
+// from a timeout from an unreachable console (pam_exec collapses every
+// non-zero exit into one), and each of those correctly ends the same way:
+// the code is asked for instead. What is printed goes to the login screen,
+// so it says what the person should be doing.
+func runPushFactor(args []string) int {
+	flags := flag.NewFlagSet("push-factor", flag.ExitOnError)
+	configPath := flags.String("config", config.DefaultPath, "agent configuration file")
+	username := flags.String("user", "", "the person signing in")
+	service := flags.String("service", "login", "login, ssh, sudo or remote-desktop")
+	_ = flags.Parse(args)
+	if *username == "" {
+		return 1
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent:", err)
+		return 2
+	}
+	api, err := client.New(cfg, version)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent:", err)
+		return 2
+	}
+	defer api.Close()
+
+	// Asking has its own short limit: a console that cannot be reached must
+	// not hold the login screen for the whole approval window before the
+	// code can even be asked for.
+	askCtx, cancelAsk := context.WithTimeout(context.Background(), 10*time.Second)
+	id, timeout, err := api.PushBegin(askCtx, *username, *service)
+	cancelAsk()
+	if err != nil {
+		var unavailable client.PushUnavailable
+		if !errors.As(err, &unavailable) {
+			fmt.Fprintln(os.Stderr, "odm-agent: push-factor:", err)
+		}
+		return 2
+	}
+	fmt.Println("Approve the sign-in on your phone.")
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return 1
+		case <-ticker.C:
+		}
+		decision, err := api.PushPoll(ctx, id)
+		if err != nil {
+			// One failed poll is not an answer; the deadline is.
+			continue
+		}
+		switch decision {
+		case client.PushApproved:
+			return 0
+		case client.PushDenied, client.PushExpired:
+			return 1
+		}
+	}
 }
 
 // runSyncSecondFactor refreshes the enrolments pam_oath reads, and nothing
@@ -157,12 +231,12 @@ func runSyncSecondFactor(args []string) int {
 	}
 	defer api.Close()
 
-	lines, err := api.SecondFactorUsers(ctx)
+	lines, phones, err := api.SecondFactorUsers(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		return 1
 	}
-	if err := apply.WriteOathUsers(apply.NewEnv(*root), lines); err != nil {
+	if err := apply.WriteOathUsers(apply.NewEnv(*root), lines, phones); err != nil {
 		fmt.Fprintln(os.Stderr, "odm-agent:", err)
 		return 1
 	}
@@ -361,14 +435,14 @@ func fetchSecondFactor(
 	if settings.SecondFactor == nil || !settings.SecondFactor.Enabled {
 		return nil
 	}
-	lines, err := api.SecondFactorUsers(ctx)
+	lines, phones, err := api.SecondFactorUsers(ctx)
 	if err != nil {
 		// Left as it was rather than emptied. An empty file is a machine
 		// where nobody has a second factor, which with the module in the
 		// stack is a machine nobody can sign in to.
 		return []policy.Result{policy.Fail("second_factor:enrolments", err)}
 	}
-	if err := apply.WriteOathUsers(env, lines); err != nil {
+	if err := apply.WriteOathUsers(env, lines, phones); err != nil {
 		return []policy.Result{policy.Fail("second_factor:enrolments", err)}
 	}
 	return []policy.Result{policy.Ok("second_factor:enrolments")}
@@ -837,7 +911,7 @@ func refreshDynamicDNS(ctx context.Context, env apply.Env, current []string) {
 // self-update runs under the binary being replaced; the new one then starts,
 // finds the serial matching and nothing newer on offer, and says "policy
 // unchanged" on every poll until somebody happens to edit a policy object.
-// Seen live: 0.10.19 shipped a fix to a file its predecessor had written
+// Seen live: 0.10.20 shipped a fix to a file its predecessor had written
 // wrongly, was installed on every machine within a minute, and rewrote that
 // file on none of them.
 func lastSerial(env apply.Env) string {

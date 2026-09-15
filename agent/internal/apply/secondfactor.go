@@ -83,12 +83,41 @@ var secondFactorServices = map[string][]string{
 //
 // requisite on pam_oath rather than required: once the code is wrong there is
 // nothing further to ask.
-const guardLine = "auth [success=1 default=ignore] pam_exec.so quiet " + factorGuard
+//
+// With the push method there are three lines: the guard's jump is one
+// further, and pushLine sits between it and pam_oath. pamBlock builds them.
+const guardLineFormat = "auth [success=%d default=ignore] pam_exec.so quiet " + factorGuard
+
+// pushLine asks the phone. It exits 0 for "approved", which success=1 turns
+// into a jump over pam_oath — the code is not asked for. Anything else — the
+// phone said no, nobody answered in time, no phone enrolled, the console
+// could not be reached — falls through to pam_oath, and the code is asked
+// for as if the phone had never been involved. A refusal on the phone
+// therefore does not end the sign-in by itself: it ends it by leaving
+// somebody with a code to type that they do not have. pam_exec cannot tell
+// its caller why a helper exited non-zero, and the alternative — treating
+// "no answer" as a refusal — would lock out everybody whose phone was in a
+// drawer the moment the console was unreachable.
+//
+// stdout is handed to the conversation, which is how "check your phone"
+// reaches the login screen.
+const pushLine = "auth [success=1 default=ignore] pam_exec.so quiet stdout " + pushHelper
+
+const pushHelper = "/usr/lib/odm/second-factor-push"
 
 const oathLine = "auth requisite pam_oath.so usersfile=" + oathUsersFile +
 	" window=2 digits=6"
 
 const oathMarker = "pam_oath.so"
+
+// pamBlock is the lines one method puts into a stack, managed-header first.
+func pamBlock(method string) string {
+	managed := "# " + strings.TrimSuffix(strings.TrimPrefix(Header, "# "), "\n") + "\n"
+	if method == "push" {
+		return managed + fmt.Sprintf(guardLineFormat, 2) + "\n" + pushLine + "\n" + oathLine + "\n"
+	}
+	return managed + fmt.Sprintf(guardLineFormat, 1) + "\n" + oathLine + "\n"
+}
 
 // Where the lines go: after the password has been checked, not before it.
 // Asked first, the code is demanded of somebody who then fails the password,
@@ -183,6 +212,12 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 	if err := env.WriteFile(factorGuard, guardScript(), 0o755, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("second_factor", err)}
 	}
+	// The helper pushLine runs, whichever method is in force: written always
+	// so a method switch is only a PAM-line change, and pruned with the rest
+	// when the setting goes.
+	if err := env.WriteFile(pushHelper, pushHelperScript(), 0o755, "root", "root"); err != nil {
+		return []policy.Result{policy.Fail("second_factor", err)}
+	}
 
 	// The users file has to exist before the module reads it, even empty: a
 	// missing one makes pam_oath fail every authentication, which locks the
@@ -211,7 +246,7 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 		for _, path := range paths {
 			var err error
 			if wanted[path] {
-				err = addOathLine(env, path)
+				err = addOathLine(env, path, factor.Method)
 			} else {
 				err = removeOathLine(env, path)
 			}
@@ -230,8 +265,8 @@ func applySecondFactor(ctx context.Context, s policy.Settings, env Env) []policy
 // WriteOathUsers puts the enrolments this machine is entitled to see into the
 // file pam_oath reads. Called by the agent after it has fetched them, not by
 // an applier: they are not policy, they are the people the policy names.
-func WriteOathUsers(env Env, lines []string) error {
-	if err := writeEnrolled(env, lines); err != nil {
+func WriteOathUsers(env Env, lines, phones []string) error {
+	if err := writeEnrolled(env, lines, phones); err != nil {
 		return err
 	}
 	if len(lines) == 0 {
@@ -244,20 +279,31 @@ func WriteOathUsers(env Env, lines []string) error {
 	return env.WriteFile(oathUsersFile, strings.Join(sorted, "\n")+"\n", 0o600, "root", "root")
 }
 
-// writeEnrolled records who has a second factor, and only that.
+// writeEnrolled records who has a second factor, and only that. A phone
+// counts the same as a code here: the point of the list is "leave this
+// person alone, they are enrolled", whichever way they are asked.
 //
 // The prompt that walks somebody through setting one up runs as them, in
 // their own session, and has to know whether to say anything at all. It
 // cannot read the file pam_oath reads — that one holds everybody's shared
 // secret and is root-only for good reason — so the names are written beside
 // it where a person can read them.
-func writeEnrolled(env Env, lines []string) error {
-	names := make([]string, 0, len(lines))
+func writeEnrolled(env Env, lines, phones []string) error {
+	seen := map[string]bool{}
+	names := make([]string, 0, len(lines)+len(phones))
 	for _, line := range lines {
 		// HOTP/T30/6 <user> - <secret>
 		fields := strings.Fields(line)
-		if len(fields) >= 2 {
+		if len(fields) >= 2 && !seen[fields[1]] {
+			seen[fields[1]] = true
 			names = append(names, fields[1])
+		}
+	}
+	for _, name := range phones {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name != "" && !seen[name] {
+			seen[name] = true
+			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
@@ -271,7 +317,7 @@ func writeEnrolled(env Env, lines []string) error {
 // addOathLine puts the module at the top of a PAM stack, where a second
 // factor has to be: after the password has been accepted is too late to
 // refuse the sign-in.
-func addOathLine(env Env, path string) error {
+func addOathLine(env Env, path, method string) error {
 	body, err := os.ReadFile(env.Path(path))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -281,11 +327,20 @@ func addOathLine(env Env, path string) error {
 		}
 		return err
 	}
-	if strings.Contains(string(body), oathMarker) {
+	block := pamBlock(method)
+	if strings.Contains(string(body), strings.TrimRight(block, "\n")) {
 		return nil
 	}
-	managed := "# " + strings.TrimSuffix(strings.TrimPrefix(Header, "# "), "\n") + "\n"
-	block := managed + guardLine + "\n" + oathLine + "\n"
+	if strings.Contains(string(body), oathMarker) {
+		// There, but not this block: the method changed. Take the old lines
+		// out and put the right ones in, rather than leaving two guards.
+		if err := removeOathLine(env, path); err != nil {
+			return err
+		}
+		if body, err = os.ReadFile(env.Path(path)); err != nil {
+			return err
+		}
+	}
 
 	// After the password has been checked. Put first, the code is demanded of
 	// somebody who then fails the password, and — with nothing in front of it
@@ -330,13 +385,14 @@ func removeOathLine(env Env, path string) error {
 	}
 	if !strings.Contains(string(body), oathMarker) &&
 		!strings.Contains(string(body), enrolMarker) &&
-		!strings.Contains(string(body), factorGuard) {
+		!strings.Contains(string(body), factorGuard) &&
+		!strings.Contains(string(body), pushHelper) {
 		return nil
 	}
 	var kept []string
 	for _, line := range strings.Split(string(body), "\n") {
 		if strings.Contains(line, oathMarker) || strings.Contains(line, enrolMarker) ||
-			strings.Contains(line, factorGuard) {
+			strings.Contains(line, factorGuard) || strings.Contains(line, pushHelper) {
 			continue
 		}
 		if strings.Contains(line, "Managed by Open Directory Manager") {
@@ -572,6 +628,31 @@ exit 0
 // written into a file and never consulted, so pam_oath asked everybody and
 // refused everybody who had not enrolled — before the password prompt, on
 // every service at once.
+// pushHelperScript is what pushLine runs, as root, from inside PAM. It asks
+// the control plane to ask the phone and waits for the answer. Exit 0 is the
+// only answer PAM acts on ("approved": skip the code); every other outcome
+// — refused, no answer, no phone, no console — leaves the code to be asked
+// for. A thin wrapper: the work is in odm-agent, which has the keytab and
+// the client, and the wrapper exists so the PAM line names something with
+// no arguments to get wrong.
+func pushHelperScript() string {
+	return "#!/bin/sh\n" + Header + `
+# Exit 0: the phone approved this sign-in; do not ask for a code.
+# Anything else: ask for the code.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+set -u
+[ -n "${PAM_USER:-}" ] || exit 1
+case "${PAM_SERVICE:-}" in
+    sshd) SERVICE=ssh ;;
+    sudo) SERVICE=sudo ;;
+    xrdp-sesman) SERVICE=remote-desktop ;;
+    *) SERVICE=login ;;
+esac
+exec /usr/sbin/odm-agent push-factor --user "$PAM_USER" --service "$SERVICE"
+`
+}
+
 func guardScript() string {
 	return "#!/bin/sh\n" + Header + `
 # Exit 0: do not ask this account for a code.
@@ -639,9 +720,13 @@ if [ -n "${REQUIRE:-}" ]; then
     named "$REQUIRE" || exit 0
 fi
 
-# Enrolled: asked.
+# Enrolled: asked. A code in the file pam_oath reads, or a phone — which
+# leaves nothing in that file, only a name in the enrolled list.
 if [ -r ` + oathUsersFile + ` ] && \
         awk -v u="$SHORT" '$2 == u {found=1} END {exit !found}' ` + oathUsersFile + `; then
+    exit 1
+fi
+if [ -r ` + enrolledList + ` ] && grep -qxF "$SHORT" ` + enrolledList + `; then
     exit 1
 fi
 
@@ -680,7 +765,7 @@ func removeSecondFactor(env Env, configured bool) []policy.Result {
 			}
 		}
 	}
-	for _, path := range []string{oathUsersFile, secondFactorPam, factorGuard} {
+	for _, path := range []string{oathUsersFile, secondFactorPam, factorGuard, pushHelper} {
 		if err := os.Remove(env.Path(path)); err == nil {
 			removed = true
 		}

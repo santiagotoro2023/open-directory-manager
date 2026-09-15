@@ -23,6 +23,7 @@ import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { useContextMenu } from "../components/ContextMenu";
 import { ChoiceList, SUPPORTED_RELEASES } from "../components/ChoiceList";
+import { Collapsible } from "../components/Collapsible";
 import { ContainerPicker } from "../components/Picker";
 import { SettingsEditor, halvesConfigured } from "../components/SettingsEditor";
 import { TemplateManager } from "../components/TemplateManager";
@@ -456,7 +457,16 @@ function GpoDetail({
           </section>
 
           <section>
-            <h3>Item-level targeting</h3>
+            {/* Folded by default: this is on every policy object, and a full
+                set of empty filters in plain view reads as something that has
+                to be filled in. Opens itself when a filter is actually set. */}
+            <Collapsible
+              title="Item-level targeting"
+              summary={targetingSummary(lines(osList), hostname, lines(ipRanges), lines(groups))}
+              open={Boolean(
+                lines(osList).length || hostname || lines(ipRanges).length || lines(groups).length,
+              )}
+            >
             <div className="field">
               <span>Operating systems</span>
               <div className="option-row">
@@ -497,11 +507,33 @@ function GpoDetail({
                 emptyLabel="Any group."
               />
             </div>
+            </Collapsible>
           </section>
         </div>
       )}
     </main>
   );
+}
+
+/** One line saying what item-level targeting currently does, for the folded view. */
+export function targetingSummary(
+  os: string[],
+  hostname: string,
+  ipRanges: string[],
+  groups: string[],
+): string {
+  const parts: string[] = [];
+  if (os.length) {
+    parts.push(
+      os
+        .map((value) => SUPPORTED_RELEASES.find((release) => release.value === value)?.label ?? value)
+        .join(", "),
+    );
+  }
+  if (hostname) parts.push(`hosts ${hostname}`);
+  if (ipRanges.length) parts.push(ipRanges.join(", "));
+  if (groups.length) parts.push(groups.length === 1 ? groups[0] : `${groups.length} groups`);
+  return parts.length ? `Only ${parts.join(" · ")}` : "Every machine the links reach";
 }
 
 function LinksEditor({ gpo, onChanged }: { gpo: Gpo; onChanged: () => void }) {

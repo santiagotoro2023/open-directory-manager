@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, authz, directory, sessions, totp
+from . import audit, authz, directory, push, sessions, totp
 from .config import Settings, get_settings
 from .security import clear_session_cookie, current_session, get_pool, set_session_cookie
 from .sessions import Session
@@ -560,4 +560,161 @@ async def remove_enrolment(
             outcome="success",
             object_type="session",
             detail="the second factor was removed",
+        )
+
+
+# ------------------------------------------------------- phone approvals ----
+# The same two-step shape as a code: a topic is issued and the phone is
+# subscribed to it, and it only counts once the phone has answered a
+# notification — the tap is the proof that the right phone is listening.
+
+
+@router.get("/second-factor/push")
+async def push_state(
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    row = await pool.fetchrow(
+        "SELECT topic, confirmed_at FROM push_enrolment WHERE principal_sid = $1",
+        session.principal_sid,
+    )
+    pending = bool(row and not row["confirmed_at"])
+    return {
+        "available": push.configured(settings),
+        "enrolled": bool(row and row["confirmed_at"]),
+        "pending": pending,
+        # Shown again while unconfirmed, so somebody who closed the dialog
+        # half-way can carry on; never once confirmed — the topic is the
+        # secret, and a secret readable later is a secret a stolen session
+        # hands over.
+        "subscribe_url": push.subscribe_url(settings, row["topic"]) if pending else None,
+        "topic": row["topic"] if pending else None,
+        "server_url": (settings.ntfy_public_url or settings.ntfy_url or "").rstrip("/"),
+    }
+
+
+@router.post("/second-factor/push", status_code=201)
+async def begin_push_enrolment(
+    request: Request,
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Issue a topic for the phone to subscribe to, and send it the button
+    that finishes enrolling.
+
+    Re-issued whole on every call while unconfirmed: a topic somebody may
+    have typed into the wrong phone is not worth keeping.
+    """
+    if not session.principal_sid:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "this session has no account identifier"
+        )
+    if not push.configured(settings):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "phone approvals are not set up on this domain; see Wiki → Operations",
+        )
+    async with pool.acquire() as conn:
+        existing = await conn.fetchval(
+            "SELECT confirmed_at FROM push_enrolment WHERE principal_sid = $1",
+            session.principal_sid,
+        )
+        if existing:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "this account already has a phone; remove it before setting up another",
+            )
+        topic = push.new_topic()
+        token = push.new_token()
+        await conn.execute(
+            """
+            INSERT INTO push_enrolment (principal_sid, principal, topic, confirm_token)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (principal_sid) DO UPDATE
+                SET topic = excluded.topic, confirm_token = excluded.confirm_token,
+                    confirmed_at = NULL, updated_at = now()
+            """,
+            session.principal_sid,
+            session.principal,
+            topic,
+            token,
+        )
+    return {
+        "subscribe_url": push.subscribe_url(settings, topic),
+        "topic": topic,
+        "server_url": (settings.ntfy_public_url or settings.ntfy_url or "").rstrip("/"),
+    }
+
+
+@router.post("/second-factor/push/test")
+async def send_push_confirmation(
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Send the phone the Confirm button (again). Tapping it finishes enrolling."""
+    row = await pool.fetchrow(
+        "SELECT topic, confirm_token, confirmed_at FROM push_enrolment WHERE principal_sid = $1",
+        session.principal_sid,
+    )
+    if row is None or row["confirmed_at"]:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing to confirm")
+    try:
+        await run_in_threadpool(
+            push.ask_to_confirm_phone,
+            settings,
+            row["topic"],
+            row["confirm_token"],
+            session.principal,
+        )
+    except push.PushError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    return {"sent": True}
+
+
+class RemovePushRequest(BaseModel):
+    code: str = ""
+
+
+@router.delete("/second-factor/push", status_code=204)
+async def remove_push_enrolment(
+    body: RemovePushRequest,
+    request: Request,
+    session: Session = Depends(current_session),
+    pool: asyncpg.Pool = Depends(get_pool),
+):
+    """Stop asking this phone.
+
+    When the account also has a code, a current code is required — the same
+    rule as removing the code itself, for the same reason: a stolen session
+    must not be able to take a factor off and keep the account. An account
+    with only a phone has nothing else to prove it with, and losing the phone
+    is exactly when this has to be possible.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM push_enrolment WHERE principal_sid = $1", session.principal_sid
+        )
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no phone is enrolled")
+        code = await conn.fetchrow(
+            "SELECT * FROM totp_enrolment WHERE principal_sid = $1 AND confirmed_at IS NOT NULL",
+            session.principal_sid,
+        )
+        if code is not None and not await _accept_second_factor(conn, code, body.code):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "that code is not right")
+        await conn.execute(
+            "DELETE FROM push_enrolment WHERE principal_sid = $1", session.principal_sid
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=request.client.host if request.client else None,
+            action="auth.second_factor.push.remove",
+            outcome="success",
+            object_type="session",
+            detail="the phone was removed from sign-in approvals",
         )

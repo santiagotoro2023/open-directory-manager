@@ -134,6 +134,7 @@ export interface PolicySettings {
   };
   second_factor?: {
     enabled: boolean;
+    method?: "code" | "push";
     self_enrol: boolean;
     services: string[];
     require_principals: string[];
@@ -1560,6 +1561,31 @@ export const api = {
 
     remove: (code: string) =>
       request<void>("/auth/second-factor", { method: "DELETE", body: JSON.stringify({ code }) }),
+
+    // Approval on a phone, beside the code.
+    pushState: () =>
+      request<{
+        available: boolean;
+        enrolled: boolean;
+        pending: boolean;
+        subscribe_url: string | null;
+        topic: string | null;
+        server_url: string;
+      }>("/auth/second-factor/push"),
+
+    pushBegin: () =>
+      request<{ subscribe_url: string; topic: string; server_url: string }>(
+        "/auth/second-factor/push",
+        json({}),
+      ),
+
+    pushTest: () => request<{ sent: boolean }>("/auth/second-factor/push/test", json({})),
+
+    pushRemove: (code: string) =>
+      request<void>("/auth/second-factor/push", {
+        method: "DELETE",
+        body: JSON.stringify({ code }),
+      }),
   },
 
   sites: {

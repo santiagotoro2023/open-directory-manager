@@ -1183,6 +1183,21 @@ fs.protected_symlinks                1`}</Code>
             headers={["Field", "Notes"]}
             rows={[
               [
+                "How",
+                <>
+                  <strong>A code from an authenticator app</strong> is checked on the machine
+                  itself, so it works with the console unreachable. <strong>Approval on the
+                  phone</strong> sends an Approve / Deny notification to the person&rsquo;s phone
+                  (the ntfy app) and waits up to a minute; the login screen says &ldquo;Approve
+                  the sign-in on your phone&rdquo; meanwhile. No answer, Deny, a phone that is not
+                  set up, or a console the machine cannot reach all fall through to the code —
+                  so somebody with both never loses the way in, and somebody with only a phone is
+                  refused rather than let through when it cannot be asked. Needs phone approvals
+                  on the domain controller (Wiki &rarr; Operations &rarr; Phone approvals) and each
+                  person subscribing their phone from the console&rsquo;s Second factor dialog.
+                </>,
+              ],
+              [
                 "Walk people through setting one up",
                 "On a text login or over SSH they are asked there and then. In a graphical session it opens full-screen as the desktop starts and asks until it is done: closing it three times without enrolling signs the session out, because a window that can be clicked away is a second factor nobody sets up. It runs the enrolment through sudo, since reaching the console means reading the machine's keytab and that is root's alone. Somebody already enrolled, exempt, or outside \"Only for\" is shown nothing, and a console that cannot be reached never signs anybody out.",
               ],

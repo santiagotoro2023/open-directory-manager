@@ -692,10 +692,12 @@ async def security_baseline(
     checks.append(baseline.passwords_never_expire(described))
     checks.append(baseline.privileged_accounts(sorted(admins)))
 
+    # A phone counts: it is a second factor, on the same policy setting.
     enrolled = {
         str(row["principal"]).split("@")[0].lower()
         for row in await pool.fetch(
-            "SELECT principal FROM totp_enrolment WHERE confirmed_at IS NOT NULL"
+            "SELECT principal FROM totp_enrolment WHERE confirmed_at IS NOT NULL "
+            "UNION SELECT principal FROM push_enrolment WHERE confirmed_at IS NOT NULL"
         )
     }
     checks.append(baseline.second_factor(sorted(admins), enrolled))

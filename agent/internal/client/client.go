@@ -290,32 +290,113 @@ func (c *Client) tasks(ctx context.Context, wait time.Duration) ([]tasks.Task, e
 
 // SecondFactorUsers asks for the enrolments this machine is entitled to hold.
 //
-// One line per account, in the format pam_oath reads. The control plane
+// One line per account, in the format pam_oath reads, and separately the
+// names of the people whose second factor is a phone rather than a code —
+// names only, so the machine knows they count as enrolled. The control plane
 // decides which accounts a machine may see; the machine proves which machine
 // it is with the identity domain join gave it, the same as every other call
 // here.
-func (c *Client) SecondFactorUsers(ctx context.Context) ([]string, error) {
+func (c *Client) SecondFactorUsers(ctx context.Context) (users, pushUsers []string, err error) {
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodGet, c.base+"/api/v1/agent/second-factor", nil,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("second factor: %s", why(response))
+		return nil, nil, fmt.Errorf("second factor: %s", why(response))
 	}
 	var body struct {
-		Users []string `json:"users"`
+		Users     []string `json:"users"`
+		PushUsers []string `json:"push_users"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decode second factor: %w", err)
+		return nil, nil, fmt.Errorf("decode second factor: %w", err)
 	}
-	return body.Users, nil
+	return body.Users, body.PushUsers, nil
+}
+
+// PushDecision is the answer so far to a sign-in the phone was asked about.
+type PushDecision string
+
+const (
+	PushPending  PushDecision = "pending"
+	PushApproved PushDecision = "approved"
+	PushDenied   PushDecision = "denied"
+	PushExpired  PushDecision = "expired"
+)
+
+// PushUnavailable is a begin the control plane refused for a reason that
+// means "ask for the code instead": no phone enrolled, the policy does not
+// use the method, phone approvals not set up on this domain. Distinguished
+// from an error, which means the same thing at the machine but is worth
+// logging.
+type PushUnavailable struct{ Reason string }
+
+func (u PushUnavailable) Error() string { return u.Reason }
+
+// PushBegin asks the control plane to ask the person's phone about this
+// sign-in. The machine learns an id to poll and how long to wait; nothing
+// about the phone.
+func (c *Client) PushBegin(ctx context.Context, username, service string) (id string, timeout time.Duration, err error) {
+	payload, _ := json.Marshal(map[string]string{"username": username, "service": service})
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+"/api/v1/agent/second-factor/push", bytes.NewReader(payload),
+	)
+	if err != nil {
+		return "", 0, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return "", 0, err
+	}
+	defer response.Body.Close()
+	switch response.StatusCode {
+	case http.StatusOK:
+	case http.StatusForbidden, http.StatusNotFound, http.StatusServiceUnavailable:
+		return "", 0, PushUnavailable{Reason: why(response)}
+	default:
+		return "", 0, fmt.Errorf("push: %s", why(response))
+	}
+	var body struct {
+		ID             string `json:"id"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		return "", 0, fmt.Errorf("decode push: %w", err)
+	}
+	return body.ID, time.Duration(body.TimeoutSeconds) * time.Second, nil
+}
+
+// PushPoll reads the answer so far.
+func (c *Client) PushPoll(ctx context.Context, id string) (PushDecision, error) {
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, c.base+"/api/v1/agent/second-factor/push/"+url.PathEscape(id), nil,
+	)
+	if err != nil {
+		return "", err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("push: %s", why(response))
+	}
+	var body struct {
+		Decision PushDecision `json:"decision"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("decode push: %w", err)
+	}
+	return body.Decision, nil
 }
 
 // SecondFactorStart is what the control plane hands back when somebody begins
