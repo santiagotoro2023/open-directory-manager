@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -66,7 +66,7 @@ def new_token() -> str:
 
 
 def expiry(settings: Settings, now: datetime | None = None) -> datetime:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     return now + timedelta(seconds=settings.push_timeout_seconds)
 
 
