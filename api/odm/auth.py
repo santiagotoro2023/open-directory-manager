@@ -598,7 +598,7 @@ async def push_state(
         "subscribe_url": push.subscribe_url(settings, row["topic"]) if pending else None,
         "topic": row["topic"] if pending else None,
         "server_url": push.server_url(settings),
-        "trust": await run_in_threadpool(push.trust_state, settings),
+        "trust": await run_in_threadpool(push.phone_trust, settings),
         "trust_url": push.trust_url(settings),
     }
 

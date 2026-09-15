@@ -73,8 +73,21 @@ def expiry(settings: Settings, now: datetime | None = None) -> datetime:
 
 def server_url(settings: Settings, override: str = "") -> str:
     """Where phones reach the server: a policy's own external address when it
-    names one (a port forwarded through a router), else the controller's."""
-    return (override or settings.ntfy_public_url or settings.ntfy_url or "").rstrip("/")
+    names one (a port forwarded through a router); else the controller over
+    plain HTTP while its certificate is one no phone trusts on its own, and
+    over HTTPS once it has one phones do.
+
+    Plain HTTP is a real trade: the topic and each sign-in's one-shot answer
+    token cross the network in the clear, so somebody on the same network
+    who also knows the password could approve their own sign-in. It is
+    still a second factor against everyone not on that network, and it is
+    the only way a phone can be asked with nothing installed on it by hand
+    — which is the way a domain full of people actually gets set up."""
+    if override:
+        return override.rstrip("/")
+    if settings.ntfy_plain_url and trust_state(settings) != "public":
+        return settings.ntfy_plain_url.rstrip("/")
+    return (settings.ntfy_public_url or settings.ntfy_url or "").rstrip("/")
 
 
 def subscribe_url(settings: Settings, topic: str, override: str = "") -> str:
@@ -449,10 +462,18 @@ def methods_no_longer_asked_for(old: dict | None, new: dict | None) -> set[str]:
 CONSOLE_CERTIFICATE = "/etc/odm/tls/api.crt"
 
 
+def phone_trust(settings: Settings, override: str = "") -> str:
+    """What a phone has to do about the certificate on the address it will
+    actually use: nothing over plain HTTP or a public certificate, else
+    install one."""
+    if server_url(settings, override).startswith("http://"):
+        return "public"
+    return trust_state(settings)
+
+
 def trust_state(settings: Settings) -> str:
-    """What a phone has to do about the certificate: "self-signed" (install
-    the console's own), "domain-ca" (install the domain's root), or
-    "public" (nothing)."""
+    """What the console's certificate is: "self-signed", "domain-ca", or
+    "public"."""
     from pathlib import Path
 
     from . import ca

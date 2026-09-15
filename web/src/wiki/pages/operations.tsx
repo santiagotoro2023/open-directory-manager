@@ -290,8 +290,15 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
           <Note>
             Anyone who knows a topic&rsquo;s name can read it, and nobody but the control plane can
             publish to one: ntfy is configured read-only by default with a single publishing
-            account. Approvals travel over TLS only; the plain-HTTP listener exists on the
-            loopback address alone, for the control plane on the same machine.
+            account. Phones reach it over plain HTTP on port 8445 for as long as the
+            console&rsquo;s certificate is one no phone trusts on its own (self-signed, or from
+            the domain&rsquo;s own authority) — nobody installs a certificate on a phone by hand,
+            and that is the only way the feature is real on such a domain. The trade is that
+            the topic name and each sign-in&rsquo;s one-shot answer cross the local network in
+            the clear, so somebody on that network who also knows the password could approve
+            their own sign-in; it remains a second factor against everyone else. Give the
+            console a certificate phones already trust (Certificates &rarr; Signing request,
+            signed publicly, then Upload) and phones switch to HTTPS on 8444 by themselves.
           </Note>
           <Note>
             Google Authenticator and similar apps cannot receive these. They are code generators
@@ -316,9 +323,11 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               dynamic-DNS name if the address changes. Say <C>odm.example.org</C>.
             </li>
             <li>
-              <strong>Forward the port.</strong> On the router, forward TCP <C>8444</C> from the
-              internet to the controller&rsquo;s address on the office network, same port. Only
-              that port: the console on <C>8443</C>, LDAP, Kerberos and SMB stay inside. If the
+              <strong>Forward the port.</strong> On the router, forward TCP <C>8444</C> (HTTPS)
+              from the internet to the controller&rsquo;s address on the office network, same
+              port. Not <C>8445</C>: plain HTTP across the internet would put every approval on
+              the open road, so from outside it is HTTPS with a certificate phones trust, or
+              nothing. Only that port: the console on <C>8443</C>, LDAP, Kerberos and SMB stay inside. If the
               router does not offer a fixed lease for the controller, give the controller a
               static address first.
             </li>

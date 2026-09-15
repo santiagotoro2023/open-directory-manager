@@ -106,3 +106,22 @@ def test_the_external_address_must_be_https_or_nothing():
     )
     with pytest.raises(ValueError):
         SecondFactor(push_server_url="http://odm.example.org:8444")
+
+
+def test_phones_use_plain_http_until_the_certificate_is_one_they_trust(monkeypatch):
+    """Nobody installs a certificate on a phone by hand, so a self-signed
+    console reaches phones over plain HTTP; a public certificate switches
+    them back to HTTPS on its own."""
+    settings = settings_with_ntfy()
+    settings.ntfy_plain_url = "http://odm.corp.example.internal:8445"
+
+    monkeypatch.setattr(push, "trust_state", lambda _settings: "self-signed")
+    assert push.server_url(settings) == "http://odm.corp.example.internal:8445"
+    assert push.subscribe_url(settings, "odm-abc").startswith("ntfyhttp://")
+    assert push.phone_trust(settings) == "public"
+
+    monkeypatch.setattr(push, "trust_state", lambda _settings: "public")
+    assert push.server_url(settings) == "https://odm.corp.example.internal:8444"
+    # A policy's own address is used as given, whatever the certificate.
+    outside = "https://odm.example.org:8444"
+    assert push.server_url(settings, outside) == outside

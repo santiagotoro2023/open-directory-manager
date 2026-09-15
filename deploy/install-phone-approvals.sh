@@ -12,10 +12,13 @@
 # Three things this sets up, and why:
 #
 # - HTTPS for the phones, on its own port, with the console's own certificate
-#   and key. A phone is told "approve this sign-in" over this connection and
-#   answers with a link; over plain HTTP that link would be on the network
-#   for anyone to use. Plain HTTP exists only on the loopback address, for
-#   the control plane on the same machine to publish through.
+#   and key — and plain HTTP on a second port, which phones use for as long
+#   as that certificate is one no phone trusts without somebody installing
+#   it by hand. Nobody does that, so plain HTTP is what makes the feature
+#   real on a self-signed domain: the topic and each sign-in's one-shot
+#   answer token cross the local network in the clear, which is a trade
+#   the control plane documents and switches away from by itself the day
+#   the console has a certificate phones already trust.
 # - Anyone may read a topic whose name they know; only the control plane may
 #   publish. The topic name is the secret (long and random, shown to the
 #   person once), and publishing is what could put a fake "Approve?" in front
@@ -98,7 +101,7 @@ cat > /etc/ntfy/server.yml <<CONF
 # Local edits are overwritten the next time setup.sh runs.
 base-url: "https://${CONSOLE_FQDN}:${PUBLIC_PORT}"
 listen-https: ":${PUBLIC_PORT}"
-listen-http: "127.0.0.1:${LOOPBACK_PORT}"
+listen-http: ":${LOOPBACK_PORT}"
 cert-file: "${TLS_DIR}/api.crt"
 key-file: "${TLS_DIR}/api.key"
 cache-file: "/var/cache/ntfy/cache.db"
@@ -181,7 +184,8 @@ if [[ -f "$SECRETS_FILE" ]]; then
     {
         printf '\n# --- Phone approvals (ntfy, from install-phone-approvals.sh) ---\n'
         printf 'ODM_NTFY_URL=http://127.0.0.1:%s\n' "$LOOPBACK_PORT"
-        printf 'ODM_NTFY_PUBLIC_URL=https://%s:%s\n' "$CONSOLE_FQDN" "$PUBLIC_PORT"
+        printf 'ODM_NTFY_PUBLIC_URL=https://%s:%s\n' "" ""
+        printf 'ODM_NTFY_PLAIN_URL=http://%s:%s\n' "$CONSOLE_FQDN" "$LOOPBACK_PORT"
         printf 'ODM_NTFY_TOKEN=%s\n' "$(cat "$TOKEN_FILE")"
     } >> "$SECRETS_FILE"
 fi

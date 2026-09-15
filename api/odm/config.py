@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     # on the certificate rather than an address.
     ntfy_url: str | None = None
     ntfy_public_url: str | None = None
+    # The same server over plain HTTP, for phones on a domain whose console
+    # certificate no phone would trust without somebody installing it by
+    # hand — which nobody does. Used automatically whenever the console's
+    # certificate is self-signed or from the domain's own authority; a
+    # publicly trusted certificate switches phones back to HTTPS by itself.
+    ntfy_plain_url: str | None = None
     ntfy_token: str | None = None
     ntfy_ca_cert: Path | None = None
     # How long a sign-in waits for the phone before the code is asked for
