@@ -206,3 +206,41 @@ func TestRefreshDynamicDnsIgnoresAddressOrder(t *testing.T) {
 		t.Fatalf("the same addresses in a different order restarted sssd: %v", runner.commands)
 	}
 }
+
+// The apply that carries out a self-update runs under the binary being
+// replaced. If the serial it records still counted for the new binary, the
+// new one would say "policy unchanged" on every poll and none of its fixes
+// would ever run — which is exactly what happened to 0.10.17.
+func TestANewAgentVersionAppliesOnceRegardlessOfSerial(t *testing.T) {
+	env := apply.NewEnv(t.TempDir())
+	env.Version = "0.10.16"
+	saveSerial(env, "serial-42")
+
+	if got := lastSerial(env); got != "serial-42" {
+		t.Fatalf("the version that wrote the serial does not read it back: %q", got)
+	}
+
+	env.Version = "0.10.17"
+	if got := lastSerial(env); got != "" {
+		t.Errorf("a different agent version treated an old serial as its own: %q", got)
+	}
+}
+
+// A serial file from before versions were recorded in it has no version
+// line at all, which is the same situation: the agent that wrote it was
+// not this one.
+func TestASerialFromBeforeVersionsWereRecordedForcesOneApply(t *testing.T) {
+	env := apply.NewEnv(t.TempDir())
+	env.Version = "0.10.18"
+	full := env.Path(serialPath)
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte("serial-42"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := lastSerial(env); got != "" {
+		t.Errorf("an unversioned serial was accepted: %q", got)
+	}
+}

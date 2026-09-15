@@ -364,6 +364,18 @@ goal.
     machine upgrading from a version that did claim these carries the
     stale claim in the state file already on its disk, and that alone is
     enough to delete the file once, on the very upgrade that fixes it.
+- **A new agent version must apply once on its own, or its fixes never
+  run.** The apply that carries out a self-update executes under the
+  binary being replaced; the new binary then starts, finds the policy
+  serial unchanged and nothing newer on offer, and prints "policy
+  unchanged" on every poll until somebody happens to edit a policy
+  object. 0.10.17 shipped a fix to a file its predecessor had written
+  wrongly, was installed fleet-wide within a minute, and corrected that
+  file on no machine at all. The serial file now records which agent
+  version wrote it (`lastSerial` in `agent/main.go`); a serial recorded by
+  any other version reads as no serial. Anything else that gates work on
+  "has this changed since last time" must include the agent's own version
+  in what "last time" means.
 - **Ask the component itself before theorising about it.** The boot splash
   failed to render across six attempts, each with a different explanation
   — kernel parameters, module lists, driver versions, a theme script, a

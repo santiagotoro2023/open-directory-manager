@@ -31,7 +31,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.10.17"
+const version = "0.10.18"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -828,18 +828,34 @@ func refreshDynamicDNS(ctx context.Context, env apply.Env, current []string) {
 	}
 }
 
+// lastSerial is the serial of the policy this machine last applied in full
+// — as applied by *this* version of the agent. A serial recorded by a
+// different version reads as no serial at all, so a freshly updated agent
+// applies once whatever the policy has or has not done in the meantime.
+//
+// Without that, a release's fixes never ran. The apply that carries out a
+// self-update runs under the binary being replaced; the new one then starts,
+// finds the serial matching and nothing newer on offer, and says "policy
+// unchanged" on every poll until somebody happens to edit a policy object.
+// Seen live: 0.10.18 shipped a fix to a file its predecessor had written
+// wrongly, was installed on every machine within a minute, and rewrote that
+// file on none of them.
 func lastSerial(env apply.Env) string {
 	raw, err := os.ReadFile(env.Path(serialPath))
 	if err != nil {
 		return ""
 	}
-	return string(raw)
+	serial, by, _ := strings.Cut(string(raw), "\n")
+	if strings.TrimSpace(by) != env.Version {
+		return ""
+	}
+	return serial
 }
 
 func saveSerial(env apply.Env, serial string) {
 	full := env.Path(serialPath)
 	if err := os.MkdirAll(filepath.Dir(full), 0o750); err == nil {
-		_ = os.WriteFile(full, []byte(serial), 0o600)
+		_ = os.WriteFile(full, []byte(serial+"\n"+env.Version+"\n"), 0o600)
 	}
 }
 

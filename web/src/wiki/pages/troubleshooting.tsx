@@ -92,6 +92,21 @@ export function Content() {
               ],
               [
                 <>
+                  A client shows the new agent version, but a fix that version is supposed to
+                  make has not happened; the agent logs only{" "}
+                  <C key="nv1">policy unchanged</C>
+                </>,
+                <>
+                  Fixed in 0.10.18. The apply that carries out a self-update runs under the old
+                  binary; the new one then started, found the policy serial unchanged, and did
+                  nothing until a policy object was next edited — so a release&rsquo;s fixes could
+                  sit installed everywhere and applied nowhere. The agent now records which
+                  version wrote the serial and applies once after every update. On an older
+                  client, <C key="nv2">sudo odm-agent apply --force</C> does the same by hand.
+                </>,
+              ],
+              [
+                <>
                   A machine&rsquo;s inventory stopped updating, and the agent logs{" "}
                   <C key="inv1">422</C>{" "}
                   <C key="inv2">List should have at most 500 items</C>
