@@ -607,6 +607,8 @@ function ConfigurationTab() {
           )}
         </>
       )}
+
+      <SecondFactorReset />
     </>
   );
 }
@@ -785,4 +787,63 @@ function elapsed(since: string): string {
   if (seconds < 60) return `${seconds} seconds`;
   const minutes = Math.floor(seconds / 60);
   return minutes === 1 ? "a minute" : `${minutes} minutes`;
+}
+
+/**
+ * Every second factor off every account, in one go.
+ *
+ * The fresh start for the whole domain — after a notification server is
+ * replaced, after a policy has been reworked, after a mistake. Everybody a
+ * policy covers is walked through setting theirs up again at their next
+ * sign-in. Two clicks, because it is the size of thing that deserves two.
+ */
+function SecondFactorReset() {
+  const [arming, setArming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null);
+
+  async function reset() {
+    setBusy(true);
+    setOutcome(null);
+    try {
+      const { removed } = await api.operations.resetAllSecondFactors();
+      const parts = Object.entries(removed)
+        .filter(([, count]) => count > 0)
+        .map(([method, count]) => `${count} ${method === "push" ? "phone" : method}`);
+      setOutcome(parts.length ? `Removed ${parts.join(" and ")} enrolments.` : "Nothing was enrolled.");
+      setArming(false);
+    } catch (err) {
+      setOutcome(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3 className="section-title">Second factor</h3>
+      <p className="muted">
+        Takes every code and every phone off every account. Anybody a policy covers is walked
+        through setting theirs up again at their next sign-in. For one person, use the
+        account&rsquo;s own <strong>Reset second factor</strong> instead.
+      </p>
+      <div className="actions-row">
+        {arming ? (
+          <>
+            <button type="button" className="danger" disabled={busy} onClick={() => void reset()}>
+              Yes, reset every second factor
+            </button>
+            <button type="button" className="ghost" disabled={busy} onClick={() => setArming(false)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button type="button" className="ghost" onClick={() => setArming(true)}>
+            Reset every second factor…
+          </button>
+        )}
+        {outcome && <span className="muted">{outcome}</span>}
+      </div>
+    </>
+  );
 }

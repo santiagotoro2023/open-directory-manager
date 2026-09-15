@@ -3783,14 +3783,16 @@ function SecondFactorEditor({
                 checked={current.method === "push"}
                 onChange={() => set({ method: "push" })}
               />
-              Approval on the phone, with the code as the fallback
+              Approval on the phone
             </label>
             <small>
-              Approval sends the phone an Approve / Deny notification and waits up to a minute.
-              No answer, a phone that is not set up, or a console the machine cannot reach all
-              fall back to asking for the code. Somebody without a phone set up is walked
-              through it at their next sign-in, the same way as the code. Needs phone approvals
-              on the domain controller (Wiki &rarr; Operations &rarr; Phone approvals).
+              Approval sends the phone an Approve / Deny notification and waits up to a minute;
+              no answer, or Deny, refuses the sign-in. Switching method takes the other
+              method's enrolments away from everyone this policy covers — the policy is the
+              source of truth — and somebody without a phone set up is walked through it at
+              their next sign-in, inside the grace period, the same way as the code. Needs
+              phone approvals on the domain controller (Wiki &rarr; Health and backups &rarr;
+              Phone approvals).
             </small>
           </div>
           {current.method === "push" && (

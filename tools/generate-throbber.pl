@@ -13,9 +13,9 @@ use warnings;
 use Compress::Zlib;
 use Math::Trig;
 
-my $frames   = 72;    # 5 degrees apart: a hand-off that reads as a turn, not a series of jumps
-my $size     = 64;    # px; the script does not scale these, so this is the on-screen size
-my $stroke   = 5.0;   # px
+my $frames   = 120;  # 3 degrees apart: at 50 frames a second, one turn every 2.4s and no visible step
+my $size     = 48;   # px; the script does not scale these, so this is the on-screen size
+my $stroke   = 4.0;  # px
 my $arc      = 0.78;  # fraction of the full circle the arc covers
 my $ss       = 4;     # supersampling per axis, for anti-aliased edges
 my $out_dir  = "agent/internal/apply/assets/bootsplash";

@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"odm.example.org/agent/internal/policy"
 )
@@ -93,19 +94,42 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 			cmdline += " nvidia-drm.modeset=1 nvidia-drm.fbdev=1"
 		}
 		body += fmt.Sprintf("GRUB_CMDLINE_LINUX_DEFAULT=%q\n", cmdline)
-		// auto is already grub-mkconfig's own default, but it is the mode
-		// GRUB_GFXPAYLOAD_LINUX=keep then hands the kernel, so it is worth
-		// being explicit about rather than inheriting from whatever else
-		// happens to be in /etc/default/grub: "auto" is what asks the
-		// firmware for the display's own preferred mode, which is what
-		// keeps the splash at the panel's native resolution instead of
-		// something the monitor then stretches to fit.
-		body += "GRUB_GFXMODE=auto\n"
+		// The graphics mode GRUB sets is the one GRUB_GFXPAYLOAD_LINUX=keep
+		// hands the kernel, and on a machine whose real driver stays out of
+		// the initramfs it is the mode the whole splash is drawn in. "auto"
+		// does not ask the panel what it is: on UEFI it keeps whatever mode
+		// the firmware was left in, which on the machine this was built
+		// against was 1024x768 on a 16:9 panel — so everything drawn,
+		// background, logo and spinner alike, arrived on screen pulled wide,
+		// with the theme's own aspect-preserving scaling working perfectly
+		// on a framebuffer the monitor then stretched. GRUB takes a list and
+		// uses the first mode the firmware actually offers, and a firmware
+		// only offers modes the connected display can show, so the list runs
+		// from the common native resolutions downward and ends in auto for a
+		// firmware that offers none of them.
+		body += "GRUB_GFXMODE=" + grubGfxModes + "\n"
 		body += "GRUB_GFXPAYLOAD_LINUX=keep\n"
 	}
 	if err := env.WriteFile(grubConfPath, body, 0o644, "root", "root"); err != nil {
 		return []policy.Result{policy.Fail("grub", err)}
 	}
+	// The debug drop-in this project's own troubleshooting page has an
+	// operator add while chasing a splash that does not render. It puts
+	// plymouth.debug on the kernel line for as long as it exists, and an
+	// operator who fixed the problem and forgot it is left with a machine
+	// that boots noisier than the setting promises. Taken out here, on the
+	// same pass that regenerates GRUB's configuration.
+	_ = os.Remove(env.Path(plymouthDebugDropIn))
 	results := []policy.Result{runAll(ctx, env, "grub", []string{"update-grub"})}
 	return append(results, applyBootSplash(ctx, s.Grub, env)...)
 }
+
+// grubGfxModes is the preference list above: the native resolutions of the
+// panels a managed desktop is likely to have, widest first, then whatever
+// the firmware was in.
+const grubGfxModes = "3840x2160,2560x1440,2560x1080,1920x1200,1920x1080,1680x1050," +
+	"1600x900,1440x900,1366x768,1280x1024,1280x800,1024x768,auto"
+
+// plymouthDebugDropIn is the file the troubleshooting page has an operator
+// write to capture Plymouth's own log across a boot.
+const plymouthDebugDropIn = "/etc/default/grub.d/99-plymouth-debug.cfg"

@@ -17,7 +17,7 @@ import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 import { EnrolmentTokens } from "../components/EnrolmentTokens";
 import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
-import { isDisabled } from "../components/objectDialogs";
+import { PasswordDialog, SecondFactorResetDialog, isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
 import { useNavigate } from "react-router-dom";
 import Select from "../components/Select"
@@ -109,6 +109,8 @@ export function Directory() {
   const [linking, setLinking] = useState<string | null>(null);
   const navigate = useNavigate();
   const [renaming, setRenaming] = useState<DirectoryObject | null>(null);
+  const [resettingPassword, setResettingPassword] = useState<DirectoryObject | null>(null);
+  const [resettingFactor, setResettingFactor] = useState<DirectoryObject | null>(null);
   const { bind, menu } = useContextMenu();
   // Objects picked for one change applied to all of them. Creating from CSV
   // has always been possible; changing what already exists has not, and doing
@@ -410,6 +412,16 @@ export function Directory() {
                     { separator: true },
                     { label: "Rename", onSelect: () => setRenaming(object) },
                     {
+                      label: "Reset password…",
+                      disabled: object.objectType !== "user",
+                      onSelect: () => setResettingPassword(object),
+                    },
+                    {
+                      label: "Reset second factor…",
+                      disabled: object.objectType !== "user",
+                      onSelect: () => setResettingFactor(object),
+                    },
+                    {
                       label: "Link a policy object…",
                       disabled: object.objectType !== "ou",
                       onSelect: () => setLinking(object.distinguishedName),
@@ -494,6 +506,21 @@ export function Directory() {
           targetDn={linking}
           onClose={() => setLinking(null)}
           onLinked={() => setLinking(null)}
+        />
+      )}
+
+      {resettingPassword && (
+        <PasswordDialog
+          dn={resettingPassword.distinguishedName}
+          onClose={() => setResettingPassword(null)}
+        />
+      )}
+
+      {resettingFactor && (
+        <SecondFactorResetDialog
+          dn={resettingFactor.distinguishedName}
+          name={label(resettingFactor)}
+          onClose={() => setResettingFactor(null)}
         />
       )}
 

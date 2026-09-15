@@ -144,10 +144,15 @@ func WriteKrb5Conf(options Options, env Env) error {
 
 // WriteSssdConf configures identity and authentication against the domain.
 func WriteSssdConf(options Options, env Env) error {
+	// No "services =" line. Debian starts SSSD's responders by socket
+	// activation, and naming them here as well makes every boot print
+	// "[FAILED] Failed to listen on sssd-nss.socket" (and pam, and pac) to
+	// the console — the responders still come up through the monitor, so
+	// nothing was broken, but a failure line is what makes systemd print
+	// every status line after it, over the top of a boot splash.
 	body := managed + fmt.Sprintf(`[sssd]
 domains = %s
 config_file_version = 2
-services = nss, pam
 
 [domain/%s]
 id_provider = ad

@@ -1033,3 +1033,78 @@ async def group_query_loop(pool: asyncpg.Pool, settings: Settings) -> None:
             raise
         except Exception:  # noqa: BLE001 - a loop that dies stops maintaining every group
             _log.exception("running the group queries")
+
+
+# ------------------------------------------------------- second factor ----
+# What somebody has enrolled, and taking it away. A helpdesk action of the
+# same weight as a password reset, so it takes the same right: a person who
+# has lost their phone is a person who cannot sign in, and the fix is the
+# same fresh start either way.
+
+
+class SecondFactorResetRequest(BaseModel):
+    dn: Dn
+
+
+async def _principal_sid(settings: Settings, dn: str) -> tuple[str, str]:
+    user = await _read(settings, objects.get, dn)
+    if user.get("objectType") != "user":
+        raise objects.ObjectError("not a user")
+    sid = str(user.get("objectSid") or "")
+    if not sid:
+        raise objects.ObjectError("that account has no identifier")
+    return sid, str(user.get("sAMAccountName") or user.get("cn") or dn)
+
+
+@router.get("/user/second-factor")
+async def user_second_factor(
+    dn: Annotated[str, Query(min_length=3, max_length=1024)],
+    _: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Which second factors this account has: a code, a phone, both, neither."""
+    authz.require("directory.read", dn)
+    sid, _name = await _principal_sid(settings, dn)
+    code = await pool.fetchval(
+        "SELECT confirmed_at IS NOT NULL FROM totp_enrolment WHERE principal_sid = $1", sid
+    )
+    phone = await pool.fetchval(
+        "SELECT confirmed_at IS NOT NULL FROM push_enrolment WHERE principal_sid = $1", sid
+    )
+    return {"code": bool(code), "phone": bool(phone)}
+
+
+@router.post("/user/second-factor/reset")
+async def reset_user_second_factor(
+    body: SecondFactorResetRequest,
+    request: Request,
+    session: Session = Depends(require_admin),
+    authz: Authz = Depends(authorization),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Take every second factor off this account. Their next sign-in under a
+    policy that asks for one walks them through setting it up again."""
+    authz.require("user.password.reset", body.dn)
+    sid, name = await _principal_sid(settings, body.dn)
+    async with _audit_context(
+        request,
+        session,
+        pool,
+        "user.second_factor.reset",
+        object_type="user",
+        object_dn=body.dn,
+    ) as entry:
+        removed = {}
+        async with pool.acquire() as conn:
+            for method, table in (("code", "totp_enrolment"), ("phone", "push_enrolment")):
+                status = await conn.execute(
+                    f"DELETE FROM {table} WHERE principal_sid = $1", sid  # noqa: S608 - fixed names
+                )
+                removed[method] = int(status.split()[-1]) if status else 0
+            await conn.execute("DELETE FROM push_challenge WHERE principal_sid = $1", sid)
+        gone = ", ".join(method for method, count in removed.items() if count)
+        entry.detail = f"{name}: removed {gone}" if gone else f"{name}: nothing was enrolled"
+    return {"removed": removed}

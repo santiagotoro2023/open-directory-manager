@@ -424,7 +424,7 @@ func TestGrubAddsNvidiaModesetAndFbdev(t *testing.T) {
 	for _, want := range []string{
 		"nvidia-drm.modeset=1",
 		"nvidia-drm.fbdev=1",
-		"GRUB_GFXMODE=auto",
+		"GRUB_GFXMODE=" + grubGfxModes,
 		"GRUB_GFXPAYLOAD_LINUX=keep",
 	} {
 		if !strings.Contains(body, want) {

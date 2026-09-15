@@ -72,6 +72,15 @@ cached_login = yes
 		return []policy.Result{policy.Fail(ccacheSetting, err)}
 	}
 
+	// A machine joined before the join stopped writing "services =" still
+	// carries it, and prints a failure for each named responder at every
+	// boot. Taken out here for the same reason it is no longer written.
+	dropped, err := removeSssdServicesLine(env)
+	if err != nil {
+		return []policy.Result{policy.Fail(ccacheSetting, err)}
+	}
+	changed = changed || dropped
+
 	results := []policy.Result{}
 	if removed := removeWinbindAuth(ctx, env); removed != nil {
 		results = append(results, *removed)
@@ -173,4 +182,38 @@ func addSetting(env Env, path, setting, after, line string, mode os.FileMode) (b
 		return true, nil
 	}
 	return false, nil
+}
+
+// removeSssdServicesLine takes "services = ..." out of [sssd] in sssd.conf.
+// Debian starts the responders by socket activation; naming them as well
+// makes every boot print "[FAILED] Failed to listen on sssd-nss.socket" for
+// each one, and one failure line is what makes systemd print every status
+// line after it over the boot splash. Reports whether anything changed.
+func removeSssdServicesLine(env Env) (bool, error) {
+	body, err := os.ReadFile(env.Path(sssdConfPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	var kept []string
+	dropped := false
+	inSssd := false
+	for _, line := range strings.Split(string(body), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			inSssd = trimmed == "[sssd]"
+		}
+		if inSssd && strings.HasPrefix(trimmed, "services") &&
+			strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(trimmed, "services")), "=") {
+			dropped = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if !dropped {
+		return false, nil
+	}
+	return true, os.WriteFile(env.Path(sssdConfPath), []byte(strings.Join(kept, "\n")), 0o600)
 }

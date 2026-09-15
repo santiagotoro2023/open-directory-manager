@@ -297,7 +297,7 @@ function PhoneApproval({ onError }: { onError: (message: string | null) => void 
         <>
           <p>
             Where a policy asks for it, signing in sends your phone an Approve / Deny
-            notification instead of asking for a code. The code still works as the fallback.
+            notification instead of asking for a code.
           </p>
           <Field
             label="Code from the app"
@@ -330,7 +330,7 @@ function PhoneApproval({ onError }: { onError: (message: string | null) => void 
             <li>
               In the app: <strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
               <em>Use another server</em>, then enter the server and the topic below — or scan
-              this to open the topic on the phone and choose <em>Subscribe</em>.
+              this with the phone&rsquo;s camera, which opens the app on that dialog.
             </li>
             <li>Tap <strong>Confirm</strong> on the notification that arrives.</li>
           </ol>
@@ -364,7 +364,7 @@ function PhoneApproval({ onError }: { onError: (message: string | null) => void 
         <>
           <p>
             Approve sign-ins with a tap instead of typing a code. Uses the ntfy app on your
-            phone; the code stays as the fallback when the phone does not answer.
+            phone.
           </p>
           <div className="actions-row">
             <button

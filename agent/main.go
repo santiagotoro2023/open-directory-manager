@@ -32,7 +32,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.10.21"
+const version = "0.10.22"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -166,7 +166,12 @@ func runPushFactor(args []string) int {
 		}
 		return 2
 	}
-	fmt.Println("Approve the sign-in on your phone.")
+	// What the person sees on the login screen while this waits: pam_exec's
+	// stdout option hands each line to the greeter as a PAM message, the
+	// same way a code prompt reaches it, so this is the login step itself
+	// and not something happening behind it.
+	fmt.Println("Check your phone: approve this sign-in to continue.")
+	nudge := time.After(30 * time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
 	defer cancel()
@@ -175,7 +180,11 @@ func runPushFactor(args []string) int {
 	for {
 		select {
 		case <-ctx.Done():
+			fmt.Println("No answer from your phone. Sign in again to try once more.")
 			return 1
+		case <-nudge:
+			fmt.Println("Still waiting for your phone. Open the ntfy notification and tap Approve.")
+			continue
 		case <-ticker.C:
 		}
 		decision, err := api.PushPoll(ctx, id)
@@ -185,8 +194,13 @@ func runPushFactor(args []string) int {
 		}
 		switch decision {
 		case client.PushApproved:
+			fmt.Println("Approved.")
 			return 0
-		case client.PushDenied, client.PushExpired:
+		case client.PushDenied:
+			fmt.Println("Denied from your phone.")
+			return 1
+		case client.PushExpired:
+			fmt.Println("No answer from your phone. Sign in again to try once more.")
 			return 1
 		}
 	}
@@ -912,7 +926,7 @@ func refreshDynamicDNS(ctx context.Context, env apply.Env, current []string) {
 // self-update runs under the binary being replaced; the new one then starts,
 // finds the serial matching and nothing newer on offer, and says "policy
 // unchanged" on every poll until somebody happens to edit a policy object.
-// Seen live: 0.10.21 shipped a fix to a file its predecessor had written
+// Seen live: 0.10.22 shipped a fix to a file its predecessor had written
 // wrongly, was installed on every machine within a minute, and rewrote that
 // file on none of them.
 func lastSerial(env apply.Env) string {

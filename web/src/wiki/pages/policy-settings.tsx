@@ -1188,14 +1188,15 @@ fs.protected_symlinks                1`}</Code>
                   <strong>A code from an authenticator app</strong> is checked on the machine
                   itself, so it works with the console unreachable. <strong>Approval on the
                   phone</strong> sends an Approve / Deny notification to the person&rsquo;s phone
-                  (the ntfy app) and waits up to a minute; the login screen says &ldquo;Approve
-                  the sign-in on your phone&rdquo; meanwhile. No answer, Deny, a phone that is not
-                  set up, or a console the machine cannot reach all fall through to the code —
-                  so somebody with both never loses the way in, and somebody with only a phone is
-                  refused rather than let through when it cannot be asked. Needs phone approvals
-                  on the domain controller (Wiki &rarr; Health and backups &rarr; Phone approvals);
-                  each person is walked through subscribing their phone at their next sign-in,
-                  the same way as the code, and then through a backup code.
+                  (the ntfy app) and waits up to a minute; the login screen says &ldquo;Check your
+                  phone: approve this sign-in to continue&rdquo; meanwhile. No answer, or Deny,
+                  refuses the sign-in; there is no code behind the phone. The policy is the source
+                  of truth: switching method takes the other method&rsquo;s enrolments away from
+                  everyone the policy covers, and turning the setting off or removing it takes
+                  both. Somebody without what the policy asks for is let in during the grace
+                  period and walked through setting it up at their next sign-in. Needs phone
+                  approvals on the domain controller (Wiki &rarr; Health and backups &rarr; Phone
+                  approvals).
                 </>,
               ],
               [

@@ -1244,6 +1244,12 @@ export const api = {
     setPassword: (dn: string, password: string, must_change: boolean) =>
       request<void>("/directory/user/password", json({ dn, password, must_change })),
 
+    secondFactor: (dn: string) =>
+      request<{ code: boolean; phone: boolean }>(`/directory/user/second-factor${qs({ dn })}`),
+
+    resetSecondFactor: (dn: string) =>
+      request<{ removed: Record<string, number> }>("/directory/user/second-factor/reset", json({ dn })),
+
     setPhoto: (dn: string, photo: string) =>
       request<void>("/directory/user/photo", json({ dn, photo })),
 
@@ -1968,6 +1974,9 @@ export const api = {
     exportUrl: () => "/api/v1/domain/export",
 
     /** Read an export. Without apply it only says what importing would do. */
+    resetAllSecondFactors: () =>
+      request<{ removed: Record<string, number> }>("/operations/second-factor/reset-all", json({})),
+
     importDomain: (body: string, apply: boolean) =>
       request<{
         applied: boolean;

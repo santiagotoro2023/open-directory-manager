@@ -24,6 +24,7 @@ from . import (
     domainexport,
     kea,
     objects,
+    push,
     replication,
     tasks,
 )
@@ -775,3 +776,33 @@ def _as_datetime(value: Any) -> datetime | None:
             return None
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None
+
+
+# ------------------------------------------------------- second factor ----
+
+
+@router.post("/second-factor/reset-all", dependencies=[Depends(requires("domain.import"))])
+async def reset_every_second_factor(
+    request: Request,
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Take every second factor off every account — code and phone alike.
+
+    The fresh start for the whole domain: after a notification server is
+    replaced, after a policy has been reworked, after a mistake. Everybody a
+    policy covers is walked through setting theirs up again at their next
+    sign-in. Held behind the same right as replacing the domain's whole
+    configuration, because that is the size of it.
+    """
+    async with pool.acquire() as conn:
+        removed = await push.retire_enrolments(
+            conn,
+            None,
+            {"code", "push"},
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=request.client.host if request.client else None,
+            reason="every second factor reset from the console",
+        )
+    return {"removed": removed}

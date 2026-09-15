@@ -1669,3 +1669,35 @@ func TestADriveThatIsAlreadyMountedIsNotAFailure(t *testing.T) {
 		}
 	}
 }
+
+// Debian starts SSSD's responders by socket activation; a "services =" line
+// naming them as well makes every boot print a [FAILED] line per responder,
+// and one failure line is what makes systemd print every status line after
+// it over the boot splash. Taken out of a machine joined before the join
+// stopped writing it; a services line under another section is not touched.
+func TestTheSssdServicesLineIsTakenOutOfTheSssdSection(t *testing.T) {
+	env, _ := testEnv(t)
+	write(t, env, "/etc/krb5.conf", "[libdefaults]\n")
+	write(t, env, "/etc/sssd/sssd.conf", Header+`[sssd]
+domains = corp.example.internal
+config_file_version = 2
+services = nss, pam, pac
+
+[domain/corp.example.internal]
+id_provider = ad
+# services = something else entirely, in another section
+`)
+
+	applyCcache(context.Background(), policy.Settings{}, env)
+
+	sssd := read(t, env, "/etc/sssd/sssd.conf")
+	if strings.Contains(sssd, "services = nss, pam, pac") {
+		t.Errorf("the services line is still there:\n%s", sssd)
+	}
+	if !strings.Contains(sssd, "config_file_version = 2") || !strings.Contains(sssd, "id_provider = ad") {
+		t.Errorf("more than the services line was changed:\n%s", sssd)
+	}
+	if !strings.Contains(sssd, "# services = something else") {
+		t.Errorf("a comment in another section was touched:\n%s", sssd)
+	}
+}

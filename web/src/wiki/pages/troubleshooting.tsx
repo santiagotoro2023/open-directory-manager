@@ -1097,6 +1097,23 @@ export function Content() {
               ],
               [
                 <>
+                  The policy was switched from the code to approval on the phone, but sign-in
+                  still asks for a code
+                </>,
+                <>
+                  Fixed in 0.10.22. Two things were wrong: the code was kept as a fallback behind
+                  the phone, so somebody without a phone yet was asked for the code they had been
+                  told they no longer needed; and the machine kept everybody&rsquo;s code secrets
+                  regardless. Now a policy that asks for the phone asks for the phone alone, a
+                  machine under that policy holds no code secrets, and switching method takes the
+                  other method&rsquo;s enrolments away from everyone the policy covers — the
+                  policy object is the source of truth. Somebody without a phone is let in during
+                  the grace period and walked through setting one up. If a machine has not
+                  re-applied since the switch, <C key="sw1">sudo odm-agent apply --force</C>.
+                </>,
+              ],
+              [
+                <>
                   Restarting or shutting down leaves the splash frozen on screen — background,
                   logo, a spinner that no longer turns — until a key is pressed
                 </>,

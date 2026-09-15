@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import db, objects, policy, rsop, sysvol, tasks
+from . import db, objects, policy, push, rsop, sysvol, tasks, totp
 from .config import Settings, get_settings
 from .policy_schema import PolicySettings, Targeting
 from .routes_directory import _audit_context, _bound
@@ -439,8 +439,50 @@ async def update_gpo(
 
         entry.before = _gpo_json(before)
         entry.after = _gpo_json(row)
+        await _retire_second_factors(
+            pool, settings, request, session, _gpo_json(before), _gpo_json(row)
+        )
         await _applied(pool, session.principal)
         return _gpo_json(row)
+
+
+async def _retire_second_factors(
+    pool: asyncpg.Pool,
+    settings: Settings,
+    request: Request,
+    session: Session,
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> None:
+    """The policy is the source of truth for a second factor. A method it
+    stops asking for takes its enrolments with it, for the people it
+    covered — turned off, taken out, or switched to the other method — so
+    nobody goes on being asked for something the policy no longer wants,
+    and the walkthrough sets up what it wants next time they sign in."""
+    old = (before.get("settings") or {}).get("second_factor")
+    new = (after.get("settings") or {}).get("second_factor")
+    methods = push.methods_no_longer_asked_for(old, new)
+    if not methods:
+        return
+    async with _bound(settings, write=False) as ldap:
+        wanted = await run_in_threadpool(
+            totp.entitled_principals,
+            ldap,
+            settings,
+            require=(old or {}).get("require_principals") or [],
+            exempt=(old or {}).get("exempt_principals") or [],
+        )
+    async with pool.acquire() as conn:
+        await push.retire_enrolments(
+            conn,
+            wanted,
+            methods,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=request.client.host if request.client else None,
+            reason=f"policy {after.get('display_name') or before.get('guid')} no longer asks for "
+            + " and ".join(sorted(methods)),
+        )
 
 
 @router.delete("/gpo", status_code=204, dependencies=[Depends(requires("gpo.write"))])

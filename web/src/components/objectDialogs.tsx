@@ -439,3 +439,64 @@ export function DeleteDialog({
     </Modal>
   );
 }
+
+/** Take every second factor off one account — code and phone alike.
+ *
+ * The fresh start for somebody who has lost their phone, or set the wrong one
+ * up: their next sign-in under a policy that asks for one walks them through
+ * it again. Nothing to type; the confirmation is the whole dialog. */
+export function SecondFactorResetDialog({
+  dn,
+  name,
+  onClose,
+}: {
+  dn: string;
+  name: string;
+  onClose: () => void;
+}) {
+  const { busy, error, run } = useAction();
+  const [state, setState] = useState<{ code: boolean; phone: boolean } | null>(null);
+
+  useEffect(() => {
+    let current = true;
+    api.directory
+      .secondFactor(dn)
+      .then((result) => current && setState(result))
+      .catch(() => current && setState({ code: false, phone: false }));
+    return () => {
+      current = false;
+    };
+  }, [dn]);
+
+  const has = state ? [state.code && "a code", state.phone && "a phone"].filter(Boolean) : [];
+
+  return (
+    <Modal
+      title="Reset second factor"
+      submitLabel="Reset"
+      busy={busy || !state}
+      error={error}
+      onClose={onClose}
+      onSubmit={() =>
+        void run(async () => {
+          await api.directory.resetSecondFactor(dn);
+          onClose();
+        })
+      }
+    >
+      {!state ? (
+        <p className="muted">Checking what is enrolled…</p>
+      ) : has.length ? (
+        <p>
+          <strong>{name}</strong> has {has.join(" and ")} enrolled. Resetting removes{" "}
+          {has.length > 1 ? "both" : "it"}; their next sign-in under a policy that asks for a
+          second factor walks them through setting one up again.
+        </p>
+      ) : (
+        <p>
+          <strong>{name}</strong> has no second factor enrolled. Resetting changes nothing.
+        </p>
+      )}
+    </Modal>
+  );
+}

@@ -206,9 +206,9 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
             A second factor answered with a tap instead of a typed code. Where a policy&rsquo;s{" "}
             <strong>Second factor</strong> setting says <em>Approval on the phone</em>, signing in
             sends the person&rsquo;s phone an <strong>Approve</strong> / <strong>Deny</strong>{" "}
-            notification and waits up to a minute; the code stays as the fallback whenever the
-            phone does not answer. The login screen says &ldquo;Approve the sign-in on your
-            phone&rdquo; while it waits.
+            notification and waits up to a minute; no answer, or Deny, refuses the sign-in. The
+            login screen says &ldquo;Check your phone: approve this sign-in to continue&rdquo;
+            while it waits, the way it shows the code prompt for the other method.
           </p>
           <p>
             The notifications go through <strong>ntfy</strong> &mdash; an open notification
@@ -224,10 +224,13 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
           <p>
             <strong>Nobody has to visit the console.</strong> The administrator sets the policy;
             everything else happens at the machine, the same way a code is set up. Somebody the
-            policy covers who has no phone set up is walked through it at their next sign-in
-            &mdash; on a text login or over SSH right there, in a graphical session in a
-            full-screen window as the desktop starts that cannot be clicked away &mdash; and
-            then through a backup code, for when the phone is not to hand.
+            policy covers who has no phone set up is let in during the grace period and walked
+            through it at their next sign-in &mdash; on a text login or over SSH right there, in
+            a graphical session in a full-screen window as the desktop starts that cannot be
+            clicked away. <strong>The policy is the source of truth:</strong> switching a policy
+            from the code to the phone takes everyone&rsquo;s code enrolments away (and the other
+            way round), and turning the setting off takes both, so nobody is asked for something
+            the policy no longer wants.
           </p>
           <Steps>
             <li>
@@ -237,10 +240,14 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
             </li>
             <li>
               At the person&rsquo;s next sign-in the walkthrough shows the server, the topic and
-              a QR code. They install the <strong>ntfy</strong> app, add the subscription
-              (<strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
-              <em>Use another server</em>) and, if the app warns about the certificate, review
-              and trust it there. The topic is the secret: long, random, shown once.
+              a QR code. They install the <strong>ntfy</strong> app and either scan the code
+              with the phone&rsquo;s camera (it opens the app on its subscribe dialog) or add the
+              subscription by hand (<strong>+</strong> &rarr; <em>Subscribe to topic</em> &rarr;{" "}
+              <em>Use another server</em>, then the server and topic shown). If the app warns
+              about the certificate, they review and trust it there. The topic is the secret:
+              long, random, shown once. It must be the app that subscribes — the server no
+              longer has a web page to subscribe from, precisely so a Confirm tapped in a
+              browser cannot enrol a phone that is not listening.
             </li>
             <li>
               They tap <strong>Confirm</strong> on the notification that arrives. That tap is
@@ -249,8 +256,9 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
               sends it again.
             </li>
             <li>
-              The walkthrough continues into the backup code (scan, type the six digits, keep the
-              recovery codes) and the sign-in completes. From then on, a tap.
+              The sign-in completes. From then on: password, then a tap. There is no code behind
+              the phone; somebody who loses their phone is reset by an administrator (below) and
+              walked through it again.
             </li>
           </Steps>
           <Reference
@@ -265,8 +273,12 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
                 "Audit log, actions auth.second_factor.push.begin / .ask / .approved / .denied / .enrol.",
               ],
               [
-                "Removing a phone",
-                "The person, from Second factor under their own name in the console; or an administrator, from the user object. Their next sign-in walks them through setting one up again.",
+                "Resetting one person",
+                "Right-click the user in Directory → Reset second factor…, or the same button on the user object. Removes their code and their phone; their next sign-in walks them through setting up whatever the policy asks for. The person can also remove their own phone from Second factor under their name in the console.",
+              ],
+              [
+                "Resetting everyone",
+                "Overview → Configuration → Reset every second factor. The fresh start for the whole domain, held behind the same right as replacing the domain's configuration.",
               ],
             ]}
           />

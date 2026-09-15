@@ -529,12 +529,11 @@ func TestTheEnrolledListIsNotUnderTheAgentsPrivateDirectory(t *testing.T) {
 	}
 }
 
-// With the phone asked first: the guard jumps over both lines, the phone's
-// line jumps over the code on approval only, and the code stays as the
-// fallback. A refusal on the phone is not a hard failure by itself — pam_exec
-// cannot say why a helper exited non-zero, and "no answer" and "no console"
-// exit the same way — so it ends the sign-in by leaving a code to type.
-func TestThePhoneIsAskedBeforeTheCodeAndTheCodeRemainsTheFallback(t *testing.T) {
+// Asked for the phone, the phone is the whole of it: the guard in front,
+// the phone's line final, and no code behind it — a person switched to the
+// phone must not go on being asked for a code (seen live, and exactly the
+// complaint). Without a phone, the guard's grace period is the way in.
+func TestThePhoneIsTheWholeCheckUnderThePushMethod(t *testing.T) {
 	env, _ := testEnv(t)
 	withPam(t, env, "gdm-password", "sshd")
 
@@ -546,21 +545,20 @@ func TestThePhoneIsAskedBeforeTheCodeAndTheCodeRemainsTheFallback(t *testing.T) 
 		body := read(t, env, "/etc/pam.d/"+service)
 		guard := strings.Index(body, factorGuard)
 		phone := strings.Index(body, pushHelper)
-		code := strings.Index(body, "pam_oath.so")
-		if guard < 0 || phone < 0 || code < 0 {
+		if guard < 0 || phone < 0 {
 			t.Fatalf("%s is missing a line:\n%s", service, body)
 		}
-		if !(guard < phone && phone < code) {
-			t.Errorf("%s: guard, phone, code is the order; got\n%s", service, body)
+		if guard > phone {
+			t.Errorf("%s: the guard must come before the phone:\n%s", service, body)
 		}
-		if !strings.Contains(body, "success=2 default=ignore] pam_exec.so quiet "+factorGuard) {
-			t.Errorf("%s: the guard must jump over both the phone and the code:\n%s", service, body)
+		if strings.Contains(body, "pam_oath.so") {
+			t.Errorf("%s: a code is still asked for under the phone method:\n%s", service, body)
 		}
-		if !strings.Contains(body, "success=1 default=ignore] pam_exec.so quiet stdout "+pushHelper) {
-			t.Errorf("%s: an approval must skip the code and nothing else:\n%s", service, body)
+		if !strings.Contains(body, "success=1 default=ignore] pam_exec.so quiet "+factorGuard) {
+			t.Errorf("%s: the guard must jump over the phone's line:\n%s", service, body)
 		}
-		if strings.Contains(body, "requisite pam_exec.so") || strings.Contains(body, "required pam_exec.so") {
-			t.Errorf("%s: the phone's answer must never be a hard refusal on its own:\n%s", service, body)
+		if !strings.Contains(body, "requisite pam_exec.so quiet stdout "+pushHelper) {
+			t.Errorf("%s: the phone's answer must be final:\n%s", service, body)
 		}
 	}
 	if _, err := os.Stat(env.Path(pushHelper)); err != nil {
@@ -585,7 +583,8 @@ func TestSwitchingTheMethodRewritesTheLines(t *testing.T) {
 		t.Fatalf("the code method wrote the phone line:\n%s", first)
 	}
 	second := run("push")
-	if !strings.Contains(second, pushHelper) || strings.Count(second, factorGuard) != 1 {
+	if !strings.Contains(second, pushHelper) || strings.Contains(second, "pam_oath.so") ||
+		strings.Count(second, factorGuard) != 1 {
 		t.Errorf("switching to the phone did not rewrite the block cleanly:\n%s", second)
 	}
 	third := run("code")
@@ -638,9 +637,9 @@ func TestTheEnrolledListFollowsTheMethod(t *testing.T) {
 	if got := read(t, env, enrolledList); got != "bob\ngrace\n" {
 		t.Errorf("push method: enrolled should be the people with a phone, got %q", got)
 	}
-	// The code file is the code file regardless: ada keeps hers.
-	if !strings.Contains(read(t, env, oathUsersFile), "ada") {
-		t.Error("switching method dropped a code enrolment")
+	// A machine asking for the phone holds nobody's code secret.
+	if got := read(t, env, oathUsersFile); got != "" {
+		t.Errorf("push method: code secrets are still on the machine: %q", got)
 	}
 }
 

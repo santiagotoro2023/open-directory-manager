@@ -106,7 +106,10 @@ cache-duration: "1h"
 auth-file: "/var/lib/ntfy/user.db"
 auth-default-access: "read-only"
 enable-signup: false
-enable-login: true
+enable-login: false
+# No web page: opening a topic in a browser showed the same Confirm button the
+# phone gets, and a tap there enrolled a phone that was never subscribed.
+web-root: "disable"
 behind-proxy: false
 CONF
 chown root:ntfy /etc/ntfy/server.yml

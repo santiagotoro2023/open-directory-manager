@@ -54,21 +54,20 @@ func runEnrolFactor(args []string) int {
 	}
 	defer api.Close()
 
-	// The phone first, where the policy asks for it. The control plane says
-	// so by accepting the request; a policy that asks for a code instead, or
-	// a domain with no notification server, refuses it and the code is the
-	// whole of the walkthrough.
 	// One reader of the terminal for the whole walkthrough: two readers on
-	// the same input race, and the one waiting for a phone tap would eat the
-	// code typed for the step after it.
+	// the same input race.
 	lines := stdinLines()
 
-	phoneDone := false
-	if outcome := enrolPhone(ctx, api, *username, lines); outcome != phoneNotAsked {
-		if outcome == phoneFailed {
-			return 1
-		}
-		phoneDone = true
+	// The phone, where the policy asks for it — and then nothing else: a
+	// policy that asks for the phone asks for the phone. The control plane
+	// says which by accepting or refusing the request; a policy that asks
+	// for a code instead, or a domain with no notification server, refuses
+	// it and the code is the walkthrough.
+	switch enrolPhone(ctx, api, *username, lines) {
+	case phoneDone:
+		return 0
+	case phoneFailed:
+		return 1
 	}
 
 	start, err := api.BeginSecondFactor(ctx, *username)
@@ -77,20 +76,12 @@ func runEnrolFactor(args []string) int {
 		return 1
 	}
 	if start.AlreadyEnrolled {
-		if !phoneDone {
-			fmt.Println("A second factor is already set up for this account.")
-		}
+		fmt.Println("A second factor is already set up for this account.")
 		return 0
 	}
 
 	fmt.Println()
-	if phoneDone {
-		fmt.Println("  Now a backup code, for when the phone is not to hand")
-		fmt.Println()
-		fmt.Println("  If the phone does not answer, this code is what you are asked for.")
-	} else {
-		fmt.Println("  Set up your second factor")
-	}
+	fmt.Println("  Set up your second factor")
 	fmt.Println()
 	fmt.Println("  Scan this with your authenticator app or password manager.")
 	fmt.Println()
@@ -195,10 +186,11 @@ func enrolPhone(
 	fmt.Println("  2. In the app: + , then \"Subscribe to topic\", then \"Use another server\".")
 	fmt.Println("     Server: ", enrolment.ServerURL)
 	fmt.Println("     Topic:  ", enrolment.Topic)
-	fmt.Println("     Or scan this to open the topic on the phone and choose Subscribe:")
+	fmt.Println("     Or scan this with the phone's camera: it opens the ntfy app on the subscribe dialog.")
 	fmt.Println()
 	printQR(ctx, enrolment.SubscribeURL)
 	fmt.Println()
+	fmt.Println("     If scanning does nothing, enter the server and topic above by hand.")
 	fmt.Println("     If the app warns about the certificate, review it and choose to trust it.")
 	fmt.Println("  3. Tap Confirm on the notification that arrives.")
 	fmt.Println()

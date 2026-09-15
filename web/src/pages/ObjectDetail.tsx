@@ -44,6 +44,7 @@ import {
   MoveDialog,
   OffboardDialog,
   PasswordDialog,
+  SecondFactorResetDialog,
   PhotoDialog,
   isDisabled,
   text,
@@ -103,7 +104,7 @@ export function ObjectDetail() {
   const [tab, setTab] = useState<Tab>("general");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<
-    "password" | "photo" | "move" | "members" | "delete" | "rsop" | "offboard" | null
+    "password" | "second-factor" | "photo" | "move" | "members" | "delete" | "rsop" | "offboard" | null
   >(
     null,
   );
@@ -312,6 +313,11 @@ export function ObjectDetail() {
               </button>
             )}
             {object.objectType === "user" && (
+              <button type="button" className="ghost" onClick={() => setDialog("second-factor")}>
+                Reset second factor
+              </button>
+            )}
+            {object.objectType === "user" && (
               <button type="button" className="ghost" onClick={() => setDialog("photo")}>
                 Picture
               </button>
@@ -372,6 +378,13 @@ export function ObjectDetail() {
       {isComputer && tab === "logs" && <LogsTab dn={dn} name={machineName} />}
 
       {dialog === "password" && <PasswordDialog dn={dn} onClose={() => setDialog(null)} />}
+      {dialog === "second-factor" && (
+        <SecondFactorResetDialog
+          dn={dn}
+          name={String(object.cn ?? object.sAMAccountName ?? dn)}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog === "offboard" && object && (
         <OffboardDialog
           dn={dn}

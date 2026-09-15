@@ -31,7 +31,7 @@ def test_the_phone_subscribes_to_the_public_name_not_the_loopback():
     """The phone must reach the server under the name on the certificate."""
     settings = settings_with_ntfy()
     url = push.subscribe_url(settings, "odm-abc")
-    assert url == "https://odm.corp.example.internal:8444/odm-abc"
+    assert url == "ntfy://odm.corp.example.internal:8444/odm-abc"
 
 
 def test_the_buttons_answer_through_the_server_the_phone_already_reaches():
@@ -56,7 +56,7 @@ def test_a_policy_can_point_phones_somewhere_else():
     both use the address the policy names, not the controller's."""
     settings = settings_with_ntfy()
     outside = "https://odm.example.org:8444"
-    assert push.subscribe_url(settings, "odm-abc", outside) == f"{outside}/odm-abc"
+    assert push.subscribe_url(settings, "odm-abc", outside) == "ntfy://odm.example.org:8444/odm-abc"
     assert f"{outside}/odm-answer-tok" in push.actions_header(settings, "tok", outside)
 
 

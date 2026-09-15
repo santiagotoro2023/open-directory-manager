@@ -78,8 +78,14 @@ def server_url(settings: Settings, override: str = "") -> str:
 
 
 def subscribe_url(settings: Settings, topic: str, override: str = "") -> str:
-    """What the person types into the ntfy app: the server, then the topic."""
-    return f"{server_url(settings, override)}/{topic}"
+    """What a QR code carries: an ntfy:// link, which the ntfy app opens as
+    its own subscribe dialog for this server and topic. A plain https link
+    opened the server's web page instead, and that page had the same
+    Confirm button the phone gets — a tap there enrolled a phone that was
+    never subscribed. The web page is disabled on the server as well."""
+    base = server_url(settings, override)
+    scheme = "ntfyhttp" if base.startswith("http://") else "ntfy"
+    return f"{scheme}://{base.split('://', 1)[-1]}/{topic}"
 
 
 
@@ -326,3 +332,80 @@ async def settle_challenge(conn: Any, settings: Settings, challenge_id: str) -> 
         detail=f"{row['service']} sign-in at {row['hostname']} {answer} from the phone",
     )
     return answer
+
+
+# ------------------------------------------------------------ retiring ----
+# The policy is the source of truth for whether somebody has a second
+# factor, and of which kind. An enrolment the policy no longer asks for is
+# not kept around to be asked for later: a method taken out of the policy
+# takes its enrolments with it, for the people the policy covered, and the
+# walkthrough sets up whatever the policy asks for next time they sign in.
+
+
+def _name_filter(wanted: Any) -> tuple[str, list[Any]]:
+    """A WHERE clause over principal for the accounts a policy covers."""
+    if wanted is None:
+        return "TRUE", []
+    names = sorted(str(name).lower() for name in set(wanted) if isinstance(name, str))
+    if type(wanted).__name__ == "_AllExcept":
+        return "lower(split_part(principal, '@', 1)) <> ALL($1::text[])", [names]
+    return "lower(split_part(principal, '@', 1)) = ANY($1::text[])", [names]
+
+
+async def retire_enrolments(
+    conn: Any,
+    wanted: Any,
+    methods: set[str],
+    *,
+    actor: str,
+    actor_sid: str | None,
+    source_ip: str | None,
+    reason: str,
+) -> dict[str, int]:
+    """Delete the enrolments of the given methods for the accounts a policy
+    covers, and say how many went. One audit entry for the lot."""
+    from . import audit
+
+    clause, args = _name_filter(wanted)
+    removed: dict[str, int] = {}
+    if "code" in methods:
+        status = await conn.execute(
+            f"DELETE FROM totp_enrolment WHERE {clause}", *args  # noqa: S608 - fixed clauses
+        )
+        removed["code"] = int(status.split()[-1]) if status else 0
+    if "push" in methods:
+        status = await conn.execute(
+            f"DELETE FROM push_enrolment WHERE {clause}", *args  # noqa: S608 - fixed clauses
+        )
+        removed["push"] = int(status.split()[-1]) if status else 0
+        await conn.execute(
+            f"DELETE FROM push_challenge WHERE {clause}", *args  # noqa: S608 - fixed clauses
+        )
+    if any(removed.values()):
+        await audit.record(
+            conn,
+            actor=actor,
+            actor_sid=actor_sid,
+            source_ip=source_ip,
+            action="auth.second_factor.retire",
+            outcome="success",
+            object_type="session",
+            detail=f"{reason}: removed "
+            + ", ".join(f"{count} {method}" for method, count in removed.items()),
+        )
+    return removed
+
+
+def methods_no_longer_asked_for(old: dict | None, new: dict | None) -> set[str]:
+    """Which methods a policy change stops asking for.
+
+    Turned off or taken out: both. Switched from one method to the other:
+    the one it left. Anything else: nothing — including turning it on, which
+    only ever adds.
+    """
+    if not old or not old.get("enabled"):
+        return set()
+    if not new or not new.get("enabled"):
+        return {"code", "push"}
+    before, after = old.get("method") or "code", new.get("method") or "code"
+    return {before} if before != after else set()

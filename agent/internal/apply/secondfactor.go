@@ -84,24 +84,25 @@ var secondFactorServices = map[string][]string{
 // requisite on pam_oath rather than required: once the code is wrong there is
 // nothing further to ask.
 //
-// With the push method there are three lines: the guard's jump is one
-// further, and pushLine sits between it and pam_oath. pamBlock builds them.
+// With the push method the second line is the phone instead of the code:
+// the guard jumps over it the same way, and there is no code behind it.
+// pamBlock builds whichever pair the method calls for.
 const guardLineFormat = "auth [success=%d default=ignore] pam_exec.so quiet " + factorGuard
 
-// pushLine asks the phone. It exits 0 for "approved", which success=1 turns
-// into a jump over pam_oath — the code is not asked for. Anything else — the
-// phone said no, nobody answered in time, no phone enrolled, the console
-// could not be reached — falls through to pam_oath, and the code is asked
-// for as if the phone had never been involved. A refusal on the phone
-// therefore does not end the sign-in by itself: it ends it by leaving
-// somebody with a code to type that they do not have. pam_exec cannot tell
-// its caller why a helper exited non-zero, and the alternative — treating
-// "no answer" as a refusal — would lock out everybody whose phone was in a
-// drawer the moment the console was unreachable.
+// pushLine asks the phone, and the phone's answer is the answer. It exits
+// 0 for "approved" and the sign-in goes through; anything else — the phone
+// said no, nobody answered in time, the console could not be reached —
+// refuses it, which requisite makes final. There is deliberately no code
+// behind it: a policy that asks for the phone asks for the phone, and a
+// person switched to it must not go on being asked for a code they were
+// told they no longer need (seen live, and exactly the complaint). The
+// guard in front still decides whether this account is asked at all, so a
+// local account, an exempt one, or one inside its grace period is let in
+// without a phone — and that is the way back when the console is down.
 //
 // stdout is handed to the conversation, which is how "check your phone"
 // reaches the login screen.
-const pushLine = "auth [success=1 default=ignore] pam_exec.so quiet stdout " + pushHelper
+const pushLine = "auth requisite pam_exec.so quiet stdout " + pushHelper
 
 const pushHelper = "/usr/lib/odm/second-factor-push"
 
@@ -114,7 +115,7 @@ const oathMarker = "pam_oath.so"
 func pamBlock(method string) string {
 	managed := "# " + strings.TrimSuffix(strings.TrimPrefix(Header, "# "), "\n") + "\n"
 	if method == "push" {
-		return managed + fmt.Sprintf(guardLineFormat, 2) + "\n" + pushLine + "\n" + oathLine + "\n"
+		return managed + fmt.Sprintf(guardLineFormat, 1) + "\n" + pushLine + "\n"
 	}
 	return managed + fmt.Sprintf(guardLineFormat, 1) + "\n" + oathLine + "\n"
 }
@@ -270,6 +271,11 @@ func WriteOathUsers(env Env, lines, phones []string, method string) error {
 	if err := writeEnrolled(env, lines, phones, method); err != nil {
 		return err
 	}
+	// A machine asking for the phone has no use for anybody's code secret,
+	// and a secret with no use is a secret to not have on the machine.
+	if method == "push" {
+		lines = nil
+	}
 	if len(lines) == 0 {
 		// Emptied rather than removed: pam_oath fails every authentication
 		// when its file is missing.
@@ -338,7 +344,7 @@ func addOathLine(env Env, path, method string) error {
 	if strings.Contains(string(body), strings.TrimRight(block, "\n")) {
 		return nil
 	}
-	if strings.Contains(string(body), oathMarker) {
+	if strings.Contains(string(body), factorGuard) {
 		// There, but not this block: the method changed. Take the old lines
 		// out and put the right ones in, rather than leaving two guards.
 		if err := removeOathLine(env, path); err != nil {
@@ -791,7 +797,7 @@ func oathLinePresent(env Env, path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return strings.Contains(string(body), oathMarker), nil
+	return strings.Contains(string(body), factorGuard), nil
 }
 
 // SecondFactorMethod reads the method from the conf the applier last wrote,
