@@ -36,6 +36,18 @@ export function Content() {
             headers={["Symptom", "Check"]}
             rows={[
               [
+                "A terminal window flashes open and shut for a split second at every desktop sign-in",
+                <>
+                  Fixed in 0.10.19. The prompt that walks a person through setting up a second
+                  factor runs as them and first checks a list of who is already enrolled. That
+                  list lived under <C key="tf1">/var/lib/odm</C>, which is root-only, so the
+                  check failed for everyone, the prompt opened a terminal for its privileged
+                  helper, and the helper — as root — read the list, saw the enrolment and exited
+                  at once. The list now lives beside <C key="tf2">/etc/odm/second-factor.conf</C>,
+                  which the prompt already reads. Upgrade the client; the next apply moves it.
+                </>,
+              ],
+              [
                 "Refused with a message about delegation",
                 "The account is not in the administrators group and holds no assignment. Delegation → New assignment.",
               ],

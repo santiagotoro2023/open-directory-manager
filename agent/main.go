@@ -31,7 +31,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.10.18"
+const version = "0.10.19"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -837,7 +837,7 @@ func refreshDynamicDNS(ctx context.Context, env apply.Env, current []string) {
 // self-update runs under the binary being replaced; the new one then starts,
 // finds the serial matching and nothing newer on offer, and says "policy
 // unchanged" on every poll until somebody happens to edit a policy object.
-// Seen live: 0.10.18 shipped a fix to a file its predecessor had written
+// Seen live: 0.10.19 shipped a fix to a file its predecessor had written
 // wrongly, was installed on every machine within a minute, and rewrote that
 // file on none of them.
 func lastSerial(env apply.Env) string {

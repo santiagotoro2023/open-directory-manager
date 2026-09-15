@@ -65,7 +65,7 @@ func TestBootSplashAddsQuietAndKeepsTheGraphicsMode(t *testing.T) {
 
 	body := read(t, env, grubConfPath)
 	for _, want := range []string{
-		`GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"`,
+		`GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=3"`,
 		"GRUB_GFXPAYLOAD_LINUX=keep",
 	} {
 		if !strings.Contains(body, want) {

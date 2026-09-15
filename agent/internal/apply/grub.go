@@ -81,7 +81,14 @@ func applyGrub(ctx context.Context, s policy.Settings, env Env) []policy.Result 
 		// force-loading nouveau into the same initramfs the whole time,
 		// which evicts the display and then fails on hardware the
 		// proprietary driver owns. See the comment on nvidiaModprobeConf.
-		cmdline := "quiet splash"
+		// loglevel=3 on top of quiet: quiet alone sets the console log level to
+		// 4, which still prints every KERN_ERR line — a USB device that fails
+		// to enumerate, a firmware file a driver wanted — onto the framebuffer
+		// console in the seconds before plymouthd has a device to draw on.
+		// Seen live as "a brief moment of errors" between GRUB and the splash.
+		// 3 prints only critical and above; a panic raises the level itself
+		// and is always shown, and every message is still in the journal.
+		cmdline := "quiet splash loglevel=3"
 		if nvidiaProprietaryDriverInUse(env) {
 			cmdline += " nvidia-drm.modeset=1 nvidia-drm.fbdev=1"
 		}

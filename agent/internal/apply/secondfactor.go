@@ -43,7 +43,17 @@ const (
 	// Who has enrolled, by name and nothing else, for the parts of this that
 	// run as the person rather than as root. The secrets stay in
 	// /etc/security/users.oath, which stays root-only.
-	enrolledList = "/var/lib/odm/second-factor-enrolled"
+	//
+	// Beside second-factor.conf, which the session prompt already reads, and
+	// deliberately not under /var/lib/odm: that directory is 0750 root-only
+	// (the agent keeps its serial and journal cursor there), so a 0644 file
+	// inside it is unreadable to the person all the same. Seen live: the
+	// session prompt could not read the list, took that as "not enrolled",
+	// and opened a full-screen terminal for the privileged helper — which,
+	// as root, read the list, saw the enrolment, and exited. A terminal
+	// window flashing open and shut at every sign-in, on every enrolled
+	// account.
+	enrolledList = "/etc/odm/second-factor-enrolled"
 	// What decides, for this account, whether a code is asked for at all.
 	// Without it pam_oath is unconditional, and unconditional means anybody
 	// with no enrolment is refused before they are even asked for a password

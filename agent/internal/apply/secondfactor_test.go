@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -511,5 +512,19 @@ func TestOnlyOneEnrolmentWindowOpens(t *testing.T) {
 	// face value meant no flags were passed at all.
 	if !strings.Contains(session, "for terminal in gnome-terminal") {
 		t.Error("x-terminal-emulator is still tried before the terminals it points at")
+	}
+}
+
+// The list is for the session prompt, which runs as the person, and a
+// world-readable file inside a root-only directory is unreadable all the
+// same. /var/lib/odm is 0750; the list lived there, the prompt could not
+// read it, took that as "not enrolled", and opened a terminal at every
+// sign-in for a helper that exited at once.
+func TestTheEnrolledListIsNotUnderTheAgentsPrivateDirectory(t *testing.T) {
+	if strings.HasPrefix(enrolledList, "/var/lib/odm/") {
+		t.Errorf("%s is under the agent's 0750 state directory, where the person cannot read it", enrolledList)
+	}
+	if !strings.HasPrefix(enrolledList, filepath.Dir(secondFactorPam)+"/") {
+		t.Errorf("%s is not beside %s, which the session prompt already reads", enrolledList, secondFactorPam)
 	}
 }
