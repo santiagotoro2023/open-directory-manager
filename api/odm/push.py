@@ -134,12 +134,14 @@ def publish(
     priority: str = "high",
 ) -> None:
     """Send one notification to one phone. Blocking."""
+    if not configured(settings) or not settings.ntfy_url:
+        raise PushUnavailable("phone approvals are not set up (ODM_NTFY_URL is unset)")
     if not TOPIC_RE.match(topic):
         raise PushError("not a valid topic name")
     headers = {"Title": title, "Priority": priority, "Tags": "lock"}
     if actions:
         headers["Actions"] = actions
-    url = f"{settings.ntfy_url.rstrip('/')}/{topic}"  # type: ignore[union-attr]
+    url = f"{settings.ntfy_url.rstrip('/')}/{topic}"
     try:
         with _client(settings) as client:
             response = client.post(url, content=message.encode(), headers=headers)
