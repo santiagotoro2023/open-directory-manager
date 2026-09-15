@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import ca, objects, roles, tasks
+from . import ca, objects, push, roles, tasks
 from .config import Settings, get_settings
 from .routes_directory import _audit_context
 from .security import get_pool, require_admin, requires, requires_domain_admin
@@ -794,7 +794,13 @@ CONSOLE_CERTIFICATE = "/etc/odm/tls/api.crt"
 
 @router.get("/trust.crt")
 async def trust_anchor(settings: Settings = Depends(get_settings)) -> Response:
-    if ca.initialised(settings):
+    # Decided by what the console actually serves, not by whether an
+    # authority exists: a self-signed console beside an initialised authority
+    # (the state a domain is in until the console certificate is replaced)
+    # needs the console's own certificate trusted, and the root would do
+    # nothing for it. Seen live, on the first deployment of this.
+    state = await run_in_threadpool(push.trust_state, settings)
+    if state == "domain-ca":
         pem = await run_in_threadpool(ca.root_pem, settings)
         name = "odm-root-ca.crt"
     else:
