@@ -274,7 +274,7 @@ async def _over_threshold(
         FROM metric_sample
         WHERE (($5 AND metric LIKE $1 || '%') OR (NOT $5 AND metric = $1))
           AND ($2::text[] IS NULL OR host = ANY($2))
-          AND at >= $3 - ($4 || ' seconds')::interval
+          AND at >= $3::timestamptz - ($4 || ' seconds')::interval
         GROUP BY host, metric
         """,
         rule["metric"],
