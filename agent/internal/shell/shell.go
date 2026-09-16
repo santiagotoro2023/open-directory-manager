@@ -94,9 +94,13 @@ func Serve(ctx context.Context, conn Conn, opts Options) error {
 		slave.Close()
 		return fmt.Errorf("start shell: %w", err)
 	}
-	// The child holds the slave now; keeping it open here would stop the
-	// master from ever reading EOF when the shell exits.
-	slave.Close()
+	// The child holds the slave now, and so does this process, on purpose:
+	// the last thing a shell prints before it exits sits in the terminal's
+	// buffer, and on Linux a master whose slave has no open end left throws
+	// that buffer away with the EIO. Holding an end open here keeps the
+	// bytes until the shell has gone and they have been read; the end is
+	// closed below, after the wait, which is when the master gets its EOF.
+	defer slave.Close()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -189,9 +193,20 @@ func Serve(ctx context.Context, conn Conn, opts Options) error {
 	if errors.As(waitErr, &exit) {
 		status = exit.ExitCode()
 	}
-	// Closing the master unblocks the reader; the console hears why after
-	// whatever output was still queued, and the input side — blocked on
-	// the console — is released by closing the connection last.
+	// Letting go of the slave is what tells the master the shell has gone:
+	// the reader drains what was still queued, then gets EIO and stops. A
+	// grandchild the shell left behind could keep the slave open and the
+	// reader waiting, so the master is closed after a moment regardless,
+	// which unblocks the reader either way. The console hears the exit
+	// after the last of the output, and the input side — blocked on the
+	// console — is released by closing the connection last.
+	slave.Close()
+	drained := make(chan struct{})
+	go func() { output.Wait(); close(drained) }()
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+	}
 	master.Close()
 	output.Wait()
 	body, _ := json.Marshal(control{Type: "exit", Status: status})
