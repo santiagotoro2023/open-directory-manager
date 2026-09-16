@@ -376,6 +376,21 @@ goal.
   any other version reads as no serial. Anything else that gates work on
   "has this changed since last time" must include the agent's own version
   in what "last time" means.
+- **A shell script this agent writes onto a machine is tested by running
+  it, not by reading it.** The graphical second-factor walkthrough shipped
+  with its attempt loop reading `while [ "" -le 3 ]` — a `$ATTEMPT` eaten
+  by an edit made through a shell one-liner, whose own quoting swallowed
+  the variable — and `test(1)` refuses an empty operand, so the loop body
+  never ran: no window, no call to the console, and every graphical
+  sign-in went straight to "Signing out". Nothing in the tree could have
+  caught it, because every test of that script asserted that certain
+  substrings were present and none ever executed it. Scripts the agent
+  generates live inside Go string literals, where `$name` means nothing to
+  the compiler and everything to `/bin/sh`; edit them with a tool that
+  does not interpret `$` (never through `perl -pi`/`sed` on a shell
+  command line without reading the result back), and give each one a test
+  that at least runs `sh -n` over the written file and asserts against
+  `[ "" ` — the fingerprint of a variable that went missing.
 - **Ask the component itself before theorising about it.** The boot splash
   failed to render across six attempts, each with a different explanation
   — kernel parameters, module lists, driver versions, a theme script, a
