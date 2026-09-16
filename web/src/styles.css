@@ -3453,3 +3453,23 @@ a.button {
   font-weight: 600;
   text-decoration: none;
 }
+
+/* a picture chosen by address or by file, in a settings entry */
+.image-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.image-field input {
+  flex: 1 1 220px;
+  min-width: 160px;
+}
+.image-field-preview {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: #fff;
+}

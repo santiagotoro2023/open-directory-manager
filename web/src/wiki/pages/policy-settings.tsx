@@ -1075,19 +1075,20 @@ for           %Engineers      (optional)`}</Code>
               ["Address", "The page the window opens on."],
               [
                 "Icon",
-                "A PNG or SVG the machine fetches once and keeps; empty takes the site's own favicon.",
+                "A picture chosen from the computer (drawn at 256 pixels and carried in the policy), or the address of a PNG or SVG the machine fetches once. Empty reads the site for the largest icon it declares — the web-app manifest's, the apple-touch-icon — and falls back to the favicon last. A site that redirects to a sign-in page declares that page's icons; choose a picture for those.",
               ],
               [
                 "Browser",
-                "Chromium's application mode is the real thing (its own window, its own dock entry); Firefox opens a window of its own. auto takes Chromium where it is installed.",
+                "Chromium's application mode where Chromium is installed. Otherwise Firefox, in a window of its own with the tab strip and the toolbar hidden, under a profile made for that application in the person's home on first use (~/.local/share/odm-webapps/<name>). auto takes Chromium where it is installed.",
               ],
               ["Menu categories", "Where the launcher is filed: Office, Network, Utility…"],
             ]}
           />
           <Note>
-            The browser&rsquo;s ordinary profile is used on purpose: the sign-in the person has in
-            the browser is the one the application gets. To put the launcher in the dock, name{" "}
-            <C>odm-webapp-&lt;name&gt;.desktop</C> in Dash and taskbar.
+            With Chromium the browser&rsquo;s ordinary profile is used on purpose: the sign-in the
+            person has in the browser is the one the application gets. With Firefox each
+            application has its own profile, so its sign-in is its own. To put the launcher in
+            the dock, name <C>odm-webapp-&lt;name&gt;.desktop</C> in Dash and taskbar.
           </Note>
         </Section>
 

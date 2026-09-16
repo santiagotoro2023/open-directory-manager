@@ -2,7 +2,10 @@ package apply
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -100,17 +103,27 @@ func TestLogonHoursWriteTheRulesAndOnePamLine(t *testing.T) {
 	}
 }
 
-func TestAWebAppBecomesALauncherWithAnIcon(t *testing.T) {
+func TestAWebAppBecomesALauncherWithTheLargestIconTheSiteDeclares(t *testing.T) {
 	env, run := testEnv(t)
 	dir := t.TempDir()
 	_ = os.WriteFile(dir+"/chromium", []byte("#!/bin/sh\n"), 0o755)
 	t.Setenv("PATH", dir)
-	fetched := ""
-	webAppFetch = func(_ context.Context, location string) ([]byte, string, error) {
-		fetched = location
-		return []byte("PNG"), "image/png", nil
+	var fetched []string
+	webAppFetch = func(_ context.Context, location string) ([]byte, string, string, error) {
+		fetched = append(fetched, location)
+		switch location {
+		case "https://outlook.office.com/mail/":
+			page := `<html><head><link rel="icon" href="/favicon.ico" sizes="32x32">` +
+				`<link rel="apple-touch-icon" sizes="180x180" href="/img/touch.png">` +
+				`<link rel="manifest" href="/manifest.json"></head></html>`
+			return []byte(page), "text/html", "https://outlook.office.com/mail/", nil
+		case "https://outlook.office.com/manifest.json":
+			return []byte(`{"icons":[{"src":"/img/big-512.png","sizes":"512x512"}]}`), "application/json", location, nil
+		case "https://outlook.office.com/img/big-512.png":
+			return []byte("PNG512"), "image/png", location, nil
+		}
+		return nil, "", "", fmt.Errorf("unexpected %s", location)
 	}
-	defer func() { webAppFetch = nil }()
 	settings := policy.Settings{WebApps: []policy.WebApp{
 		{Name: "Outlook", URL: "https://outlook.office.com/mail/", Categories: []string{"Office"}},
 	}}
@@ -118,24 +131,102 @@ func TestAWebAppBecomesALauncherWithAnIcon(t *testing.T) {
 	if len(results) != 1 || results[0].Status != "success" {
 		t.Fatalf("results: %+v", results)
 	}
-	entry, err := os.ReadFile(env.Path("/usr/share/applications/odm-webapp-outlook.desktop"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	entry := read(t, env, "/usr/share/applications/odm-webapp-outlook.desktop")
 	for _, want := range []string{"Name=Outlook", "Exec=chromium --app=https://outlook.office.com/mail/ --class=odm-webapp-outlook",
-		"StartupWMClass=odm-webapp-outlook", "Categories=Office;", "odm-webapp-outlook.png"} {
-		if !strings.Contains(string(entry), want) {
+		"StartupWMClass=odm-webapp-outlook", "Categories=Office;", "odm-webapp-outlook-"} {
+		if !strings.Contains(entry, want) {
 			t.Errorf("entry lacks %q:\n%s", want, entry)
 		}
 	}
-	if fetched != "https://outlook.office.com/favicon.ico" {
-		t.Errorf("icon fetched from %q", fetched)
+	if len(fetched) != 3 || fetched[2] != "https://outlook.office.com/img/big-512.png" {
+		t.Errorf("the 512px manifest icon should have been chosen: %v", fetched)
+	}
+	icons, _ := filepath.Glob(env.Path("/usr/share/icons/hicolor/256x256/apps/odm-webapp-outlook-*.png"))
+	if len(icons) != 1 {
+		t.Fatalf("one icon file expected: %v", icons)
+	}
+	if body, _ := os.ReadFile(icons[0]); string(body) != "PNG512" {
+		t.Error("the icon was not the one fetched")
 	}
 	if !run.ran("update-desktop-database", "") {
 		t.Error("the desktop database was not refreshed")
 	}
 	if webAppSlug("Microsoft Teams (web)") != "microsoft-teams-web" {
 		t.Error(webAppSlug("Microsoft Teams (web)"))
+	}
+}
+
+func TestAnUploadedIconIsWrittenAsItIs(t *testing.T) {
+	env, _ := testEnv(t)
+	dir := t.TempDir()
+	_ = os.WriteFile(dir+"/chromium", []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("PATH", dir)
+	webAppFetch = func(_ context.Context, location string) ([]byte, string, string, error) {
+		return nil, "", "", fmt.Errorf("nothing should be fetched for an uploaded icon, asked for %s", location)
+	}
+	settings := policy.Settings{WebApps: []policy.WebApp{
+		{Name: "Teams", URL: "https://teams.microsoft.com/", IconURL: "data:image/png;base64,UE5H"},
+	}}
+	results := applyWebApps(context.Background(), settings, env)
+	if len(results) != 1 || results[0].Status != "success" {
+		t.Fatalf("results: %+v", results)
+	}
+	icons, _ := filepath.Glob(env.Path("/usr/share/icons/hicolor/256x256/apps/odm-webapp-teams-*.png"))
+	if len(icons) != 1 {
+		t.Fatalf("one icon file expected: %v", icons)
+	}
+	if body, _ := os.ReadFile(icons[0]); string(body) != "PNG" {
+		t.Error("the uploaded icon was not decoded")
+	}
+}
+
+// The Firefox launcher is a shell script inside a Go string. It is run here,
+// with a firefox that records what it was asked, because a variable lost to
+// an edit is invisible to the compiler and fatal to the script.
+func TestTheFirefoxLauncherMakesAProfileAndOpensAnApplicationWindow(t *testing.T) {
+	env, _ := testEnv(t)
+	bin := t.TempDir()
+	log := bin + "/firefox.log"
+	_ = os.WriteFile(bin+"/firefox", []byte("#!/bin/sh\necho \"$@\" > "+log+"\n"), 0o755)
+	t.Setenv("PATH", bin+":/usr/bin:/bin")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	webAppFetch = func(_ context.Context, location string) ([]byte, string, string, error) {
+		return nil, "", "", fmt.Errorf("no icon for %s", location)
+	}
+	settings := policy.Settings{WebApps: []policy.WebApp{{Name: "Outlook", URL: "https://outlook.office.com/mail/"}}}
+	results := applyWebApps(context.Background(), settings, env)
+	if len(results) != 1 || results[0].Status != "success" {
+		t.Fatalf("results: %+v", results)
+	}
+	entry := read(t, env, "/usr/share/applications/odm-webapp-outlook.desktop")
+	if !strings.Contains(entry, "Exec="+webAppLauncher+" outlook https://outlook.office.com/mail/") {
+		t.Fatalf("a machine without Chromium gets the launcher:\n%s", entry)
+	}
+	script := env.Path(webAppLauncher)
+	if strings.Contains(read(t, env, webAppLauncher), `[ "" `) {
+		t.Fatal("a variable went missing from the launcher")
+	}
+	if out, err := exec.Command("sh", "-n", script).CombinedOutput(); err != nil {
+		t.Fatalf("the launcher does not parse: %v %s", err, out)
+	}
+	if out, err := exec.Command("sh", script, "outlook", "https://outlook.office.com/mail/").CombinedOutput(); err != nil {
+		t.Fatalf("running the launcher: %v %s", err, out)
+	}
+	profile := home + "/.local/share/odm-webapps/outlook"
+	prefs, err := os.ReadFile(profile + "/user.js")
+	if err != nil || !strings.Contains(string(prefs), "legacyUserProfileCustomizations") {
+		t.Fatalf("no profile was made: %v", err)
+	}
+	if css, err := os.ReadFile(profile + "/chrome/userChrome.css"); err != nil || !strings.Contains(string(css), "#nav-bar") {
+		t.Fatalf("the toolbar is not hidden: %v", err)
+	}
+	args, _ := os.ReadFile(log)
+	for _, want := range []string{"--no-remote", "--class odm-webapp-outlook", "--profile " + profile, "https://outlook.office.com/mail/"} {
+		if !strings.Contains(string(args), want) {
+			t.Errorf("firefox was not asked for %q: %s", want, args)
+		}
 	}
 }
 

@@ -13,7 +13,7 @@ import binascii
 import re
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 MODE_RE = re.compile(r"^0?[0-7]{3}$")
 UNIT_RE = re.compile(r"^[A-Za-z0-9@:_.-]{1,128}\.(service|socket|timer|target|mount|path)$")
@@ -1428,9 +1428,10 @@ class WebApp(Strict):
 
     name: Annotated[str, Field(min_length=1, max_length=64)]
     url: Annotated[str, Field(min_length=8, max_length=2048)]
-    # Where an icon comes from: a PNG or SVG the agent fetches once. Empty
-    # uses the site's own /favicon.ico when it has one.
-    icon_url: Annotated[str, Field(max_length=2048)] = ""
+    # Where an icon comes from: a PNG or SVG the agent fetches once, or one
+    # the operator uploaded, carried as a data URL. Empty reads the site for
+    # the largest icon it declares.
+    icon_url: Annotated[str, Field(max_length=700_000)] = ""
     # Which browser draws the window. auto takes Chromium where it is
     # installed and Firefox otherwise.
     browser: Literal["auto", "chromium", "firefox"] = "auto"
@@ -1451,7 +1452,13 @@ class WebApp(Strict):
 
     @field_validator("url", "icon_url")
     @classmethod
-    def _url(cls, value: str) -> str:
+    def _url(cls, value: str, info: ValidationInfo) -> str:
+        if info.field_name == "icon_url" and value.startswith("data:image/"):
+            if not value.startswith(("data:image/png;base64,", "data:image/svg+xml;base64,")):
+                raise ValueError("an uploaded icon is a PNG or an SVG")
+            return value
+        if len(value) > 2048:
+            raise ValueError("a web address is at most 2048 characters")
         if value and not value.startswith(("https://", "http://")):
             raise ValueError("a web address starts with https://")
         if any(character in value for character in " \n\r\x00\"'%"):

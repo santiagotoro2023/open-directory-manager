@@ -20,7 +20,7 @@ import { PickerField, type PickerKind, type PickerValue } from "./Picker";
 import { Split } from "./Split";
 import Select from "./Select"
 
-type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox";
+type FieldKind = "text" | "number" | "textarea" | "select" | "checkbox" | "image";
 
 interface FieldSpec {
   key: string;
@@ -719,17 +719,21 @@ export const CATEGORIES: CategorySpec[] = [
       "for everybody on the machine. Outlook on the web, Teams, an intranet application.",
     doc: "web-applications",
     note:
-      "Chromium draws the window where it is installed (its application mode is the real thing); " +
-      "Firefox opens a window of its own otherwise. The browser's ordinary sign-in is the " +
-      "application's. Pin the launcher with Dash and taskbar: its entry is odm-webapp-<name>.desktop.",
+      "Chromium's application mode is used where Chromium is installed; otherwise Firefox opens " +
+      "the site in a window of its own with the tab strip and toolbar hidden, under a profile " +
+      "of its own per application. Pin the launcher with Dash and taskbar: its entry is " +
+      "odm-webapp-<name>.desktop.",
     fields: [
       { key: "name", label: "Name", placeholder: "Outlook", width: "180px" },
       { key: "url", label: "Address", placeholder: "https://outlook.office.com/mail/" },
       {
         key: "icon_url",
         label: "Icon",
-        placeholder: "https://…/icon.png",
-        hint: "A PNG or SVG the machine fetches once; empty uses the site's own favicon",
+        kind: "image",
+        placeholder: "https://…/icon.png, or choose a file",
+        hint:
+          "A picture file (drawn at 256 px), or the address of a PNG or SVG the machine fetches once; " +
+          "empty reads the site for the largest icon it declares",
       },
       {
         key: "browser",
@@ -3005,6 +3009,66 @@ function BrowserEditor({
   );
 }
 
+/** A picture by address or by file. A chosen file is drawn onto a 256-pixel
+ *  canvas and carried as a PNG data URL, so a 2 MB logo becomes the icon it
+ *  will be drawn as and travels inside the policy object. */
+function ImageField({
+  field,
+  value,
+  onChange,
+}: {
+  field: FieldSpec;
+  value: string;
+  onChange: (value: unknown) => void;
+}) {
+  const uploaded = value.startsWith("data:image/");
+  return (
+    <div className="image-field">
+      {value && (
+        <img className="image-field-preview" src={value} alt="" width={40} height={40} />
+      )}
+      <input
+        aria-label={field.label}
+        placeholder={field.placeholder}
+        value={uploaded ? "Uploaded picture" : value}
+        readOnly={uploaded}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <FileInput
+        accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon"
+        placeholder=""
+        onChoose={async (file) => onChange(await iconDataUrl(file))}
+      />
+      {value && (
+        <button type="button" className="ghost small" onClick={() => onChange("")}>
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Any picture the browser can decode, as a 256×256 PNG data URL; an SVG is
+ *  kept as it is, since it scales by itself. */
+async function iconDataUrl(file: File): Promise<string> {
+  if (file.type === "image/svg+xml") {
+    const text = await file.text();
+    return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(text)));
+  }
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("this browser cannot draw pictures");
+  // Fit inside the square, centred, keeping the aspect ratio.
+  const scale = Math.min(256 / bitmap.width, 256 / bitmap.height);
+  const width = Math.round(bitmap.width * scale);
+  const height = Math.round(bitmap.height * scale);
+  context.drawImage(bitmap, (256 - width) / 2, (256 - height) / 2, width, height);
+  return canvas.toDataURL("image/png");
+}
+
 function Cell({
   field,
   value,
@@ -3047,6 +3111,9 @@ function Cell({
   }
   if (field.kind === "textarea" && field.fill === "root-certificate") {
     return <CertificateField field={field} value={toInput(value)} onChange={onChange} />;
+  }
+  if (field.kind === "image") {
+    return <ImageField field={field} value={toInput(value)} onChange={onChange} />;
   }
   if (field.kind === "textarea") {
     return (
@@ -3412,6 +3479,7 @@ function describe(value: unknown, limit = 40): string {
   if (value === undefined || value === null || value === "") return "—";
   if (typeof value === "boolean") return value ? "yes" : "no";
   if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
+  if (typeof value === "string" && value.startsWith("data:image/")) return "uploaded picture";
   const text = String(value).replace(/\s+/g, " ").trim();
   return text.length > limit ? text.slice(0, limit - 1) + "…" : text;
 }

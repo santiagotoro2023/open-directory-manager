@@ -952,14 +952,6 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         {assist && (
           <AssistDialog dn={dn} username={assist} onClose={() => setAssist(null)} />
         )}
-        {messaging && (
-          <MessageDialog
-            dns={[dn]}
-            label={facts.hostname.split(".")[0]}
-            onClose={() => setMessaging(false)}
-            onDone={(summary) => setNotice(summary)}
-          />
-        )}
         <h3 className="section-title">Signed in now</h3>
         <table className="data compact">
           <tbody>
@@ -1291,6 +1283,14 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         </div>
       </div>
 
+      {messaging && (
+        <MessageDialog
+          dns={[dn]}
+          label={facts.hostname.split(".")[0]}
+          onClose={() => setMessaging(false)}
+          onDone={(summary) => setNotice(summary)}
+        />
+      )}
       {power && (
         <Modal
           title={power === "restart" ? "Restart this machine?" : "Shut this machine down?"}

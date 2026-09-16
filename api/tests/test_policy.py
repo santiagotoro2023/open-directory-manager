@@ -471,3 +471,16 @@ def test_the_dict_merge_does_not_take_the_targets_name():
     ]
     merged = merge_settings(gpos, target)
     assert [entry["path"] for entry in merged["files"]] == ["/etc/here"]
+
+
+def test_a_web_app_icon_may_be_uploaded_as_a_png_data_url():
+    import pytest
+
+    from odm.policy_schema import WebApp
+
+    teams = "https://teams.microsoft.com/"
+    WebApp(name="Teams", url=teams, icon_url="data:image/png;base64,UE5H")
+    with pytest.raises(ValueError):
+        WebApp(name="Teams", url=teams, icon_url="data:text/html;base64,PGh0bWw+")
+    with pytest.raises(ValueError):
+        WebApp(name="Teams", url=teams, icon_url="https://x.example/" + "a" * 2100)
