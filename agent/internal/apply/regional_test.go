@@ -188,7 +188,14 @@ func TestTheFirefoxLauncherMakesAProfileAndOpensAnApplicationWindow(t *testing.T
 	bin := t.TempDir()
 	log := bin + "/firefox.log"
 	_ = os.WriteFile(bin+"/firefox", []byte("#!/bin/sh\necho \"$@\" > "+log+"\n"), 0o755)
-	t.Setenv("PATH", bin+":/usr/bin:/bin")
+	// Only what the script needs, and no browser but the fake: a runner with
+	// Chrome on its PATH would be given Chromium's mode instead.
+	for _, tool := range []string{"sh", "mkdir", "cat"} {
+		if path, err := exec.LookPath(tool); err == nil {
+			_ = os.Symlink(path, bin+"/"+tool)
+		}
+	}
+	t.Setenv("PATH", bin)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "")
