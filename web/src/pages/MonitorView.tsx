@@ -28,7 +28,7 @@ export function MonitorView({ token }: { token: string }) {
 
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(), 30_000);
+    const timer = setInterval(() => void load(), 15_000);
     return () => clearInterval(timer);
   }, [load]);
 

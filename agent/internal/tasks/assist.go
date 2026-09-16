@@ -31,6 +31,79 @@ type assistSession struct {
 	uid     int
 	kind    string // "wayland" or "x11"
 	display string // ":10" for an X session
+	// The desktop's own environment, read from a process in the session:
+	// where its display and its bus actually are. logind's idea of the
+	// display is empty for a GDM session on either server, so asking logind
+	// alone started every dialog with nowhere to draw.
+	environment map[string]string
+}
+
+// The variables a program needs to reach a person's desktop.
+var desktopVariables = []string{
+	"DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS",
+}
+
+// desktopEnvironment finds a process of the session's owner that is part of
+// the desktop and reads the display variables from it. The shell of the
+// desktop first, since that is the process that certainly has them.
+func desktopEnvironment(env apply.Env, uid int) map[string]string {
+	entries, err := os.ReadDir(env.Path("/proc"))
+	if err != nil {
+		return nil
+	}
+	preferred := map[string]bool{
+		"gnome-shell": true, "gnome-session-binary": true, "plasmashell": true,
+		"xfce4-session": true, "mate-session": true, "cinnamon-session": true,
+	}
+	var fallback map[string]string
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		status, err := os.ReadFile(env.Path(fmt.Sprintf("/proc/%d/status", pid)))
+		if err != nil || !ownedBy(string(status), uid) {
+			continue
+		}
+		raw, err := os.ReadFile(env.Path(fmt.Sprintf("/proc/%d/environ", pid)))
+		if err != nil {
+			continue
+		}
+		found := map[string]string{}
+		for _, pair := range strings.Split(string(raw), "\x00") {
+			key, value, ok := strings.Cut(pair, "=")
+			if !ok {
+				continue
+			}
+			for _, wanted := range desktopVariables {
+				if key == wanted && value != "" {
+					found[key] = value
+				}
+			}
+		}
+		if found["DISPLAY"] == "" && found["WAYLAND_DISPLAY"] == "" {
+			continue
+		}
+		comm, _ := os.ReadFile(env.Path(fmt.Sprintf("/proc/%d/comm", pid)))
+		if preferred[strings.TrimSpace(string(comm))] {
+			return found
+		}
+		if fallback == nil {
+			fallback = found
+		}
+	}
+	return fallback
+}
+
+// ownedBy reads the real uid out of /proc/<pid>/status.
+func ownedBy(status string, uid int) bool {
+	for _, line := range strings.Split(status, "\n") {
+		if strings.HasPrefix(line, "Uid:") {
+			fields := strings.Fields(line)
+			return len(fields) > 1 && fields[1] == strconv.Itoa(uid)
+		}
+	}
+	return false
 }
 
 // runRemoteAssist offers one person's session to whoever asked, for a while.
@@ -95,12 +168,20 @@ func findSession(ctx context.Context, env apply.Env, user string) (assistSession
 			}
 		}
 		uid, _ := strconv.Atoi(fields[1])
-		switch values["Type"] {
-		case "wayland":
-			return assistSession{user: user, uid: uid, kind: "wayland"}, nil
-		case "x11":
-			return assistSession{user: user, uid: uid, kind: "x11", display: values["Display"]}, nil
+		if values["Type"] != "wayland" && values["Type"] != "x11" {
+			continue
 		}
+		session := assistSession{user: user, uid: uid, kind: values["Type"], display: values["Display"]}
+		session.environment = desktopEnvironment(env, uid)
+		// The desktop's own word beats logind's: it is the one that is
+		// actually drawing on the display.
+		if display := session.environment["DISPLAY"]; display != "" {
+			session.display = display
+		}
+		if session.environment["XDG_SESSION_TYPE"] == "x11" && session.environment["WAYLAND_DISPLAY"] == "" {
+			session.kind = "x11"
+		}
+		return session, nil
 	}
 	return assistSession{}, fmt.Errorf("%s has no graphical session on this machine", user)
 }
@@ -147,16 +228,25 @@ func shareX11(
 	ctx context.Context, env apply.Env, session assistSession, password string, minutes int,
 ) error {
 	if _, err := exec.LookPath("x11vnc"); err != nil {
-		return fmt.Errorf("x11vnc is not installed, so an X session cannot be offered")
+		// Fetched the first time it is needed rather than shipped to every
+		// machine: most are never watched, and the person has just said
+		// yes, so the moment is right.
+		if out, err := apply.Unsandboxed(ctx, env, "apt-get", "install", "-y", "--no-install-recommends", "x11vnc"); err != nil {
+			return fmt.Errorf("x11vnc is not installed and could not be installed: %w: %s", err, strings.TrimSpace(out))
+		}
 	}
 	display := session.display
 	if display == "" {
 		display = ":0"
 	}
+	xauthority := session.environment["XAUTHORITY"]
+	if xauthority == "" {
+		xauthority = "/run/user/" + strconv.Itoa(session.uid) + "/gdm/Xauthority"
+	}
 	_, err := env.Run.Run(ctx, "systemd-run", "--quiet",
 		fmt.Sprintf("--unit=odm-assist-%d", session.uid),
 		"--uid", strconv.Itoa(session.uid),
-		"--setenv=XAUTHORITY=/run/user/"+strconv.Itoa(session.uid)+"/gdm/Xauthority",
+		"--setenv=XAUTHORITY="+xauthority,
 		"x11vnc", "-display", display, "-once", "-shared",
 		"-timeout", strconv.Itoa(minutes*60),
 		"-passwd", password, "-noxdamage", "-repeat")
@@ -175,20 +265,27 @@ func runAs(
 		"--setenv=XDG_RUNTIME_DIR=" + runtime,
 		"--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=" + runtime + "/bus",
 	}
-	// A Wayland session has no Display as logind knows it; a GTK program
-	// finds the compositor through WAYLAND_DISPLAY instead, and asked with
-	// an empty DISPLAY it cannot open anything and exits at once — which
-	// read as the person refusing before they had been asked anything.
-	if session.kind == "wayland" {
+	// The desktop's own display variables, as its shell has them. logind
+	// does not know a GDM session's display on either server, and a GTK
+	// program handed an empty DISPLAY cannot open anything and exits at
+	// once — which read as the person refusing before they had been asked.
+	given := map[string]bool{}
+	for _, key := range desktopVariables {
+		if value := session.environment[key]; value != "" && key != "DBUS_SESSION_BUS_ADDRESS" {
+			full = append(full, "--setenv="+key+"="+value)
+			given[key] = true
+		}
+	}
+	if !given["DISPLAY"] && session.display != "" {
+		full = append(full, "--setenv=DISPLAY="+session.display)
+	}
+	if session.kind == "wayland" && !given["WAYLAND_DISPLAY"] {
 		if socket := waylandSocket(env, runtime); socket != "" {
 			full = append(full, "--setenv=WAYLAND_DISPLAY="+socket)
 		}
-		full = append(full, "--setenv=XDG_SESSION_TYPE=wayland")
-		if session.display != "" {
-			full = append(full, "--setenv=DISPLAY="+session.display)
-		}
-	} else {
-		full = append(full, "--setenv=DISPLAY="+session.display)
+	}
+	if !given["XAUTHORITY"] && session.kind == "x11" {
+		full = append(full, "--setenv=XAUTHORITY="+runtime+"/gdm/Xauthority")
 	}
 	full = append(append(full, "--", name), args...)
 	return env.Run.Run(ctx, "systemd-run", full...)

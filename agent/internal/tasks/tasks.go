@@ -125,6 +125,8 @@ func RunWithProgress(
 		output, err = manageProfileDisk(ctx, task.Payload, env)
 	case "local-user-add":
 		output, err = addLocalUser(ctx, task.Payload, env)
+	case "local-user-password":
+		output, err = setLocalUserPassword(ctx, task.Payload, env)
 	case "local-user-remove":
 		output, err = removeLocalUser(ctx, task.Payload, env)
 	case "printer-apply":

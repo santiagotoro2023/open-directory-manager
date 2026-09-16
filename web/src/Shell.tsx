@@ -127,14 +127,14 @@ const NAV = [
   },
   { label: "Activity", group: "Security", to: "/activity", icon: ActivityIcon, permission: "audit.read" },
   { label: "Audit Log", group: "Security", to: "/audit", icon: ScrollText, permission: "audit.read" },
-  { label: "Wiki", to: "/wiki", icon: BookOpen },
+  { label: "Wiki", to: "/wiki", icon: BookOpen, group: "Help" },
 ];
 
-const GROUP_ORDER = ["Domain", "Network", "Services", "Servers", "Security"];
+const GROUP_ORDER = ["Domain", "Network", "Services", "Servers", "Security", "Help"];
 
 function groupRank(item: { group?: string; to: string }): number {
-  // Overview stands first and the Wiki last, outside any group.
-  if (!item.group) return item.to === "/" ? -1 : GROUP_ORDER.length;
+  // Overview stands first, outside any group.
+  if (!item.group) return -1;
   return GROUP_ORDER.indexOf(item.group);
 }
 

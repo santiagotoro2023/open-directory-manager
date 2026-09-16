@@ -38,9 +38,12 @@ func TestLocalUsersSkipSystemAccounts(t *testing.T) {
 
 	users := localUsers(env)
 
-	if len(users) != 2 {
-		t.Fatalf("expected ada and bob, got %v", users)
+	// root, ada and bob: the service accounts stay out, root is the one
+	// system account that is somebody and whose password an operator sets.
+	if len(users) != 3 || users[0].Name != "root" {
+		t.Fatalf("expected root, ada and bob, got %v", users)
 	}
+	users = users[1:]
 	if users[0].Name != "ada" || users[0].UID != 1000 {
 		t.Errorf("wrong first user: %+v", users[0])
 	}

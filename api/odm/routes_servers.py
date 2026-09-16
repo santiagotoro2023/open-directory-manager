@@ -254,7 +254,7 @@ class ComputerAction(BaseModel):
         str,
         Field(
             pattern="^(update-check|update-install|package-install|package-remove"
-            "|local-user-add|local-user-remove|policy-refresh|restart|shutdown"
+            "|local-user-add|local-user-remove|local-user-password|policy-refresh|restart|shutdown"
             "|agent-update)$"
         ),
     ]
@@ -286,10 +286,12 @@ async def run_action(
         if not body.package or not PACKAGE_RE.match(body.package):
             raise objects.ObjectError("that is not a package name")
         payload["package"] = body.package
-    if body.action in ("local-user-add", "local-user-remove"):
+    if body.action in ("local-user-add", "local-user-remove", "local-user-password"):
         if body.local_user is None:
             raise objects.ObjectError("no local account was given")
         payload = body.local_user.model_dump(exclude_none=True)
+        if body.action == "local-user-password" and not body.local_user.password:
+            raise objects.ObjectError("a new password was not given")
     if body.action == "agent-update":
         payload["version"] = body.version
 

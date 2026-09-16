@@ -1,6 +1,6 @@
 {
   "name": "odm-web",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@xterm/addon-canvas": "0.7.0",
     "@xterm/addon-fit": "0.10.0",
     "@xterm/xterm": "5.5.0",
     "lucide-react": "0.469.0",

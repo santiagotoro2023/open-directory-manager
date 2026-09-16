@@ -33,7 +33,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.13.1"
+const version = "0.13.2"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"

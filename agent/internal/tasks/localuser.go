@@ -104,3 +104,29 @@ func removeLocalUser(ctx context.Context, payload map[string]any, env apply.Env)
 	}
 	return name + " removed, home directory included", nil
 }
+
+// setLocalUserPassword changes one local account's password — root's
+// included, which is the one an operator most often needs to set from here
+// after a machine was installed with a password nobody wrote down.
+func setLocalUserPassword(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
+	name := str(payload["name"])
+	if !safeLogin.MatchString(name) {
+		return "", fmt.Errorf("%q is not a valid login name", name)
+	}
+	if _, err := user.Lookup(name); err != nil {
+		return "", fmt.Errorf("%s is not an account on this machine", name)
+	}
+	password := str(payload["password"])
+	if password == "" {
+		return "", fmt.Errorf("no password was given")
+	}
+	// Through stdin, so the password is never an argument in the process list.
+	if err := apply.SetPassword(ctx, env, name, password); err != nil {
+		return "", fmt.Errorf("setting the password for %s: %w", name, err)
+	}
+	// A locked account stays locked otherwise, whatever password it has.
+	if out, err := unsandboxed(ctx, env, nil, "passwd", "--unlock", name); err != nil {
+		return out, fmt.Errorf("unlocking %s: %w", name, err)
+	}
+	return "password set for " + name, nil
+}

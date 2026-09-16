@@ -180,9 +180,16 @@ function DashboardsTab() {
     api.monitor.groups().then((r) => setGroups(r.groups)).catch(() => undefined);
   }, [loadList]);
 
+  // Redrawn on its own, every quarter minute — a dashboard is looked at,
+  // not reloaded — and it says when it last was.
+  const [updated, setUpdated] = useState<Date | null>(null);
   useEffect(() => {
-    void loadData();
-    const timer = setInterval(() => void loadData(), 30_000);
+    const tick = async () => {
+      await loadData();
+      setUpdated(new Date());
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), 15_000);
     return () => clearInterval(timer);
   }, [loadData]);
 
@@ -299,6 +306,9 @@ function DashboardsTab() {
               </button>
             )}
             <span className="spacer" />
+            {updated && (
+              <span className="muted">Updated {updated.toLocaleTimeString()} · every 15 s</span>
+            )}
             <button type="button" className="danger" onClick={() => void remove()}>
               Delete
             </button>

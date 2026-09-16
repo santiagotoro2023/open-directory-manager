@@ -327,9 +327,11 @@ func localUsers(env apply.Env) []LocalUser {
 			continue
 		}
 		uid, err := strconv.Atoi(parts[2])
-		// Only real people. The distribution's service accounts are noise on a
-		// page about who can use the machine.
-		if err != nil || uid < firstHumanUID || uid >= 65534 {
+		// Real people, and root. The distribution's service accounts are
+		// noise on a page about who can use the machine; root is the one
+		// system account that is somebody, and the one whose password an
+		// operator most wants to be able to set from here.
+		if err != nil || uid >= 65534 || (uid != 0 && uid < firstHumanUID) {
 			continue
 		}
 		users = append(users, LocalUser{
@@ -394,7 +396,28 @@ func ParseWho(out string, local []LocalUser) []Session {
 			Since:  strings.Join(fields[2:], " "),
 		})
 	}
-	return found
+	return oneGraphicalSession(found)
+}
+
+// oneGraphicalSession collapses the two utmp entries GNOME writes for one
+// desktop sign-in — one for the seat and one for the virtual terminal the
+// compositor runs on — into one line, kept under the seat. Two rows for one
+// person at one screen read as two people.
+func oneGraphicalSession(sessions []Session) []Session {
+	seated := map[string]bool{}
+	for _, session := range sessions {
+		if strings.HasPrefix(session.Line, "seat") {
+			seated[session.User] = true
+		}
+	}
+	kept := make([]Session, 0, len(sessions))
+	for _, session := range sessions {
+		if seated[session.User] && strings.HasPrefix(session.Line, "tty") {
+			continue
+		}
+		kept = append(kept, session)
+	}
+	return kept
 }
 
 // installedPackages reports what somebody asked for, not the thousands pulled

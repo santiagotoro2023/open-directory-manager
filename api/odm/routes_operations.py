@@ -195,7 +195,18 @@ async def backup_loop(pool: asyncpg.Pool, settings: Settings) -> None:
         return
     interval = max(settings.backup_interval_hours, 1) * 3600
     while True:
-        await asyncio.sleep(interval)
+        # Measured from the last attempt, not from this process starting: a
+        # loop that slept a full day from start-up never ran on a controller
+        # that was upgraded, and so restarted, more often than that.
+        wait = float(interval)
+        with contextlib.suppress(Exception):
+            last = await pool.fetchval(
+                "SELECT max(started_at) FROM domain_backup WHERE state IN ('complete', 'failed')"
+            )
+            if last is not None:
+                age = (datetime.now(UTC) - last).total_seconds()
+                wait = max(120.0, interval - age)
+        await asyncio.sleep(wait)
         with contextlib.suppress(Exception):
             # The same path a click on Back up now takes: the controller's
             # own agent, which is root there. Running samba-tool from the

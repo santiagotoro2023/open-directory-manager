@@ -37,6 +37,7 @@ KINDS = (
     "rd-profile-manage",
     "local-user-add",
     "local-user-remove",
+    "local-user-password",
     "policy-refresh",
     "restart",
     "shutdown",

@@ -654,6 +654,8 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   const [addingUser, setAddingUser] = useState(false);
   const [removingUser, setRemovingUser] = useState<string | null>(null);
   const [assist, setAssist] = useState<string | null>(null);
+  const [packageFilter, setPackageFilter] = useState("");
+  const [passwordFor, setPasswordFor] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -718,6 +720,13 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
             {facts.packages.length} installed by request, of {facts.package_count} in total
           </h3>
           <span className="spacer" />
+          <input
+            className="search"
+            aria-label="Search installed software"
+            placeholder="Search packages"
+            value={packageFilter}
+            onChange={(e) => setPackageFilter(e.target.value)}
+          />
           <button type="button" className="primary" onClick={() => setInstalling(true)}>
             Install a package
           </button>
@@ -734,7 +743,11 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
             </tr>
           </thead>
           <tbody>
-            {facts.packages.map((entry) => (
+            {facts.packages
+              .filter((entry) =>
+                !packageFilter || entry.name.toLowerCase().includes(packageFilter.toLowerCase()),
+              )
+              .map((entry) => (
               <tr key={entry.name}>
                 <td>{entry.name}</td>
                 <td className="mono">{entry.version}</td>
@@ -827,20 +840,30 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
                 <td className="actions">
                   <button
                     type="button"
-                    className="danger"
+                    className="ghost"
                     disabled={busy}
-                    aria-label={`Delete ${user.name}`}
-                    onClick={() => setRemovingUser(user.name)}
+                    onClick={() => setPasswordFor(user.name)}
                   >
-                    <Trash2 size={15} aria-hidden="true" />
+                    Set password
                   </button>
+                  {user.uid !== 0 && (
+                    <button
+                      type="button"
+                      className="danger"
+                      disabled={busy}
+                      aria-label={`Delete ${user.name}`}
+                      onClick={() => setRemovingUser(user.name)}
+                    >
+                      <Trash2 size={15} aria-hidden="true" />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
             {facts.local_users.length === 0 && (
               <tr>
                 <td colSpan={5} className="empty">
-                  No local accounts outside the system range.
+                  No local accounts reported yet.
                 </td>
               </tr>
             )}
@@ -853,6 +876,16 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
             onSubmit={async (account) => {
               setAddingUser(false);
               await ask("local-user-add", undefined, account);
+            }}
+          />
+        )}
+        {passwordFor && (
+          <LocalPasswordDialog
+            name={passwordFor}
+            onClose={() => setPasswordFor(null)}
+            onSubmit={async (password) => {
+              setPasswordFor(null);
+              await ask("local-user-password", undefined, { name: passwordFor, password });
             }}
           />
         )}
@@ -1297,6 +1330,8 @@ function LogsTab({ dn, name }: { dn: string; name: string }) {
   // Errors only: what somebody opening this page is nearly always looking
   // for, and a machine that has been up for a week has a great deal else.
   const [errorsOnly, setErrorsOnly] = useState(false);
+  // A word that has to appear, in the message or the unit's name.
+  const [needle, setNeedle] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1328,14 +1363,22 @@ function LogsTab({ dn, name }: { dn: string; name: string }) {
 
   // What is on screen, which is what an export has to be: filtering and then
   // exporting something else is a report nobody can check against the page.
-  const shown = errorsOnly
-    ? groups
-        .map((group) => ({
-          ...group,
-          entries: group.entries.filter((entry) => entry.priority <= 3),
-        }))
-        .filter((group) => group.entries.length > 0)
-    : groups;
+  const lowered = needle.trim().toLowerCase();
+  const shown =
+    errorsOnly || lowered
+      ? groups
+          .map((group) => ({
+            ...group,
+            entries: group.entries.filter(
+              (entry) =>
+                (!errorsOnly || entry.priority <= 3) &&
+                (!lowered ||
+                  entry.message.toLowerCase().includes(lowered) ||
+                  group.unit.toLowerCase().includes(lowered)),
+            ),
+          }))
+          .filter((group) => group.entries.length > 0)
+      : groups;
   const showing = shown.reduce((sum, group) => sum + group.entries.length, 0);
 
   function exportView() {
@@ -1367,9 +1410,17 @@ function LogsTab({ dn, name }: { dn: string; name: string }) {
     <>
       <div className="page-header">
         <h3 className="section-title">
-          {errorsOnly ? `${showing} of ${total}` : total} {total === 1 ? "entry" : "entries"}
+          {errorsOnly || lowered ? `${showing} of ${total}` : total}{" "}
+          {total === 1 ? "entry" : "entries"}
         </h3>
         <span className="spacer" />
+        <input
+          className="search"
+          aria-label="Filter the log"
+          placeholder="Filter: a word, a unit"
+          value={needle}
+          onChange={(e) => setNeedle(e.target.value)}
+        />
         <Select
           aria-label="How far back"
           value={String(hours)}
@@ -2247,5 +2298,48 @@ function DynamicMembership({
         </Modal>
       )}
     </>
+  );
+}
+
+
+/**
+ * A new password for a local account — root included, which is the account
+ * whose password an operator most often has to set on a machine somebody
+ * else installed. Sent to the machine and never stored; the agent sets it
+ * through stdin so it is never in a process list either.
+ */
+function LocalPasswordDialog({
+  name,
+  onClose,
+  onSubmit,
+}: {
+  name: string;
+  onClose: () => void;
+  onSubmit: (password: string) => Promise<void>;
+}) {
+  const [password, setPassword] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mismatch = again !== "" && again !== password;
+  return (
+    <Modal
+      title={`Set the password for ${name}`}
+      submitLabel="Set password"
+      busy={busy}
+      error={mismatch ? "The two passwords differ." : null}
+      onSubmit={() => {
+        if (password.length < 8 || mismatch) return;
+        setBusy(true);
+        void onSubmit(password).finally(() => setBusy(false));
+      }}
+      onClose={onClose}
+    >
+      <Field label="New password" hint="At least eight characters. A locked account is unlocked by this.">
+        <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      </Field>
+      <Field label="Again">
+        <input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+      </Field>
+    </Modal>
   );
 }

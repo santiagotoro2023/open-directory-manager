@@ -3310,8 +3310,8 @@ ol.steps {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  margin: 12px 0 4px;
-  padding: 0 12px;
+  margin: 6px 0 2px;
+  padding: 4px 12px;
   border: 0;
   background: none;
   font: inherit;
@@ -3333,6 +3333,12 @@ ol.steps {
 
 .nav-group.folded svg {
   transform: rotate(-90deg);
+}
+
+/* A folded group is one line, not a heading with a gap for the items it is
+   not showing. */
+.nav-group.folded {
+  margin-bottom: 0;
 }
 
 .sidebar.collapsed .nav-group {

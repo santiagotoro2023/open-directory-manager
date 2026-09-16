@@ -1167,6 +1167,29 @@ async def agent_inventory(
             body.agent_version,
         )
 
+        # A local administrator the machine no longer has — the policy stopped
+        # naming one and the agent removed the account, or somebody deleted it
+        # by hand — must not go on being shown with a password that opens
+        # nothing. The machine's own account list is the truth about that.
+        present = {user.name for user in body.local_users}
+        stale = await conn.fetchval(
+            "SELECT account FROM local_administrator WHERE lower(computer_dn) = lower($1)",
+            machine.dn,
+        )
+        if stale and stale not in present:
+            await conn.execute(
+                "DELETE FROM local_administrator WHERE lower(computer_dn) = lower($1)", machine.dn
+            )
+            await audit.record(
+                conn,
+                actor=machine.hostname or machine.sam_account_name,
+                action="computer.localadmin.gone",
+                outcome="success",
+                object_type="computer",
+                object_dn=machine.dn,
+                detail=f"{stale} is no longer on the machine; its password was discarded",
+            )
+
         # The same machine under the name it used to have. Moving a machine to
         # another organizational unit changes its distinguished name, and the
         # row it wrote under the old one stayed behind for ever — one machine

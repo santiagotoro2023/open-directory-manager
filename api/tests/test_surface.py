@@ -604,7 +604,7 @@ def test_every_task_with_a_subject_moves_something_on():
         "browse", "make-directory", "printer-discover", "console-certificate",
         "update-check", "update-install", "package-install", "package-remove",
         "policy-refresh", "restart", "shutdown", "share-remove", "printer-remove",
-        "local-user-add", "local-user-remove", "radius-apply",
+        "local-user-add", "local-user-remove", "local-user-password", "radius-apply",
         # A test page changes nothing about the printer; the answer is whether
         # a page came out, which is the task's own output.
         "printer-test",

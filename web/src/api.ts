@@ -806,6 +806,7 @@ export type ComputerAction =
   | "package-install"
   | "package-remove"
   | "local-user-add"
+  | "local-user-password"
   | "local-user-remove"
   | "policy-refresh"
   | "restart"

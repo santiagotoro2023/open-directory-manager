@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
 import { ApiError, api, terminalSocket } from "../api";
 
@@ -45,6 +46,9 @@ export function Terminal({ dn, hostname }: { dn: string; hostname: string }) {
   const [message, setMessage] = useState("");
   // Bumped to open a fresh session after one ends.
   const [attempt, setAttempt] = useState(0);
+  // How much the machine has sent and how big the terminal is: what says,
+  // when nothing appears, whether the bytes are missing or the drawing.
+  const [seen, setSeen] = useState({ bytes: 0, cols: 0, rows: 0 });
 
   useEffect(() => {
     const element = host.current;
@@ -65,6 +69,15 @@ export function Terminal({ dn, hostname }: { dn: string; hostname: string }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(element);
+    // Drawn on a canvas rather than as DOM rows: the rows renderer sits
+    // inside the console's own stylesheet and was seen to draw nothing in
+    // one browser while the bytes arrived; a canvas is its own surface.
+    // A browser without 2D canvas keeps the DOM renderer.
+    try {
+      term.loadAddon(new CanvasAddon());
+    } catch {
+      /* the DOM renderer stays */
+    }
     fit.fit();
 
     let socket: WebSocket | null = null;
@@ -95,7 +108,13 @@ export function Terminal({ dn, hostname }: { dn: string; hostname: string }) {
           const frame = new Uint8Array(event.data);
           if (frame.length === 0) return;
           if (frame[0] === FRAME_DATA) {
-            term.write(frame.subarray(1));
+            const payload = frame.subarray(1);
+            try {
+              term.write(payload);
+            } catch (err) {
+              setMessage(`The terminal could not draw: ${String(err)}`);
+            }
+            setSeen((was) => ({ bytes: was.bytes + payload.length, cols: term.cols, rows: term.rows }));
             return;
           }
           let fields: { type?: string; text?: string; status?: number } = {};
@@ -158,7 +177,8 @@ export function Terminal({ dn, hostname }: { dn: string; hostname: string }) {
         <span className="mono">root@{hostname.split(".")[0]}</span>
         <span className={`terminal-state terminal-state-${phase}`}>
           {phase === "opening" && (message || "Opening…")}
-          {phase === "connected" && "Connected"}
+          {phase === "connected" &&
+            (message || `Connected · ${seen.cols}×${seen.rows} · ${seen.bytes} bytes received`)}
           {phase === "ended" && (message || "Ended")}
           {phase === "failed" && (message || "Failed")}
         </span>
