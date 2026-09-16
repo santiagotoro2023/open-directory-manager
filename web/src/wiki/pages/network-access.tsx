@@ -95,13 +95,16 @@ export function Content() {
               ],
               [
                 "EAP-TLS",
-                "A certificate on each machine. Certificates → and the certificate policy setting issue and renew them automatically.",
+                "A certificate on each machine: Group Policy → Domain authority → machine certificate issues and renews it. The RADIUS role checks it against the domain authority, whose root every Network Access apply hands it.",
               ],
             ]}
           />
           <Note>
             EAP-TLS is the one worth aiming at: a machine that has a certificate needs no password
-            on the network at all, and a machine that has left the domain stops having one.
+            on the network at all, and a machine that has left the domain stops having one. The
+            client side is one policy entry: Group Policy → <strong>Wi-Fi networks</strong>, security{" "}
+            <C>wpa-eap</C>, which writes a NetworkManager system connection that identifies the
+            machine as <C>host/&lt;fqdn&gt;</C> &mdash; a computer, to the rules here.
           </Note>
         </Section>
 

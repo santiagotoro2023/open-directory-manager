@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.12.0_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.13.0_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -139,7 +139,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 |---|---|
 | Directory | Users, groups, computers and organizational units — create, edit, move, delete, bulk CSV import, one action that offboards a leaver, one change applied to a selection of objects, and groups whose membership is a query rather than a list |
 | Group Policy | Policy objects with links, precedence, enforced links, blocked inheritance, security filtering, item-level targeting, a full change history with one-button rollback, modelling a link before making it, export/import as portable JSON, and settings filed into collapsible folders so a long list stays navigable |
-| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates, login screen (including a background picture that actually appears at GNOME's greeter, not only in the setting), desktop background, browser policy, apt package deployment, a `.deb` uploaded directly for software with no apt repository to reach, graphics drivers detected from the hardware or named directly, unattended updates, always-on VPN, remote desktop session rules, default applications per file type, the dash layout per user or group (optionally left alone once seeded, for someone free to rearrange their own), desktop shortcuts and file-manager bookmarks, fonts and the desktop theme, the local password policy, boot loader wait and menu visibility, a graphical boot splash with a background, a logo and a message in place of Debian's own kernel and initramfs text, kernel parameters, power and screen-lock behaviour, removable-storage rules, a second factor at the machine, an allowlist for what may be installed, what the first sign-in shows, agent updates, and a local administrator whose password each machine rotates itself — removed from a machine the moment the policy stops naming one. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
+| Policy settings | Files, scripts, systemd units, cron, firewall, drive maps, roaming profiles, printers, sudo rules, HBAC rules, trusted certificates and the domain's own authority in one setting — trusted by the system and the browsers, with a certificate for the machine itself — Wi-Fi networks joined before anyone signs in, with 802.1X and that machine certificate or a pre-shared key, login screen (including a background picture that actually appears at GNOME's greeter, not only in the setting), desktop background, browser policy, apt package deployment, a `.deb` uploaded directly for software with no apt repository to reach, graphics drivers detected from the hardware or named directly, unattended updates, always-on VPN, remote desktop session rules, default applications per file type, the dash layout per user or group (optionally left alone once seeded, for someone free to rearrange their own), desktop shortcuts and file-manager bookmarks, fonts and the desktop theme, the local password policy, boot loader wait and menu visibility, a graphical boot splash with a background, a logo and a message in place of Debian's own kernel and initramfs text, kernel parameters, power and screen-lock behaviour, removable-storage rules, a second factor at the machine, an allowlist for what may be installed, what the first sign-in shows, agent updates, and a local administrator whose password each machine rotates itself — removed from a machine the moment the policy stops naming one. A setting applies for exactly as long as a policy object says it should, and is taken back when it stops |
 | Roaming profiles | A home directory on a share that follows the person between desktops and session hosts, as a disk image per person or a directory. The same mechanism a remote desktop collection uses, so one profile can serve both |
 | Administrative templates | Vendor ADMX/ADML import with generated forms |
 | DNS | Zones and records in the domain's integrated DNS |
@@ -148,7 +148,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Printing | CUPS printers on any print server, found on the network by scanning for them, handed to people by policy |
 | Remote desktop | Collections of session hosts behind a broker that returns people to the session they left, profile disks on a share you can grow or reset from the console, published applications, and connection files that arrive on a desktop with something installed that opens them. A session host serves XFCE, GNOME or KDE Plasma, chosen when the role is installed. An optional standby broker sharing one affinity table, and one DNS name published across both. A host is drained rather than removed while it is patched. The broker owns 3389; a host sharing its machine moves to 3390 |
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
-| Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
+| Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment; EAP-TLS checked against the domain authority, so a machine with the certificate the domain issued it is a machine that may join the Wi-Fi |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
 | Machine management | Model, serial and drive health from SMART, installed software, local accounts to add and remove, sign-in history, watching a signed-in person's screen with their consent, recent logs filtered to errors and exportable, updates, restart, a remote agent update, a terminal — a real root login shell on a pseudo-terminal, carried over the agent's own connection, its whole transcript in the audit log when it ends — a file browser that shows and changes owner, group and mode, and disk-encryption status with an escrowed recovery key — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, re-issues the console's own certificate, and withdraws one to a revocation list every issued certificate points at |
@@ -160,6 +160,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Domain controllers | Which controllers exist, which are read-only, and replication between them; a default organizational unit for a computer that joins without naming one itself |
 | Operations | Health dashboard on Overview, replication, domain backups taken by the controller's own agent, a security baseline measuring the domain against a checklist, and a configuration export: every object, zone and setting in one readable file, importable into a new domain from the console or from `setup.sh --import` |
 | Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one, keeping the security identifier it had |
+| Monitoring | A role that has every machine report processor, memory, filesystems, network and temperature once a minute and the node carrying it probe what has no agent — ping, a port, a page; rules that open and resolve alerts per series, with severities, scopes (every machine, a group, one machine) and how long a condition must hold; channels — an ntfy topic with a code to scan, or a webhook; maintenance windows that keep planned work from paging anyone; and dashboards designed in the console from charts, current values, the machine table and open alerts, one of them the default, any of them shareable as a full-screen link for a screen on a wall |
 | Audit | Every change with actor, outcome and before-and-after state |
 | Activity | What people did at the machines, from every machine's own journal in one place: each sign-in and failed one, each sudo command and refused one, su, phone approvals and refusals, password changes, local accounts, USB devices, boots — filterable by machine, person, kind and time, on a computer object, on a user object, or domain-wide, and exportable as CSV |
 | Clients | One `.deb`: `odm-client-install`, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |
@@ -179,6 +180,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Printing | CUPS, driverless or with an uploaded PPD |
 | Remote access | WireGuard |
 | Network access | FreeRADIUS, against the directory through winbind |
+| Monitoring | The agent reading /proc and /sys; PostgreSQL holding a fortnight of samples; uPlot in the console |
 | Unattended install | Debian's own installer, preseeded, over proxy DHCP |
 
 Directory objects always live in Samba's LDAP; PostgreSQL is never the source
@@ -246,7 +248,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.12.0   # -> dist/odm-client_0.12.0_amd64.deb
+bash packaging/deb/build-in-container.sh 0.13.0   # -> dist/odm-client_0.13.0_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

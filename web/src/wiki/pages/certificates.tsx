@@ -221,6 +221,13 @@ export function Content() {
             The root can also be downloaded directly for machines outside the domain, or for
             browsers that keep their own store.
           </p>
+          <p>
+            The policy setting <strong>Domain authority</strong> does the same without a pasted
+            certificate: it resolves to whatever authority the domain has at the moment the policy
+            is applied, tells Firefox and Chromium as well as the system store, and can enrol a
+            certificate for the machine itself in the same breath &mdash; which is what 802.1X
+            Wi-Fi uses. A domain whose authority is re-created follows along at the next refresh.
+          </p>
         </Section>
 
         <Section title="Revocation">
