@@ -9,11 +9,13 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -27,6 +29,7 @@ import (
 	"odm.example.org/agent/internal/config"
 	"odm.example.org/agent/internal/enrol"
 	"odm.example.org/agent/internal/inventory"
+	"odm.example.org/agent/internal/logonhours"
 	"odm.example.org/agent/internal/policy"
 	"odm.example.org/agent/internal/relay"
 	"odm.example.org/agent/internal/shell"
@@ -34,7 +37,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.13.5"
+const version = "0.14.0"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -80,6 +83,8 @@ func main() {
 		os.Exit(runSyncSecondFactor(os.Args[2:]))
 	case "push-factor":
 		os.Exit(runPushFactor(os.Args[2:]))
+	case "logon-hours":
+		os.Exit(runLogonHours(os.Args[2:]))
 	case "--version", "-v", "version":
 		fmt.Println("odm-agent", version)
 	default:
@@ -98,6 +103,7 @@ func usage() {
   enrol-factor --user NAME        set up a second factor for that account
   sync-second-factor              refresh who may hold one, without applying policy
   push-factor --user NAME         ask that person's phone to approve a sign-in (run by PAM)
+  logon-hours [--sweep]           say whether PAM_USER may sign in now; --sweep ends sessions
   --version                       print the version
 
   --force is the equivalent of gpupdate /force: apply even when the policy
@@ -1073,6 +1079,80 @@ func lastLines(text string, count int) string {
 		kept = kept[len(kept)-2000:]
 	}
 	return kept
+}
+
+// runLogonHours is the PAM account helper for the logon-hours setting
+// (apply/logonhours.go): it reads the rules the policy wrote and says, with
+// its exit status, whether the person PAM names may sign in now. With
+// --sweep it is the timer instead: every open session of a person whose
+// window has closed, and whose rule asked for it, is ended.
+//
+// Anything that stops it deciding — no file, an unreadable one — is a yes.
+// A machine whose rules cannot be read must not become a machine nobody can
+// sign in to.
+func runLogonHours(args []string) int {
+	sweep := len(args) > 0 && args[0] == "--sweep"
+	raw, err := os.ReadFile("/etc/odm/logon-hours.json")
+	if err != nil {
+		return 0
+	}
+	var file logonhours.File
+	if err := json.Unmarshal(raw, &file); err != nil || len(file.Rules) == 0 {
+		return 0
+	}
+	now := time.Now()
+	if !sweep {
+		if !logonhours.IsSignIn(os.Getenv("PAM_SERVICE")) {
+			return 0
+		}
+		user := os.Getenv("PAM_USER")
+		if user == "" {
+			return 0
+		}
+		decision := logonhours.Decide(file.Rules, user, groupsOf(user), now)
+		if decision.Allowed {
+			return 0
+		}
+		// stdout reaches the person through pam_exec's stdout option.
+		fmt.Println(decision.Message)
+		syslogLine(fmt.Sprintf("logon hours: refused for %s (%s)", user, os.Getenv("PAM_SERVICE")))
+		return 1
+	}
+	out, err := exec.Command("loginctl", "list-sessions", "--no-legend").Output()
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		id, user := fields[0], fields[2]
+		decision := logonhours.Decide(file.Rules, user, groupsOf(user), now)
+		if decision.Allowed || !decision.SignOut {
+			continue
+		}
+		_ = exec.Command("loginctl", "terminate-session", id).Run()
+		syslogLine(fmt.Sprintf("logon hours: signed out for %s (session-%s)", user, id))
+	}
+	return 0
+}
+
+// groupsOf asks the machine — its NSS, which is SSSD for a domain account —
+// which groups a person is in. Go's own user package cannot: a static
+// binary reads /etc/group and nothing else.
+func groupsOf(user string) []string {
+	out, err := exec.Command("id", "-Gn", "--", user).Output()
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(out))
+}
+
+// syslogLine writes one line to the journal, where the activity feed reads
+// it back.
+func syslogLine(text string) {
+	_ = exec.Command("logger", "-t", "odm-agent", "--", text).Run()
 }
 
 // serveAssist carries a shared screen to the console (internal/relay) for

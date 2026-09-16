@@ -662,6 +662,93 @@ export const CATEGORIES: CategorySpec[] = [
     },
   },
   {
+    key: "logon_hours",
+    title: "Logon hours",
+    half: "Computer",
+    group: "Security",
+    identity: "principal",
+    help:
+      "When a person or a group may sign in at the machine — at the screen, over SSH or over " +
+      "remote desktop. Somebody named by no rule is not restricted; somebody named by several " +
+      "may sign in during any of their windows.",
+    doc: "logon-hours",
+    note:
+      "Enforced at sign-in only: sudo, cron and a session already open are untouched unless the " +
+      "rule also signs people out when their window closes. Local accounts are not restricted.",
+    fields: [
+      {
+        key: "principal",
+        label: "User or group",
+        placeholder: "%Sales",
+        picker: "principal",
+        pickerValue: "principal",
+      },
+      {
+        key: "days",
+        label: "Days",
+        placeholder: "mon, tue, wed, thu, fri",
+        hint: "mon, tue, wed, thu, fri, sat, sun — separated by commas",
+        suggestions: [
+          { value: "mon, tue, wed, thu, fri", label: "Weekdays" },
+          { value: "sat, sun", label: "Weekend" },
+          { value: "mon, tue, wed, thu, fri, sat, sun", label: "Every day" },
+        ],
+      },
+      { key: "start", label: "From", placeholder: "07:00", width: "90px" },
+      {
+        key: "end",
+        label: "Until",
+        placeholder: "19:00",
+        width: "90px",
+        hint: "Earlier than From means the window crosses midnight",
+      },
+      { key: "sign_out", label: "Sign out when it ends", kind: "checkbox", width: "120px" },
+      { key: "message", label: "Message when refused", placeholder: "Sales signs in during office hours." },
+    ],
+    blank: { principal: "", days: ["mon", "tue", "wed", "thu", "fri"], start: "07:00", end: "19:00", sign_out: false, message: "" },
+  },
+  {
+    key: "web_apps",
+    title: "Web applications",
+    half: "Computer",
+    group: "Software and drivers",
+    identity: "name",
+    help:
+      "A web site installed as if it were a program: a launcher with an icon that opens the site " +
+      "in a window of its own, without an address bar — what \"Install as app\" does in the browser, " +
+      "for everybody on the machine. Outlook on the web, Teams, an intranet application.",
+    doc: "web-applications",
+    note:
+      "Chromium draws the window where it is installed (its application mode is the real thing); " +
+      "Firefox opens a window of its own otherwise. The browser's ordinary sign-in is the " +
+      "application's. Pin the launcher with Dash and taskbar: its entry is odm-webapp-<name>.desktop.",
+    fields: [
+      { key: "name", label: "Name", placeholder: "Outlook", width: "180px" },
+      { key: "url", label: "Address", placeholder: "https://outlook.office.com/mail/" },
+      {
+        key: "icon_url",
+        label: "Icon",
+        placeholder: "https://…/icon.png",
+        hint: "A PNG or SVG the machine fetches once; empty uses the site's own favicon",
+      },
+      {
+        key: "browser",
+        label: "Browser",
+        kind: "select",
+        options: ["auto", "chromium", "firefox"],
+        width: "120px",
+      },
+      {
+        key: "categories",
+        label: "Menu categories",
+        placeholder: "Office, Network",
+        hint: "Office, Network, Utility, Development, Graphics, AudioVideo — separated by commas",
+      },
+      { key: "comment", label: "Description", placeholder: "Mail and calendar" },
+    ],
+    blank: { name: "", url: "", icon_url: "", browser: "auto", categories: [], comment: "" },
+  },
+  {
     key: "remote_desktop_files",
     title: "Remote desktop files",
     half: "User",
@@ -983,7 +1070,7 @@ export const CATEGORIES: CategorySpec[] = [
 ];
 
 // Fields the API models as a list but an operator types as a line.
-const LIST_FIELDS = new Set(["users", "commands"]);
+const LIST_FIELDS = new Set(["users", "commands", "days", "categories", "additional_locales"]);
 
 function toInput(value: unknown): string {
   if (Array.isArray(value)) return value.join(", ");
@@ -1121,6 +1208,26 @@ const SPECIAL: SpecialSpec[] = [
       "the power button do. Enforced by logind as well as the desktop, so a laptop " +
       "closed at the login screen behaves the same way.",
     doc: "power-and-suspend",
+  },
+  {
+    key: "regional",
+    title: "Regional settings",
+    half: "Computer",
+    group: "System configuration",
+    help:
+      "Language, formats, keyboard layout and time zone — for the login screen, the console " +
+      "and every desktop session on the machine.",
+    doc: "regional-settings",
+  },
+  {
+    key: "firmware_updates",
+    title: "Firmware updates",
+    half: "Computer",
+    group: "Software and drivers",
+    help:
+      "Firmware from the Linux Vendor Firmware Service through fwupd: the BIOS, the dock, the " +
+      "SSD. Listed on each machine's page, and installed when the policy says so.",
+    doc: "firmware-updates",
   },
   {
     key: "screen_lock",
@@ -1266,6 +1373,8 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "roaming_profile") return settings.roaming_profile ? 1 : 0;
   if (key === "power") return settings.power ? 1 : 0;
   if (key === "screen_lock") return settings.screen_lock ? 1 : 0;
+  if (key === "regional") return settings.regional ? 1 : 0;
+  if (key === "firmware_updates") return settings.firmware_updates ? 1 : 0;
   if (key === "removable_storage") return settings.removable_storage ? 1 : 0;
   if (key === "desktop_theme") return settings.desktop_theme ? 1 : 0;
   if (key === "second_factor") return settings.second_factor ? 1 : 0;
@@ -1437,6 +1546,10 @@ export function SettingsEditor({
           {selected === "power" && <PowerEditor settings={settings} onChange={onChange} />}
           {selected === "screen_lock" && (
             <ScreenLockEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "regional" && <RegionalEditor settings={settings} onChange={onChange} />}
+          {selected === "firmware_updates" && (
+            <FirmwareUpdatesEditor settings={settings} onChange={onChange} />
           )}
           {selected === "removable_storage" && (
             <RemovableStorageEditor settings={settings} onChange={onChange} />
@@ -3589,6 +3702,224 @@ function PowerEditor({
               onChange={(e) => set({ allow_user_change: e.target.checked })}
             />
             Let people change these in their own settings
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+const LOCALES: { value: string; label: string }[] = [
+  { value: "en_US.UTF-8", label: "English (US)" },
+  { value: "en_GB.UTF-8", label: "English (UK)" },
+  { value: "de_DE.UTF-8", label: "Deutsch (Deutschland)" },
+  { value: "de_CH.UTF-8", label: "Deutsch (Schweiz)" },
+  { value: "de_AT.UTF-8", label: "Deutsch (Österreich)" },
+  { value: "fr_FR.UTF-8", label: "Français (France)" },
+  { value: "fr_CH.UTF-8", label: "Français (Suisse)" },
+  { value: "it_IT.UTF-8", label: "Italiano" },
+  { value: "es_ES.UTF-8", label: "Español" },
+  { value: "nl_NL.UTF-8", label: "Nederlands" },
+  { value: "pt_BR.UTF-8", label: "Português (Brasil)" },
+  { value: "pl_PL.UTF-8", label: "Polski" },
+  { value: "sv_SE.UTF-8", label: "Svenska" },
+];
+
+function RegionalEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.regional;
+  function set(changes: Partial<NonNullable<PolicySettings["regional"]>>) {
+    onChange({
+      ...settings,
+      regional: {
+        locale: "en_US.UTF-8",
+        formats_locale: "",
+        additional_locales: [],
+        keyboard_layout: "us",
+        keyboard_variant: "",
+        timezone: "Etc/UTC",
+        allow_user_change: true,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("regional")}
+        actions={
+          current && <RemoveSetting onRemove={() => onChange({ ...settings, regional: undefined })} />
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <div className="field-grid">
+            <label className="field">
+              <span>Language</span>
+              <input
+                list="odm-locales"
+                value={current.locale}
+                onChange={(e) => set({ locale: e.target.value })}
+                placeholder="de_CH.UTF-8"
+              />
+              <datalist id="odm-locales">
+                {LOCALES.map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </option>
+                ))}
+              </datalist>
+              <small>As locale-gen names it: language_TERRITORY.UTF-8.</small>
+            </label>
+            <label className="field">
+              <span>Formats</span>
+              <input
+                list="odm-locales"
+                value={current.formats_locale}
+                onChange={(e) => set({ formats_locale: e.target.value })}
+                placeholder="Same as the language"
+              />
+              <small>Dates, numbers, currency and paper size, when they differ from the language.</small>
+            </label>
+            <label className="field">
+              <span>Other languages to offer</span>
+              <input
+                value={current.additional_locales.join(", ")}
+                onChange={(e) =>
+                  set({
+                    additional_locales: e.target.value
+                      .split(",")
+                      .map((part) => part.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="fr_CH.UTF-8, it_CH.UTF-8"
+              />
+              <small>Generated on the machine so people may choose them.</small>
+            </label>
+            <label className="field">
+              <span>Keyboard layout</span>
+              <input
+                value={current.keyboard_layout}
+                onChange={(e) => set({ keyboard_layout: e.target.value })}
+                placeholder="ch"
+              />
+              <small>An XKB layout: us, gb, de, ch, fr, es, it…</small>
+            </label>
+            <label className="field">
+              <span>Keyboard variant</span>
+              <input
+                value={current.keyboard_variant}
+                onChange={(e) => set({ keyboard_variant: e.target.value })}
+                placeholder="de_nodeadkeys"
+              />
+              <small>Empty for the layout's default.</small>
+            </label>
+            <label className="field">
+              <span>Time zone</span>
+              <input
+                value={current.timezone}
+                onChange={(e) => set({ timezone: e.target.value })}
+                placeholder="Europe/Zurich"
+              />
+              <small>Region/City, as the IANA database names it.</small>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.allow_user_change}
+              onChange={(e) => set({ allow_user_change: e.target.checked })}
+            />
+            Let people choose another language or layout in their own settings
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function FirmwareUpdatesEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.firmware_updates;
+  function set(changes: Partial<NonNullable<PolicySettings["firmware_updates"]>>) {
+    onChange({
+      ...settings,
+      firmware_updates: {
+        enabled: true,
+        mode: "report",
+        include_testing: false,
+        reboot_when_needed: false,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("firmware_updates")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, firmware_updates: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.enabled}
+              onChange={(e) => set({ enabled: e.target.checked })}
+            />
+            Check the Linux Vendor Firmware Service at every refresh
+          </label>
+          <div className="field-grid">
+            <label className="field">
+              <span>What to do with an update</span>
+              <select
+                value={current.mode}
+                onChange={(e) => set({ mode: e.target.value as "report" | "install" })}
+              >
+                <option value="report">Report it on the machine's page</option>
+                <option value="install">Install it at the refresh</option>
+              </select>
+              <small>fwupd installs the machine's own firmware from what the vendor published.</small>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.reboot_when_needed}
+              onChange={(e) => set({ reboot_when_needed: e.target.checked })}
+            />
+            Restart the machine a minute later when an update needs it to finish
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.include_testing}
+              onChange={(e) => set({ include_testing: e.target.checked })}
+            />
+            Include the vendor service's testing remote
           </label>
         </>
       )}

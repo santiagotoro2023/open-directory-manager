@@ -614,6 +614,8 @@ def test_every_task_with_a_subject_moves_something_on():
         # A terminal only asks the agent to connect; the session runs over
         # that connection and the audit log keeps it, transcript and all.
         "shell-session",
+        # A message is shown and gone; the audit row is its record.
+        "message",
     }
 
     routes = pathlib.Path("odm")

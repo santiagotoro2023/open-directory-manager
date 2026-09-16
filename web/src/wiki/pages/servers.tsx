@@ -223,6 +223,18 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="Send a message">
+          <p>
+            <strong>Directory</strong> &rarr; the machine &rarr; <strong>General</strong> &rarr;{" "}
+            <strong>Send a message</strong>, or select several machines in the directory and use{" "}
+            <strong>Send a message to N machines</strong>. What <C>msg</C> did on Windows: a
+            notification on every desktop signed in at the machine and a line on every
+            terminal, shown within a second. <em>Stays on screen until dismissed</em> makes it a
+            critical notification, which the desktop does not time out. Nothing is stored on the
+            machine; the audit log keeps who said what to whom.
+          </p>
+        </Section>
+
         <Section title="A machine's logs">
           <p>
             <strong>Directory</strong> &rarr; the machine &rarr; <strong>Logs</strong>. Warnings

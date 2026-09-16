@@ -21,6 +21,8 @@ const KINDS: Record<string, { label: string; tone?: "bad" | "good" }> = {
   "sign-in": { label: "Signed in" },
   "sign-out": { label: "Signed out" },
   "sign-in-failed": { label: "Sign-in failed", tone: "bad" },
+  "logon-hours-refused": { label: "Outside logon hours", tone: "bad" },
+  "logon-hours-signed-out": { label: "Signed out: logon hours ended" },
   logon: { label: "Signed in" },
   logoff: { label: "Signed out" },
   sudo: { label: "sudo" },

@@ -181,6 +181,72 @@ export function PasswordDialog({ dn, onClose }: { dn: string; onClose: () => voi
   );
 }
 
+/** A message on the screens of whoever is signed in at one machine or many
+ *  — what `msg` did on Windows. */
+export function MessageDialog({
+  dns,
+  label,
+  onClose,
+  onDone,
+}: {
+  dns: string[];
+  /** What the dialog says it is sending to: a host name, or "12 machines". */
+  label: string;
+  onClose: () => void;
+  onDone?: (summary: string) => void;
+}) {
+  const [title, setTitle] = useState("Message from IT");
+  const [text, setText] = useState("");
+  const [urgency, setUrgency] = useState<"normal" | "critical">("normal");
+  const { busy, error, run } = useAction();
+
+  return (
+    <Modal
+      title={`Send a message to ${label}`}
+      submitLabel="Send"
+      busy={busy}
+      error={error}
+      onClose={onClose}
+      onSubmit={() =>
+        void run(async () => {
+          const result = await api.servers.message(dns, title, text, urgency);
+          const summary =
+            `Sent to ${result.queued.length} machine${result.queued.length === 1 ? "" : "s"}` +
+            (result.missing.length ? `; ${result.missing.length} never reported and got nothing.` : ".");
+          onDone?.(summary);
+          onClose();
+        })
+      }
+    >
+      <p className="muted">
+        A notification on every desktop that is signed in, and a line on every terminal, within a
+        second. It is in the audit log; nothing stays on the machine.
+      </p>
+      <Field label="Title">
+        <input value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} />
+      </Field>
+      <Field label="Message">
+        <textarea
+          value={text}
+          rows={4}
+          maxLength={1000}
+          required
+          placeholder="The file server restarts at 18:00. Save your work before then."
+          onChange={(e) => setText(e.target.value)}
+        />
+      </Field>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={urgency === "critical"}
+          onChange={(e) => setUrgency(e.target.checked ? "critical" : "normal")}
+        />
+        Stays on screen until dismissed
+      </label>
+    </Modal>
+  );
+}
+
 export function OffboardDialog({
   dn,
   name,

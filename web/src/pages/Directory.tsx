@@ -17,7 +17,7 @@ import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 import { EnrolmentTokens } from "../components/EnrolmentTokens";
 import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
-import { PasswordDialog, SecondFactorResetDialog, isDisabled } from "../components/objectDialogs";
+import { MessageDialog, PasswordDialog, SecondFactorResetDialog, isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { LoadingRow } from "../components/Loading";
@@ -122,6 +122,12 @@ export function Directory() {
   // has always been possible; changing what already exists has not, and doing
   // it one at a time is what makes a department move an afternoon's work.
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [messaging, setMessaging] = useState(false);
+  // The machines among what is selected: a message goes to screens, and a
+  // person or a group has none.
+  const chosenComputers = objects
+    .filter((object) => chosen.has(object.distinguishedName) && object.objectType === "computer")
+    .map((object) => object.distinguishedName);
   const [bulk, setBulk] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -360,6 +366,11 @@ export function Directory() {
             <button type="button" className="primary" onClick={() => setBulk(true)}>
               Change all of them…
             </button>
+            {chosenComputers.length > 0 && (
+              <button type="button" className="secondary" onClick={() => setMessaging(true)}>
+                Send a message to {chosenComputers.length === 1 ? "the machine" : `${chosenComputers.length} machines`}…
+              </button>
+            )}
             <button type="button" className="ghost" onClick={() => setChosen(new Set())}>
               Clear
             </button>
@@ -495,6 +506,14 @@ export function Directory() {
 
       {menu}
 
+      {messaging && (
+        <MessageDialog
+          dns={chosenComputers}
+          label={chosenComputers.length === 1 ? "one machine" : `${chosenComputers.length} machines`}
+          onClose={() => setMessaging(false)}
+          onDone={(summary) => setNotice(summary)}
+        />
+      )}
       {bulk && (
         <BulkDialog
           dns={[...chosen]}

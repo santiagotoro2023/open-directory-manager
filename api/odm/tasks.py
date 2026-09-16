@@ -38,6 +38,7 @@ KINDS = (
     "local-user-add",
     "local-user-remove",
     "local-user-password",
+    "message",
     "policy-refresh",
     "restart",
     "shutdown",

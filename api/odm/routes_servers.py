@@ -13,13 +13,13 @@ import contextlib
 import json
 import re
 import secrets
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 import asyncpg
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import agents, agentupdate, audit, objects, sessions, tasks, terminal
 from . import assist as assisting
@@ -198,6 +198,7 @@ async def computer_detail(
             "package_count": fact["package_count"],
             "hardware": json.loads(fact["hardware"] or "{}"),
             "disks": json.loads(fact["disks"] or "[]"),
+            "firmware": json.loads(fact.get("firmware") or "[]"),
             "reported_at": fact["reported_at"],
         },
         "events": [
@@ -377,6 +378,78 @@ async def browse_computer(
         return json.loads(answer)
     except ValueError as exc:
         raise objects.ObjectError(f"{row['hostname']} sent something unreadable back") from exc
+
+
+class MessageRequest(BaseModel):
+    """A message shown on the desktops of one machine, or of many."""
+
+    dns: Annotated[
+        list[Annotated[str, Field(min_length=3, max_length=1024)]],
+        Field(min_length=1, max_length=500),
+    ]
+    title: Annotated[str, Field(min_length=1, max_length=80)] = "Message from IT"
+    text: Annotated[str, Field(min_length=1, max_length=1000)]
+    urgency: Literal["normal", "critical"] = "normal"
+
+    @field_validator("title", "text")
+    @classmethod
+    def _plain(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("a message is text")
+        return value.strip()
+
+
+@router.post("/computer/message", status_code=202,
+             dependencies=[Depends(requires("computer.manage"))])
+async def send_message(
+    body: MessageRequest,
+    request: Request,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Put a message on the screen of whoever is signed in at these
+    machines — "the file server restarts in ten minutes" — the way `msg`
+    did on Windows. A notification on every graphical session and a line on
+    every terminal, within a second of the click; nothing is stored on the
+    machine. Each machine's message is one queued task and one audit row.
+    """
+    queued: list[str] = []
+    missing: list[str] = []
+    async with pool.acquire() as conn:
+        for dn in body.dns:
+            authz.require("computer.manage", dn)
+            fact = await conn.fetchrow(HOSTNAME_BY_DN, dn)
+            if fact is None:
+                missing.append(dn)
+                continue
+            await tasks.enqueue(
+                conn,
+                node_fqdn=fact["hostname"],
+                kind="message",
+                payload={
+                    "title": body.title,
+                    "text": body.text,
+                    "urgency": body.urgency,
+                    "requested_by": session.principal,
+                },
+                subject=dn,
+                requested_by=session.principal,
+            )
+            await audit.record(
+                conn,
+                actor=session.principal,
+                actor_sid=session.principal_sid,
+                source_ip=client_ip(request),
+                action="computer.message",
+                outcome="success",
+                object_type="computer",
+                object_dn=dn,
+                detail=f"{fact['hostname']}: {body.title}",
+                after={"title": body.title, "text": body.text, "urgency": body.urgency},
+            )
+            queued.append(fact["hostname"])
+    return {"queued": queued, "missing": missing}
 
 
 class AssistRequest(BaseModel):

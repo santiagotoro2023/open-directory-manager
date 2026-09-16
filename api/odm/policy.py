@@ -50,6 +50,9 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
     "dash": ("name", "for_principal"),
     "certificate_enrolment": ("profile", "path"),
     "admx": ("policy_id",),
+    "wifi_networks": ("ssid",),
+    "logon_hours": ("principal", "start", "end"),
+    "web_apps": ("name",),
 }
 
 # Categories that are objects rather than lists; merged one level deep.
@@ -69,6 +72,8 @@ DICT_CATEGORIES = (
     "second_factor",
     "first_run",
     "software_control",
+    "regional",
+    "firmware_updates",
 )
 
 CATEGORIES = (*LIST_KEYS, *DICT_CATEGORIES)
@@ -286,12 +291,16 @@ def merge_settings(gpos: list[Gpo], target: Target | None = None) -> dict[str, A
                     bucket[_identity(category, item)] = item
                     sources[f"{category}:{_identity(category, item)}"] = gpo.guid
             elif category in DICT_CATEGORIES and isinstance(value, dict):
-                target = merged.setdefault(category, {})
+                # Not `target`: that is the machine the list branch above
+                # evaluates per-entry targeting against, and a dict here
+                # once took its name, so every targeted entry after the
+                # first dict category was matched against a settings dict.
+                bucket_dict = merged.setdefault(category, {})
                 for key, sub in value.items():
-                    if isinstance(sub, dict) and isinstance(target.get(key), dict):
-                        target[key] = {**target[key], **sub}
+                    if isinstance(sub, dict) and isinstance(bucket_dict.get(key), dict):
+                        bucket_dict[key] = {**bucket_dict[key], **sub}
                     else:
-                        target[key] = sub
+                        bucket_dict[key] = sub
                     sources[f"{category}.{key}"] = gpo.guid
             else:
                 merged[category] = value

@@ -95,6 +95,52 @@ type Settings struct {
 	RemoteDesktopSession *RemoteDesktopSession  `json:"remote_desktop_session,omitempty"`
 	AgentUpdate          *AgentUpdate           `json:"agent_update,omitempty"`
 	Agent                *AgentConfig           `json:"agent,omitempty"`
+	Regional             *Regional              `json:"regional,omitempty"`
+	LogonHours           []LogonHoursRule       `json:"logon_hours,omitempty"`
+	FirmwareUpdates      *FirmwareUpdates       `json:"firmware_updates,omitempty"`
+	WebApps              []WebApp               `json:"web_apps,omitempty"`
+}
+
+// Regional is the language, keyboard, time zone and formats of a machine.
+type Regional struct {
+	Locale            string   `json:"locale"`
+	FormatsLocale     string   `json:"formats_locale"`
+	AdditionalLocales []string `json:"additional_locales"`
+	KeyboardLayout    string   `json:"keyboard_layout"`
+	KeyboardVariant   string   `json:"keyboard_variant"`
+	Timezone          string   `json:"timezone"`
+	AllowUserChange   bool     `json:"allow_user_change"`
+}
+
+// LogonHoursRule is when one principal may sign in: Active Directory's
+// logon hours, on the policy object.
+type LogonHoursRule struct {
+	Principal string   `json:"principal"`
+	Days      []string `json:"days"`
+	Start     string   `json:"start"`
+	End       string   `json:"end"`
+	SignOut   bool     `json:"sign_out"`
+	Message   string   `json:"message"`
+}
+
+// FirmwareUpdates is fwupd by policy: report what could be updated, or
+// install it.
+type FirmwareUpdates struct {
+	Enabled          bool   `json:"enabled"`
+	Mode             string `json:"mode"`
+	IncludeTesting   bool   `json:"include_testing"`
+	RebootWhenNeeded bool   `json:"reboot_when_needed"`
+}
+
+// WebApp is a web site installed as if it were a program: a launcher that
+// opens it in a browser window of its own.
+type WebApp struct {
+	Name       string   `json:"name"`
+	URL        string   `json:"url"`
+	IconURL    string   `json:"icon_url"`
+	Browser    string   `json:"browser"`
+	Categories []string `json:"categories"`
+	Comment    string   `json:"comment"`
 }
 
 // Updates configures unattended apt upgrades.

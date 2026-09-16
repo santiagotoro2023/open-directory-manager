@@ -9,6 +9,7 @@ import {
   FileText,
   Folder,
   KeyRound,
+  MessageSquare,
   Monitor,
   Plus,
   Power,
@@ -44,6 +45,7 @@ import {
   GROUP_KIND_LABELS,
   GROUP_SCOPES,
   MembersDialog,
+  MessageDialog,
   MoveDialog,
   OffboardDialog,
   PasswordDialog,
@@ -686,6 +688,7 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
   const [addingUser, setAddingUser] = useState(false);
   const [removingUser, setRemovingUser] = useState<string | null>(null);
   const [assist, setAssist] = useState<string | null>(null);
+  const [messaging, setMessaging] = useState(false);
   const [packageFilter, setPackageFilter] = useState("");
   const [passwordFor, setPasswordFor] = useState<string | null>(null);
 
@@ -949,6 +952,14 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
         {assist && (
           <AssistDialog dn={dn} username={assist} onClose={() => setAssist(null)} />
         )}
+        {messaging && (
+          <MessageDialog
+            dns={[dn]}
+            label={facts.hostname.split(".")[0]}
+            onClose={() => setMessaging(false)}
+            onDone={(summary) => setNotice(summary)}
+          />
+        )}
         <h3 className="section-title">Signed in now</h3>
         <table className="data compact">
           <tbody>
@@ -1042,6 +1053,10 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
                 <Power size={15} aria-hidden="true" />
                 Restart
               </button>
+              <button type="button" className="ghost" disabled={busy} onClick={() => setMessaging(true)}>
+                <MessageSquare size={15} aria-hidden="true" />
+                Send a message
+              </button>
               <span className="spacer" />
               <button
                 type="button"
@@ -1112,6 +1127,36 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
             </div>
           )}
         </div>
+
+        {facts.firmware && facts.firmware.length > 0 && (
+          <div className="detail-card">
+            <h3 className="section-title">Firmware updates available</h3>
+            <table className="data compact">
+              <thead>
+                <tr>
+                  <th scope="col">Device</th>
+                  <th scope="col">Installed</th>
+                  <th scope="col">Available</th>
+                  <th scope="col">About</th>
+                </tr>
+              </thead>
+              <tbody>
+                {facts.firmware.map((update) => (
+                  <tr key={update.device}>
+                    <td>{update.device}</td>
+                    <td className="mono">{update.current || "—"}</td>
+                    <td className="mono">{update.version || "—"}</td>
+                    <td className="clip muted">{update.summary || ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="muted">
+              From the firmware-updates policy setting; set it to install to apply them at the next
+              refresh.
+            </p>
+          </div>
+        )}
 
         {facts.disks && facts.disks.length > 0 && (
           <div className="detail-card">

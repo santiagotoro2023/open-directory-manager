@@ -23,7 +23,9 @@ func (e Env) ReplaceBlock(path, body string, mode os.FileMode) error {
 
 	kept := stripBlock(string(existing))
 	if body == "" {
-		if len(existing) == 0 {
+		if len(existing) == 0 || !strings.Contains(string(existing), blockStart) {
+			// Nothing of ours in it: a system file is not rewritten for the
+			// sake of taking out a block that was never there.
 			return nil
 		}
 		// Removing the block is not owning the file either.

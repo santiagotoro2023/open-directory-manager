@@ -32,7 +32,10 @@ router = APIRouter(prefix="/api/v1/activity", tags=["activity"])
 # agent reports that is not listed here is still stored and shown — the
 # families are a convenience, not a schema.
 FAMILIES: dict[str, tuple[str, ...]] = {
-    "sign-ins": ("sign-in", "sign-out", "sign-in-failed", "logon", "logoff"),
+    "sign-ins": (
+        "sign-in", "sign-out", "sign-in-failed", "logon", "logoff",
+        "logon-hours-refused", "logon-hours-signed-out",
+    ),
     "privilege": ("sudo", "sudo-denied", "su", "su-denied", "console-shell"),
     "second-factor": (
         "second-factor-approved",
@@ -48,7 +51,10 @@ FAMILIES: dict[str, tuple[str, ...]] = {
 
 # What is worth counting on the overview: the things somebody should look
 # at rather than the things that merely happened.
-WATCHED = ("sign-in-failed", "sudo-denied", "su-denied", "second-factor-denied", "usb-connected")
+WATCHED = (
+    "sign-in-failed", "sudo-denied", "su-denied", "second-factor-denied", "usb-connected",
+    "logon-hours-refused",
+)
 
 SELECT = """
     SELECT id, computer_dn, hostname, kind, principal, occurred_at, detail, service, source

@@ -1000,6 +1000,15 @@ class ReportedVolume(BaseModel):
     free_key_slots: Annotated[int, Field(default=0, ge=0, le=64)] = 0
 
 
+class ReportedFirmware(BaseModel):
+    """One thing fwupd could update, from the firmware policy's last apply."""
+
+    device: Annotated[str, Field(max_length=128)]
+    current: Annotated[str, Field(default="", max_length=64)] = ""
+    version: Annotated[str, Field(default="", max_length=64)] = ""
+    summary: Annotated[str, Field(default="", max_length=512)] = ""
+
+
 class Inventory(BaseModel):
     """What a machine says about itself.
 
@@ -1046,6 +1055,8 @@ class Inventory(BaseModel):
     # What the machine is, and what its drives say about their own health.
     hardware: ReportedHardware = ReportedHardware()
     disks: Annotated[list[ReportedDisk], Field(default_factory=list, max_length=32)]
+    # Firmware fwupd could update, where a firmware policy reaches the machine.
+    firmware: Annotated[list[ReportedFirmware], Field(default_factory=list, max_length=64)]
     # The agent's own version, on every check-in rather than only the ones
     # where a policy apply also ran — an agent that replaced itself between
     # two unchanged polls otherwise never says so.
@@ -1097,13 +1108,14 @@ async def agent_inventory(
                 local_users, sessions, pending_updates, security_updates,
                 updates, updates_checked_at, packages, package_count,
                 addresses, site_name, print_devices, replication,
-                replication_at, volumes, hardware, disks, agent_version, reported_at
+                replication_at, volumes, hardware, disks, agent_version, firmware,
+                reported_at
             )
             VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10::jsonb,
                     CASE WHEN $11 THEN now() ELSE NULL END, $12::jsonb, $13,
                     $14::jsonb, $15, $16::jsonb, nullif($17, ''),
                     CASE WHEN $17 <> '' THEN now() ELSE NULL END, $18::jsonb,
-                    $19::jsonb, $20::jsonb, $21, now())
+                    $19::jsonb, $20::jsonb, $21, $22::jsonb, now())
             ON CONFLICT (computer_dn) DO UPDATE SET
                 hostname           = excluded.hostname,
                 operating_system   = excluded.operating_system,
@@ -1131,6 +1143,7 @@ async def agent_inventory(
                 volumes            = excluded.volumes,
                 hardware           = excluded.hardware,
                 disks              = excluded.disks,
+                firmware           = excluded.firmware,
                 -- Likewise: an agent too old to send this at all must not
                 -- blank a version a newer one already reported.
                 agent_version      = CASE WHEN excluded.agent_version <> ''
@@ -1168,6 +1181,7 @@ async def agent_inventory(
             json.dumps(body.hardware.model_dump()),
             json.dumps([disk.model_dump() for disk in body.disks]),
             body.agent_version,
+            json.dumps([update.model_dump() for update in body.firmware]),
         )
 
         # A local administrator the machine no longer has — the policy stopped

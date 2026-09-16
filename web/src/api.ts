@@ -364,6 +364,23 @@ export interface PolicySettings {
   };
   wifi_networks?: Record<string, unknown>[];
   agent?: { refresh_minutes: number };
+  regional?: {
+    locale: string;
+    formats_locale: string;
+    additional_locales: string[];
+    keyboard_layout: string;
+    keyboard_variant: string;
+    timezone: string;
+    allow_user_change: boolean;
+  };
+  logon_hours?: Record<string, unknown>[];
+  firmware_updates?: {
+    enabled: boolean;
+    mode: "report" | "install";
+    include_testing: boolean;
+    reboot_when_needed: boolean;
+  };
+  web_apps?: Record<string, unknown>[];
 }
 
 export interface Targeting {
@@ -796,6 +813,7 @@ export interface ComputerFacts {
     reallocated_sectors?: number;
     percentage_used?: number;
   }[];
+  firmware?: { device: string; current?: string; version?: string; summary?: string }[];
   reported_at: string;
 }
 
@@ -2013,6 +2031,13 @@ export const api = {
         password: string;
         minutes: number;
       }>("/servers/computer/assist", json({ dn, username, minutes })),
+
+    /** A message on the screens of the people signed in at these machines. */
+    message: (dns: string[], title: string, text: string, urgency: "normal" | "critical") =>
+      request<{ queued: string[]; missing: string[] }>(
+        "/servers/computer/message",
+        json({ dns, title, text, urgency }),
+      ),
 
     /** What the viewer page needs about an offer it is about to attach to. */
     assistSession: (session: string) =>

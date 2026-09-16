@@ -141,6 +141,26 @@ export function Content() {
               ],
               ["Always-on VPN", "single value", "A tunnel the machine holds up from boot."],
               [
+                "Regional settings",
+                "single value",
+                "Language, formats, keyboard layout and time zone for the whole machine.",
+              ],
+              [
+                "Logon hours",
+                "principal and window",
+                "When a person or a group may sign in at the machine.",
+              ],
+              [
+                "Firmware updates",
+                "single value",
+                "fwupd: firmware listed on the machine's page, or installed at the refresh.",
+              ],
+              [
+                "Web applications",
+                "name",
+                "A web site installed as a program: a launcher that opens it in a window of its own.",
+              ],
+              [
                 "Certificates",
                 "kind and path",
                 "A certificate the machine gets by itself and renews.",
@@ -967,6 +987,108 @@ for           %Engineers      (optional)`}</Code>
             domain authority &mdash; so an access point claiming to be the corporate network
             with a certificate from anywhere else is refused.
           </p>
+        </Section>
+
+        <Section title="Regional settings">
+          <p>
+            Language, formats, keyboard and time zone, in every place a machine keeps them: the
+            system locale in <C>/etc/default/locale</C> (the login screen and every new session
+            start from it), the keyboard in <C>/etc/default/keyboard</C> (the console and the
+            login screen), the desktop&rsquo;s own copies in dconf, and the time zone through{" "}
+            <C>timedatectl</C>. The locales named are generated with <C>locale-gen</C> first.
+            ODM&rsquo;s lines live in a block at the end of the two system files, so what the
+            installer wrote stays and comes back when the setting goes.
+          </p>
+          <Reference
+            headers={["Field", "Meaning"]}
+            rows={[
+              ["Language", "The locale, as locale-gen names it: de_CH.UTF-8."],
+              [
+                "Formats",
+                "Dates, numbers, currency, paper and measurements, when they differ from the language — an office that works in English and writes Swiss dates.",
+              ],
+              ["Other languages to offer", "Generated on the machine so people may switch to them."],
+              ["Keyboard layout, variant", "An XKB layout (ch, de, us) and, optionally, a variant (de_nodeadkeys)."],
+              ["Time zone", "Region/City, as the IANA database names it."],
+              [
+                "Let people choose",
+                "Off, the desktop's language and layout are locked to these; on, they are the defaults a person may change.",
+              ],
+            ]}
+          />
+        </Section>
+
+        <Section title="Logon hours">
+          <p>
+            When a person or a group may sign in at the machine &mdash; Active Directory&rsquo;s
+            logon hours, kept on the policy object so that a department is one rule. Enforced in
+            the account phase of the interactive sign-ins (the screen, SSH, remote desktop) by the
+            agent&rsquo;s own PAM helper, through one line in <C>/etc/pam.d/common-account</C>;
+            the rules it reads are in <C>/etc/odm/logon-hours.json</C>.
+          </p>
+          <Reference
+            headers={["Rule", "Meaning"]}
+            rows={[
+              ["Nobody names the person", "They are not restricted at all."],
+              ["Several rules name them", "They may sign in during any of their windows."],
+              ["Until is earlier than From", "The window crosses midnight: 22:00 to 06:00 the next morning."],
+              ["Sign out when it ends", "A timer ends a session still open when its window closes, every minute; without it, only new sign-ins are refused."],
+              ["Message when refused", "Shown at the login screen and over SSH in place of the generic refusal."],
+            ]}
+          />
+          <Note>
+            sudo, su, cron and a session already open are never refused by hours: the helper
+            answers yes to anything that is not a sign-in. Local accounts are not subject to
+            rules either &mdash; a machine whose clock is wrong must still let an administrator
+            in. A refusal is in the machine&rsquo;s Activity as <em>Outside logon hours</em>.
+          </Note>
+        </Section>
+
+        <Section title="Firmware updates">
+          <p>
+            Firmware from the Linux Vendor Firmware Service, through <C>fwupd</C>, which the
+            agent installs the first time a policy asks. At every refresh the metadata is
+            refreshed and what could be updated &mdash; the BIOS, a dock, a drive &mdash; is
+            reported with the machine&rsquo;s inventory and shown on its page under{" "}
+            <strong>Firmware updates available</strong>. In <strong>install</strong> mode the
+            updates are applied at the refresh; most are staged for the next boot, and the
+            machine restarts a minute later only when the setting says it may.
+          </p>
+          <Note>
+            The testing remote carries firmware a vendor has not promoted to stable yet. Leave it
+            off for anything but a lab.
+          </Note>
+        </Section>
+
+        <Section title="Web applications">
+          <p>
+            A web site installed as if it were a program: a launcher in the applications grid
+            with an icon that opens the site in a window of its own, with no address bar and no
+            tabs &mdash; what <em>Install as app</em> does in the browser, done for everybody on
+            the machine by policy. Outlook on the web, Teams, an intranet application, a ticket
+            system: to the person they are installed applications, and to the machine they are
+            one desktop entry each in <C>/usr/share/applications/odm-webapp-&lt;name&gt;.desktop</C>.
+          </p>
+          <Reference
+            headers={["Field", "Meaning"]}
+            rows={[
+              ["Address", "The page the window opens on."],
+              [
+                "Icon",
+                "A PNG or SVG the machine fetches once and keeps; empty takes the site's own favicon.",
+              ],
+              [
+                "Browser",
+                "Chromium's application mode is the real thing (its own window, its own dock entry); Firefox opens a window of its own. auto takes Chromium where it is installed.",
+              ],
+              ["Menu categories", "Where the launcher is filed: Office, Network, Utility…"],
+            ]}
+          />
+          <Note>
+            The browser&rsquo;s ordinary profile is used on purpose: the sign-in the person has in
+            the browser is the one the application gets. To put the launcher in the dock, name{" "}
+            <C>odm-webapp-&lt;name&gt;.desktop</C> in Dash and taskbar.
+          </Note>
         </Section>
 
         <Section title="Printers">

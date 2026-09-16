@@ -94,6 +94,8 @@ type Report struct {
 	// What the machine is, and what its disks think of themselves.
 	Hardware Hardware `json:"hardware"`
 	Disks    []Disk   `json:"disks"`
+	// Firmware fwupd could update, from the last apply of a firmware policy.
+	Firmware []apply.FirmwareUpdate `json:"firmware,omitempty"`
 	// The agent's own version, on every pass rather than only the ones that
 	// also apply something — an agent that replaced itself hours ago and a
 	// console still showing the version from before that is the same class
@@ -196,6 +198,7 @@ func Collect(ctx context.Context, env apply.Env) Report {
 		LocalUsers:      localUsers(env),
 		Hardware:        hardware(env),
 		Disks:           []Disk{},
+		Firmware:        apply.PendingFirmware(env),
 		AgentVersion:    env.Version,
 	}
 	if booted, ok := bootTime(env); ok {

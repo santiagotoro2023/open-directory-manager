@@ -81,6 +81,8 @@ var (
 	groupChanged = regexp.MustCompile(`^(add|remove) '([^']+)' (?:to|from) group '([^']+)'`)
 	// What odm-agent itself logs when a second factor is asked for.
 	secondFactor = regexp.MustCompile(`^second factor: (approved|denied|no answer|enrolled|removed) for (\S+) \(([\w-]+)\)`)
+	// And when logon hours refused a sign-in, or ended a session.
+	logonHours = regexp.MustCompile(`^logon hours: (refused|signed out) for (\S+) \(([\w-]+)\)`)
 	// "usb 1-3: New USB device found, idVendor=0781, idProduct=5591, bcdDevice= 1.00"
 	usbFound = regexp.MustCompile(`^usb ([\d.-]+): New USB device found, idVendor=([0-9a-f]+), idProduct=([0-9a-f]+)`)
 	// "usb 1-3: Product: Ultra"
@@ -265,6 +267,15 @@ func classify(identifier, message string, when time.Time) (Event, bool) {
 				event.Kind = "second-factor-enrolled"
 			case "removed":
 				event.Kind = "second-factor-removed"
+			}
+			return event, true
+		}
+		if m := logonHours.FindStringSubmatch(message); m != nil {
+			event.Principal, event.Service = shortName(m[2]), m[3]
+			if m[1] == "refused" {
+				event.Kind = "logon-hours-refused"
+			} else {
+				event.Kind = "logon-hours-signed-out"
 			}
 			return event, true
 		}

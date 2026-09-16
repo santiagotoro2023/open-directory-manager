@@ -402,3 +402,72 @@ def test_a_wifi_network_is_validated_for_its_security():
         WifiNetwork(ssid="Corp", security="wpa-eap", psk="a key that does not belong")
     with pytest.raises(ValueError):
         WifiNetwork(ssid="Corp", certificate_path="relative/path")
+
+
+def test_regional_settings_are_validated_as_locales_layouts_and_zones():
+    import pytest
+
+    from odm.policy_schema import Regional
+
+    Regional(locale="de_CH.UTF-8", keyboard_layout="ch", keyboard_variant="de_nodeadkeys",
+             timezone="Europe/Zurich", additional_locales=["fr_CH.UTF-8"])
+    with pytest.raises(ValueError):
+        Regional(locale="german")
+    with pytest.raises(ValueError):
+        Regional(keyboard_layout="ch; rm -rf /")
+    with pytest.raises(ValueError):
+        Regional(timezone="../../etc/passwd")
+
+
+def test_logon_hours_rules_take_principals_days_and_clock_times():
+    import pytest
+
+    from odm.policy_schema import LogonHoursRule
+
+    LogonHoursRule(principal="%Sales", days=["mon", "fri"], start="07:00", end="19:00")
+    LogonHoursRule(principal="carol", days=["fri"], start="22:00", end="06:00", sign_out=True)
+    with pytest.raises(ValueError):
+        LogonHoursRule(principal="%Sales", days=[], start="07:00", end="19:00")
+    with pytest.raises(ValueError):
+        LogonHoursRule(principal="%Sales", days=["monday"], start="07:00", end="19:00")
+    with pytest.raises(ValueError):
+        LogonHoursRule(principal="%Sales", days=["mon"], start="7am", end="19:00")
+    with pytest.raises(ValueError):
+        LogonHoursRule(principal="bad\\name", days=["mon"])
+
+
+def test_a_web_app_needs_a_web_address_and_a_plain_name():
+    import pytest
+
+    from odm.policy_schema import WebApp
+
+    WebApp(name="Outlook", url="https://outlook.office.com/mail/", categories=["Office"])
+    with pytest.raises(ValueError):
+        WebApp(name="Outlook", url="outlook.office.com")
+    with pytest.raises(ValueError):
+        WebApp(name="Outlook", url="https://x.example/a b")
+    with pytest.raises(ValueError):
+        WebApp(name="Out[look]", url="https://x.example/")
+    with pytest.raises(ValueError):
+        WebApp(name="Outlook", url="https://x.example/", categories=["Office;Exec=rm"])
+
+
+def test_the_dict_merge_does_not_take_the_targets_name():
+    """A dict category once shadowed the target that per-entry targeting is
+    matched against, so every targeted entry after the first dict category
+    was matched against a settings dict."""
+    from odm.policy import Gpo, Target, merge_settings
+
+    target = Target(dn="CN=ws01", hostname="ws01", os_id="debian",
+                    group_dns=[], ip_addresses=())
+    gpos = [
+        Gpo(guid="a", display_name="a", enabled=True, security_filter=[], targeting=None,
+            settings={"screen_lock": {"idle_minutes": 5}}),
+        Gpo(guid="b", display_name="b", enabled=True, security_filter=[], targeting=None,
+            settings={"files": [
+                {"path": "/etc/here", "targeting": {"hostname_pattern": "ws*"}},
+                {"path": "/etc/not", "targeting": {"hostname_pattern": "srv*"}},
+            ]}),
+    ]
+    merged = merge_settings(gpos, target)
+    assert [entry["path"] for entry in merged["files"]] == ["/etc/here"]

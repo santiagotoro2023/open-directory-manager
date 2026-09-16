@@ -36,6 +36,10 @@ EXTENSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,15}$")
 SYSCTL_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_*-]+)+$")
 FONT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,120}\.(ttf|otf|ttc|woff2)$", re.I)
 PACKAGE_GLOB_RE = re.compile(r"^[a-z0-9][a-z0-9+._-]{0,126}\*?$")
+LOCALE_RE = re.compile(r"^[a-z]{2,3}(_[A-Z]{2})?(@[a-z]+)?\.UTF-8$")
+XKB_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+TIMEZONE_RE = re.compile(r"^[A-Z][A-Za-z_+-]{1,30}(/[A-Za-z0-9_+-]{1,30}){0,2}$")
+TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 Name = Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -1283,11 +1287,184 @@ class PolicySettings(Strict):
     agent_update: AgentUpdate | None = None
     certificates: Certificates | None = None
     wifi_networks: Annotated[list[WifiNetwork], Field(default_factory=list, max_length=32)]
+    regional: Regional | None = None
+    logon_hours: Annotated[list[LogonHoursRule], Field(default_factory=list, max_length=100)]
+    firmware_updates: FirmwareUpdates | None = None
+    web_apps: Annotated[list[WebApp], Field(default_factory=list, max_length=100)]
 
     def stored(self) -> dict[str, Any]:
         """Drop empty categories so a GPO's settings show only what it sets."""
         dumped = self.model_dump(exclude_none=True)
         return {key: value for key, value in dumped.items() if value not in ([], {}, None)}
+
+
+class Regional(Strict):
+    """Language, keyboard, time zone and formats — the "Regional settings"
+    policy every office outside the English-speaking world sets first.
+
+    The locale is generated on the machine and written as the system default,
+    so the login screen, the desktop and every new session speak it; the
+    keyboard reaches the console and GDM through /etc/default/keyboard and
+    the desktop through dconf; the time zone through timedatectl. A second
+    locale for formats — dates, numbers, paper — is what an office that works
+    in English but writes Swiss dates needs.
+    """
+
+    # A locale as locale-gen knows it: language_TERRITORY.UTF-8.
+    locale: Annotated[str, Field(max_length=32)] = "en_US.UTF-8"
+    # Formats (LC_TIME, LC_NUMERIC, LC_MONETARY, LC_PAPER, LC_MEASUREMENT).
+    # Empty follows the language.
+    formats_locale: Annotated[str, Field(max_length=32)] = ""
+    # Locales to generate beside the default, so people may choose them.
+    additional_locales: Annotated[
+        list[Annotated[str, Field(max_length=32)]], Field(default_factory=list, max_length=16)
+    ]
+    # An XKB layout and variant: "ch" / "de_nodeadkeys", "us" / "".
+    keyboard_layout: Annotated[str, Field(max_length=16)] = "us"
+    keyboard_variant: Annotated[str, Field(max_length=32)] = ""
+    # An IANA time zone, Region/City.
+    timezone: Annotated[str, Field(max_length=64)] = "Etc/UTC"
+    # Whether people may pick another language or layout in their own
+    # settings. Off, the desktop's choices are locked to these.
+    allow_user_change: bool = True
+
+    @field_validator("locale", "formats_locale", "additional_locales")
+    @classmethod
+    def _locale(cls, value: str | list[str]) -> str | list[str]:
+        values = value if isinstance(value, list) else [value]
+        for entry in values:
+            if entry and not LOCALE_RE.match(entry):
+                raise ValueError(f"{entry!r} is not a locale such as de_CH.UTF-8")
+        return value
+
+    @field_validator("keyboard_layout", "keyboard_variant")
+    @classmethod
+    def _keyboard(cls, value: str) -> str:
+        if value and not XKB_RE.match(value):
+            raise ValueError("a keyboard layout or variant is letters, digits, _ and - only")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone(cls, value: str) -> str:
+        if not TIMEZONE_RE.match(value):
+            raise ValueError("a time zone is Region/City, as in Europe/Zurich")
+        return value
+
+
+class LogonHoursRule(Strict):
+    """When a person or a group may sign in at the machine — Active
+    Directory's logon hours, kept on the policy object rather than on each
+    account so a department is one rule.
+
+    Enforced in the account phase of the interactive sign-ins (the screen,
+    SSH, remote desktop), never at sudo or cron. Somebody named by no rule
+    is not restricted; somebody named by several may sign in during any of
+    their windows. Optionally, a session still open when the window closes
+    is signed out.
+    """
+
+    principal: Annotated[str, Field(min_length=1, max_length=64)]
+    # Days of the week the window applies on.
+    days: Annotated[
+        list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]],
+        Field(min_length=1, max_length=7),
+    ]
+    # Local time of day, HH:MM. A window may cross midnight (22:00 – 06:00).
+    start: Annotated[str, Field(max_length=5)] = "07:00"
+    end: Annotated[str, Field(max_length=5)] = "19:00"
+    # Sign an open session out when its window ends.
+    sign_out: bool = False
+    # What the person is told when refused.
+    message: Annotated[str, Field(max_length=200)] = ""
+    targeting: ItemTargeting | None = None
+
+    @field_validator("principal")
+    @classmethod
+    def _principal(cls, value: str) -> str:
+        if not PRINCIPAL_RE.match(value):
+            raise ValueError("a principal is a user name or %group")
+        return value
+
+    @field_validator("start", "end")
+    @classmethod
+    def _time(cls, value: str) -> str:
+        if not TIME_RE.match(value):
+            raise ValueError("a time is HH:MM, 24-hour")
+        return value
+
+    @field_validator("message")
+    @classmethod
+    def _message(cls, value: str) -> str:
+        if any(character in value for character in "\n\r\x00"):
+            raise ValueError("the message is one line")
+        return value
+
+
+class FirmwareUpdates(Strict):
+    """Firmware from the Linux Vendor Firmware Service, through fwupd — the
+    part of "Windows Update" that updates the BIOS, the dock and the SSD.
+
+    Report only lists what could be updated on each machine's page; install
+    applies it at the refresh, which is where an office wants it least
+    surprising: a reboot is only taken when the policy says so.
+    """
+
+    enabled: bool = True
+    mode: Literal["report", "install"] = "report"
+    # fwupd's testing remote, for firmware the vendor has not promoted yet.
+    include_testing: bool = False
+    # Whether a machine may restart itself to finish an update that needs it.
+    reboot_when_needed: bool = False
+
+
+class WebApp(Strict):
+    """A web site installed as if it were a program: a launcher with an icon
+    that opens the site in a window of its own, with no address bar and no
+    tabs. What "Install as app" does in the browser, done for everybody on
+    the machine by policy — so Outlook on the web, Teams, or an intranet
+    application sits in the applications grid like anything else.
+    """
+
+    name: Annotated[str, Field(min_length=1, max_length=64)]
+    url: Annotated[str, Field(min_length=8, max_length=2048)]
+    # Where an icon comes from: a PNG or SVG the agent fetches once. Empty
+    # uses the site's own /favicon.ico when it has one.
+    icon_url: Annotated[str, Field(max_length=2048)] = ""
+    # Which browser draws the window. auto takes Chromium where it is
+    # installed and Firefox otherwise.
+    browser: Literal["auto", "chromium", "firefox"] = "auto"
+    # Application-menu categories, as the desktop entry specification names
+    # them: Office, Network, Utility, ...
+    categories: Annotated[
+        list[Annotated[str, Field(max_length=32)]], Field(default_factory=list, max_length=8)
+    ]
+    comment: Annotated[str, Field(max_length=120)] = ""
+    targeting: ItemTargeting | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        if any(character in value for character in "\n\r\x00=[]") or value.strip() != value:
+            raise ValueError("a name is one line without = or brackets")
+        return value
+
+    @field_validator("url", "icon_url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        if value and not value.startswith(("https://", "http://")):
+            raise ValueError("a web address starts with https://")
+        if any(character in value for character in " \n\r\x00\"'%"):
+            raise ValueError("a web address cannot contain spaces or quotes")
+        return value
+
+    @field_validator("categories")
+    @classmethod
+    def _categories(cls, value: list[str]) -> list[str]:
+        for entry in value:
+            if not NAME_RE.match(entry):
+                raise ValueError("a category is a single word such as Office")
+        return value
 
 
 class ItemTargeting(Strict):
