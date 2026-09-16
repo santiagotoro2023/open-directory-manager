@@ -160,7 +160,7 @@ exit 0
 		return policy.Fail("scripts:pam-hook", err)
 	}
 	if err := env.ReplaceBlock(
-		pamSessionPath, "session optional pam_exec.so "+pamHookPath+"\n", 0o644,
+		pamSessionPath, "session optional pam_exec.so seteuid "+pamHookPath+"\n", 0o644,
 	); err != nil {
 		return policy.Fail("scripts:pam-hook", err)
 	}

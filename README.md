@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.10.27_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.11.0_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -245,7 +245,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.10.27   # -> dist/odm-client_0.10.27_amd64.deb
+bash packaging/deb/build-in-container.sh 0.11.0   # -> dist/odm-client_0.11.0_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

@@ -554,10 +554,10 @@ func TestThePhoneIsTheWholeCheckUnderThePushMethod(t *testing.T) {
 		if strings.Contains(body, "pam_oath.so") {
 			t.Errorf("%s: a code is still asked for under the phone method:\n%s", service, body)
 		}
-		if !strings.Contains(body, "success=1 default=ignore] pam_exec.so quiet "+factorGuard) {
+		if !strings.Contains(body, "success=1 default=ignore] pam_exec.so seteuid quiet "+factorGuard) {
 			t.Errorf("%s: the guard must jump over the phone's line:\n%s", service, body)
 		}
-		if !strings.Contains(body, "requisite pam_exec.so quiet stdout "+pushHelper) {
+		if !strings.Contains(body, "requisite pam_exec.so seteuid quiet stdout "+pushHelper) {
 			t.Errorf("%s: the phone's answer must be final:\n%s", service, body)
 		}
 	}
@@ -679,6 +679,38 @@ func TestTheWalkthroughActuallyGetsItsThreeAttempts(t *testing.T) {
 		}
 		if out, err := exec.Command("sh", "-n", env.Path(path)).CombinedOutput(); err != nil {
 			t.Errorf("%s does not parse: %v\n%s", path, err, out)
+		}
+	}
+}
+
+// Every helper PAM runs for the second factor runs as root, whichever
+// program asked. sudo authenticates with the real uid still the person's and
+// only the effective uid root, pam_exec hands that state on unchanged, and
+// dash — /bin/sh, what every helper here starts with — drops the effective
+// uid to match the real one as its first act. So under sudo the guard could
+// not read the enrolment files it decides by, and the phone helper died on
+// "open /etc/odm/agent.json: permission denied" before asking anything:
+// "PAM authentication error", no push, at every sudo on every machine, with
+// the same lines working at the login screen and over SSH, where the two
+// uids are already both root. pam_exec's seteuid option makes the real uid
+// the effective one before the helper starts, which is a no-op everywhere
+// else and the whole fix here.
+func TestEveryPamHelperRunsAsRootUnderSudoToo(t *testing.T) {
+	env, _ := testEnv(t)
+	withPam(t, env, "sudo", "sshd", "login")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, SelfEnrol: true, Method: "push",
+			Services: []string{"login", "ssh", "sudo"}},
+	}, env)
+
+	for _, service := range []string{"sudo", "sshd", "login"} {
+		for _, line := range strings.Split(read(t, env, "/etc/pam.d/"+service), "\n") {
+			if !strings.Contains(line, "pam_exec.so") {
+				continue
+			}
+			if !strings.Contains(line, "pam_exec.so seteuid ") {
+				t.Errorf("%s: a helper runs with the caller's real uid:\n%s", service, line)
+			}
 		}
 	}
 }

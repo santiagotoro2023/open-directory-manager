@@ -87,7 +87,7 @@ var secondFactorServices = map[string][]string{
 // With the push method the second line is the phone instead of the code:
 // the guard jumps over it the same way, and there is no code behind it.
 // pamBlock builds whichever pair the method calls for.
-const guardLineFormat = "auth [success=%d default=ignore] pam_exec.so quiet " + factorGuard
+const guardLineFormat = "auth [success=%d default=ignore] pam_exec.so seteuid quiet " + factorGuard
 
 // pushLine asks the phone, and the phone's answer is the answer. It exits
 // 0 for "approved" and the sign-in goes through; anything else — the phone
@@ -102,7 +102,7 @@ const guardLineFormat = "auth [success=%d default=ignore] pam_exec.so quiet " + 
 //
 // stdout is handed to the conversation, which is how "check your phone"
 // reaches the login screen.
-const pushLine = "auth requisite pam_exec.so quiet stdout " + pushHelper
+const pushLine = "auth requisite pam_exec.so seteuid quiet stdout " + pushHelper
 
 const pushHelper = "/usr/lib/odm/second-factor-push"
 
@@ -149,7 +149,7 @@ func oathInstalled(env Env) bool {
 
 // And the session line that walks somebody through setting one up. Optional,
 // so a machine that cannot reach the console still lets people in.
-const enrolLine = "session optional pam_exec.so " + enrolHelper
+const enrolLine = "session optional pam_exec.so seteuid " + enrolHelper
 
 const enrolMarker = enrolHelper
 
