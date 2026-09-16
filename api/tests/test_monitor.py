@@ -134,3 +134,24 @@ async def test_a_shared_dashboard_answers_without_a_session_and_an_unknown_token
 ):
     response = await client.get("/api/v1/monitor/public/" + "x" * 32)
     assert response.status_code == 404
+
+
+def test_a_rule_with_no_window_fires_on_the_newest_sample_and_a_long_one_needs_coverage():
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    rule = {"op": "gt", "threshold": 90.0}
+    summary = {
+        "host": "fs01", "metric": "disk_percent:/", "low": 85.0, "high": 96.0,
+        "first": now - timedelta(seconds=110), "last": now, "newest": 96.0,
+    }
+    # At once: the newest sample is over the line, so it fires even though
+    # an older one in the lookback was not.
+    assert monitor.judge(rule, [summary], 0) == {("fs01", "disk_percent:/"): 96.0}
+    # Five minutes: every sample must be over the line...
+    assert monitor.judge(rule, [summary], 300) == {}
+    steady = summary | {"low": 92.0, "first": now - timedelta(seconds=290)}
+    assert monitor.judge(rule, [steady], 300) == {("fs01", "disk_percent:/"): 96.0}
+    # ...and the window must actually be covered by samples.
+    brief = steady | {"first": now - timedelta(seconds=60)}
+    assert monitor.judge(rule, [brief], 300) == {}

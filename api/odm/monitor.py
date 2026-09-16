@@ -264,7 +264,11 @@ async def _over_threshold(
     """Series whose every sample in the window breaks the rule — and whose
     window is actually covered, so one bad sample at the start of a gap is
     not read as a condition that held for an hour."""
-    window = max(int(rule["for_seconds"]), 1)
+    window = max(int(rule["for_seconds"]), 0)
+    # Read back at least two intervals, whatever the window: a rule that
+    # fires "at once" still has to see the newest sample, which arrived up
+    # to a minute ago.
+    lookback = max(window, DEFAULT_INTERVAL * 2)
     family = rule["metric"].endswith(":")
     rows = await pool.fetch(
         """
@@ -280,17 +284,27 @@ async def _over_threshold(
         rule["metric"],
         hosts,
         now,
-        str(window),
+        str(lookback),
         family,
     )
+    return judge(rule, rows, window)
+
+
+def judge(rule: Any, rows: list[Any], window: int) -> dict[tuple[str, str], float]:
+    """Which series the rule fires for, given each series' summary over the
+    lookback. Pure, so the decision can be tested without a database."""
     firing: dict[tuple[str, str], float] = {}
     for row in rows:
+        if window <= DEFAULT_INTERVAL:
+            # "At once", or within one interval: the newest sample decides.
+            if _holds(rule["op"], float(row["newest"]), rule["threshold"]):
+                firing[(row["host"], row["metric"])] = float(row["newest"])
+            continue
         edge = row["low"] if rule["op"] == "gt" else row["high"]
         if not _holds(rule["op"], edge, rule["threshold"]):
             continue
         covered = (row["last"] - row["first"]).total_seconds()
-        # A window of zero seconds means "the moment it happens".
-        if window > DEFAULT_INTERVAL and covered < window * 0.6:
+        if covered < window * 0.6:
             continue
         firing[(row["host"], row["metric"])] = float(row["newest"])
     return firing
