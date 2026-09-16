@@ -918,6 +918,54 @@ for           %Engineers      (optional)`}</Code>
           />
         </Section>
 
+        <Section title="Domain authority">
+          <p>
+            The two settings above, filled in from the domain&rsquo;s own certificate authority
+            without pasting anything: the root goes into the system trust store, Firefox is
+            told to read that store and Chromium is handed the certificate through its policy
+            file, and &mdash; when <strong>machine certificate</strong> is on &mdash; the
+            machine enrols a <C>client</C> certificate for itself at the path given. Resolved
+            each time the policy is applied, so an authority created or re-created after the
+            policy was written is followed at the next refresh, and a domain with no authority
+            yet applies nothing and says so.
+          </p>
+          <Note>
+            The machine certificate is what 802.1X needs. Turn it on in a policy that reaches the
+            machines that will join a Wi-Fi network, and the network entry below finds it at the
+            same path.
+          </Note>
+        </Section>
+
+        <Section title="Wi-Fi networks">
+          <p>
+            A wireless network the machine joins on its own, written as a NetworkManager system
+            connection under <C>/etc/NetworkManager/system-connections</C>, root-only, so it is
+            up at the login screen rather than after somebody signs in. A machine without
+            NetworkManager reports the setting skipped.
+          </p>
+          <Reference
+            headers={["Security", "Means", "Needs"]}
+            rows={[
+              [
+                "wpa-eap",
+                "802.1X, EAP-TLS: the machine proves itself with its own certificate. No password exists.",
+                "Domain authority → machine certificate on the machine; the RADIUS role, which checks the certificate against the domain authority and answers the access points.",
+              ],
+              ["wpa-psk", "A pre-shared key, sent to the machines the policy reaches.", "The key, at least eight characters."],
+              ["open", "No security.", "—"],
+            ]}
+          />
+          <p>
+            With <C>wpa-eap</C> the supplicant identifies itself as <C>host/&lt;fqdn&gt;</C>,
+            which the Network Access rules read as a computer rather than a person, so a rule
+            for computers in a group decides which machines get on and which VLAN they land in.{" "}
+            <strong>RADIUS server name</strong> makes the machine check the server&rsquo;s own
+            certificate carries that name &mdash; the RADIUS role issues itself one from the
+            domain authority &mdash; so an access point claiming to be the corporate network
+            with a certificate from anywhere else is refused.
+          </p>
+        </Section>
+
         <Section title="Printers">
           <p>
             A printer handed to the person signing in, from a machine carrying the print-server

@@ -58,6 +58,7 @@ var appliers = []applier{
 	{"second_factor", applySecondFactor},
 	{"first_run", applyFirstRun},
 	{"always_on_vpn", applyAlwaysOnVpn},
+	{"wifi_networks", applyWifi},
 	{"local_administrator", applyLocalAdministrator},
 	{"graphics_drivers", applyGraphicsDrivers},
 	{"grub", applyGrub},

@@ -65,6 +65,7 @@ type Settings struct {
 	Updates              *Updates               `json:"updates,omitempty"`
 	LoginScreen          *LoginScreen           `json:"login_screen,omitempty"`
 	CertificateEnrolment []CertificateEnrolment `json:"certificate_enrolment,omitempty"`
+	WifiNetworks         []WifiNetwork          `json:"wifi_networks,omitempty"`
 	Printers             []Printer              `json:"printers,omitempty"`
 	RemoteDesktopFiles   []RemoteDesktopFile    `json:"remote_desktop_files,omitempty"`
 	DefaultApplications  []DefaultApplication   `json:"default_applications,omitempty"`
@@ -583,3 +584,19 @@ func SanitizeForReport(results []Result) []Result {
 }
 
 const reasonEllipsis = " […] "
+
+// WifiNetwork is a wireless network the machine joins on its own — a
+// NetworkManager system connection, there before anyone signs in. With
+// wpa-eap it is 802.1X with the machine's own certificate: the machine joins
+// because it is a domain member, and there is no password to write down.
+type WifiNetwork struct {
+	SSID            string `json:"ssid"`
+	Hidden          bool   `json:"hidden"`
+	Security        string `json:"security"`
+	EAP             string `json:"eap"`
+	CertificatePath string `json:"certificate_path"`
+	ServerName      string `json:"server_name"`
+	PSK             string `json:"psk"`
+	Autoconnect     bool   `json:"autoconnect"`
+	Priority        int    `json:"priority"`
+}

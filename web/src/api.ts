@@ -244,6 +244,13 @@ export interface PolicySettings {
   };
   printers?: Record<string, unknown>[];
   always_on_vpn?: { tunnel: string; block_until_connected: boolean };
+  certificates?: {
+    trust_domain_authority: boolean;
+    browsers: boolean;
+    machine_certificate: boolean;
+    machine_certificate_path: string;
+  };
+  wifi_networks?: Record<string, unknown>[];
   agent?: { refresh_minutes: number };
 }
 

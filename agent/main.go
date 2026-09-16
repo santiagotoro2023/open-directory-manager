@@ -815,6 +815,13 @@ func taskEnv(root string, api *client.Client) apply.Env {
 	env.Version = version
 	env.Download = api.DownloadAgent
 	env.RoleScript = api.RoleScript
+	env.Certificate = func(ctx context.Context, profile string) (string, string, string, error) {
+		response, err := api.Certificate(ctx, enrol.Request{Profile: profile, ValidityDays: 365})
+		if err != nil {
+			return "", "", "", err
+		}
+		return response.CertificatePEM, response.PrivateKeyPEM, response.CAPEM, nil
+	}
 	return env
 }
 

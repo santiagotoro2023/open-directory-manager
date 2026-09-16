@@ -8,6 +8,8 @@ package tasks
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -681,6 +683,11 @@ func externalInterface(env apply.Env) string {
 const (
 	radiusClientsPath  = "/etc/freeradius/3.0/odm/clients.conf"
 	radiusPoliciesPath = "/etc/freeradius/3.0/odm/policy.conf"
+	// The role installer creates this directory for freerad and points the
+	// eap module at these three files.
+	radiusCAPath         = "/etc/freeradius/3.0/odm/tls/ca.pem"
+	radiusServerCertPath = "/etc/freeradius/3.0/odm/tls/server.pem"
+	radiusServerKeyPath  = "/etc/freeradius/3.0/odm/tls/server.key"
 )
 
 func applyRadius(ctx context.Context, payload map[string]any, env apply.Env) (string, error) {
@@ -703,6 +710,38 @@ func applyRadius(ctx context.Context, payload map[string]any, env apply.Env) (st
 		}
 	}
 
+	// The domain authority's root, for EAP-TLS: a machine proving itself
+	// with the certificate the authority issued it is accepted only if the
+	// server can check it against the authority. The installer points the
+	// eap module at this file and seeds it with the server's own certificate
+	// so FreeRADIUS starts before the domain has an authority at all.
+	notes := ""
+	if caPEM := str(payload["ca_pem"]); caPEM != "" {
+		if err := env.WriteFile(radiusCAPath, caPEM, 0o644, "freerad", "freerad"); err != nil {
+			return "", fmt.Errorf("writing %s: %w", radiusCAPath, err)
+		}
+		notes = ", domain authority trusted for EAP-TLS"
+		// And a server certificate from the same authority, so a supplicant
+		// told to check the server's name can. Requested for this machine,
+		// which the console names from the ticket that asked; the key it
+		// sends is written for freerad alone.
+		if boolean(payload["server_certificate"], false) && env.Certificate != nil {
+			current, _ := os.ReadFile(env.Path(radiusServerCertPath))
+			if !issuedBy(current, []byte(caPEM)) {
+				certPEM, keyPEM, _, err := env.Certificate(ctx, "server")
+				if err != nil {
+					notes += fmt.Sprintf(" (server certificate not issued: %v)", err)
+				} else if err := env.WriteFile(radiusServerKeyPath, keyPEM, 0o640, "freerad", "freerad"); err != nil {
+					return "", fmt.Errorf("writing %s: %w", radiusServerKeyPath, err)
+				} else if err := env.WriteFile(radiusServerCertPath, certPEM, 0o644, "freerad", "freerad"); err != nil {
+					return "", fmt.Errorf("writing %s: %w", radiusServerCertPath, err)
+				} else {
+					notes += ", server certificate issued by the domain authority"
+				}
+			}
+		}
+	}
+
 	// A configuration FreeRADIUS refuses would take the service down on
 	// restart, so it is checked before anything is restarted.
 	if out, err := env.Run.Run(ctx, "freeradius", "-CX"); err != nil {
@@ -711,7 +750,32 @@ func applyRadius(ctx context.Context, payload map[string]any, env apply.Env) (st
 	if out, err := env.Run.Run(ctx, "systemctl", "reload-or-restart", "freeradius"); err != nil {
 		return out, fmt.Errorf("reloading freeradius: %w", err)
 	}
-	return "network access rules applied", nil
+	return "network access rules applied" + notes, nil
+}
+
+// issuedBy says whether a certificate on disk was signed by the authority
+// whose root is given — cheaply, by issuer name against subject name, which
+// is enough to know whether to ask for a new one.
+func issuedBy(certPEM, caPEM []byte) bool {
+	certificate := firstCertificate(certPEM)
+	root := firstCertificate(caPEM)
+	if certificate == nil || root == nil {
+		return false
+	}
+	return certificate.Issuer.String() == root.Subject.String() &&
+		time.Now().Add(30*24*time.Hour).Before(certificate.NotAfter)
+}
+
+func firstCertificate(data []byte) *x509.Certificate {
+	block, _ := pem.Decode(data)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil
+	}
+	certificate, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil
+	}
+	return certificate
 }
 
 // Share is the definition the control plane stores, as the agent receives it.

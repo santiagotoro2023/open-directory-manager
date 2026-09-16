@@ -615,6 +615,53 @@ export const CATEGORIES: CategorySpec[] = [
     blank: { profile: "server", path: "/etc/ssl/odm", validity_days: 365, renew_before_days: 30 },
   },
   {
+    key: "wifi_networks",
+    title: "Wi-Fi networks",
+    half: "Computer",
+    group: "System configuration",
+    identity: "ssid",
+    help:
+      "Wireless networks the machine joins on its own, before anyone signs in — with 802.1X " +
+      "and its own certificate from the domain authority, or a pre-shared key.",
+    doc: "wi-fi-networks",
+    note:
+      "For wpa-eap, turn on Certificates → machine certificate in a policy that reaches " +
+      "the machine, and install the RADIUS role: it checks the certificate against the " +
+      "domain authority.",
+    fields: [
+      { key: "ssid", label: "SSID", placeholder: "Corp" },
+      {
+        key: "security",
+        label: "Security",
+        kind: "select",
+        options: ["wpa-eap", "wpa-psk", "open"],
+        width: "120px",
+      },
+      { key: "psk", label: "Pre-shared key", hint: "wpa-psk only; at least 8 characters" },
+      {
+        key: "server_name",
+        label: "RADIUS server name",
+        hint: "wpa-eap: the server's certificate must carry this name; empty checks the chain only",
+        placeholder: "radius.corp.example.internal",
+      },
+      { key: "certificate_path", label: "Machine certificate at", placeholder: "/etc/ssl/odm" },
+      { key: "hidden", label: "Hidden", kind: "checkbox", width: "80px" },
+      { key: "autoconnect", label: "Join automatically", kind: "checkbox", width: "90px" },
+      { key: "priority", label: "Priority", kind: "number", width: "90px" },
+    ],
+    blank: {
+      ssid: "",
+      security: "wpa-eap",
+      eap: "tls",
+      psk: "",
+      server_name: "",
+      certificate_path: "/etc/ssl/odm",
+      hidden: false,
+      autoconnect: true,
+      priority: 0,
+    },
+  },
+  {
     key: "remote_desktop_files",
     title: "Remote desktop files",
     half: "User",
@@ -973,6 +1020,16 @@ interface SpecialSpec {
 
 const SPECIAL: SpecialSpec[] = [
   {
+    key: "certificates",
+    title: "Domain authority",
+    half: "Computer",
+    group: "Security",
+    help:
+      "The domain's own certificate authority on every machine the policy reaches — trusted " +
+      "by the system and the browsers — and a certificate of the machine's own for 802.1X.",
+    doc: "domain-authority",
+  },
+  {
     key: "updates",
     title: "System updates",
     half: "Computer",
@@ -1199,6 +1256,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "updates") return settings.updates ? 1 : 0;
   if (key === "login_screen") return settings.login_screen ? 1 : 0;
   if (key === "always_on_vpn") return settings.always_on_vpn ? 1 : 0;
+  if (key === "certificates") return settings.certificates ? 1 : 0;
   if (key === "local_administrator") return settings.local_administrator ? 1 : 0;
   if (key === "graphics_drivers") return settings.graphics_drivers ? 1 : 0;
   if (key === "grub") return settings.grub ? 1 : 0;
@@ -1353,6 +1411,9 @@ export function SettingsEditor({
           )}
           {selected === "always_on_vpn" && (
             <AlwaysOnVpnEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "certificates" && (
+            <CertificatesEditor settings={settings} onChange={onChange} />
           )}
           {selected === "local_administrator" && (
             <LocalAdministratorEditor settings={settings} onChange={onChange} />
@@ -2154,6 +2215,92 @@ function GraphicsDriversEditor({
             <option value="none">None (do not manage)</option>
           </Select>
         </Field>
+      )}
+    </>
+  );
+}
+
+function CertificatesEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.certificates;
+
+  function set(changes: Partial<NonNullable<PolicySettings["certificates"]>>) {
+    onChange({
+      ...settings,
+      certificates: {
+        trust_domain_authority: true,
+        browsers: true,
+        machine_certificate: false,
+        machine_certificate_path: "/etc/ssl/odm",
+        ...current,
+        ...changes,
+      },
+    });
+  }
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("certificates")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, certificates: undefined })} />
+          )
+        }
+      />
+      <p className="muted">
+        Resolved when the policy is applied, from whatever authority the domain has then: nothing
+        is pasted here, and an authority created or re-created later is followed at the next
+        refresh. Trusted certificates and Certificates are the general settings underneath; this
+        fills them in.
+      </p>
+
+      {!current ? (
+        <EmptySetting
+          message="Not configured. Machines trust the domain authority only if a Trusted certificates entry carries it."
+          onAdd={() => set({})}
+        />
+      ) : (
+        <>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.trust_domain_authority}
+              onChange={(e) => set({ trust_domain_authority: e.target.checked })}
+            />
+            Trust the domain authority — its root into the system trust store
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.browsers}
+              disabled={!current.trust_domain_authority}
+              onChange={(e) => set({ browsers: e.target.checked })}
+            />
+            Tell Firefox and Chromium too, through their policy files
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.machine_certificate}
+              onChange={(e) => set({ machine_certificate: e.target.checked })}
+            />
+            A certificate for the machine itself, renewed by the agent — what 802.1X Wi-Fi uses
+          </label>
+          {current.machine_certificate && (
+            <Field label="Written to" hint="client.crt and client.key in this directory">
+              <input
+                value={current.machine_certificate_path}
+                onChange={(e) => set({ machine_certificate_path: e.target.value })}
+              />
+            </Field>
+          )}
+        </>
       )}
     </>
   );

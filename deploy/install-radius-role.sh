@@ -80,10 +80,22 @@ fi
 chown freerad:freerad "$RADIUS_TLS/server.key" "$RADIUS_TLS/server.pem"
 chmod 0640 "$RADIUS_TLS/server.key"
 chmod 0644 "$RADIUS_TLS/server.pem"
+# What client certificates are checked against, for EAP-TLS. The agent writes
+# the domain authority's root here whenever Network Access is applied and
+# the domain has an authority; until then it is the server's own certificate,
+# so the file exists and FreeRADIUS starts. A machine holding a certificate
+# from the domain authority (Group Policy → Certificates → machine
+# certificate) is then exactly a machine that can join an 802.1X network.
+if [[ ! -s "$RADIUS_TLS/ca.pem" ]]; then
+    cp "$RADIUS_TLS/server.pem" "$RADIUS_TLS/ca.pem"
+    chown freerad:freerad "$RADIUS_TLS/ca.pem"
+    chmod 0644 "$RADIUS_TLS/ca.pem"
+fi
 backup "$CONF/mods-available/eap"
 sed -i -E \
     -e "s#^([[:space:]]*)private_key_file[[:space:]]*=.*#\1private_key_file = $RADIUS_TLS/server.key#" \
     -e "s#^([[:space:]]*)certificate_file[[:space:]]*=.*#\1certificate_file = $RADIUS_TLS/server.pem#" \
+    -e "s#^([[:space:]]*)ca_file[[:space:]]*=.*#\1ca_file = $RADIUS_TLS/ca.pem#" \
     "$CONF/mods-available/eap"
 
 echo "==> Writing the ODM configuration"

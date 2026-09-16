@@ -1098,6 +1098,100 @@ class LocalPasswordPolicy(Strict):
     accounts: Annotated[list[Name], Field(default_factory=list, max_length=64)]
 
 
+class Certificates(Strict):
+    """The domain's own authority on every machine, and a certificate of its
+    own for each, without pasting anything anywhere.
+
+    Trusted certificates and certificate enrolment are the general settings;
+    this is the case every domain with an authority wants and used to have to
+    assemble by hand. The control plane fills it in when the policy is
+    resolved: the root goes into trusted_certificates, the browsers are told,
+    and a machine certificate becomes an enrolment — so the agent applies
+    nothing new, and a domain whose authority is re-created follows along.
+    """
+
+    # The authority's root into the system trust store, and so into every
+    # program that reads it.
+    trust_domain_authority: bool = True
+    # Firefox reads the system store only when told; Chromium is told the
+    # certificate itself. Both through their documented policy files.
+    browsers: bool = True
+    # A certificate for the machine itself, from the authority, renewed by
+    # the agent — what 802.1X needs. The key stays on the machine.
+    machine_certificate: bool = False
+    machine_certificate_path: Annotated[str, Field(max_length=255)] = "/etc/ssl/odm"
+
+    @field_validator("machine_certificate_path")
+    @classmethod
+    def _path(cls, value: str) -> str:
+        if not value.startswith("/") or ".." in value:
+            raise ValueError("the path must be absolute and contain no ..")
+        return value.rstrip("/")
+
+
+class WifiNetwork(Strict):
+    """A wireless network a machine joins on its own, as NetworkManager keeps
+    it: a system connection, available before anyone signs in.
+
+    802.1X is the point. With the machine certificate from Certificates and
+    the RADIUS role verifying it against the domain authority, a machine
+    joins the network because it is a domain member, with no password anyone
+    could write down. A pre-shared key is offered for the networks that have
+    nothing better.
+    """
+
+    ssid: Annotated[str, Field(min_length=1, max_length=32)]
+    hidden: bool = False
+    security: Literal["wpa-eap", "wpa-psk", "open"] = "wpa-eap"
+    # For wpa-eap: TLS with the machine certificate. The identity the
+    # supplicant sends is host/<fqdn>, which the RADIUS rules read as a
+    # computer rather than a person.
+    eap: Literal["tls"] = "tls"
+    # Where Certificates → machine certificate put the pair.
+    certificate_path: Annotated[str, Field(max_length=255)] = "/etc/ssl/odm"
+    # Checked against the RADIUS server's certificate, so a rogue access
+    # point with a certificate from anywhere else is refused. Empty checks
+    # the chain only.
+    server_name: Annotated[str, Field(max_length=253)] = ""
+    # For wpa-psk. Sent to the machines the policy reaches and to nothing
+    # else, but a shared secret is what it is: prefer 802.1X.
+    psk: Annotated[str, Field(max_length=63)] = ""
+    autoconnect: bool = True
+    # Higher wins where more than one is in range.
+    priority: Annotated[int, Field(ge=-999, le=999)] = 0
+    # Optional: this entry applies only where it matches.
+    targeting: ItemTargeting | None = None
+
+    @field_validator("ssid")
+    @classmethod
+    def _ssid(cls, value: str) -> str:
+        if any(character in value for character in "\n\r\x00"):
+            raise ValueError("an SSID cannot contain control characters")
+        return value
+
+    @field_validator("certificate_path")
+    @classmethod
+    def _path(cls, value: str) -> str:
+        if not value.startswith("/") or ".." in value:
+            raise ValueError("the path must be absolute and contain no ..")
+        return value.rstrip("/")
+
+    @field_validator("server_name")
+    @classmethod
+    def _server(cls, value: str) -> str:
+        if value and not HOSTNAME_RE.match(value):
+            raise ValueError("the server name must be a host name")
+        return value
+
+    @model_validator(mode="after")
+    def _secret(self) -> WifiNetwork:
+        if self.security == "wpa-psk" and len(self.psk) < 8:
+            raise ValueError("a pre-shared key is at least 8 characters")
+        if self.security != "wpa-psk" and self.psk:
+            raise ValueError("a pre-shared key only belongs to a wpa-psk network")
+        return self
+
+
 class AgentUpdate(Strict):
     """Whether machines take the agent this console hands out.
 
@@ -1181,6 +1275,8 @@ class PolicySettings(Strict):
     remote_desktop_session: RemoteDesktopSession | None = None
     agent: AgentSettings | None = None
     agent_update: AgentUpdate | None = None
+    certificates: Certificates | None = None
+    wifi_networks: Annotated[list[WifiNetwork], Field(default_factory=list, max_length=32)]
 
     def stored(self) -> dict[str, Any]:
         """Drop empty categories so a GPO's settings show only what it sets."""

@@ -13,7 +13,7 @@ from typing import Any
 import asyncpg
 from ldap3 import Connection
 
-from . import admx, directory, objects, policy
+from . import admx, ca, directory, objects, policy
 from .config import Settings
 
 Inputs = tuple[dict[str, policy.Gpo], list[policy.Link], set[str]]
@@ -184,6 +184,7 @@ async def build(
     await apply_admx(pool, document)
     await attach_vpn(pool, document, target.dn)
     await attach_custom_packages(pool, document)
+    attach_certificates(settings, document)
     # The serial fingerprints what the agent will actually apply, so it is
     # recomputed after template expansion.
     document["serial"] = policy.serial(document)
@@ -261,3 +262,46 @@ async def attach_vpn(pool: asyncpg.Pool, document: dict[str, Any], dn: str) -> N
         "dns": list(row["dns_servers"]),
         "search_domain": row["search_domain"],
     }
+
+
+def attach_certificates(settings: Settings, document: dict[str, Any]) -> None:
+    """Turn the Certificates setting into the settings the agent applies.
+
+    The setting names an intent — trust the domain's authority, tell the
+    browsers, hold a machine certificate — and this is where the intent
+    becomes the general settings that already exist for each: the root goes
+    into trusted_certificates, Chromium is handed the certificate through its
+    policy (Firefox reads the system store once trusted_certificates tells
+    it to, which the agent already does), and the machine certificate is an
+    enrolment. Resolved here rather than stored, so an authority created or
+    re-created after the policy was written is followed at the next poll.
+    """
+    resolved = document.get("settings") or {}
+    wanted = resolved.get("certificates")
+    if not wanted:
+        return
+    root = ca.root_pem(settings) if ca.initialised(settings) else ""
+    if not root:
+        wanted["unavailable"] = "this domain has no certificate authority yet"
+    elif wanted.get("trust_domain_authority", True):
+        anchors = resolved.setdefault("trusted_certificates", [])
+        if not any(anchor.get("name") == "domain-authority" for anchor in anchors):
+            anchors.append({"name": "domain-authority", "certificate_pem": root})
+        if wanted.get("browsers", True):
+            browser = resolved.setdefault("browser", {})
+            chromium = browser.setdefault("chromium", {})
+            listed = chromium.setdefault("CACertificates", [])
+            if isinstance(listed, list) and root not in listed:
+                listed.append(root)
+            browser.setdefault("firefox", {})
+    if wanted.get("machine_certificate"):
+        enrolments = resolved.setdefault("certificate_enrolment", [])
+        if not any(entry.get("profile") == "client" for entry in enrolments):
+            enrolments.append(
+                {
+                    "profile": "client",
+                    "path": wanted.get("machine_certificate_path") or "/etc/ssl/odm",
+                    "validity_days": 365,
+                    "renew_before_days": 30,
+                }
+            )

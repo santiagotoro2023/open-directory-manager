@@ -338,3 +338,67 @@ def test_a_target_in_a_group_can_be_filtered_on(monkeypatch):
     )
     applies, why = policy.in_scope(filtered, target)
     assert applies, why
+
+
+def test_the_domain_authority_setting_becomes_the_general_settings(monkeypatch):
+    """Certificates names an intent; the agent applies the settings it turns into."""
+    from odm import ca, rsop
+    from odm.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(ca, "initialised", lambda _settings: True)
+    monkeypatch.setattr(ca, "root_pem", lambda _settings: "-----BEGIN CERTIFICATE-----\nroot\n")
+    document = {
+        "settings": {
+            "certificates": {
+                "trust_domain_authority": True,
+                "browsers": True,
+                "machine_certificate": True,
+                "machine_certificate_path": "/etc/ssl/odm",
+            },
+            "browser": {"chromium": {"HomepageLocation": "https://intranet"}},
+        }
+    }
+    rsop.attach_certificates(settings, document)
+    resolved = document["settings"]
+    assert resolved["trusted_certificates"] == [
+        {"name": "domain-authority", "certificate_pem": "-----BEGIN CERTIFICATE-----\nroot\n"}
+    ]
+    assert resolved["browser"]["chromium"]["HomepageLocation"] == "https://intranet"
+    assert resolved["browser"]["chromium"]["CACertificates"] == [
+        "-----BEGIN CERTIFICATE-----\nroot\n"
+    ]
+    assert resolved["certificate_enrolment"][0]["profile"] == "client"
+    assert resolved["certificate_enrolment"][0]["path"] == "/etc/ssl/odm"
+
+    # Applied twice, it does not double anything.
+    rsop.attach_certificates(settings, document)
+    assert len(resolved["trusted_certificates"]) == 1
+    assert len(resolved["browser"]["chromium"]["CACertificates"]) == 1
+    assert len(resolved["certificate_enrolment"]) == 1
+
+
+def test_without_an_authority_the_setting_says_so_and_touches_nothing(monkeypatch):
+    from odm import ca, rsop
+    from odm.config import get_settings
+
+    monkeypatch.setattr(ca, "initialised", lambda _settings: False)
+    document = {"settings": {"certificates": {"trust_domain_authority": True, "browsers": True}}}
+    rsop.attach_certificates(get_settings(), document)
+    assert "unavailable" in document["settings"]["certificates"]
+    assert "trusted_certificates" not in document["settings"]
+
+
+def test_a_wifi_network_is_validated_for_its_security():
+    import pytest
+
+    from odm.policy_schema import WifiNetwork
+
+    WifiNetwork(ssid="Corp", security="wpa-eap")
+    WifiNetwork(ssid="Guest", security="wpa-psk", psk="correct horse battery")
+    with pytest.raises(ValueError):
+        WifiNetwork(ssid="Guest", security="wpa-psk", psk="short")
+    with pytest.raises(ValueError):
+        WifiNetwork(ssid="Corp", security="wpa-eap", psk="a key that does not belong")
+    with pytest.raises(ValueError):
+        WifiNetwork(ssid="Corp", certificate_path="relative/path")

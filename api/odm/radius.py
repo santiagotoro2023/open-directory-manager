@@ -154,8 +154,22 @@ def render_policies(policies: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def as_task(clients: list[dict[str, Any]], policies: list[dict[str, Any]]) -> dict[str, Any]:
+def as_task(
+    clients: list[dict[str, Any]], policies: list[dict[str, Any]], ca_pem: str = ""
+) -> dict[str, Any]:
+    """What the agent on a RADIUS server writes.
+
+    The domain authority's root goes with it when there is one: EAP-TLS is a
+    client proving itself with a certificate, and FreeRADIUS can only accept
+    a certificate it can check against something. With the root in place the
+    machines that Certificates → machine certificate enrolled are exactly the
+    machines that can join an 802.1X network, and nothing else is.
+    """
     return {
         "clients": render_clients(clients),
         "policies": render_policies(policies),
+        "ca_pem": ca_pem,
+        # A server certificate from the same authority, so supplicants told
+        # to check the server (a Wi-Fi policy's server name) can.
+        "server_certificate": bool(ca_pem),
     }

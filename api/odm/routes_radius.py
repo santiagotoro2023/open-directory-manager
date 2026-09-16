@@ -8,7 +8,8 @@ import asyncpg
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
-from . import audit, objects, radius, tasks
+from . import audit, ca, objects, radius, tasks
+from .config import get_settings
 from .security import client_ip, get_pool, require_admin, requires
 from .sessions import Session
 
@@ -79,6 +80,8 @@ async def _dispatch(conn: asyncpg.Connection, actor: str) -> None:
     )
     if not nodes:
         return
+    settings = get_settings()
+    ca_pem = ca.root_pem(settings) if ca.initialised(settings) else ""
     clients = [dict(row) for row in await conn.fetch("SELECT * FROM radius_client")]
     policies = [
         dict(row) for row in await conn.fetch("SELECT * FROM radius_policy ORDER BY ordering, name")
@@ -91,6 +94,7 @@ async def _dispatch(conn: asyncpg.Connection, actor: str) -> None:
             payload=radius.as_task(
                 [client for client in clients if client["node_fqdn"] == node["node_fqdn"]],
                 policies,
+                ca_pem,
             ),
             subject=node["node_fqdn"],
             requested_by=actor,

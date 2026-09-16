@@ -68,6 +68,11 @@ type Env struct {
 	// runs is the one this console ships rather than the one the machine was
 	// joined with. Empty where there is nothing to ask.
 	RoleScript func(ctx context.Context, role string) (installer, common string, err error)
+	// Certificate asks the console for a certificate for this machine, under
+	// the named profile. Used by tasks that install a service needing one —
+	// a RADIUS server whose supplicants should be able to check it. Empty
+	// where there is nothing to ask.
+	Certificate func(ctx context.Context, profile string) (certPEM, keyPEM, caPEM string, err error)
 	// DownloadPackage fetches a custom .deb into the given directory and
 	// returns its path. Empty where there is nothing to ask, the same as
 	// Download and RoleScript.
