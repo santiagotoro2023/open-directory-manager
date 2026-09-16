@@ -391,6 +391,31 @@ goal.
   command line without reading the result back), and give each one a test
   that at least runs `sh -n` over the written file and asserts against
   `[ "" ` — the fingerprint of a variable that went missing.
+- **A helper PAM runs is only root if the program asking is root twice
+  over.** Every `pam_exec` helper the agent writes starts with `#!/bin/sh`,
+  and dash drops the effective uid to the real one as its first act
+  whenever the two differ. At the login screen and over SSH they never
+  differ — both root — and the second-factor lines worked. `sudo`
+  authenticates with the real uid still the person's and only the
+  effective uid root (`PERM_INITIAL` in sudoers, unchanged through
+  `verify_user`); `pam_exec` hands that state on untouched; the kernel
+  preserves it across `execve` (checked in `bprm_fill_uid`, which only
+  ever *raises* the euid, for a setuid file); and then dash threw the root
+  half away. So under sudo the guard could not read the files it decides
+  by and the phone helper died on `open /etc/odm/agent.json: permission
+  denied` before asking anything — "PAM authentication error" at every
+  sudo, no push, with the identical policy working at sign-in. Reproduced
+  on a controller in one line: exec `sh` with ruid 1000 / euid 0 and `id`
+  reports uid 1000 alone; exec the Go binary the same way and it still
+  reads root's files. `pam_exec.so seteuid` (`setuid(geteuid())` before
+  the exec) is the documented fix and is a no-op where the uids already
+  agree; every `pam_exec` line this agent writes carries it, and a test
+  refuses one that does not. Two general points: `[ -r file ]` in a shell
+  helper uses `access(2)`, which checks the *real* uid, so it can say "no"
+  from a process whose effective uid could open the file; and a PAM stack
+  is entered by `login`, `sshd`, `gdm`, `sudo`, `su` and `xrdp` alike, so
+  a helper that works from one of them has not been shown to work from
+  the others.
 - **Ask the component itself before theorising about it.** The boot splash
   failed to render across six attempts, each with a different explanation
   — kernel parameters, module lists, driver versions, a theme script, a
