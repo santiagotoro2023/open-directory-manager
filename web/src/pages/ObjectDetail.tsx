@@ -559,7 +559,12 @@ function MembersTab({ object, onChanged }: { object: DirectoryObject; onChanged:
   );
 }
 
-/** Ask somebody to share their screen, and say how to reach it. */
+/** Where a shared screen is watched: its own tab, outside the shell. */
+function viewerUrl(session: string): string {
+  return `/assist/${encodeURIComponent(session)}`;
+}
+
+/** Ask somebody to share their screen, then open it. */
 function AssistDialog({
   dn,
   username,
@@ -574,18 +579,26 @@ function AssistDialog({
   const [error, setError] = useState<string | null>(null);
   const [offer, setOffer] = useState<{
     protocol: string;
+    session: string;
     address: string;
     port: number;
     username: string;
     password: string;
     minutes: number;
   } | null>(null);
+  // Whether the viewer tab opened by itself; a browser that blocks a tab
+  // opened after a wait leaves the button to do it.
+  const [opened, setOpened] = useState(false);
 
   async function ask() {
     setBusy(true);
     setError(null);
     try {
-      setOffer(await api.servers.assist(dn, username, minutes));
+      const answer = await api.servers.assist(dn, username, minutes);
+      setOffer(answer);
+      if (answer.protocol === "vnc" && answer.session) {
+        setOpened(window.open(viewerUrl(answer.session), "_blank") !== null);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
     } finally {
@@ -593,12 +606,31 @@ function AssistDialog({
     }
   }
 
+  if (offer && offer.protocol === "vnc" && offer.session) {
+    return (
+      <Modal title={`${username} accepted`} submitLabel="Done" onClose={onClose} onSubmit={onClose}>
+        <p className="muted">
+          {opened
+            ? "Their screen is open in a new tab. "
+            : "The browser did not let a tab open on its own; open it from here. "}
+          The offer ends in {offer.minutes} minutes; the tab can be closed and opened again until
+          then.
+        </p>
+        <p>
+          <a className="button" href={viewerUrl(offer.session)} target="_blank" rel="noopener">
+            Watch the screen
+          </a>
+        </p>
+      </Modal>
+    );
+  }
+
   if (offer) {
     return (
       <Modal title={`${username} accepted`} submitLabel="Done" onClose={onClose} onSubmit={onClose}>
         <p className="muted">
-          Open this with any {offer.protocol === "rdp" ? "remote desktop" : "VNC"} client. The
-          credential works once and the offer ends in {offer.minutes} minutes.
+          This machine shares over RDP; open this with any remote desktop client. The credential
+          works once and the offer ends in {offer.minutes} minutes.
         </p>
         <dl className="definition">
           <dt>Address</dt>

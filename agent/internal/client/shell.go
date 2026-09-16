@@ -20,7 +20,19 @@ import (
 // operator's terminal is waiting at the other end; the control plane checks
 // that it was asked for on this machine before it joins the two.
 func (c *Client) DialShell(ctx context.Context, session string) (shell.Conn, error) {
-	location := strings.Replace(c.base, "http", "ws", 1) + "/api/v1/agent/shell/" + session
+	return c.dialSocket(ctx, "/api/v1/agent/shell/"+session, "shell connection")
+}
+
+// DialAssist opens the connection a shared screen is carried over: the same
+// kind of socket as a shell session, to the control plane's other end of a
+// remote-assistance offer. The bytes on it are the VNC protocol between the
+// server on this machine's loopback and the viewer in the console.
+func (c *Client) DialAssist(ctx context.Context, session string) (shell.Conn, error) {
+	return c.dialSocket(ctx, "/api/v1/agent/assist/"+session, "screen-sharing connection")
+}
+
+func (c *Client) dialSocket(ctx context.Context, path, what string) (shell.Conn, error) {
+	location := strings.Replace(c.base, "http", "ws", 1) + path
 	config, err := websocket.NewConfig(location, c.base+"/")
 	if err != nil {
 		return nil, err
@@ -44,7 +56,7 @@ func (c *Client) DialShell(ctx context.Context, session string) (shell.Conn, err
 	defer cancel()
 	ws, err := config.DialContext(dialCtx)
 	if err != nil {
-		return nil, fmt.Errorf("shell connection: %w", err)
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	return &socket{ws: ws}, nil
 }

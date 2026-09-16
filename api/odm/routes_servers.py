@@ -22,6 +22,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from . import agents, agentupdate, audit, objects, sessions, tasks, terminal
+from . import assist as assisting
 from .config import Settings, get_settings
 from .routes_directory import _read
 from .security import Authz, authorization, client_ip, get_pool, require_admin, requires
@@ -394,19 +395,32 @@ async def assist(
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> dict[str, Any]:
-    """Ask the person at the machine to share their screen, and say how to
-    reach it if they agree.
+    """Ask the person at the machine to share their screen.
 
     They are asked in their own session and silence is a refusal: an
     administrator who can do this can already read the machine's disk, and
-    watching somebody work is a different thing. What is handed back is a
-    one-time credential that expires with the offer.
+    watching somebody work is a different thing. When they agree, the answer
+    is an offer the console's own viewer attaches to (see assist.py) — the
+    one-time credential never leaves the console, and nothing on the machine
+    listens to the network. A machine that can only share over RDP (a GNOME
+    session on Wayland without VNC) still answers with an address and a
+    password for a remote desktop client, the old way.
     """
     authz.require("computer.shell", body.dn)
     fact = await pool.fetchrow(HOSTNAME_BY_DN, body.dn)
     if fact is None:
         raise objects.NotFound("this machine has not reported yet")
 
+    offer = assisting.registry.create(
+        dn=body.dn,
+        hostname=fact["hostname"],
+        username=body.username,
+        admin_session_id=session.id,
+        principal=session.principal,
+        principal_sid=session.principal_sid,
+        source_ip=client_ip(request),
+        minutes=body.minutes,
+    )
     try:
         answer = await tasks.run_now(
             pool,
@@ -416,18 +430,24 @@ async def assist(
                 "username": body.username,
                 "minutes": body.minutes,
                 "requested_by": session.principal,
+                "session": offer.id,
             },
             requested_by=session.principal,
             timeout=150,
         )
     except tasks.TaskFailed as exc:
+        assisting.registry.forget(offer.id)
         raise objects.ObjectError(str(exc)) from exc
 
-    # "rdp 3389 odm-assist <password> <minutes>" or "vnc 5900 - <password> <minutes>"
+    # "vnc 5900 - <password> <minutes>", relayed by the agent and viewed here;
+    # or "rdp 3389 odm-assist <password> <minutes>", reached directly.
     fields = str(answer).split()
     if len(fields) < 5:
+        assisting.registry.forget(offer.id)
         raise objects.ObjectError(f"the machine answered {answer!r}")
     protocol, port, account, password, minutes = fields[:5]
+    offer.protocol = protocol
+    offer.password = password
 
     async with pool.acquire() as conn:
         await audit.record(
@@ -442,14 +462,151 @@ async def assist(
             after={"user": body.username, "protocol": protocol, "minutes": minutes},
         )
 
+    if protocol == "vnc":
+        # The password stays here; the viewer page reads it back over the
+        # session that asked. Nobody has to type it anywhere.
+        return {
+            "protocol": protocol,
+            "session": offer.id,
+            "address": fact["hostname"],
+            "port": int(port),
+            "username": "",
+            "password": "",
+            "minutes": int(minutes),
+        }
+    assisting.registry.forget(offer.id)
     return {
         "protocol": protocol,
+        "session": "",
         "address": fact["hostname"],
         "port": int(port),
         "username": "" if account == "-" else account,
         "password": password,
         "minutes": int(minutes),
     }
+
+
+@router.get("/computer/assist/session/{session_id}",
+            dependencies=[Depends(requires("computer.shell"))])
+async def assist_session(
+    session_id: str,
+    session: Session = Depends(require_admin),
+) -> dict[str, Any]:
+    """What the viewer page needs to attach to an offer: whose screen, on
+    which machine, for how much longer, and the credential the server
+    expects. Only the console session that made the offer may read it."""
+    offer = assisting.registry.get(session_id)
+    if offer is None or offer.admin_session_id != session.id:
+        raise objects.NotFound("this offer has ended")
+    return {
+        "session": offer.id,
+        "dn": offer.dn,
+        "hostname": offer.hostname,
+        "username": offer.username,
+        "password": offer.password,
+        "seconds_left": offer.seconds_left,
+    }
+
+
+@router.websocket("/computer/assist/session/{session_id}")
+async def assist_console(
+    websocket: WebSocket,
+    session_id: str,
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """The viewer's end of a shared screen.
+
+    Guarded like the terminal: the console cookie, the session that made the
+    offer, and a first text frame carrying the CSRF token. After the token,
+    one text frame — "ready" — says the machine is on the line, and from
+    then on every frame is VNC bytes, both ways, untouched.
+    """
+    pool: asyncpg.Pool = websocket.app.state.pool
+    offer = assisting.registry.get(session_id)
+    if offer is None or not _same_origin(websocket, settings):
+        await websocket.close(code=4404)
+        return
+    token = websocket.cookies.get(settings.session_cookie_name)
+    admin = None
+    if token:
+        async with pool.acquire() as conn:
+            admin = await sessions.load(conn, settings, token)
+    if admin is None or admin.id != offer.admin_session_id:
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    try:
+        hello = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+        supplied = json.loads(hello).get("csrf", "")
+    except (TimeoutError, ValueError, AttributeError, WebSocketDisconnect):
+        await websocket.close(code=4400)
+        return
+    if not secrets.compare_digest(str(supplied), admin.csrf_token):
+        await websocket.close(code=4403)
+        return
+
+    # The agent connected when sharing started and is waiting; or it is
+    # between viewers and about to connect again.
+    link = offer.take_link()
+    deadline = asyncio.get_running_loop().time() + assisting.AGENT_WAIT_SECONDS
+    while link is None:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0 or offer.expired:
+            if offer.expired:
+                reason = "the offer has ended"
+            else:
+                reason = (
+                    f"{offer.hostname} did not connect within "
+                    f"{assisting.AGENT_WAIT_SECONDS} seconds"
+                )
+            await websocket.close(code=4408, reason=reason)
+            return
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(offer.link_arrived.wait(), timeout=remaining)
+        link = offer.take_link()
+
+    started = asyncio.get_running_loop().time()
+    offer.views += 1
+    await link.to_agent.put("open")
+    await websocket.send_text("ready")
+    reason = "the viewer closed"
+
+    async def from_console() -> None:
+        while True:
+            message = await websocket.receive_bytes()
+            await link.to_agent.put(message)
+
+    async def to_console() -> None:
+        while True:
+            message = await link.to_console.get()
+            if message is None:
+                return
+            await websocket.send_bytes(message)
+
+    async def until_expiry() -> None:
+        await asyncio.sleep(offer.seconds_left)
+
+    reader = asyncio.create_task(from_console())
+    writer = asyncio.create_task(to_console())
+    clock = asyncio.create_task(until_expiry())
+    try:
+        done, _ = await asyncio.wait({reader, writer, clock}, return_when=asyncio.FIRST_COMPLETED)
+        if writer in done:
+            reason = "the machine hung up"
+        elif clock in done:
+            reason = "the offer ran out"
+            offer.end()
+    finally:
+        link.close()
+        for task in (reader, writer, clock):
+            task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+        seconds = int(asyncio.get_running_loop().time() - started)
+        with contextlib.suppress(Exception):
+            await assisting.record_view(pool, offer, seconds, reason)
+        with contextlib.suppress(Exception):
+            await websocket.close()
 
 
 class Permissions(BaseModel):

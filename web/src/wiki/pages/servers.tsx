@@ -185,29 +185,41 @@ export function Content() {
           <p>
             <strong>Directory</strong> &rarr; the machine &rarr; <strong>Activity</strong> &rarr;{" "}
             <strong>Assist</strong> beside whoever is signed in. They are asked in their own
-            session; no answer is a refusal. What comes back is an address and a one-time
-            credential for any remote desktop or VNC client.
+            session; no answer is a refusal. When they agree, their screen opens in a new tab of
+            the console &mdash; nothing to install, no address and no password to type &mdash; and
+            the administrator can watch or take the mouse and keyboard while the person is still
+            on the phone. Closing the tab ends the viewing; the offer stands for the minutes given,
+            so the tab can be opened again from the dialog until then.
           </p>
           <Reference
             headers={["Session", "How it is shared"]}
             rows={[
               [
-                "GNOME on Wayland",
-                "GNOME's own remote desktop, over RDP. Connect with any RDP client.",
-              ],
-              [
                 "X11 — GNOME on Xorg (which the NVIDIA driver often means), and every xrdp session",
                 <>
-                  <C key="x1">x11vnc</C>, over VNC. Installed by the agent the first time a
-                  machine is offered this way.
+                  <C key="x1">x11vnc</C>, installed by the agent the first time a machine is offered
+                  this way. It listens on the machine&rsquo;s own loopback only; the agent carries
+                  its bytes to the console over its own outbound connection, the way a terminal is
+                  carried, so nothing on the machine is opened to the network.
                 </>,
+              ],
+              [
+                "GNOME on Wayland, Debian 12",
+                "GNOME's own remote desktop over VNC, carried to the console the same way.",
+              ],
+              [
+                "GNOME on Wayland, Debian 13",
+                "GNOME's remote desktop there speaks only RDP, which the console cannot draw. The dialog gives an address and a one-time credential for any RDP client instead.",
               ],
             ]}
           />
           <Note>
             The offer ends by itself after the minutes given, and needs{" "}
-            <C key="cs">computer.shell</C> — the same right as running a command on that machine.
-            Every request is in the audit log whether or not it was accepted.
+            <C key="cs">computer.shell</C> &mdash; the same right as running a command on that
+            machine. Every request is in the audit log whether or not it was accepted, and every
+            viewing is recorded with how long it lasted, in the audit log and in the
+            machine&rsquo;s own activity. A browser that blocks tabs opened after a wait leaves a{" "}
+            <strong>Watch the screen</strong> button in the dialog to open it by hand.
           </Note>
         </Section>
 

@@ -5,6 +5,7 @@ import { Shell } from "./Shell";
 import { Activity } from "./pages/Activity";
 import { Monitor } from "./pages/Monitor";
 import { MonitorView } from "./pages/MonitorView";
+import { AssistView } from "./pages/AssistView";
 import { Audit } from "./pages/Audit";
 import { Certificates } from "./pages/Certificates";
 import { Controllers } from "./pages/Controllers";
@@ -58,6 +59,12 @@ export function App() {
   }
 
   if (!session) return <Login onAuthenticated={setSession} />;
+
+  // Somebody's shared screen gets a tab of its own, without the shell
+  // around it: the screen is the whole point, and the bar above it is all
+  // the chrome it needs.
+  const assisting = window.location.pathname.match(/^\/assist\/([A-Za-z0-9_-]{20,64})$/);
+  if (assisting) return <AssistView session={assisting[1]} />;
 
   return (
     <BrowserRouter>

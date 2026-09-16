@@ -1170,6 +1170,19 @@ let csrfToken = "";
  * what proves the page opening this is the console and not another site
  * the browser happened to have the cookie for.
  */
+/** The console's end of a shared screen. Sends the CSRF token first; the
+ *  server answers with the text "ready" once the machine is on the line, and
+ *  every frame after that is the VNC protocol for the viewer to speak. */
+export function assistSocket(session: string): WebSocket {
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(
+    `${scheme}://${window.location.host}/api/v1/servers/computer/assist/session/${session}`,
+  );
+  socket.binaryType = "arraybuffer";
+  socket.addEventListener("open", () => socket.send(JSON.stringify({ csrf: csrfToken })));
+  return socket;
+}
+
 export function terminalSocket(session: string): WebSocket {
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
   const socket = new WebSocket(
@@ -1986,17 +1999,34 @@ export const api = {
       recursive?: boolean;
     }) => request<DirectoryListing>("/servers/computer/permissions", json(body)),
 
-    /** Run one command on a machine and read what it printed. Root on that
-     *  machine, its own right, and every call is in the audit log. */
+    /** Ask the person at a machine to share their screen. A "vnc" answer
+     *  carries a session id the console's own viewer attaches to (see
+     *  assistSocket); an "rdp" answer is an address and a one-time password
+     *  for a remote desktop client. */
     assist: (dn: string, username: string, minutes: number) =>
       request<{
         protocol: string;
+        session: string;
         address: string;
         port: number;
         username: string;
         password: string;
         minutes: number;
       }>("/servers/computer/assist", json({ dn, username, minutes })),
+
+    /** What the viewer page needs about an offer it is about to attach to. */
+    assistSession: (session: string) =>
+      request<{
+        session: string;
+        dn: string;
+        hostname: string;
+        username: string;
+        password: string;
+        seconds_left: number;
+      }>(`/servers/computer/assist/session/${encodeURIComponent(session)}`),
+
+    /** Run one command on a machine and read what it printed. Root on that
+     *  machine, its own right, and every call is in the audit log. */
 
     shell: (dn: string, command: string, cwd = "/", timeoutSeconds = 60) =>
       request<{ node: string; output: string; cwd: string; failed: string }>(

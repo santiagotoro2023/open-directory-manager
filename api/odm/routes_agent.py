@@ -39,6 +39,9 @@ from . import (
     terminal,
     totp,
 )
+from . import (
+    assist as assisting,
+)
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -1451,6 +1454,65 @@ async def agent_shell(
         await terminal.finish(pool, opened)
         with contextlib.suppress(Exception):
             await websocket.close()
+
+
+@router.websocket("/assist/{session_id}")
+async def agent_assist(
+    websocket: WebSocket,
+    session_id: str,
+    machine: Machine = Depends(require_machine_socket),
+) -> None:
+    """The machine's end of a shared screen (see assist.py).
+
+    The agent connects here once the person has agreed and the VNC server is
+    up on the machine's loopback, and waits. The first message it gets is the
+    word "open", which means a viewer has attached and it should connect to
+    the server; every frame after that, both ways, is VNC bytes. When the
+    viewer goes the connection is closed, and the agent comes back for the
+    next one until the offer runs out.
+    """
+    offer = assisting.registry.get(session_id)
+    if offer is None or offer.dn.lower() != machine.dn.lower():
+        await websocket.close(code=4404)
+        return
+    await websocket.accept()
+    link = assisting.Link()
+    offer.offer_link(link)
+
+    async def from_agent() -> None:
+        while True:
+            message = await websocket.receive_bytes()
+            await link.to_console.put(message)
+
+    async def to_agent() -> None:
+        while True:
+            message = await link.to_agent.get()
+            if message is None:
+                return
+            if isinstance(message, str):
+                await websocket.send_text(message)
+            else:
+                await websocket.send_bytes(message)
+
+    async def until_over() -> None:
+        await offer.ended.wait()
+
+    reader = asyncio.create_task(from_agent())
+    writer = asyncio.create_task(to_agent())
+    over = asyncio.create_task(until_over())
+    try:
+        await asyncio.wait({reader, writer, over}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        link.close()
+        if offer.link is link:
+            offer.link = None
+        for task in (reader, writer, over):
+            task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+        with contextlib.suppress(Exception):
+            # 4410: the offer is over, do not come back.
+            await websocket.close(code=4410 if offer.expired else 1000)
 
 
 # ------------------------------------------------------------- monitoring --

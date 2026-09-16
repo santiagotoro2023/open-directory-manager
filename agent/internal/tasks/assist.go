@@ -9,22 +9,31 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"odm.example.org/agent/internal/apply"
 )
 
 // Watching somebody's screen, with their consent.
 //
-// Two ways in, because a desktop is one of two things. A GNOME session on
-// Wayland has no X server to attach to and shares through
-// gnome-remote-desktop, which speaks RDP — the protocol the rest of this
-// console already deals in. An X session, including every xrdp session, is
-// attached to with x11vnc.
+// The console is the viewer. The VNC server started here listens on this
+// machine's loopback and nothing else, and the agent carries its bytes to
+// the console over an outbound connection of its own (internal/relay), so
+// an administrator clicks once and nothing on the machine is opened to the
+// network. Two servers, because a desktop is one of two things: an X
+// session, including every xrdp session, is attached to with x11vnc; a GNOME
+// session on Wayland has no X server and shares through gnome-remote-desktop,
+// whose VNC side is used where it exists (Debian 12) and whose RDP side is
+// the fallback where it does not — reached directly then, with an address
+// and a one-time password, the old way.
 //
 // Either way the person is asked first, the credential is one-time, and the
 // sharing turns itself off again.
 
 const assistMinutes = 30
+
+// The port the VNC server takes on the loopback. The relay connects here.
+const vncPort = 5900
 
 type assistSession struct {
 	user    string
@@ -134,6 +143,9 @@ func runRemoteAssist(ctx context.Context, payload map[string]any, env apply.Env)
 	}
 
 	if session.kind == "wayland" {
+		if err := shareWaylandVNC(ctx, env, session, password, minutes); err == nil {
+			return fmt.Sprintf("vnc %d - %s %d", vncPort, password, minutes), nil
+		}
 		if err := shareWayland(ctx, env, session, password, minutes); err != nil {
 			return "", err
 		}
@@ -142,7 +154,23 @@ func runRemoteAssist(ctx context.Context, payload map[string]any, env apply.Env)
 	if err := shareX11(ctx, env, session, password, minutes); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("vnc 5900 - %s %d", password, minutes), nil
+	return fmt.Sprintf("vnc %d - %s %d", vncPort, password, minutes), nil
+}
+
+// AssistRelay says, from a remote-assist task's payload and answer, whether
+// the agent should carry the screen to the console, and until when. The
+// loop in main starts the relay beside the queue when it does.
+func AssistRelay(payload map[string]any, answer string) (session string, address string, until time.Time, ok bool) {
+	session, _ = payload["session"].(string)
+	fields := strings.Fields(answer)
+	if session == "" || len(fields) < 5 || fields[0] != "vnc" {
+		return "", "", time.Time{}, false
+	}
+	minutes, _ := strconv.Atoi(fields[4])
+	if minutes < 1 {
+		minutes = assistMinutes
+	}
+	return session, "127.0.0.1:" + fields[1], time.Now().Add(time.Duration(minutes) * time.Minute), true
 }
 
 // findSession is the graphical session this person is actually sitting in.
@@ -197,6 +225,34 @@ func consented(ctx context.Context, env apply.Env, session assistSession, asked 
 	return err == nil
 }
 
+// shareWaylandVNC turns on the VNC side of GNOME's own remote desktop, where
+// it has one (gnome-remote-desktop 43, Debian 12; later releases dropped
+// it). It fails where there is none, and the caller falls back to RDP.
+func shareWaylandVNC(
+	ctx context.Context, env apply.Env, session assistSession, password string, minutes int,
+) error {
+	steps := [][]string{
+		{"grdctl", "vnc", "set-auth-method", "password"},
+		{"grdctl", "vnc", "set-password", password},
+		{"grdctl", "vnc", "disable-view-only"},
+		{"grdctl", "vnc", "enable"},
+	}
+	for _, step := range steps {
+		if _, err := runAs(ctx, env, session, step[0], step[1:]...); err != nil {
+			return fmt.Errorf("offering the screen over VNC: %w", err)
+		}
+	}
+	_, _ = env.Run.Run(ctx, "systemd-run", "--quiet",
+		fmt.Sprintf("--on-active=%dmin", minutes),
+		fmt.Sprintf("--unit=odm-assist-off-%d", session.uid),
+		"--uid", strconv.Itoa(session.uid),
+		"--setenv=XDG_RUNTIME_DIR=/run/user/"+strconv.Itoa(session.uid),
+		"--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/"+
+			strconv.Itoa(session.uid)+"/bus",
+		"grdctl", "vnc", "disable")
+	return nil
+}
+
 // shareWayland turns on GNOME's own remote desktop for this session.
 func shareWayland(
 	ctx context.Context, env apply.Env, session assistSession, password string, minutes int,
@@ -243,12 +299,20 @@ func shareX11(
 	if xauthority == "" {
 		xauthority = "/run/user/" + strconv.Itoa(session.uid) + "/gdm/Xauthority"
 	}
+	// An offer that is still running from last time would keep the unit
+	// name and the port; it is over now, whatever it was.
+	unit := fmt.Sprintf("odm-assist-%d", session.uid)
+	_, _ = env.Run.Run(ctx, "systemctl", "stop", unit+".service")
+	// Loopback only: the relay is the one client that reaches it. It stays
+	// up for the whole offer (-forever) so a viewer can close its tab and
+	// open another, and the unit's own time limit turns it off.
 	_, err := env.Run.Run(ctx, "systemd-run", "--quiet",
-		fmt.Sprintf("--unit=odm-assist-%d", session.uid),
+		"--unit="+unit,
 		"--uid", strconv.Itoa(session.uid),
+		fmt.Sprintf("--property=RuntimeMaxSec=%d", minutes*60),
 		"--setenv=XAUTHORITY="+xauthority,
-		"x11vnc", "-display", display, "-once", "-shared",
-		"-timeout", strconv.Itoa(minutes*60),
+		"x11vnc", "-display", display, "-forever", "-shared", "-localhost",
+		"-rfbport", strconv.Itoa(vncPort),
 		"-passwd", password, "-noxdamage", "-repeat")
 	return err
 }

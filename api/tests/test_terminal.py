@@ -193,6 +193,8 @@ def test_every_websocket_route_is_gated():
     assert {route.path for route in sockets} == {
         "/api/v1/servers/computer/shell/session/{session_id}",
         "/api/v1/agent/shell/{session_id}",
+        "/api/v1/servers/computer/assist/session/{session_id}",
+        "/api/v1/agent/assist/{session_id}",
     }
     for route in sockets:
         names = {d.call.__name__ for d in route.dependant.dependencies if d.call}

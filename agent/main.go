@@ -28,12 +28,13 @@ import (
 	"odm.example.org/agent/internal/enrol"
 	"odm.example.org/agent/internal/inventory"
 	"odm.example.org/agent/internal/policy"
+	"odm.example.org/agent/internal/relay"
 	"odm.example.org/agent/internal/shell"
 	"odm.example.org/agent/internal/tasks"
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.13.3"
+const version = "0.13.4"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -862,6 +863,13 @@ func runQueued(
 		if !result.OK {
 			fmt.Fprintf(os.Stderr, "  task %-16s failed: %s\n", task.Kind, result.Output)
 		}
+		if task.Kind == "remote-assist" && result.OK {
+			// The person said yes and the server is up on the loopback:
+			// carry it to the console for as long as the offer stands.
+			if session, address, until, ok := tasks.AssistRelay(task.Payload, result.Output); ok {
+				go serveAssist(ctx, api, session, address, until)
+			}
+		}
 		if err := api.TaskResult(ctx, result); err != nil {
 			fmt.Fprintln(os.Stderr, "odm-agent: reporting task:", err)
 			// A result the control plane will not take leaves the task
@@ -1065,6 +1073,18 @@ func lastLines(text string, count int) string {
 		kept = kept[len(kept)-2000:]
 	}
 	return kept
+}
+
+// serveAssist carries a shared screen to the console (internal/relay) for
+// the life of one offer, beside the loop the way a shell session runs.
+func serveAssist(ctx context.Context, api *client.Client, session, address string, until time.Time) {
+	fmt.Println("  screen sharing: carrying the screen to the console")
+	dial := func(ctx context.Context) (shell.Conn, error) { return api.DialAssist(ctx, session) }
+	if err := relay.Serve(ctx, dial, address, until); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: screen sharing ended:", err)
+		return
+	}
+	fmt.Println("  screen sharing: the offer ended")
 }
 
 // serveShell runs one console shell session: dial the control plane, put a
