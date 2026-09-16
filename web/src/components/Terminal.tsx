@@ -153,7 +153,7 @@ export function Terminal({ dn, hostname }: { dn: string; hostname: string }) {
   }, [dn, attempt]);
 
   return (
-    <div className="terminal">
+    <div className="console-terminal">
       <div className="terminal-bar">
         <span className="mono">root@{hostname.split(".")[0]}</span>
         <span className={`terminal-state terminal-state-${phase}`}>

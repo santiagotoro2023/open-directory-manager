@@ -4443,6 +4443,9 @@ function CustomPackagesEditor({
             <th scope="col" style={{ width: "130px" }}>
               State
             </th>
+            <th scope="col" style={{ width: "220px" }}>
+              When the policy leaves
+            </th>
             <th scope="col" style={{ width: "110px" }}>
               <span className="sr-only">Remove</span>
             </th>
@@ -4474,6 +4477,22 @@ function CustomPackagesEditor({
                   </Select>
                 </td>
                 <td>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={entry.keep_when_unlinked ?? false}
+                      onChange={(e) =>
+                        set(
+                          entries.map((other, i) =>
+                            i === index ? { ...other, keep_when_unlinked: e.target.checked } : other,
+                          ),
+                        )
+                      }
+                    />
+                    Leave it installed
+                  </label>
+                </td>
+                <td>
                   <button
                     type="button"
                     className="ghost"
@@ -4488,7 +4507,7 @@ function CustomPackagesEditor({
           })}
           {entries.length === 0 && (
             <tr>
-              <td colSpan={4} className="empty">
+              <td colSpan={5} className="empty">
                 No custom packages deployed by this object.
               </td>
             </tr>

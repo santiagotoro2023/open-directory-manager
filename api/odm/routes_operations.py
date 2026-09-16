@@ -197,11 +197,24 @@ async def backup_loop(pool: asyncpg.Pool, settings: Settings) -> None:
     while True:
         await asyncio.sleep(interval)
         with contextlib.suppress(Exception):
+            # The same path a click on Back up now takes: the controller's
+            # own agent, which is root there. Running samba-tool from the
+            # control plane's own account failed with WERR_DS_DRA_ACCESS_DENIED
+            # on every scheduled run, while the manual one worked — a
+            # dashboard saying "every 24h" over a backup four days old.
             row = await pool.fetchrow(
                 "INSERT INTO domain_backup (path, taken_by) VALUES ($1, 'system') RETURNING id",
                 f"pending:system:{asyncio.get_running_loop().time()}",
             )
-            await _run_backup(pool, settings, str(row["id"]), "system")
+            async with pool.acquire() as conn:
+                await tasks.enqueue(
+                    conn,
+                    node_fqdn=socket.getfqdn(),
+                    kind="domain-backup",
+                    payload={"target_dir": str(backup.directory(settings))},
+                    subject=str(row["id"]),
+                    requested_by="system",
+                )
 
 
 # ---------------------------------------------------------------- health ---
@@ -328,10 +341,26 @@ async def _backup_health(pool: asyncpg.Pool, settings: Settings) -> dict[str, An
         ORDER BY started_at DESC LIMIT 1
         """
     )
+    # The newest attempt of any outcome: a failed run since the last good
+    # one is what the dashboard has to say, not "healthy, four days ago".
+    attempt = await pool.fetchrow(
+        """
+        SELECT started_at, state, detail FROM domain_backup
+        WHERE state IN ('complete', 'failed')
+        ORDER BY started_at DESC LIMIT 1
+        """
+    )
+    overdue = False
+    if row is not None:
+        age = (datetime.now(UTC) - row["started_at"]).total_seconds()
+        overdue = age > settings.backup_interval_hours * 3600 * 1.5
     return {
         "configured": True,
         "interval_hours": settings.backup_interval_hours,
         "last": dict(row) if row else None,
+        "last_attempt": dict(attempt) if attempt else None,
+        "healthy": row is not None and not overdue and attempt["state"] == "complete",
+        "overdue": overdue,
     }
 
 

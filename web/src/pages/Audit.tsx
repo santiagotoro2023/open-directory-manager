@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { ApiError, api, type AuditEntry } from "../api";
 import { InfoPanel } from "../components/DocsLink";
+import { LoadingRow } from "../components/Loading";
 import Select from "../components/Select"
 
 const OUTCOMES = ["", "success", "denied", "failure"];
@@ -11,14 +12,18 @@ export function Audit() {
   const [filters, setFilters] = useState({ actor: "", action: "", object_dn: "", outcome: "" });
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setError(null);
+    setLoading(true);
     try {
       const result = await api.audit.list({ ...filters, limit: 200 });
       setEntries(result.entries);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
   }, [filters]);
 
@@ -103,7 +108,7 @@ export function Audit() {
                 <td>{new Date(entry.occurred_at).toLocaleString()}</td>
                 <td>{entry.actor}</td>
                 <td className="mono">{entry.action}</td>
-                <td className="mono">{entry.object_dn ?? ""}</td>
+                <td className="mono clip" title={entry.object_dn ?? ""}>{entry.object_dn ?? ""}</td>
                 <td>
                   <span className={`badge ${entry.outcome}`}>{entry.outcome}</span>
                 </td>
@@ -127,9 +132,10 @@ export function Audit() {
               )}
             </Fragment>
           ))}
-          {entries.length === 0 && (
+          {loading && entries.length === 0 && <LoadingRow colSpan={5} />}
+          {!loading && entries.length === 0 && (
             <tr>
-              <td colSpan={5} className="muted">
+              <td colSpan={5} className="empty">
                 No matching entries.
               </td>
             </tr>

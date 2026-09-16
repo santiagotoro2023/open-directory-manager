@@ -638,9 +638,12 @@ user      root`}</Code>
           </p>
           <Note>
             Removing the entry from a policy object — or setting it to <C>absent</C> — takes the
-            package off every machine that object reaches, the same as an apt package would.
-            Deleting the upload itself from the console is separate, and refused while any policy
-            object still names it.
+            package off every machine that object reaches, the same as an apt package would; so
+            does moving a machine out of the object&rsquo;s reach. <strong>Leave it installed</strong>{" "}
+            changes that for one entry: the package stays when the policy stops naming it, for
+            software that was a one-time hand-out rather than a state to keep. Deleting the
+            upload itself from the console is separate, and refused while any policy object still
+            names it.
           </Note>
         </Section>
 

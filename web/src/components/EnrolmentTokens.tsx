@@ -1,3 +1,4 @@
+import { LoadingRow } from "./Loading";
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { ApiError, api, type JoinToken } from "../api";
@@ -22,9 +23,11 @@ export function EnrolmentTokens({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [loaded, setLoaded] = useState(false);
   const load = useCallback(async () => {
     try {
       setTokens((await api.join.tokens()).tokens);
+      setLoaded(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
     }
@@ -133,9 +136,10 @@ export function EnrolmentTokens({
               </td>
             </tr>
           ))}
-          {tokens.length === 0 && (
+          {!loaded && <LoadingRow colSpan={5} />}
+          {loaded && tokens.length === 0 && (
             <tr>
-              <td colSpan={5} className="muted">
+              <td colSpan={5} className="empty">
                 No active tokens.
               </td>
             </tr>

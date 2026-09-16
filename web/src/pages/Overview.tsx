@@ -1,3 +1,4 @@
+import { Loading } from "../components/Loading";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Archive, Download, RefreshCw, Upload } from "lucide-react";
 import {
@@ -98,13 +99,22 @@ function Health({ report, session }: { report: HealthReport; session: SessionInf
     },
     {
       name: "Backups",
-      state: !report.backups.configured ? "off" : report.backups.last ? "ok" : "attention",
+      state: !report.backups.configured
+        ? "off"
+        : report.backups.healthy ?? Boolean(report.backups.last)
+          ? "ok"
+          : "attention",
       detail: !report.backups.configured
         ? "Set ODM_BACKUP_DIR in the secrets file to enable them."
         : report.backups.last
           ? `Last ${ago(report.backups.last.started_at)} · ${bytes(
               report.backups.last.size_bytes,
-            )} · every ${report.backups.interval_hours}h`
+            )} · every ${report.backups.interval_hours}h` +
+            (report.backups.last_attempt?.state === "failed"
+              ? ` · the last attempt failed: ${report.backups.last_attempt.detail ?? "no reason given"}`
+              : report.backups.overdue
+                ? " · overdue"
+                : "")
           : `No backup has completed yet · every ${report.backups.interval_hours}h`,
     },
   ];
@@ -308,6 +318,7 @@ export function Overview({ session }: { session: SessionInfo }) {
       )}
       {notice && <p className="muted">{notice}</p>}
 
+      {tab === "health" && !report && <Loading label="Checking the domain…" />}
       {tab === "health" && report && <Health report={report} session={session} />}
 
       {tab === "replication" && replication && (

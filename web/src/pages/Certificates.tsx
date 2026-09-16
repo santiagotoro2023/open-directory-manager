@@ -1,3 +1,4 @@
+import { Loading } from "../components/Loading";
 import { useCallback, useEffect, useState } from "react";
 import { Download, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import {
@@ -57,6 +58,15 @@ export function Certificates() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
     }
+  }
+
+  if (!status && !error) {
+    return (
+      <main className="content">
+        <h1>Certificates</h1>
+        <Loading />
+      </main>
+    );
   }
 
   if (status && !status.initialised) {
@@ -294,7 +304,7 @@ export function Certificates() {
               ))}
               {certificates.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={5} className="empty">
                     Nothing issued yet.
                   </td>
                 </tr>

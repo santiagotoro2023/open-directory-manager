@@ -258,6 +258,12 @@ class CustomPackage(Strict):
     name: Name
     package_id: Annotated[str, Field(min_length=1, max_length=64)]
     state: Literal["present", "absent"] = "present"
+    # What happens when the policy stops reaching the machine — the object
+    # moved, the link removed, the entry deleted. Off, the package goes with
+    # the policy that put it there, the way every other setting does; on, it
+    # stays, for software that was a one-time hand-out rather than a state
+    # to keep.
+    keep_when_unlinked: bool = False
     # Optional: this entry applies only where it matches.
     targeting: ItemTargeting | None = None
 

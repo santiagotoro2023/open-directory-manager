@@ -32,8 +32,8 @@ export const METRIC_LABELS: Record<string, { label: string; unit: string }> = {
   uptime_seconds: { label: "Uptime", unit: "s" },
   processes: { label: "Processes", unit: "" },
   agent_up: { label: "Reporting", unit: "" },
-  probe_up: { label: "Probe answered", unit: "" },
-  probe_latency_ms: { label: "Probe latency", unit: "ms" },
+  "probe_up:": { label: "Probe answered", unit: "" },
+  "probe_latency_ms:": { label: "Probe latency", unit: "ms" },
 };
 
 export function metricMeta(metric: string): { label: string; unit: string } {
@@ -67,7 +67,8 @@ export function formatValue(value: number | null | undefined, unit: string): str
 }
 
 function shortHost(host: string): string {
-  return host.split(".")[0];
+  // An address stays whole; only a name loses its domain.
+  return /^\d+\.\d+\.\d+\.\d+$/.test(host) ? host : host.split(".")[0];
 }
 
 /** One time-series chart of every series the widget's scope covers. */
@@ -158,7 +159,8 @@ function StatWidget({ values, unit }: { values: { host: string; metric: string; 
   );
 }
 
-export function HostsWidget({ hosts }: { hosts: MonitorHost[] }) {
+export function HostsWidget({ hosts: all }: { hosts: MonitorHost[] }) {
+  const hosts = all.filter((host) => !host.probe_only);
   if (hosts.length === 0) return <p className="muted widget-empty">No machine has reported yet.</p>;
   return (
     <table className="data compact">

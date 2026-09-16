@@ -18,6 +18,7 @@ import { InfoPanel } from "../components/DocsLink";
 import { Field, Modal } from "../components/Modal";
 import { QrCode } from "../components/QrCode";
 import Select from "../components/Select";
+import { Loading, LoadingRow } from "../components/Loading";
 import { DashboardGrid, HostsWidget, METRIC_LABELS, formatValue, metricMeta } from "../components/monitor/Dashboard";
 import { WATCH, useLive } from "../live";
 
@@ -310,6 +311,7 @@ function DashboardsTab() {
         </p>
       )}
 
+      {!dashboard && !error && <Loading label="Loading dashboards…" />}
       {dashboard && <DashboardGrid widgets={dashboard.layout.widgets} data={data} />}
 
       {adding && (
@@ -397,11 +399,12 @@ function Designer({
   const [hosts, setHosts] = useState<MonitorHost[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<DashboardData>({});
 
   useEffect(() => {
-    api.monitor.hosts().then((r) => setHosts(r.hosts)).catch(() => undefined);
-    api.monitor.dashboardData(dashboard.id).then((r) => setPreview(r.data)).catch(() => undefined);
+    api.monitor
+      .hosts()
+      .then((r) => setHosts(r.hosts.filter((host) => !host.probe_only)))
+      .catch(() => undefined);
   }, [dashboard.id]);
 
   function move(index: number, by: number) {
@@ -445,7 +448,7 @@ function Designer({
   return (
     <Modal title="Design dashboard" submitLabel="Save" busy={busy} error={error} onSubmit={() => void save()} onClose={onClose} wide>
       <div className="designer">
-        <div className="designer-side">
+        <div className="designer-side full">
           <Field label="Name">
             <input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
@@ -579,10 +582,6 @@ function Designer({
             </div>
           )}
         </div>
-        <div className="designer-preview">
-          <DashboardGrid widgets={widgets} data={preview} />
-          <p className="muted">Widgets added since the last save show without data until saved.</p>
-        </div>
       </div>
     </Modal>
   );
@@ -591,6 +590,7 @@ function Designer({
 // -------------------------------------------------------------------- hosts --
 
 function HostsTab() {
+  const [loaded, setLoaded] = useState(false);
   const [hosts, setHosts] = useState<MonitorHost[]>([]);
   const [groups, setGroups] = useState<MonitorGroup[]>([]);
   const [editing, setEditing] = useState<Partial<MonitorGroup> | null>(null);
@@ -600,8 +600,9 @@ function HostsTab() {
   const load = useCallback(async () => {
     try {
       const [h, g] = await Promise.all([api.monitor.hosts(), api.monitor.groups()]);
-      setHosts(h.hosts);
+      setHosts(h.hosts.filter((host) => !host.probe_only));
       setGroups(g.groups);
+    setLoaded(true);
     } catch (err) {
       setError(describeError(err));
     }
@@ -642,7 +643,7 @@ function HostsTab() {
     <>
       {error && <p className="alert" role="alert">{error}</p>}
       <h3 className="section-title">Machines</h3>
-      <HostsWidget hosts={hosts} />
+      {!loaded ? <Loading /> : <HostsWidget hosts={hosts} />}
 
       <div className="toolbar" style={{ marginTop: 18 }}>
         <h3 className="section-title" style={{ margin: 0 }}>Groups</h3>
@@ -672,7 +673,8 @@ function HostsTab() {
               </td>
             </tr>
           ))}
-          {groups.length === 0 && (
+          {!loaded && <LoadingRow colSpan={4} />}
+          {loaded && groups.length === 0 && (
             <tr><td colSpan={4} className="empty">No groups. A rule, a window or a chart can name every machine, one machine, or a group.</td></tr>
           )}
         </tbody>
@@ -717,6 +719,7 @@ function HostsTab() {
 // ------------------------------------------------------------------- alerts --
 
 function AlertsTab() {
+  const [loaded, setLoaded] = useState(false);
   const [alerts, setAlerts] = useState<MonitorAlert[]>([]);
   const [state, setState] = useState<"firing" | "resolved" | "all">("firing");
   const [error, setError] = useState<string | null>(null);
@@ -724,6 +727,7 @@ function AlertsTab() {
   const load = useCallback(async () => {
     try {
       setAlerts((await api.monitor.alerts(state)).alerts);
+    setLoaded(true);
     } catch (err) {
       setError(describeError(err));
     }
@@ -766,7 +770,8 @@ function AlertsTab() {
               <td>{alert.state === "firing" ? <span className="badge failure">firing</span> : <span className="badge success">resolved {alert.resolved_at && new Date(alert.resolved_at).toLocaleTimeString()}</span>}</td>
             </tr>
           ))}
-          {alerts.length === 0 && <tr><td colSpan={6} className="empty">Nothing here.</td></tr>}
+          {!loaded && <LoadingRow colSpan={6} />}
+          {loaded && alerts.length === 0 && <tr><td colSpan={6} className="empty">Nothing here.</td></tr>}
         </tbody>
       </table>
     </>
@@ -790,6 +795,7 @@ const BLANK_RULE: Omit<MonitorRule, "id"> = {
 };
 
 function RulesTab() {
+  const [loaded, setLoaded] = useState(false);
   const [rules, setRules] = useState<MonitorRule[]>([]);
   const [groups, setGroups] = useState<MonitorGroup[]>([]);
   const [channels, setChannels] = useState<MonitorChannel[]>([]);
@@ -805,6 +811,7 @@ function RulesTab() {
       setGroups(g.groups);
       setChannels(c.channels);
       setHosts(h.hosts);
+    setLoaded(true);
     } catch (err) {
       setError(describeError(err));
     }
@@ -860,7 +867,8 @@ function RulesTab() {
           </tr>
         </thead>
         <tbody>
-          {rules.map((rule) => (
+          {!loaded && <LoadingRow colSpan={7} />}
+          {loaded && rules.map((rule) => (
             <tr key={rule.id} className={rule.enabled ? "" : "muted"}>
               <td>{rule.name}{!rule.enabled && <span className="badge">off</span>}<br /><span className="muted">{rule.description}</span></td>
               <td className="mono">{metricMeta(rule.metric).label} {rule.op === "gt" ? ">" : "<"} {rule.threshold}</td>
@@ -961,6 +969,7 @@ function RulesTab() {
 // ----------------------------------------------------------------- channels --
 
 function ChannelsTab() {
+  const [loaded, setLoaded] = useState(false);
   const [channels, setChannels] = useState<MonitorChannel[]>([]);
   const [adding, setAdding] = useState<{ name: string; kind: "ntfy" | "webhook"; url: string; min_severity: "warning" | "critical" } | null>(null);
   const [qr, setQr] = useState<MonitorChannel | null>(null);
@@ -971,6 +980,7 @@ function ChannelsTab() {
   const load = useCallback(async () => {
     try {
       setChannels((await api.monitor.channels()).channels);
+    setLoaded(true);
     } catch (err) {
       setError(describeError(err));
     }
@@ -1043,7 +1053,8 @@ function ChannelsTab() {
               </td>
             </tr>
           ))}
-          {channels.length === 0 && <tr><td colSpan={5} className="empty">No channels. Alerts are recorded either way; a channel is who hears about them.</td></tr>}
+          {!loaded && <LoadingRow colSpan={5} />}
+          {loaded && channels.length === 0 && <tr><td colSpan={5} className="empty">No channels. Alerts are recorded either way; a channel is who hears about them.</td></tr>}
         </tbody>
       </table>
 
@@ -1090,6 +1101,7 @@ function localInput(date: Date): string {
 }
 
 function MaintenanceTab() {
+  const [loaded, setLoaded] = useState(false);
   const [windows, setWindows] = useState<MaintenanceWindow[]>([]);
   const [groups, setGroups] = useState<MonitorGroup[]>([]);
   const [hosts, setHosts] = useState<MonitorHost[]>([]);
@@ -1103,6 +1115,7 @@ function MaintenanceTab() {
       setWindows(w.windows);
       setGroups(g.groups);
       setHosts(h.hosts);
+    setLoaded(true);
     } catch (err) {
       setError(describeError(err));
     }
@@ -1173,7 +1186,8 @@ function MaintenanceTab() {
               </tr>
             );
           })}
-          {windows.length === 0 && <tr><td colSpan={6} className="empty">No windows.</td></tr>}
+          {!loaded && <LoadingRow colSpan={6} />}
+          {loaded && windows.length === 0 && <tr><td colSpan={6} className="empty">No windows.</td></tr>}
         </tbody>
       </table>
 
@@ -1207,6 +1221,7 @@ function MaintenanceTab() {
 // ------------------------------------------------------------------- probes --
 
 function ProbesTab() {
+  const [loaded, setLoaded] = useState(false);
   const [probes, setProbes] = useState<MonitorProbe[]>([]);
   const [nodes, setNodes] = useState<string[]>([]);
   const [editing, setEditing] = useState<(Omit<MonitorProbe, "id"> & { id?: string }) | null>(null);
@@ -1220,6 +1235,7 @@ function ProbesTab() {
       setProbes(p.probes);
       setNodes(o.probing_nodes);
       setLatest(h.hosts);
+    setLoaded(true);
     } catch (err) {
       setError(describeError(err));
     }
@@ -1291,14 +1307,15 @@ function ProbesTab() {
         <tbody>
           {probes.map((probe) => {
             const seen = status.get(targetHost(probe));
-            const up = seen?.metrics.probe_up;
+            const suffix = `:${probe.kind}${probe.port ? `-${probe.port}` : ""}`;
+            const up = seen?.metrics[`probe_up${suffix}`];
             return (
               <tr key={probe.id} className={probe.enabled ? "" : "muted"}>
                 <td>{probe.name}{!probe.enabled && <span className="badge">off</span>}</td>
                 <td className="mono">{probe.kind} {probe.target}{probe.port ? `:${probe.port}` : ""}</td>
                 <td>{minutes(probe.interval_seconds)}</td>
                 <td>{up === undefined ? <span className="muted">not yet</span> : up === 1 ? <span className="badge success">yes</span> : <span className="badge failure">no</span>}</td>
-                <td>{formatValue(seen?.metrics.probe_latency_ms, "ms")}</td>
+                <td>{formatValue(seen?.metrics[`probe_latency_ms${suffix}`], "ms")}</td>
                 <td className="row-actions">
                   <button type="button" className="small secondary" onClick={() => setEditing(probe)}>Edit</button>
                   <button type="button" className="small danger" onClick={() => void remove(probe)}>Delete</button>
@@ -1306,7 +1323,8 @@ function ProbesTab() {
               </tr>
             );
           })}
-          {probes.length === 0 && <tr><td colSpan={6} className="empty">No probes.</td></tr>}
+          {!loaded && <LoadingRow colSpan={6} />}
+          {loaded && probes.length === 0 && <tr><td colSpan={6} className="empty">No probes.</td></tr>}
         </tbody>
       </table>
 

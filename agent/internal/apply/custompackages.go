@@ -32,6 +32,8 @@ type customPackageState struct {
 type installedPackage struct {
 	PackageName string `json:"package_name"`
 	Version     string `json:"version"`
+	// Whether the entry that installed it said to leave it when it goes.
+	Keep bool `json:"keep,omitempty"`
 }
 
 func loadCustomPackageState(env Env) customPackageState {
@@ -87,6 +89,11 @@ func applyCustomPackages(ctx context.Context, s policy.Settings, env Env) []poli
 		wanted[pkg.PackageID] = true
 		if installed, ok := state.Installed[pkg.PackageID]; ok &&
 			installed.PackageName == pkg.PackageName && installed.Version == pkg.Version {
+			// The entry may have changed its mind about what happens later.
+			if installed.Keep != pkg.KeepWhenUnlinked {
+				installed.Keep = pkg.KeepWhenUnlinked
+				state.Installed[pkg.PackageID] = installed
+			}
 			results = append(results, policy.Result{
 				Setting: setting, Status: "unchanged",
 				Reason: fmt.Sprintf("%s %s already installed", pkg.PackageName, pkg.Version),
@@ -118,7 +125,7 @@ func applyCustomPackages(ctx context.Context, s policy.Settings, env Env) []poli
 			continue
 		}
 		state.Installed[pkg.PackageID] = installedPackage{
-			PackageName: pkg.PackageName, Version: pkg.Version,
+			PackageName: pkg.PackageName, Version: pkg.Version, Keep: pkg.KeepWhenUnlinked,
 		}
 		results = append(results, policy.Result{
 			Setting: setting, Status: "applied",
@@ -135,6 +142,16 @@ func applyCustomPackages(ctx context.Context, s policy.Settings, env Env) []poli
 			continue
 		}
 		setting := "custom_packages:" + installed.PackageName
+		if installed.Keep {
+			// The entry asked for the package to outlive it. Forgotten, not
+			// removed: it is the machine's own now.
+			delete(state.Installed, id)
+			results = append(results, policy.Result{
+				Setting: setting, Status: "applied",
+				Reason: installed.PackageName + " left installed, as the entry asked",
+			})
+			continue
+		}
 		if result, ok := removeCustomPackage(ctx, env, &state, id, setting); ok {
 			results = append(results, result)
 		}

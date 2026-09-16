@@ -75,6 +75,8 @@ export interface ActivitySummary {
 export interface MonitorHost {
   host: string;
   up: boolean;
+  /** A probe target rather than a machine: nothing reports from it. */
+  probe_only?: boolean;
   age_seconds: number;
   last_seen: string;
   metrics: Record<string, number>;
@@ -235,6 +237,7 @@ export interface PolicySettings {
     name: string;
     package_id: string;
     state?: "present" | "absent";
+    keep_when_unlinked?: boolean;
     package_name?: string;
     version?: string;
     sha256?: string;
@@ -1105,6 +1108,9 @@ export interface HealthReport {
     configured: boolean;
     interval_hours?: number;
     last?: { started_at: string; size_bytes: number } | null;
+    last_attempt?: { started_at: string; state: string; detail: string | null } | null;
+    healthy?: boolean;
+    overdue?: boolean;
   };
 }
 

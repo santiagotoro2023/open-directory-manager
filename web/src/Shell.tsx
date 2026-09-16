@@ -18,6 +18,7 @@ import {
   Gauge,
   HardDriveDownload,
   Activity as ActivityIcon,
+  ChevronDown,
   ScrollText,
   Server,
   ShieldCheck,
@@ -129,6 +130,30 @@ const NAV = [
   { label: "Wiki", to: "/wiki", icon: BookOpen },
 ];
 
+const GROUP_ORDER = ["Domain", "Network", "Services", "Servers", "Security"];
+
+function groupRank(item: { group?: string; to: string }): number {
+  // Overview stands first and the Wiki last, outside any group.
+  if (!item.group) return item.to === "/" ? -1 : GROUP_ORDER.length;
+  return GROUP_ORDER.indexOf(item.group);
+}
+
+function recallFolded(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem("odm.sidebar.folded") ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function rememberFolded(folded: Record<string, boolean>) {
+  try {
+    localStorage.setItem("odm.sidebar.folded", JSON.stringify(folded));
+  } catch {
+    /* nothing to do */
+  }
+}
+
 function remember(collapsed: boolean) {
   try {
     localStorage.setItem("odm.sidebar", collapsed ? "collapsed" : "open");
@@ -184,12 +209,25 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
   // from, so the section it provides appears without a reload.
   useLive(WATCH.roles, () => readRoles());
 
+  // In group order, whatever order the entries were written in, so a group's
+  // heading appears once with everything in it beneath.
   const visible = NAV.filter(
     (item) =>
       (!item.domainAdmin || session.domain_admin) &&
       (!item.permission || holds(session, item.permission)) &&
       (!item.roles || item.roles.every((role) => installed.has(role))),
-  );
+  ).sort((a, b) => groupRank(a) - groupRank(b));
+
+  // Which groups are folded is furniture, not domain state: kept in the
+  // browser, and a folded group still shows the page you are on.
+  const [folded, setFolded] = useState<Record<string, boolean>>(recallFolded);
+  function fold(group: string) {
+    setFolded((was) => {
+      const next = { ...was, [group]: !was[group] };
+      rememberFolded(next);
+      return next;
+    });
+  }
 
   function toggle() {
     setCollapsed((current) => {
@@ -225,28 +263,42 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
             )}
           </button>
           <ul>
-            {visible.map(({ label, to, icon: Icon, end, group }, index) => (
-              <li key={label}>
-                {group && group !== visible[index - 1]?.group && (
-                  // The sections are grouped the way an operator thinks of
-                  // the domain: what is in it, the network it runs on, what
-                  // it serves, the servers, and who did what. Collapsed, a
-                  // rule stands in for the heading.
-                  <div className="nav-group" aria-hidden={collapsed}>
-                    <span>{group}</span>
-                  </div>
-                )}
-                <NavLink
-                  to={to}
-                  end={end}
-                  title={label}
-                  className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}
-                >
-                  <Icon size={16} aria-hidden="true" />
-                  <span>{label}</span>
-                </NavLink>
-              </li>
-            ))}
+            {visible.map(({ label, to, icon: Icon, end, group }, index) => {
+              const active = end ? location.pathname === to : location.pathname.startsWith(to);
+              const hidden = Boolean(group && folded[group] && !collapsed && !active);
+              return (
+                <li key={label}>
+                  {group && group !== visible[index - 1]?.group && (
+                    // The sections are grouped the way an operator thinks
+                    // of the domain: what is in it, the network it runs on,
+                    // what it serves, the servers, and who did what. Each
+                    // heading folds its group; collapsed to icons, a rule
+                    // stands in for the heading.
+                    <button
+                      type="button"
+                      className={folded[group] ? "nav-group folded" : "nav-group"}
+                      onClick={() => fold(group)}
+                      aria-expanded={!folded[group]}
+                      tabIndex={collapsed ? -1 : 0}
+                    >
+                      <span>{group}</span>
+                      <ChevronDown size={12} aria-hidden="true" />
+                    </button>
+                  )}
+                  {!hidden && (
+                    <NavLink
+                      to={to}
+                      end={end}
+                      title={label}
+                      className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}
+                    >
+                      <Icon size={16} aria-hidden="true" />
+                      <span>{label}</span>
+                    </NavLink>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </nav>
 

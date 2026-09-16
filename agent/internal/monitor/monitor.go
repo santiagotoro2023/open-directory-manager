@@ -13,6 +13,7 @@ package monitor
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -343,7 +344,14 @@ func RunProbe(ctx context.Context, probe Probe) []Sample {
 		started := time.Now()
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, probe.Target, nil)
 		if err == nil {
-			client := &http.Client{Timeout: 8 * time.Second}
+			// Availability, not trust: a probe asks whether the page answers.
+			// Half the pages worth probing on an internal network carry a
+			// certificate nothing here can check, and "not answering" for
+			// those would hide the outages the probe exists to catch.
+			client := &http.Client{
+				Timeout:   8 * time.Second,
+				Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec
+			}
 			response, err := client.Do(request)
 			if err == nil {
 				response.Body.Close()
@@ -363,11 +371,26 @@ func RunProbe(ctx context.Context, probe Probe) []Sample {
 			host = request.URL.Hostname()
 		}
 	}
-	samples := []Sample{{Metric: "probe_up", Value: up, Host: host}}
+	// One series per kind of check on a target, so a TCP probe and an HTTP
+	// probe of the same host do not overwrite each other's answer.
+	suffix := ":" + probe.Kind
+	if probe.Port > 0 {
+		suffix += "-" + strconv.Itoa(probe.Port)
+	}
+	samples := []Sample{{Metric: "probe_up" + suffix, Value: up, Host: host}}
 	if up == 1 {
-		samples = append(samples, Sample{Metric: "probe_latency_ms", Value: ms, Host: host})
+		samples = append(samples, Sample{Metric: "probe_latency_ms" + suffix, Value: ms, Host: host})
 	}
 	return samples
+}
+
+// SeriesSuffix is the metric suffix a probe reports under; the console
+// looks a probe's answer up by it.
+func (p Probe) SeriesSuffix() string {
+	if p.Port > 0 {
+		return ":" + p.Kind + "-" + strconv.Itoa(p.Port)
+	}
+	return ":" + p.Kind
 }
 
 // String is for the agent's own log line.

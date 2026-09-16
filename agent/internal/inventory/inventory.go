@@ -574,6 +574,7 @@ func CollectLogs(
 
 	// Named units are wanted at every priority, so they are a second read
 	// rather than a looser filter on the first.
+	var named []LogEntry
 	for _, unit := range units {
 		unitArgs := []string{"--output=json", "--no-pager", "--unit=" + unit,
 			fmt.Sprintf("--lines=%d", limit/2)}
@@ -583,10 +584,27 @@ func CollectLogs(
 			unitArgs = append(unitArgs, "--since=-1h")
 		}
 		more, _ := runJournal(ctx, env, unitArgs, limit/2)
-		entries = append(entries, more...)
+		named = append(named, more...)
 	}
 
-	return newest(dedupe(entries), limit), cursor
+	// The named units first, then the general sweep with whatever room is
+	// left. Trimming the two together by time let a desktop session's
+	// hundreds of warnings a minute push every one of the agent's own lines
+	// out of the report — the machine's Logs tab showed GNOME complaining
+	// about keybindings and nothing about what the agent had just done.
+	keep := newest(dedupe(named), limit*3/5)
+	seen := map[string]bool{}
+	for _, entry := range keep {
+		seen[entry.Cursor] = true
+	}
+	var rest []LogEntry
+	for _, entry := range dedupe(entries) {
+		if !seen[entry.Cursor] {
+			rest = append(rest, entry)
+		}
+	}
+	keep = append(keep, newest(rest, limit-len(keep))...)
+	return keep, cursor
 }
 
 // newest keeps the most recent entries and no more than limit of them.

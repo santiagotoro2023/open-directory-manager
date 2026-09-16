@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -167,16 +168,46 @@ func shareX11(
 func runAs(
 	ctx context.Context, env apply.Env, session assistSession, name string, args ...string,
 ) (string, error) {
-	full := append([]string{
+	runtime := "/run/user/" + strconv.Itoa(session.uid)
+	full := []string{
 		"--quiet", "--pipe", "--wait", "--collect",
 		"--uid", strconv.Itoa(session.uid),
-		"--setenv=XDG_RUNTIME_DIR=/run/user/" + strconv.Itoa(session.uid),
-		"--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/" +
-			strconv.Itoa(session.uid) + "/bus",
-		"--setenv=DISPLAY=" + session.display,
-		"--", name,
-	}, args...)
+		"--setenv=XDG_RUNTIME_DIR=" + runtime,
+		"--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=" + runtime + "/bus",
+	}
+	// A Wayland session has no Display as logind knows it; a GTK program
+	// finds the compositor through WAYLAND_DISPLAY instead, and asked with
+	// an empty DISPLAY it cannot open anything and exits at once — which
+	// read as the person refusing before they had been asked anything.
+	if session.kind == "wayland" {
+		if socket := waylandSocket(env, runtime); socket != "" {
+			full = append(full, "--setenv=WAYLAND_DISPLAY="+socket)
+		}
+		full = append(full, "--setenv=XDG_SESSION_TYPE=wayland")
+		if session.display != "" {
+			full = append(full, "--setenv=DISPLAY="+session.display)
+		}
+	} else {
+		full = append(full, "--setenv=DISPLAY="+session.display)
+	}
+	full = append(append(full, "--", name), args...)
 	return env.Run.Run(ctx, "systemd-run", full...)
+}
+
+// waylandSocket is the compositor's socket in a session's runtime
+// directory — wayland-0 almost always, but read rather than assumed.
+func waylandSocket(env apply.Env, runtime string) string {
+	entries, err := os.ReadDir(env.Path(runtime))
+	if err != nil {
+		return "wayland-0"
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "wayland-") && !strings.HasSuffix(name, ".lock") {
+			return name
+		}
+	}
+	return "wayland-0"
 }
 
 // oneTimePassword is what the viewer is given, and it is given once.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api, type ActivityEntry, type ActivityQuery } from "../api";
 import Select from "./Select";
+import { LoadingRow } from "./Loading";
 
 /**
  * What people did on the machines, as one table wherever it is asked for:
@@ -257,6 +258,7 @@ export function ActivityTable({
               <td className="mono detail">{entry.detail}</td>
             </tr>
           ))}
+          {loading && entries.length === 0 && <LoadingRow colSpan={7} />}
           {entries.length === 0 && !loading && (
             <tr>
               <td colSpan={7} className="empty">

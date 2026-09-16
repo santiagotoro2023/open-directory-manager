@@ -272,10 +272,14 @@ button.ghost:hover {
 
 /* ---------------------------------------------------------------- shell -- */
 
+/* The frame stays put and the page scrolls inside it: the top bar and the
+   navigation are always where they were, and a long page never scrolls its
+   own heading and toolbar off the top with nothing above them. */
 .shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
@@ -374,12 +378,14 @@ button.ghost:hover {
 .body {
   display: flex;
   flex: 1;
+  min-height: 0;
   align-items: stretch;
 }
 
 .sidebar {
   flex: 0 0 216px;
   padding: 14px 10px;
+  overflow-y: auto;
   background: var(--surface-recessed);
   border-right: 1px solid var(--border);
 }
@@ -413,7 +419,9 @@ button.ghost:hover {
 
 .content {
   flex: 1;
+  min-width: 0;
   padding: 24px 28px;
+  overflow: auto;
   background: var(--surface);
 }
 
@@ -1483,6 +1491,7 @@ ul.plain {
   display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   align-items: stretch;
   background: var(--surface);
 }
@@ -1491,7 +1500,9 @@ ul.plain {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   flex: 0 0 auto;
+  overflow-y: auto;
   background: var(--surface-recessed);
 }
 
@@ -1500,6 +1511,8 @@ ul.plain {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* Wider than it looks: the visible line is 1px, the grab area is 9px. */
@@ -2631,8 +2644,10 @@ tr.detail-row td {
 
 /* The terminal on a machine. Dark, because that is what a terminal is and
    because the emulator's own colours are drawn against it; the bar above it
-   is the console's, and says whose shell this is and whether it is there. */
-.terminal {
+   is the console's, and says whose shell this is and whether it is there.
+   Not ".terminal": xterm.js names its own root element that, and styling it
+   from here broke the emulator's layout. */
+.console-terminal {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
@@ -2678,7 +2693,7 @@ tr.detail-row td {
   padding: 6px 0 6px 8px;
 }
 
-.terminal-screen .xterm {
+.terminal-screen > .xterm {
   height: 100%;
 }
 
@@ -3203,16 +3218,9 @@ ol.steps {
 /* The designer: the widget list beside a live preview. */
 .designer {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
-
-@media (max-width: 1100px) {
-  .designer { grid-template-columns: 1fr; }
-}
-
-.designer-preview .dashboard-grid { margin-top: 0; }
-.designer-preview .widget-body { min-height: 0; }
 
 .widget-list {
   list-style: none;
@@ -3298,13 +3306,33 @@ ol.steps {
 /* Sidebar sections: a small heading before each group of pages. Collapsed
    to icons, the heading has nowhere to go and becomes a rule. */
 .nav-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   margin: 12px 0 4px;
   padding: 0 12px;
+  border: 0;
+  background: none;
+  font: inherit;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+.nav-group:hover {
+  color: var(--text);
+}
+
+.nav-group svg {
+  transition: transform 120ms ease;
+}
+
+.nav-group.folded svg {
+  transform: rotate(-90deg);
 }
 
 .sidebar.collapsed .nav-group {
@@ -3314,6 +3342,11 @@ ol.steps {
   background: var(--border);
   overflow: hidden;
   color: transparent;
+  pointer-events: none;
+}
+
+.sidebar.collapsed .nav-group svg {
+  display: none;
 }
 
 /* The path an object lives at: domain › OU › OU › name, each a link. */
@@ -3339,4 +3372,14 @@ ol.steps {
 
 .path-leaf {
   color: var(--text);
+}
+
+/* A cell that keeps its width: a long distinguished name is clipped with an
+   ellipsis and readable on hover, rather than pushing the whole page into a
+   horizontal scroll. */
+td.clip {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

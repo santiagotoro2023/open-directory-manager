@@ -109,17 +109,18 @@ func TestATcpProbeAnswersAndAClosedPortDoesNot(t *testing.T) {
 		}
 	}()
 	port := listener.Addr().(*net.TCPAddr).Port
-	samples := RunProbe(context.Background(), Probe{Kind: "tcp", Target: "127.0.0.1", Port: port})
-	up, _ := metric(samples, "probe_up")
+	probe := Probe{Kind: "tcp", Target: "127.0.0.1", Port: port}
+	samples := RunProbe(context.Background(), probe)
+	up, _ := metric(samples, "probe_up"+probe.SeriesSuffix())
 	if up != 1 || samples[0].Host != "127.0.0.1" {
 		t.Errorf("an open port reads as down: %+v", samples)
 	}
-	if _, ok := metric(samples, "probe_latency_ms"); !ok {
+	if _, ok := metric(samples, "probe_latency_ms"+probe.SeriesSuffix()); !ok {
 		t.Error("no latency for an answered probe")
 	}
 	listener.Close()
-	samples = RunProbe(context.Background(), Probe{Kind: "tcp", Target: "127.0.0.1", Port: port})
-	if up, _ := metric(samples, "probe_up"); up != 0 {
+	samples = RunProbe(context.Background(), probe)
+	if up, _ := metric(samples, "probe_up"+probe.SeriesSuffix()); up != 0 {
 		t.Error("a closed port reads as up")
 	}
 }
@@ -130,7 +131,7 @@ func TestAnHttpProbeIsNamedByItsHost(t *testing.T) {
 	}))
 	defer server.Close()
 	samples := RunProbe(context.Background(), Probe{Kind: "http", Target: server.URL + "/health"})
-	if up, _ := metric(samples, "probe_up"); up != 1 {
+	if up, _ := metric(samples, "probe_up:http"); up != 1 {
 		t.Errorf("a 200 reads as down: %+v", samples)
 	}
 	if samples[0].Host != "127.0.0.1" {

@@ -88,9 +88,9 @@ async def test_a_machine_reports_about_itself_and_its_probes_only(
                 # About another machine: dropped.
                 {"metric": "mem_percent", "value": 99, "host": "dc01.corp.example.internal"},
                 # A probe result names its target: kept.
-                {"metric": "probe_up", "value": 1, "host": "switch-01"},
+                {"metric": "probe_up:ping", "value": 1, "host": "switch-01"},
                 # A probe with no target says nothing: dropped.
-                {"metric": "probe_latency_ms", "value": 3},
+                {"metric": "probe_latency_ms:ping", "value": 3},
                 {"metric": "not a metric", "value": 1},
             ]
         },
@@ -99,7 +99,7 @@ async def test_a_machine_reports_about_itself_and_its_probes_only(
     inserted = [args for sql, args in state["executed"] if "INSERT INTO metric_sample" in sql]
     assert inserted == [
         ("ws01.corp.example.internal", "cpu_percent", 12.5),
-        ("switch-01", "probe_up", 1.0),
+        ("switch-01", "probe_up:ping", 1.0),
     ]
 
 

@@ -49,7 +49,7 @@ async def overview(
     firing = await pool.fetch(
         "SELECT severity, count(*) AS n FROM monitor_alert WHERE state = 'firing' GROUP BY severity"
     )
-    hosts = await monitor.host_summary(pool)
+    hosts = [host for host in await monitor.host_summary(pool) if not host["probe_only"]]
     return {
         "active": await monitor.active(pool),
         "probing_nodes": sorted(await monitor.probing_nodes(pool)),

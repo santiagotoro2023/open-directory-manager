@@ -122,9 +122,11 @@ export function Content() {
         <Section title="Probes">
           <p>
             Run from every node carrying the role: <em>ping</em>, a <em>TCP</em> port opening, or
-            an <em>HTTP</em> fetch (anything under 500 counts as answered). Results are reported
-            under the target&rsquo;s name, so a switch has a row in the machine table and a rule
-            like <em>Probe failing</em> can watch it.
+            an <em>HTTP</em> fetch (anything under 500 counts as answered; the certificate is not
+            checked &mdash; a probe asks whether the page is there, not whether to trust it).
+            Results are reported under the target&rsquo;s name, one series per kind of check
+            (<C>probe_up:ping</C>, <C>probe_up:tcp-8443</C>, <C>probe_up:http</C>), so a switch
+            has a row in the machine table and a rule like <em>Probe failing</em> can watch it.
           </p>
         </Section>
 

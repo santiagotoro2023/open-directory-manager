@@ -20,6 +20,7 @@ import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
 import { PasswordDialog, SecondFactorResetDialog, isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { LoadingRow } from "../components/Loading";
 import Select from "../components/Select"
 import { InfoPanel } from "../components/DocsLink";
 import { isSystemContainer, label, parentOf } from "../components/directoryTree";
@@ -465,6 +466,7 @@ export function Directory() {
                 </tr>
               );
             })}
+            {loading && objects.length === 0 && <LoadingRow colSpan={5} />}
             {!loading && objects.length === 0 && (
               <tr>
                 <td colSpan={5} className="empty">

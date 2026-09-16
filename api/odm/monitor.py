@@ -59,8 +59,8 @@ KNOWN_METRICS: list[dict[str, str]] = [
     {"metric": "uptime_seconds", "label": "Uptime", "unit": "s"},
     {"metric": "processes", "label": "Processes", "unit": ""},
     {"metric": "agent_up", "label": "Reporting", "unit": ""},
-    {"metric": "probe_up", "label": "Probe answered", "unit": ""},
-    {"metric": "probe_latency_ms", "label": "Probe latency", "unit": "ms"},
+    {"metric": "probe_up:", "label": "Probe answered (per check)", "unit": ""},
+    {"metric": "probe_latency_ms:", "label": "Probe latency (per check)", "unit": "ms"},
 ]
 
 
@@ -194,6 +194,18 @@ async def host_summary(pool: Any, hosts: list[str] | None = None) -> list[dict[s
         age = (now - summary["last_seen"]).total_seconds()
         summary["age_seconds"] = int(age)
         summary["up"] = age < interval * 5
+        # A probe target is not a machine: nothing reports from it, it is
+        # only asked about. The machine table leaves these out; the probes
+        # tab is where they are read.
+        summary["probe_only"] = not summary["disks"] and all(
+            metric.startswith("probe_") for metric in summary["metrics"]
+        )
+        if summary["probe_only"]:
+            newest_probe = max(
+                (entry["at"] for entry in values if entry["host"] == summary["host"]),
+                default=summary["last_seen"],
+            )
+            summary["up"] = (now - newest_probe).total_seconds() < 3600
     return sorted(by_host.values(), key=lambda row: row["host"])
 
 
@@ -243,7 +255,7 @@ async def _not_reporting(
     rows = await pool.fetch(
         """
         SELECT host, max(at) AS last FROM metric_sample
-        WHERE metric <> 'probe_up' AND metric <> 'probe_latency_ms'
+        WHERE metric NOT LIKE 'probe_%'
           AND ($1::text[] IS NULL OR host = ANY($1))
           AND at > now() - ($2 || ' days')::interval
         GROUP BY host
@@ -389,12 +401,12 @@ def describe(rule: Any, host: str, metric: str, value: float) -> str:
     if metric == "agent_up":
         return f"{host} has not reported for {rule['for_seconds'] // 60} minutes."
     if metric.startswith("probe_up"):
-        return f"{host} is not answering its probe."
+        return f"{host} is not answering its {metric.split(':', 1)[-1]} probe."
     verb = "over" if rule["op"] == "gt" else "under"
-    return (
-        f"{host}: {metric_label(metric)} is {value:.1f}, {verb} {rule['threshold']:g} "
-        f"for {rule['for_seconds'] // 60} minutes."
+    held = (
+        f"for {rule['for_seconds'] // 60} minutes" if rule["for_seconds"] >= 60 else "right now"
     )
+    return f"{host}: {metric_label(metric)} is {value:.1f}, {verb} {rule['threshold']:g} {held}."
 
 
 # ------------------------------------------------------------ notification --

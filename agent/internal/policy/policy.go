@@ -328,12 +328,14 @@ type Package struct {
 // found in the upload, which lets the agent skip the download entirely when
 // that version is already installed.
 type CustomPackage struct {
-	Name        string `json:"name"`
-	PackageID   string `json:"package_id"`
-	State       string `json:"state"` // present | absent
-	PackageName string `json:"package_name"`
-	Version     string `json:"version"`
-	SHA256      string `json:"sha256"`
+	Name      string `json:"name"`
+	PackageID string `json:"package_id"`
+	State     string `json:"state"` // present | absent
+	// Left installed when the policy stops naming it, rather than removed.
+	KeepWhenUnlinked bool   `json:"keep_when_unlinked"`
+	PackageName      string `json:"package_name"`
+	Version          string `json:"version"`
+	SHA256           string `json:"sha256"`
 	// Set instead of the three fields above when the upload this entry
 	// named no longer exists.
 	Unavailable string `json:"unavailable"`

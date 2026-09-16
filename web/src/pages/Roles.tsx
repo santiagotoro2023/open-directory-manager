@@ -1,3 +1,4 @@
+import { Loading } from "../components/Loading";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight, Server } from "lucide-react";
 import {
@@ -87,6 +88,7 @@ export function Roles() {
         </p>
       )}
 
+      {available.length === 0 && !error && <Loading label="Loading roles…" />}
       {available.map((role) => {
         const running = nodesFor(role);
         return (
