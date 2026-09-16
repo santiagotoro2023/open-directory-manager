@@ -5,6 +5,7 @@ import * as agent from "./pages/agent";
 import * as architecture from "./pages/architecture";
 import * as activity from "./pages/activity";
 import * as audit from "./pages/audit";
+import * as monitoring from "./pages/monitoring";
 import * as certificates from "./pages/certificates";
 import * as clientEnrolment from "./pages/client-enrolment";
 import * as controllers from "./pages/controllers";
@@ -62,6 +63,7 @@ const MODULES = [
   operations,
   activity,
   audit,
+  monitoring,
   architecture,
   glossary,
   troubleshooting,

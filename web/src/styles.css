@@ -3084,3 +3084,213 @@ ol.steps {
 .activity .badge {
   margin-left: 0;
 }
+
+/* ------------------------------------------------------------ monitoring -- */
+
+/* A dashboard: twelve columns, widgets spanning what they were given. */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.widget {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.widget.h1 .widget-body { min-height: 120px; }
+.widget.h2 .widget-body { min-height: 220px; }
+.widget.h3 .widget-body { min-height: 340px; }
+
+.widget-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-recessed);
+}
+
+.widget-body {
+  flex: 1;
+  padding: 8px 12px;
+  overflow: auto;
+}
+
+.widget-empty {
+  margin: 12px 0;
+}
+
+.widget-text {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.chart {
+  width: 100%;
+}
+
+.chart .uplot {
+  font-family: inherit;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.stat-cell {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background: var(--surface-recessed);
+  border-radius: var(--radius-sm);
+}
+
+.stat-cell-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-cell-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+}
+
+.dot.up { background: #16a34a; }
+.dot.down { background: var(--danger); }
+
+.row-down td { color: var(--danger); }
+
+.alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.alert-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.alert-row:last-child { border-bottom: 0; }
+.alert-text { flex: 1; min-width: 0; }
+.badge.warning { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+
+/* The designer: the widget list beside a live preview. */
+.designer {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 1100px) {
+  .designer { grid-template-columns: 1fr; }
+}
+
+.designer-preview .dashboard-grid { margin-top: 0; }
+.designer-preview .widget-body { min-height: 0; }
+
+.widget-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+
+.widget-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.widget-list-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.widget-list-tools { display: flex; gap: 4px; flex-shrink: 0; }
+
+.widget-form {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-recessed);
+}
+
+.field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.field-row > * { flex: 1; min-width: 0; }
+
+.dialog-actions.inline {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.qr-holder {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+}
+
+.row-actions { white-space: nowrap; text-align: right; }
+.row-actions button + button { margin-left: 6px; }
+
+.notice {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+}
+
+/* The wall: a shared dashboard, full screen, nothing else on the page. */
+.wall {
+  min-height: 100vh;
+  padding: 16px 20px;
+  background: var(--surface-recessed);
+}
+
+.wall-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.wall-header h1 { margin: 0; font-size: 20px; }

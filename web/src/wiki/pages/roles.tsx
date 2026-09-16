@@ -87,6 +87,11 @@ export function Content() {
                 "Nothing. The printers are added under Printers.",
               ],
               [
+                "Monitoring",
+                "Metrics from every machine, alerts, probes of what has no agent, dashboards. The node carrying it runs the probes.",
+                "Nothing. Groups, rules, channels, windows and dashboards are under Monitoring.",
+              ],
+              [
                 "Remote desktop session host",
                 "Serves desktops and published applications over RDP.",
                 "Nothing. Everything is decided by the collection it joins.",

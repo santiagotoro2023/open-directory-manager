@@ -72,6 +72,115 @@ export interface ActivitySummary {
   watched: string[];
 }
 
+export interface MonitorHost {
+  host: string;
+  up: boolean;
+  age_seconds: number;
+  last_seen: string;
+  metrics: Record<string, number>;
+  disks: Record<string, number>;
+}
+
+export interface MonitorGroup {
+  id: string;
+  name: string;
+  description: string;
+  members: string[];
+}
+
+export interface MonitorProbe {
+  id: string;
+  name: string;
+  kind: "ping" | "tcp" | "http";
+  target: string;
+  port: number;
+  interval_seconds: number;
+  enabled: boolean;
+}
+
+export interface MonitorChannel {
+  id: string;
+  name: string;
+  kind: "ntfy" | "webhook";
+  topic: string;
+  url: string;
+  min_severity: "warning" | "critical";
+  available?: boolean;
+  subscribe_url?: string;
+  server_url?: string;
+}
+
+export interface MonitorRule {
+  id: string;
+  name: string;
+  description: string;
+  metric: string;
+  op: "gt" | "lt";
+  threshold: number;
+  for_seconds: number;
+  severity: "warning" | "critical";
+  scope_kind: "all" | "group" | "host";
+  scope: string;
+  channels: string[];
+  enabled: boolean;
+}
+
+export interface MonitorAlert {
+  id: string;
+  rule_id: string | null;
+  rule_name: string;
+  host: string;
+  metric: string;
+  severity: "warning" | "critical";
+  state: "firing" | "resolved";
+  last_value: number | null;
+  message: string;
+  suppressed: boolean;
+  started_at: string;
+  resolved_at: string | null;
+}
+
+export interface MaintenanceWindow {
+  id: string;
+  name: string;
+  scope_kind: "all" | "group" | "host";
+  scope: string;
+  starts_at: string;
+  ends_at: string;
+  note: string;
+  created_by: string;
+}
+
+export interface DashboardWidget {
+  id: string;
+  type: "chart" | "stat" | "hosts" | "alerts" | "text";
+  title: string;
+  w: 3 | 4 | 6 | 8 | 12;
+  h: 1 | 2 | 3;
+  metric?: string;
+  scope_kind?: "all" | "group" | "host";
+  scope?: string;
+  hours?: number;
+  text?: string;
+}
+
+export interface MonitorDashboard {
+  id: string;
+  name: string;
+  layout: { widgets: DashboardWidget[] };
+  is_default: boolean;
+  channel_id: string | null;
+  public_token: string | null;
+}
+
+export interface MonitorSeries {
+  host: string;
+  metric: string;
+  points: [number, number][];
+}
+
+export type DashboardData = Record<string, unknown>;
+
 export interface AuditEntry {
   id: string;
   occurred_at: string;
@@ -1894,6 +2003,93 @@ export const api = {
       request<{ session: string; node: string }>(
         "/servers/computer/shell/session",
         json({ dn, cols, rows }),
+      ),
+  },
+
+  monitor: {
+    overview: () =>
+      request<{
+        active: boolean;
+        probing_nodes: string[];
+        hosts: number;
+        down: number;
+        firing: Record<string, number>;
+        metrics: { metric: string; label: string; unit: string }[];
+      }>("/monitor/overview"),
+    hosts: () => request<{ hosts: MonitorHost[] }>("/monitor/hosts"),
+    series: (params: { metric: string; host?: string; group?: string; hours?: number }) =>
+      request<{ metric: string; series: MonitorSeries[] }>(`/monitor/series${qs(params)}`),
+    alerts: (state: "firing" | "resolved" | "all" = "firing", host?: string) =>
+      request<{ alerts: MonitorAlert[] }>(`/monitor/alerts${qs({ state, host })}`),
+
+    groups: () => request<{ groups: MonitorGroup[] }>("/monitor/groups"),
+    createGroup: (body: Omit<MonitorGroup, "id">) =>
+      request<MonitorGroup>("/monitor/groups", json(body)),
+    updateGroup: (id: string, body: Omit<MonitorGroup, "id">) =>
+      request<MonitorGroup>(`/monitor/groups${qs({ id })}`, { ...json(body), method: "PUT" }),
+    deleteGroup: (id: string) =>
+      request<void>(`/monitor/groups${qs({ id })}`, { method: "DELETE" }),
+
+    probes: () => request<{ probes: MonitorProbe[] }>("/monitor/probes"),
+    createProbe: (body: Omit<MonitorProbe, "id">) =>
+      request<MonitorProbe>("/monitor/probes", json(body)),
+    updateProbe: (id: string, body: Omit<MonitorProbe, "id">) =>
+      request<MonitorProbe>(`/monitor/probes${qs({ id })}`, { ...json(body), method: "PUT" }),
+    deleteProbe: (id: string) =>
+      request<void>(`/monitor/probes${qs({ id })}`, { method: "DELETE" }),
+
+    channels: () => request<{ channels: MonitorChannel[] }>("/monitor/channels"),
+    createChannel: (body: { name: string; kind: string; url: string; min_severity: string }) =>
+      request<MonitorChannel>("/monitor/channels", json(body)),
+    testChannel: (id: string) =>
+      request<{ sent: boolean }>(`/monitor/channels/test${qs({ id })}`, { method: "POST" }),
+    deleteChannel: (id: string) =>
+      request<void>(`/monitor/channels${qs({ id })}`, { method: "DELETE" }),
+
+    rules: () => request<{ rules: MonitorRule[] }>("/monitor/rules"),
+    createRule: (body: Omit<MonitorRule, "id">) =>
+      request<MonitorRule>("/monitor/rules", json(body)),
+    updateRule: (id: string, body: Omit<MonitorRule, "id">) =>
+      request<MonitorRule>(`/monitor/rules${qs({ id })}`, { ...json(body), method: "PUT" }),
+    deleteRule: (id: string) =>
+      request<void>(`/monitor/rules${qs({ id })}`, { method: "DELETE" }),
+
+    maintenance: () => request<{ windows: MaintenanceWindow[] }>("/monitor/maintenance"),
+    createMaintenance: (body: Omit<MaintenanceWindow, "id" | "created_by">) =>
+      request<MaintenanceWindow>("/monitor/maintenance", json(body)),
+    deleteMaintenance: (id: string) =>
+      request<void>(`/monitor/maintenance${qs({ id })}`, { method: "DELETE" }),
+
+    dashboards: () => request<{ dashboards: MonitorDashboard[] }>("/monitor/dashboards"),
+    dashboardData: (id: string) =>
+      request<{ dashboard: MonitorDashboard; data: DashboardData }>(
+        `/monitor/dashboard/data${qs({ id })}`,
+      ),
+    createDashboard: (body: {
+      name: string;
+      layout: { widgets: DashboardWidget[] };
+      is_default: boolean;
+      channel_id: string | null;
+    }) => request<MonitorDashboard>("/monitor/dashboards", json(body)),
+    updateDashboard: (
+      id: string,
+      body: {
+        name: string;
+        layout: { widgets: DashboardWidget[] };
+        is_default: boolean;
+        channel_id: string | null;
+      },
+    ) => request<MonitorDashboard>(`/monitor/dashboards${qs({ id })}`, { ...json(body), method: "PUT" }),
+    shareDashboard: (id: string, revoke = false) =>
+      request<{ public_token: string | null }>(`/monitor/dashboards/share${qs({ id, revoke })}`, {
+        method: "POST",
+      }),
+    deleteDashboard: (id: string) =>
+      request<void>(`/monitor/dashboards${qs({ id })}`, { method: "DELETE" }),
+    /** A shared dashboard, with no session. */
+    publicDashboard: (token: string) =>
+      request<{ dashboard: MonitorDashboard; data: DashboardData }>(
+        `/monitor/public/${encodeURIComponent(token)}`,
       ),
   },
 

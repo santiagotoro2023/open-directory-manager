@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Login } from "./Login";
 import { Shell } from "./Shell";
 import { Activity } from "./pages/Activity";
+import { Monitor } from "./pages/Monitor";
+import { MonitorView } from "./pages/MonitorView";
 import { Audit } from "./pages/Audit";
 import { Certificates } from "./pages/Certificates";
 import { Controllers } from "./pages/Controllers";
@@ -41,6 +43,12 @@ export function App() {
     setSession(null);
   }, []);
 
+  // A shared dashboard needs no session and no shell: a screen on a wall is
+  // not signed in to anything. Decided before the session check so the
+  // sign-in page never stands in front of it.
+  const shared = window.location.pathname.match(/^\/view\/([A-Za-z0-9_-]{20,64})$/);
+  if (shared) return <MonitorView token={shared[1]} />;
+
   if (checking) {
     return (
       <div className="centered" role="status" aria-live="polite">
@@ -75,6 +83,7 @@ export function App() {
           <Route path="recyclebin" element={<RecycleBin />} />
           <Route path="wiki/*" element={<Wiki />} />
           <Route path="activity" element={<Activity />} />
+          <Route path="monitor" element={<Monitor />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
