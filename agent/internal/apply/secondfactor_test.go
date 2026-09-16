@@ -656,3 +656,29 @@ func TestTheMethodIsReadableFromTheConfTheGuardReads(t *testing.T) {
 		t.Errorf("method not recorded: %q", got)
 	}
 }
+
+func TestTheWalkthroughActuallyGetsItsThreeAttempts(t *testing.T) {
+	// The loop's counter went missing in an edit — `while [ "" -le 3 ]` —
+	// and test(1) rejects an empty operand, so the loop never ran once:
+	// no window, no walkthrough, straight to "Signing out" at every
+	// graphical sign-in, with nothing in the console's log to show for it.
+	env, _ := testEnv(t)
+	withPam(t, env, "gdm-password")
+	applySecondFactor(context.Background(), policy.Settings{
+		SecondFactor: &policy.SecondFactor{Enabled: true, SelfEnrol: true, Method: "push"},
+	}, env)
+
+	session := read(t, env, enrolSession)
+	if !strings.Contains(session, `while [ "$ATTEMPT" -le 3 ]; do`) {
+		t.Errorf("the attempt loop does not count attempts:\n%s", session)
+	}
+	for _, path := range []string{enrolSession, enrolPrivileged, enrolHelper} {
+		script := read(t, env, path)
+		if strings.Contains(script, `[ "" `) {
+			t.Errorf("%s tests an empty string where a variable was meant:\n%s", path, script)
+		}
+		if out, err := exec.Command("sh", "-n", env.Path(path)).CombinedOutput(); err != nil {
+			t.Errorf("%s does not parse: %v\n%s", path, err, out)
+		}
+	}
+}

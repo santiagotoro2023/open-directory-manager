@@ -590,7 +590,7 @@ hide_overview() {
 }
 
 ATTEMPT=1
-while [ "" -le 3 ]; do
+while [ "$ATTEMPT" -le 3 ]; do
     hide_overview
     ( sleep 2; hide_overview; sleep 3; hide_overview ) &
     if ! open_terminal; then
