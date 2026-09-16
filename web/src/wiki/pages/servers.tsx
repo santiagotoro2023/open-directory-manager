@@ -196,10 +196,10 @@ export function Content() {
                 "GNOME's own remote desktop, over RDP. Connect with any RDP client.",
               ],
               [
-                "X11, including every xrdp session",
+                "X11 — GNOME on Xorg (which the NVIDIA driver often means), and every xrdp session",
                 <>
-                  <C key="x1">x11vnc</C>, over VNC. Install it on machines you want to assist this
-                  way.
+                  <C key="x1">x11vnc</C>, over VNC. Installed by the agent the first time a
+                  machine is offered this way.
                 </>,
               ],
             ]}
@@ -220,6 +220,7 @@ export function Content() {
           <Reference
             headers={["Control", "What it does"]}
             rows={[
+              ["Filter", "A word that has to appear in the message or the unit's name."],
               ["Period", "6 hours to 14 days."],
               ["Errors only", "Hides warnings."],
               ["Export", "Downloads what is on screen as CSV: time, unit, level, message."],

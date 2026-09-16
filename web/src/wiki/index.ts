@@ -24,6 +24,7 @@ import * as printing from "./pages/printing";
 import * as remoteDesktop from "./pages/remote-desktop";
 import * as remoteAccess from "./pages/remote-access";
 import * as quickstart from "./pages/quickstart";
+import * as whyOdm from "./pages/why-odm";
 import * as recycleBin from "./pages/recycle-bin";
 import * as roles from "./pages/roles";
 import * as servers from "./pages/servers";
@@ -38,6 +39,7 @@ import * as troubleshooting from "./pages/troubleshooting";
  * routing are all driven from here.
  */
 const MODULES = [
+  whyOdm,
   quickstart,
   directory,
   groupPolicy,

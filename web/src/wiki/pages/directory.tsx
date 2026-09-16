@@ -225,7 +225,7 @@ export function Content() {
             rows={[
               ["Machine", "What the agent last reported: addresses, disks, uptime, sessions."],
               ["Software", "Installed packages, pending updates, and the actions to update them."],
-              ["Local users", "Accounts that exist on that machine only, and the shells they use."],
+              ["Local users", "Accounts that exist on that machine only — root included — with the shells they use, a new account, and Set password for any of them."],
               [
                 "Files",
                 "The machine's own file system, read through its agent — names, sizes and times. Contents are never read.",

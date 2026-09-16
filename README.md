@@ -15,6 +15,21 @@ Terminology is the one an AD or FreeIPA administrator already has:
 Organizational Unit, Group Policy Object, Distinguished Name, Sudo Rule,
 HBAC rule, user group, computer group.
 
+## Why
+
+A business that wants off Windows usually stays because nothing on Linux
+managed a hundred computers as one: the pieces existed — Samba, SSSD,
+Kerberos, the browsers' policy files, nftables, CUPS, Kea, FreeRADIUS,
+WireGuard — but as a dozen projects with a dozen vocabularies, each needing
+its own specialist. ODM drives all of them from one console with one agent,
+in Active Directory's own terms, so the person who knows the console knows
+the fleet. There is no licence, no telemetry and no cloud account; every
+password, log and certificate stays on machines you own. And because the
+domain underneath is a standard one, a business is never locked to ODM
+either. The console's Wiki has a page on this — **Why Open Directory
+Manager** — written for the people who decide rather than the people who
+operate.
+
 ---
 
 ## Quickstart
@@ -67,7 +82,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.13.2_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.13.3_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -248,7 +263,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.13.2   # -> dist/odm-client_0.13.2_amd64.deb
+bash packaging/deb/build-in-container.sh 0.13.3   # -> dist/odm-client_0.13.3_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on
