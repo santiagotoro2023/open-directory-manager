@@ -41,3 +41,4 @@ npm-debug.log*
 .idea/
 .vscode/
 .build-cache/
+brag-output/
