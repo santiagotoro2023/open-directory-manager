@@ -35,10 +35,16 @@ def _calls():
             if not node.args or not isinstance(node.args[0], ast.Constant):
                 continue
             sql = node.args[0].value
-            if not isinstance(sql, str) or "$1" not in sql:
+            if not isinstance(sql, str):
                 continue
             # *args forwarding cannot be counted statically.
             if any(isinstance(argument, ast.Starred) for argument in node.args):
+                continue
+            # A statement handed arguments but carrying no placeholder is one
+            # whose $1..$n were eaten — by a shell one-liner's own $ handling,
+            # as happened once — and it fails only when it runs. Counted as
+            # zero placeholders, which the argument check then refuses.
+            if "$1" not in sql and len(node.args) == 1:
                 continue
             yield path.name, node.lineno, sql, len(node.args) - 1
 
@@ -51,7 +57,7 @@ def test_the_extractor_finds_the_statements():
 def test_no_call_passes_the_wrong_number_of_arguments():
     wrong = []
     for name, line, sql, passed in _calls():
-        highest = max(int(number) for number in PLACEHOLDER.findall(sql))
+        highest = max((int(number) for number in PLACEHOLDER.findall(sql)), default=0)
         if highest != passed:
             wrong.append(f"{name}:{line} uses ${highest} but passes {passed} arguments")
     assert not wrong, "argument counts that do not match:\n" + "\n".join(wrong)

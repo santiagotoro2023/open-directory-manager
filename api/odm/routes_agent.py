@@ -1201,7 +1201,7 @@ async def agent_inventory(
                 INSERT INTO computer_event
                     (computer_dn, hostname, kind, principal, occurred_at, detail,
                      service, source)
-                VALUES (, , , , , , , )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 ON CONFLICT (computer_dn, kind, principal, occurred_at) DO NOTHING
                 """,
                 machine.dn,
