@@ -37,6 +37,7 @@ import { Field, Modal } from "../components/Modal";
 import { RsopDialog } from "../components/RsopDialog";
 import { Terminal } from "../components/Terminal";
 import { ActivityTable } from "../components/ActivityTable";
+import { Breadcrumb } from "../components/Breadcrumb";
 import {
   DeleteDialog,
   EDITABLE,
@@ -226,7 +227,7 @@ export function ObjectDetail() {
           Save
         </button>
       </div>
-      <p className="mono muted">{dn}</p>
+      <Breadcrumb dn={dn} />
 
       <nav className="tabs" aria-label="Object sections">
         {tabs.map((entry) => (
@@ -251,6 +252,52 @@ export function ObjectDetail() {
 
       {tab === "general" && (
         <>
+          <h3 className="section-title">Actions</h3>
+          <div className="actions-row">
+            {object.objectType === "user" && (
+              <button type="button" className="ghost" onClick={() => setDialog("password")}>
+                Reset password
+              </button>
+            )}
+            {object.objectType === "user" && (
+              <button type="button" className="ghost" onClick={() => setDialog("second-factor")}>
+                Reset second factor
+              </button>
+            )}
+            {object.objectType === "user" && (
+              <button type="button" className="ghost" onClick={() => setDialog("photo")}>
+                Picture
+              </button>
+            )}
+            {object.objectType === "user" && (
+              <button type="button" className="ghost" onClick={() => setDialog("offboard")}>
+                <UserMinus size={15} aria-hidden="true" />
+                Offboard
+              </button>
+            )}
+            {isAccount && (
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => void run(() => api.directory.setEnabled(dn, isDisabled(object)))}
+              >
+                {isDisabled(object) ? "Enable" : "Disable"}
+              </button>
+            )}
+            {object.objectType === "ou" && (
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => void run(() => api.policy.setInheritance(dn, true))}
+              >
+                <ShieldCheck size={15} aria-hidden="true" />
+                Block inheritance
+              </button>
+            )}
+          </div>
+
           <h3 className="section-title">Identity</h3>
           <dl className="definition">
             <dt>Type</dt>
@@ -308,51 +355,6 @@ export function ObjectDetail() {
             </>
           )}
 
-          <h3 className="section-title">Actions</h3>
-          <div className="actions-row">
-            {object.objectType === "user" && (
-              <button type="button" className="ghost" onClick={() => setDialog("password")}>
-                Reset password
-              </button>
-            )}
-            {object.objectType === "user" && (
-              <button type="button" className="ghost" onClick={() => setDialog("second-factor")}>
-                Reset second factor
-              </button>
-            )}
-            {object.objectType === "user" && (
-              <button type="button" className="ghost" onClick={() => setDialog("photo")}>
-                Picture
-              </button>
-            )}
-            {object.objectType === "user" && (
-              <button type="button" className="ghost" onClick={() => setDialog("offboard")}>
-                <UserMinus size={15} aria-hidden="true" />
-                Offboard
-              </button>
-            )}
-            {isAccount && (
-              <button
-                type="button"
-                className="ghost"
-                disabled={busy}
-                onClick={() => void run(() => api.directory.setEnabled(dn, isDisabled(object)))}
-              >
-                {isDisabled(object) ? "Enable" : "Disable"}
-              </button>
-            )}
-            {object.objectType === "ou" && (
-              <button
-                type="button"
-                className="ghost"
-                disabled={busy}
-                onClick={() => void run(() => api.policy.setInheritance(dn, true))}
-              >
-                <ShieldCheck size={15} aria-hidden="true" />
-                Block inheritance
-              </button>
-            )}
-          </div>
         </>
       )}
 

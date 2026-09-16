@@ -3294,3 +3294,49 @@ ol.steps {
 }
 
 .wall-header h1 { margin: 0; font-size: 20px; }
+
+/* Sidebar sections: a small heading before each group of pages. Collapsed
+   to icons, the heading has nowhere to go and becomes a rule. */
+.nav-group {
+  margin: 12px 0 4px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sidebar.collapsed .nav-group {
+  margin: 8px 10px 4px;
+  padding: 0;
+  height: 1px;
+  background: var(--border);
+  overflow: hidden;
+  color: transparent;
+}
+
+/* The path an object lives at: domain › OU › OU › name, each a link. */
+.breadcrumb.path {
+  font-size: 13px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb.path a {
+  color: var(--text-muted);
+}
+
+.breadcrumb.path a:hover {
+  color: var(--accent);
+}
+
+.path-sep {
+  margin: 0 6px;
+}
+
+.path-leaf {
+  color: var(--text);
+}

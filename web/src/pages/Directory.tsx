@@ -19,7 +19,7 @@ import { EnrolmentTokens } from "../components/EnrolmentTokens";
 import { LinkPolicyDialog, RenameDialog } from "../components/DirectoryDialogs";
 import { PasswordDialog, SecondFactorResetDialog, isDisabled } from "../components/objectDialogs";
 import { Split } from "../components/Split";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Select from "../components/Select"
 import { InfoPanel } from "../components/DocsLink";
 import { isSystemContainer, label, parentOf } from "../components/directoryTree";
@@ -95,7 +95,12 @@ export function Directory() {
   // back put every operator at the top of the domain again — several clicks
   // below where they were working. Kept for the browser session, so it is the
   // same navigation state a Back button would have restored.
-  const [container, setContainer] = useState(() => remembered(CONTAINER_KEY));
+  // A link from an object's own path names the container to open; otherwise
+  // the tree opens where it was left.
+  const [params] = useSearchParams();
+  const [container, setContainer] = useState(
+    () => params.get("container") || remembered(CONTAINER_KEY),
+  );
   const [objects, setObjects] = useState<DirectoryObject[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [typeFilter, setTypeFilter] = useState<ObjectType | "">("");

@@ -35,11 +35,12 @@ import { SecondFactorDialog } from "./components/SecondFactor";
 // to show — network boot needs a boot server and a DHCP server to advertise it.
 const NAV = [
   { label: "Overview", to: "/", icon: LayoutDashboard, end: true },
-  { label: "Directory", to: "/directory", icon: Users, permission: "directory.read" },
-  { label: "Group Policy", to: "/policy", icon: ClipboardList, permission: "gpo.read" },
-  { label: "DNS", to: "/dns", icon: Globe, permission: "dns.read" },
+  { label: "Directory", group: "Domain", to: "/directory", icon: Users, permission: "directory.read" },
+  { label: "Group Policy", group: "Domain", to: "/policy", icon: ClipboardList, permission: "gpo.read" },
+  { label: "DNS", group: "Network", to: "/dns", icon: Globe, permission: "dns.read" },
   {
     label: "DHCP",
+    group: "Network",
     to: "/dhcp",
     icon: Network,
     permission: "dhcp.read",
@@ -47,6 +48,7 @@ const NAV = [
   },
   {
     label: "File Shares",
+    group: "Services",
     to: "/shares",
     icon: FolderOpen,
     permission: "share.read",
@@ -54,6 +56,7 @@ const NAV = [
   },
   {
     label: "Printers",
+    group: "Services",
     to: "/printers",
     icon: Printer,
     permission: "printer.read",
@@ -61,6 +64,7 @@ const NAV = [
   },
   {
     label: "Remote Desktop",
+    group: "Services",
     to: "/remote-desktop",
     icon: MonitorSmartphone,
     permission: "rd.read",
@@ -70,6 +74,7 @@ const NAV = [
   },
   {
     label: "Remote Access",
+    group: "Network",
     to: "/vpn",
     icon: ShieldHalf,
     permission: "vpn.read",
@@ -77,6 +82,7 @@ const NAV = [
   },
   {
     label: "Network Access",
+    group: "Network",
     to: "/network-access",
     icon: Router,
     permission: "radius.read",
@@ -84,6 +90,7 @@ const NAV = [
   },
   {
     label: "Certificates",
+    group: "Services",
     to: "/certificates",
     icon: KeyRound,
     permission: "ca.read",
@@ -91,6 +98,7 @@ const NAV = [
   },
   {
     label: "Client Enrolment",
+    group: "Network",
     to: "/enrolment",
     icon: HardDriveDownload,
     // Network boot is advertised through DHCP: without a DHCP server there is
@@ -100,22 +108,24 @@ const NAV = [
   },
   {
     label: "Domain Controllers",
+    group: "Servers",
     to: "/controllers",
     icon: Database,
     permission: "dc.read",
   },
-  { label: "Server Roles", to: "/roles", icon: Server, permission: "role.read" },
-  { label: "Delegation", to: "/delegation", icon: ShieldCheck, domainAdmin: true },
-  { label: "Deleted Objects", to: "/recyclebin", icon: Trash2, permission: "recyclebin.read" },
+  { label: "Server Roles", group: "Servers", to: "/roles", icon: Server, permission: "role.read" },
+  { label: "Delegation", group: "Security", to: "/delegation", icon: ShieldCheck, domainAdmin: true },
+  { label: "Deleted Objects", group: "Domain", to: "/recyclebin", icon: Trash2, permission: "recyclebin.read" },
   {
     label: "Monitoring",
+    group: "Servers",
     to: "/monitor",
     icon: Gauge,
     permission: "monitor.read",
     roles: ["monitoring"],
   },
-  { label: "Activity", to: "/activity", icon: ActivityIcon, permission: "audit.read" },
-  { label: "Audit Log", to: "/audit", icon: ScrollText, permission: "audit.read" },
+  { label: "Activity", group: "Security", to: "/activity", icon: ActivityIcon, permission: "audit.read" },
+  { label: "Audit Log", group: "Security", to: "/audit", icon: ScrollText, permission: "audit.read" },
   { label: "Wiki", to: "/wiki", icon: BookOpen },
 ];
 
@@ -174,6 +184,13 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
   // from, so the section it provides appears without a reload.
   useLive(WATCH.roles, () => readRoles());
 
+  const visible = NAV.filter(
+    (item) =>
+      (!item.domainAdmin || session.domain_admin) &&
+      (!item.permission || holds(session, item.permission)) &&
+      (!item.roles || item.roles.every((role) => installed.has(role))),
+  );
+
   function toggle() {
     setCollapsed((current) => {
       remember(!current);
@@ -208,13 +225,17 @@ export function Shell({ session, onSignOut }: { session: SessionInfo; onSignOut:
             )}
           </button>
           <ul>
-            {NAV.filter(
-              (item) =>
-                (!item.domainAdmin || session.domain_admin) &&
-                (!item.permission || holds(session, item.permission)) &&
-                (!item.roles || item.roles.every((role) => installed.has(role))),
-            ).map(({ label, to, icon: Icon, end }) => (
+            {visible.map(({ label, to, icon: Icon, end, group }, index) => (
               <li key={label}>
+                {group && group !== visible[index - 1]?.group && (
+                  // The sections are grouped the way an operator thinks of
+                  // the domain: what is in it, the network it runs on, what
+                  // it serves, the servers, and who did what. Collapsed, a
+                  // rule stands in for the heading.
+                  <div className="nav-group" aria-hidden={collapsed}>
+                    <span>{group}</span>
+                  </div>
+                )}
                 <NavLink
                   to={to}
                   end={end}
