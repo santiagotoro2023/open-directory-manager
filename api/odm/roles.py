@@ -402,6 +402,21 @@ REGISTRY: dict[str, Role] = {
             "sends, which is what makes a reconnect land back on the same host."
         ),
     ),
+    "monitoring": Role(
+        name="monitoring",
+        title="Monitoring",
+        summary=(
+            "Metrics from every machine, alerts on what they say, probes of "
+            "whatever else answers on the network, and dashboards to watch it on."
+        ),
+        packages=("iputils-ping", "curl"),
+        ui_section="monitoring",
+        notes=(
+            "Every agent starts reporting once this is installed anywhere. The "
+            "machine carrying the role is the one that runs probes; groups, rules, "
+            "channels, maintenance windows and dashboards are under Monitoring."
+        ),
+    ),
     "file-server": Role(
         name="file-server",
         title="File server",

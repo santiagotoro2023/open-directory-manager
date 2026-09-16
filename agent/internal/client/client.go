@@ -31,6 +31,7 @@ import (
 	agentconfig "odm.example.org/agent/internal/config"
 	"odm.example.org/agent/internal/enrol"
 	"odm.example.org/agent/internal/inventory"
+	"odm.example.org/agent/internal/monitor"
 	"odm.example.org/agent/internal/policy"
 	"odm.example.org/agent/internal/tasks"
 )
@@ -780,4 +781,28 @@ func (c *Client) DownloadPackage(ctx context.Context, dir, packageID string) (st
 		return "", err
 	}
 	return final, nil
+}
+
+// Metrics reports what this machine measured, and what its probes found.
+func (c *Client) Metrics(ctx context.Context, samples []monitor.Sample) error {
+	body, err := json.Marshal(map[string]any{"samples": samples})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.base+"/api/v1/agent/metrics", bytes.NewReader(body),
+	)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("metrics: %s", why(response))
+	}
+	return nil
 }

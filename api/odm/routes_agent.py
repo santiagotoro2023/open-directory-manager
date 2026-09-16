@@ -25,7 +25,20 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from . import agentupdate, audit, ca, objects, push, routes_dc, rsop, sites, tasks, terminal, totp
+from . import (
+    agentupdate,
+    audit,
+    ca,
+    monitor,
+    objects,
+    push,
+    routes_dc,
+    rsop,
+    sites,
+    tasks,
+    terminal,
+    totp,
+)
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -1415,3 +1428,53 @@ async def agent_shell(
         await terminal.finish(pool, opened)
         with contextlib.suppress(Exception):
             await websocket.close()
+
+
+# ------------------------------------------------------------- monitoring --
+
+
+class MetricSample(BaseModel):
+    metric: Annotated[str, Field(max_length=128)]
+    value: float
+    # A probe reports about its target, not about the machine that ran it.
+    host: Annotated[str, Field(max_length=253)] = ""
+
+
+class MetricsReport(BaseModel):
+    samples: Annotated[list[MetricSample], Field(max_length=500)]
+
+
+@router.post("/metrics", status_code=204)
+async def agent_metrics(
+    body: MetricsReport,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> None:
+    """What the machine measured about itself, and about what it probed.
+
+    Refused when no monitoring role exists: nothing would read the numbers,
+    and a table nobody reads should not be written.
+    """
+    if not await monitor.active(pool):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no monitoring role is installed")
+    rows = []
+    for sample in body.samples:
+        if not monitor.METRIC_RE.match(sample.metric):
+            continue
+        host = machine.hostname.lower()
+        if sample.metric.startswith("probe_"):
+            if not sample.host or not monitor.HOST_RE.match(sample.host):
+                continue
+            host = sample.host.lower()
+        elif sample.host:
+            # A machine may only report about itself.
+            continue
+        if sample.value != sample.value:  # NaN
+            continue
+        rows.append((host, sample.metric, float(sample.value)))
+    if not rows:
+        return
+    async with pool.acquire() as conn:
+        await conn.executemany(
+            "INSERT INTO metric_sample (host, metric, value) VALUES ($1, $2, $3)", rows
+        )

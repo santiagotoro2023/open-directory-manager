@@ -51,7 +51,7 @@ UNKNOWN_ROLES=()
 # matches deploy/install-*-role.sh is a role this script does not yet know
 # how to remove — see the header comment.
 KNOWN_ROLES=(dhcp file-server print-server radius remote-desktop-broker
-             session-host vpn certificate-authority pxe time)
+             session-host vpn certificate-authority pxe time monitoring)
 role_known() {
     local slug="$1" k
     for k in "${KNOWN_ROLES[@]}"; do [[ "$k" == "$slug" ]] && return 0; done
@@ -218,6 +218,7 @@ ROLE_VPN="no";         [[ -f /etc/wireguard/odm-external-interface ]] && ROLE_VP
 ROLE_CA="no";          [[ -d /var/lib/odm/ca ]] && ROLE_CA="yes"
 ROLE_PXE="no";         [[ -f /etc/dnsmasq.d/odm-pxe.conf || -d /srv/odm-preseed ]] && ROLE_PXE="yes"
 ROLE_TIME="no";        [[ -f /etc/odm/time-server ]] && ROLE_TIME="yes"
+ROLE_MONITORING="no";  [[ -f /etc/odm/monitoring-role ]] && ROLE_MONITORING="yes"
 
 # ------------------------------------------------------------- reporting ---
 
@@ -249,12 +250,13 @@ fi
 [[ "$ROLE_CA" == "yes" ]] && say "  • Certificate-authority role"
 [[ "$ROLE_PXE" == "yes" ]] && say "  • PXE role (dnsmasq, nginx)"
 [[ "$ROLE_TIME" == "yes" ]] && say "  • Time role (chrony)"
+[[ "$ROLE_MONITORING" == "yes" ]] && say "  • Monitoring role (probes)"
 
 if [[ "$HAS_API" == "no" && "$HAS_AGENT" == "no" && "$IS_DC" == "no" && "$HAS_POSTGRES_DB" == "no" \
         && "$ROLE_DHCP" == "no" && "$ROLE_FILE_SERVER" == "no" && "$ROLE_PRINT" == "no" \
         && "$ROLE_RADIUS" == "no" && "$ROLE_RD_BROKER" == "no" && "$ROLE_SESSION_HOST" == "no" \
         && "$ROLE_VPN" == "no" && "$ROLE_CA" == "no" && "$ROLE_PXE" == "no" \
-        && "$ROLE_TIME" == "no" ]]; then
+        && "$ROLE_TIME" == "no" && "$ROLE_MONITORING" == "no" ]]; then
     say "  (nothing — this machine looks clean already)"
 fi
 echo
@@ -557,6 +559,16 @@ teardown_time() {
     ok "Time role removed"
 }
 
+teardown_monitoring() {
+    [[ "$ROLE_MONITORING" == "yes" ]] || return 0
+    say "Monitoring role"
+    # The probes ran from here and their results live on the controller;
+    # the marker is all the role put on this machine. ping and curl stay:
+    # they are part of any machine, not of ODM.
+    run rm -f /etc/odm/monitoring-role
+    ok "Monitoring role removed"
+}
+
 teardown_pxe() {
     [[ "$ROLE_PXE" == "yes" ]] || return 0
     say "PXE role"
@@ -580,6 +592,7 @@ teardown_vpn
 teardown_certificate_authority
 teardown_pxe
 teardown_time
+teardown_monitoring
 teardown_pam
 teardown_policy_artefacts
 

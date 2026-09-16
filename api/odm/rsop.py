@@ -185,6 +185,7 @@ async def build(
     await attach_vpn(pool, document, target.dn)
     await attach_custom_packages(pool, document)
     attach_certificates(settings, document)
+    await attach_monitoring(pool, document, target.dn)
     # The serial fingerprints what the agent will actually apply, so it is
     # recomputed after template expansion.
     document["serial"] = policy.serial(document)
@@ -305,3 +306,46 @@ def attach_certificates(settings: Settings, document: dict[str, Any]) -> None:
                     "renew_before_days": 30,
                 }
             )
+
+
+async def attach_monitoring(pool: asyncpg.Pool, document: dict[str, Any], dn: str) -> None:
+    """Tell the machine whether to measure itself, and what to probe.
+
+    Not a policy setting: it follows from the monitoring role existing
+    anywhere in the domain, which is a fact about the domain rather than a
+    choice per policy object. A machine carrying the role is also handed the
+    probes to run. Carried in the document because the document is what the
+    agent already asks for on every poll.
+    """
+    active = await pool.fetchval(
+        "SELECT count(*) FROM server_role WHERE role_name = 'monitoring' AND state <> 'removed'"
+    )
+    if not active:
+        return
+    block: dict[str, Any] = {"enabled": True, "interval_seconds": 60, "probes": []}
+    hostname = await pool.fetchval(
+        "SELECT hostname FROM computer_fact WHERE lower(computer_dn) = lower($1)", dn
+    )
+    probing = await pool.fetchval(
+        """
+        SELECT count(*) FROM server_role
+        WHERE role_name = 'monitoring' AND state = 'active' AND lower(node_fqdn) = lower($1)
+        """,
+        hostname or "",
+    )
+    if probing:
+        rows = await pool.fetch(
+            "SELECT id, name, kind, target, port, interval_seconds FROM monitor_probe WHERE enabled"
+        )
+        block["probes"] = [
+            {
+                "id": str(row["id"]),
+                "name": row["name"],
+                "kind": row["kind"],
+                "target": row["target"],
+                "port": row["port"],
+                "interval_seconds": row["interval_seconds"],
+            }
+            for row in rows
+        ]
+    document["monitoring"] = block

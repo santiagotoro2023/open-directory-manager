@@ -37,6 +37,10 @@ PUBLIC = {
     # authority. Public because a certificate is, and because the phone asking
     # has nothing to authenticate with yet.
     ("GET", "/api/v1/ca/trust.crt"),
+    # A monitoring dashboard somebody deliberately shared, for a screen on a
+    # wall: no session, a token as long as one, and nothing on it but the
+    # numbers the dashboard draws. Clearing the token ends the link.
+    ("GET", "/api/v1/monitor/public/{token}"),
 }
 
 

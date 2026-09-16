@@ -91,6 +91,10 @@ PERMISSIONS: tuple[str, ...] = (
     # The domain measured against a security checklist.
     "domain.baseline",
     "audit.read",
+    # Metrics, alerts and dashboards; and writing rules, channels, windows
+    # and dashboards.
+    "monitor.read",
+    "monitor.write",
     "rbac.write",
     "ca.read",
     "ca.issue",

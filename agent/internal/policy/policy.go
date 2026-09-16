@@ -6,6 +6,8 @@
 // server-side, and this is just the flattened result (CLAUDE.md §5.2).
 package policy
 
+import "encoding/json"
+
 // Document is one machine's or one user's resolved policy.
 type Document struct {
 	Target         Target     `json:"target"`
@@ -21,6 +23,11 @@ type Document struct {
 	// What the account itself carries, as opposed to what a policy object
 	// says about it. Only present on a document resolved for one person.
 	User UserDetails `json:"user"`
+	// Whether this machine measures itself, and what it probes. Not a
+	// policy setting: it follows from the monitoring role existing anywhere
+	// in the domain, and is carried here because this document is what the
+	// agent already fetches on every poll. Decoded by the monitor package.
+	Monitoring json.RawMessage `json:"monitoring,omitempty"`
 }
 
 // UserDetails is what the directory holds about the person signing in.

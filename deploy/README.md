@@ -26,6 +26,7 @@ framework, from **Server Roles** in the console.
 | `install-session-host-role.sh` | Any joined server | xrdp and a desktop — XFCE, GNOME or KDE Plasma |
 | `install-remote-desktop-broker-role.sh` | Any joined server | haproxy, returning people to the host they were on |
 | `install-time-role.sh` | Usually a controller | chrony, serving the domain |
+| `install-monitoring-role.sh` | Any joined server | The node that probes the network; metrics, alerts and dashboards light up under Monitoring |
 | `install-phone-approvals.sh` | The control-plane host | ntfy, for a second factor approved on a phone; run by `setup.sh`, and again by hand if a controller had no route to fetch it |
 | `install-agent.sh` | An already-joined machine | The policy agent alone |
 | `import-configuration.py` | The control-plane host | Makes this domain the one in a configuration export |

@@ -513,6 +513,9 @@ func runDaemon(args []string) int {
 	// which is what somebody clicking Refresh in the console asked for.
 	forced := false
 	failures := 0
+	// Measuring runs beside the policy loop, not inside it: a number a
+	// minute must not wait on a fifteen-minute poll or a slow apply.
+	go metricsLoop(ctx, *configPath, *root)
 	for {
 		if err := applyOnce(ctx, *configPath, *root, "", forced); err != nil {
 			fmt.Fprintln(os.Stderr, "odm-agent:", err)
@@ -694,6 +697,7 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	// has to pick up a new one.
 	if username == "" {
 		saveRefresh(env, document.RefreshMinutes)
+		rememberMonitoring(document)
 	}
 	if document.AgentAvailable != nil {
 		env.Offered = document.AgentAvailable.Version

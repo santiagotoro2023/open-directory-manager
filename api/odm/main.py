@@ -30,6 +30,7 @@ from . import (
     events,
     kea,
     ldappool,
+    monitor,
     objects,
     printers,
     radius,
@@ -46,6 +47,7 @@ from . import (
     routes_dns,
     routes_events,
     routes_join,
+    routes_monitor,
     routes_operations,
     routes_packages,
     routes_policy,
@@ -98,6 +100,8 @@ async def lifespan(app: FastAPI):
         # A group whose membership is a query is only true if something keeps
         # answering the question.
         asyncio.create_task(routes_directory.group_query_loop(app.state.pool, settings)),
+        # The rules are only true if something keeps asking whether they hold.
+        asyncio.create_task(monitor.evaluate_loop(app.state.pool, settings)),
     ]
     try:
         yield
@@ -182,6 +186,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_packages.router)
     app.include_router(routes_events.router)
     app.include_router(routes_join.router)
+    app.include_router(routes_monitor.router)
     app.include_router(routes_activity.router)
     app.include_router(routes_audit.router)
 

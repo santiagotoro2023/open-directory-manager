@@ -69,6 +69,10 @@ class FakeConn:
         if "revoked_at = now()" in sql:
             self.state["session"] = None
 
+    async def executemany(self, sql, rows):
+        for row in rows:
+            self.state.setdefault("executed", []).append((sql, tuple(row)))
+
     async def fetch(self, sql, *args):
         self.state.setdefault("executed", []).append((sql, args))
         if "FROM rbac_assignment" in sql:
