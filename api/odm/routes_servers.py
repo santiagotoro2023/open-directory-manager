@@ -8,16 +8,20 @@ logging into each one.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import re
+import secrets
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 import asyncpg
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import agents, agentupdate, audit, objects, tasks
+from . import agents, agentupdate, audit, objects, sessions, tasks, terminal
 from .config import Settings, get_settings
 from .routes_directory import _read
 from .security import Authz, authorization, client_ip, get_pool, require_admin, requires
@@ -631,6 +635,177 @@ async def run_shell(
         # for exactly the commands somebody runs to find out what is wrong.
         "failed": failed,
     }
+
+
+class ShellSessionRequest(BaseModel):
+    dn: Annotated[str, Field(min_length=3, max_length=1024)]
+    cols: Annotated[int, Field(default=80, ge=20, le=500)] = 80
+    rows: Annotated[int, Field(default=24, ge=5, le=200)] = 24
+
+
+@router.post("/computer/shell/session", dependencies=[Depends(requires("computer.shell"))])
+async def open_shell_session(
+    body: ShellSessionRequest,
+    request: Request,
+    authz: Authz = Depends(authorization),
+    session: Session = Depends(require_admin),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> dict[str, Any]:
+    """Ask for a terminal on a machine.
+
+    The same power as `/computer/shell` — root on that machine — held to the
+    same right and recorded the same way, except that what is recorded at
+    the end is the whole session rather than one command. This only asks:
+    the agent is told to connect, and the console then opens the WebSocket
+    beside this endpoint, which is where the two meet.
+    """
+    authz.require("computer.shell", body.dn)
+    fact = await pool.fetchrow(HOSTNAME_BY_DN, body.dn)
+    if fact is None:
+        raise objects.NotFound(
+            "this machine has not reported yet, so there is nowhere to open a terminal"
+        )
+    opened = terminal.registry.create(
+        dn=body.dn,
+        hostname=fact["hostname"],
+        admin_session_id=session.id,
+        principal=session.principal,
+        principal_sid=session.principal_sid,
+        source_ip=client_ip(request),
+        cols=body.cols,
+        rows=body.rows,
+    )
+    async with pool.acquire() as conn:
+        await tasks.enqueue(
+            conn,
+            node_fqdn=fact["hostname"],
+            kind="shell-session",
+            payload={"session": opened.id, "cols": body.cols, "rows": body.rows},
+            subject=body.dn,
+            requested_by=session.principal,
+        )
+        await audit.record(
+            conn,
+            actor=session.principal,
+            actor_sid=session.principal_sid,
+            source_ip=client_ip(request),
+            action="computer.shell.open",
+            outcome="success",
+            object_type="computer",
+            object_dn=body.dn,
+            detail=f"{fact['hostname']}: terminal opened",
+        )
+    return {"session": opened.id, "node": fact["hostname"]}
+
+
+def _same_origin(websocket: WebSocket, settings: Settings) -> bool:
+    """Whether the page that opened this socket is the console.
+
+    Browsers send Origin on every WebSocket handshake and let any page open
+    one, cookies included — the CORS rules that guard the JSON endpoints do
+    not apply. So the check is made here: the console's own origin, or one
+    the operator listed.
+    """
+    origin = websocket.headers.get("origin", "")
+    if not origin:
+        return False
+    if origin in settings.allowed_origins:
+        return True
+    host = websocket.headers.get("host", "")
+    return bool(host) and urlsplit(origin).netloc.lower() == host.lower()
+
+
+@router.websocket("/computer/shell/session/{session_id}")
+async def shell_console(
+    websocket: WebSocket,
+    session_id: str,
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """The console's end of a terminal session.
+
+    Authenticated by the same cookie as everything else, and further by the
+    session id: only the console session that asked for the terminal may
+    attach to it. The first message is the CSRF token, which a page from
+    another origin cannot know; nothing is bridged until it has been seen.
+    """
+    pool: asyncpg.Pool = websocket.app.state.pool
+    opened = terminal.registry.get(session_id)
+    if opened is None or opened.closed.is_set() or not _same_origin(websocket, settings):
+        await websocket.close(code=4404)
+        return
+    token = websocket.cookies.get(settings.session_cookie_name)
+    admin = None
+    if token:
+        async with pool.acquire() as conn:
+            admin = await sessions.load(conn, settings, token)
+    if admin is None or admin.id != opened.admin_session_id:
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    try:
+        hello = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+        supplied = json.loads(hello).get("csrf", "")
+    except (TimeoutError, ValueError, AttributeError, WebSocketDisconnect):
+        await websocket.close(code=4400)
+        return
+    if not secrets.compare_digest(str(supplied), admin.csrf_token):
+        await websocket.close(code=4403)
+        return
+
+    # The agent was asked at the same moment the console was; whichever
+    # arrives second finds the other waiting.
+    await websocket.send_bytes(terminal.control(type="status", text="Connecting to the machine…"))
+    try:
+        await asyncio.wait_for(opened.agent_joined.wait(), timeout=terminal.AGENT_WAIT_SECONDS)
+    except TimeoutError:
+        opened.close("the machine did not connect")
+        await websocket.send_bytes(
+            terminal.control(
+                type="exit",
+                text=(
+                    f"{opened.hostname} did not connect within {terminal.AGENT_WAIT_SECONDS} "
+                    "seconds. It may be off, or its agent may be too old to open a terminal — "
+                    "an agent-update from the computer object fixes the second."
+                ),
+            )
+        )
+        await terminal.finish(pool, opened)
+        await websocket.close()
+        return
+    await websocket.send_bytes(terminal.control(type="status", text=""))
+
+    async def from_console() -> None:
+        while True:
+            message = await websocket.receive_bytes()
+            if message and message[0] == terminal.FRAME_DATA:
+                opened.note_input(message[1:])
+            await opened.to_agent.put(message)
+
+    async def to_console() -> None:
+        while True:
+            message = await opened.to_console.get()
+            if message is None:
+                return
+            await websocket.send_bytes(message)
+
+    watchdog = asyncio.create_task(terminal.watchdog(opened))
+    reader = asyncio.create_task(from_console())
+    writer = asyncio.create_task(to_console())
+    try:
+        done, _ = await asyncio.wait({reader, writer}, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            exc = task.exception()
+            if isinstance(exc, WebSocketDisconnect) or task is reader:
+                opened.close("the console closed the terminal")
+    finally:
+        opened.close("the console went away")
+        for task in (reader, writer, watchdog):
+            task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+        await terminal.finish(pool, opened)
+        with contextlib.suppress(Exception):
+            await websocket.close()
 
 
 @router.get("/computer/localadmin",

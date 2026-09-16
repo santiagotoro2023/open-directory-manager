@@ -3,6 +3,7 @@ import type { WikiPage } from "./types";
 import * as administrativeTemplates from "./pages/admx";
 import * as agent from "./pages/agent";
 import * as architecture from "./pages/architecture";
+import * as activity from "./pages/activity";
 import * as audit from "./pages/audit";
 import * as certificates from "./pages/certificates";
 import * as clientEnrolment from "./pages/client-enrolment";
@@ -59,6 +60,7 @@ const MODULES = [
   controllers,
   recycleBin,
   operations,
+  activity,
   audit,
   architecture,
   glossary,

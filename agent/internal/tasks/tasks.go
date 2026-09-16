@@ -143,6 +143,11 @@ func RunWithProgress(
 		output, err = updateAgent(ctx, task.Payload, env)
 	case "shell-run":
 		output, err = runShell(ctx, task.Payload, env)
+	case "shell-session":
+		// A terminal, not a task: it lasts as long as the operator keeps it
+		// open, so the agent's loop starts it beside the queue (serveShell in
+		// main.go) rather than through here. Reaching this is a bug.
+		err = fmt.Errorf("a shell session is opened by the agent's own loop, not run as a task")
 	default:
 		err = fmt.Errorf("unknown task kind %q", task.Kind)
 	}

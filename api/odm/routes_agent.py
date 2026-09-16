@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import contextlib
 import json
 import time
 from dataclasses import dataclass
@@ -19,12 +20,12 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from . import agentupdate, audit, ca, objects, push, routes_dc, rsop, sites, tasks, totp
+from . import agentupdate, audit, ca, objects, push, routes_dc, rsop, sites, tasks, terminal, totp
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
@@ -44,10 +45,21 @@ async def require_machine(
     request: Request,
     settings: Settings = Depends(get_settings),
 ) -> Machine:
+    return await machine_from_header(request.headers.get("authorization", ""), settings)
+
+
+async def require_machine_socket(
+    websocket: WebSocket,
+    settings: Settings = Depends(get_settings),
+) -> Machine:
+    """require_machine for a WebSocket: the same ticket, on the handshake."""
+    return await machine_from_header(websocket.headers.get("authorization", ""), settings)
+
+
+async def machine_from_header(header: str, settings: Settings) -> Machine:
     if settings.keytab is None:
         raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "no service keytab configured")
 
-    header = request.headers.get("authorization", "")
     scheme, _, payload = header.partition(" ")
     if scheme.lower() != "negotiate" or not payload:
         raise HTTPException(
@@ -899,10 +911,16 @@ class LoginSession(BaseModel):
 
 
 class MachineEvent(BaseModel):
-    kind: Annotated[str, Field(pattern="^(logon|logoff|boot|shutdown|update)$")]
+    # What the agent reads from the machine's journal (agent/internal/inventory/
+    # activity.go) and from wtmp. Shaped rather than listed: the agent that
+    # reads the journal is what knows the kinds, and a newer one must not be
+    # refused by an older console; the shape is what keeps the table clean.
+    kind: Annotated[str, Field(pattern="^[a-z][a-z0-9-]{1,39}$")]
     principal: Annotated[str, Field(max_length=64)] = ""
     occurred_at: datetime
     detail: Annotated[str, Field(max_length=500)] | None = None
+    service: Annotated[str, Field(max_length=32)] = ""
+    source: Annotated[str, Field(max_length=64)] = ""
 
 
 class InstalledPackage(BaseModel):
@@ -1181,8 +1199,9 @@ async def agent_inventory(
             await conn.execute(
                 """
                 INSERT INTO computer_event
-                    (computer_dn, hostname, kind, principal, occurred_at, detail)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                    (computer_dn, hostname, kind, principal, occurred_at, detail,
+                     service, source)
+                VALUES (, , , , , , , )
                 ON CONFLICT (computer_dn, kind, principal, occurred_at) DO NOTHING
                 """,
                 machine.dn,
@@ -1191,6 +1210,8 @@ async def agent_inventory(
                 event.principal,
                 event.occurred_at,
                 event.detail,
+                event.service,
+                event.source,
             )
 
         for record in body.logs:
@@ -1338,3 +1359,59 @@ async def agent_certificate(
         "private_key_pem": issued.private_key_pem,
         "ca_pem": await run_in_threadpool(ca.root_pem, settings),
     }
+
+
+@router.websocket("/shell/{session_id}")
+async def agent_shell(
+    websocket: WebSocket,
+    session_id: str,
+    machine: Machine = Depends(require_machine_socket),
+) -> None:
+    """The machine's end of a terminal session (see terminal.py).
+
+    The agent connects here when told to by a shell-session task, with its
+    own Kerberos ticket on the handshake. The session must have been asked
+    for on this machine: a machine cannot attach to a terminal meant for
+    another, whatever it knows.
+    """
+    pool: asyncpg.Pool = websocket.app.state.pool
+    opened = terminal.registry.get(session_id)
+    if opened is None or opened.closed.is_set() or opened.dn.lower() != machine.dn.lower():
+        await websocket.close(code=4404)
+        return
+    await websocket.accept()
+    opened.agent_joined.set()
+
+    async def from_agent() -> None:
+        while True:
+            message = await websocket.receive_bytes()
+            if message and message[0] == terminal.FRAME_DATA:
+                opened.note_output(message[1:])
+            elif (frame := terminal.parse_control(message)) and frame.get("type") == "exit":
+                status_code = frame.get("status")
+                opened.exit_status = status_code if isinstance(status_code, int) else None
+                await opened.to_console.put(message)
+                opened.close("the shell exited")
+                return
+            await opened.to_console.put(message)
+
+    async def to_agent() -> None:
+        while True:
+            message = await opened.to_agent.get()
+            if message is None:
+                return
+            await websocket.send_bytes(message)
+
+    reader = asyncio.create_task(from_agent())
+    writer = asyncio.create_task(to_agent())
+    try:
+        await asyncio.wait({reader, writer}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        opened.close("the machine went away")
+        for task in (reader, writer):
+            task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+        await terminal.finish(pool, opened)
+        with contextlib.suppress(Exception):
+            await websocket.close()

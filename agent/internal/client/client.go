@@ -41,6 +41,9 @@ type Client struct {
 	http    *spnego.Client
 	krb     *client.Client
 	version string
+	// tls is what the HTTP transport was built with, kept for the one
+	// connection that is not an HTTP request: a shell session.
+	tls *tls.Config
 }
 
 func New(cfg agentconfig.Config, version string) (*Client, error) {
@@ -71,6 +74,7 @@ func New(cfg agentconfig.Config, version string) (*Client, error) {
 		http:    spnego.NewClient(krb, httpClient, cfg.ServicePrincipal),
 		krb:     krb,
 		version: version,
+		tls:     transport.TLSClientConfig,
 	}, nil
 }
 

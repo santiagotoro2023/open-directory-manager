@@ -28,11 +28,12 @@ import (
 	"odm.example.org/agent/internal/enrol"
 	"odm.example.org/agent/internal/inventory"
 	"odm.example.org/agent/internal/policy"
+	"odm.example.org/agent/internal/shell"
 	"odm.example.org/agent/internal/tasks"
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.11.0"
+const version = "0.12.0"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -180,6 +181,7 @@ func runPushFactor(args []string) int {
 	for {
 		select {
 		case <-ctx.Done():
+			noteActivity("second factor: no answer for %s (%s)", *username, *service)
 			fmt.Println("No answer from your phone. Sign in again to try once more.")
 			return 1
 		case <-nudge:
@@ -194,12 +196,15 @@ func runPushFactor(args []string) int {
 		}
 		switch decision {
 		case client.PushApproved:
+			noteActivity("second factor: approved for %s (%s)", *username, *service)
 			fmt.Println("Approved.")
 			return 0
 		case client.PushDenied:
+			noteActivity("second factor: denied for %s (%s)", *username, *service)
 			fmt.Println("Denied from your phone.")
 			return 1
 		case client.PushExpired:
+			noteActivity("second factor: no answer for %s (%s)", *username, *service)
 			fmt.Println("No answer from your phone. Sign in again to try once more.")
 			return 1
 		}
@@ -823,6 +828,16 @@ func runQueued(
 		if task.Kind == "policy-refresh" {
 			refresh = true
 		}
+		if task.Kind == "shell-session" {
+			// A terminal, not a task: it lasts as long as the operator keeps
+			// it open, and the queue must not wait on it. Started here and
+			// reported as begun; the session itself runs beside the loop.
+			go serveShell(ctx, api, task)
+			if err := api.TaskResult(ctx, tasks.Result{ID: task.ID, OK: true, Output: "session opened"}); err != nil {
+				fmt.Fprintln(os.Stderr, "odm-agent: reporting task:", err)
+			}
+			continue
+		}
 		fmt.Printf("  task %-16s running\n", task.Kind)
 		// The console shows this while the task runs, so an install that
 		// takes ten minutes reads as an install rather than as a hang. A
@@ -865,10 +880,17 @@ func reportInventory(ctx context.Context, api *client.Client, env apply.Env) {
 	}
 	// Only advance the journal position once the entries are safely reported,
 	// or a failed report would lose them.
-	if report.LogCursor != "" {
-		full := env.Path(inventory.CursorPath)
+	for path, cursor := range map[string]string{
+		inventory.CursorPath:         report.LogCursor,
+		inventory.ActivityCursorPath: report.ActivityCursor,
+		inventory.UsbCursorPath:      report.UsbCursor,
+	} {
+		if cursor == "" {
+			continue
+		}
+		full := env.Path(path)
 		if err := os.MkdirAll(filepath.Dir(full), 0o750); err == nil {
-			_ = os.WriteFile(full, []byte(report.LogCursor), 0o600)
+			_ = os.WriteFile(full, []byte(cursor), 0o600)
 		}
 	}
 }
@@ -1032,4 +1054,28 @@ func lastLines(text string, count int) string {
 		kept = kept[len(kept)-2000:]
 	}
 	return kept
+}
+
+// serveShell runs one console shell session: dial the control plane, put a
+// terminal on this end of it, and stay until one side hangs up. The daemon's
+// own context is the only thing that ends it early — a policy apply running
+// beside it is neither delayed by it nor able to cut it off.
+func serveShell(ctx context.Context, api *client.Client, task tasks.Task) {
+	session, _ := task.Payload["session"].(string)
+	if session == "" {
+		return
+	}
+	cols, _ := task.Payload["cols"].(float64)
+	rows, _ := task.Payload["rows"].(float64)
+	conn, err := api.DialShell(ctx, session)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: shell session:", err)
+		return
+	}
+	fmt.Println("  shell session opened")
+	if err := shell.Serve(ctx, conn, shell.Options{Cols: int(cols), Rows: int(rows)}); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: shell session ended:", err)
+		return
+	}
+	fmt.Println("  shell session ended")
 }

@@ -54,6 +54,11 @@ type Event struct {
 	Principal  string    `json:"principal"`
 	OccurredAt time.Time `json:"occurred_at"`
 	Detail     string    `json:"detail,omitempty"`
+	// Service is the way in — login, ssh, sudo, remote-desktop — and Source
+	// where from: an address, a terminal, a USB port. Both empty for the
+	// events read from wtmp, which say neither.
+	Service string `json:"service,omitempty"`
+	Source  string `json:"source,omitempty"`
 }
 
 type Report struct {
@@ -75,6 +80,9 @@ type Report struct {
 	// key could be escrowed for one that is.
 	Volumes   []Volume `json:"volumes,omitempty"`
 	LogCursor string   `json:"log_cursor"`
+	// Where the activity reads stopped; see activity.go.
+	ActivityCursor string `json:"activity_cursor,omitempty"`
+	UsbCursor      string `json:"usb_cursor,omitempty"`
 	// Printers this machine can see, when it is a print server. Reported with
 	// everything else so choosing one in the console is instant, rather than
 	// a request that waits for the machine's next check-in.
@@ -214,6 +222,11 @@ func Collect(ctx context.Context, env apply.Env) Report {
 			// Nothing new: keep the position we had rather than resetting it.
 			report.LogCursor = previous
 		}
+		var activity []Event
+		activity, report.ActivityCursor, report.UsbCursor = CollectActivity(ctx, env,
+			strings.TrimSpace(readFile(env, ActivityCursorPath)),
+			strings.TrimSpace(readFile(env, UsbCursorPath)), 300)
+		report.Events = append(report.Events, activity...)
 	}
 	report.Addresses = LocalAddresses()
 	pending, security, names := PendingUpdates(ctx, env)
@@ -439,7 +452,16 @@ func recentEvents(ctx context.Context, env apply.Env) []Event {
 	if err != nil {
 		return nil
 	}
-	return ParseLast(out)
+	// Boots and shutdowns only: sign-ins come from the journal now, with the
+	// service and the address that wtmp never had (activity.go), and the
+	// same sign-in reported twice under two names is worse than once.
+	var kept []Event
+	for _, event := range ParseLast(out) {
+		if event.Kind != "logon" {
+			kept = append(kept, event)
+		}
+	}
+	return kept
 }
 
 // ParseLast turns `last -F` output into events. Exported so its handling of

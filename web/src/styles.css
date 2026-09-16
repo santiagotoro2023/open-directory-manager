@@ -2629,37 +2629,57 @@ tr.detail-row td {
   border-radius: var(--radius-sm);
 }
 
-/* The remote shell: taller than an ordinary command's output, because it is
-   a transcript rather than one answer, and it scrolls to the newest line. */
-.shell-transcript {
-  max-height: 420px;
-  min-height: 220px;
-  margin-bottom: 10px;
+/* The terminal on a machine. Dark, because that is what a terminal is and
+   because the emulator's own colours are drawn against it; the bar above it
+   is the console's, and says whose shell this is and whether it is there. */
+.terminal {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #0f172a;
 }
 
-.shell-transcript pre {
-  margin: 0 0 8px;
-  white-space: pre-wrap;
-  word-break: break-word;
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-recessed);
+  border-bottom: 1px solid var(--border);
 }
 
-.shell-transcript > div + div {
-  margin-top: 6px;
+.terminal-bar .mono {
+  color: var(--text);
 }
 
-/* The prompt, in front of the command rather than in the way of it. */
-.shell-prompt {
-  margin: 0 0 2px;
-  color: var(--accent);
+.terminal-state {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* On the line you type into, it sits beside the field rather than above its
-   top edge: the row stretches its items, so the prompt was pinned to the top
-   of a box as tall as the input and read as misaligned with the text in it. */
-.picker-field .shell-prompt {
-  align-self: center;
-  margin: 0;
+.terminal-state-connected {
+  color: var(--success, #15803d);
+}
+
+.terminal-state-failed {
+  color: var(--danger, #b91c1c);
+}
+
+.terminal-screen {
+  height: min(60vh, 640px);
+  min-height: 280px;
+  padding: 6px 0 6px 8px;
+}
+
+.terminal-screen .xterm {
+  height: 100%;
 }
 
 /* A membership row: the object's name, its distinguished name under it, and
@@ -3047,4 +3067,20 @@ ol.steps {
   padding-left: 20px;
   display: grid;
   gap: 4px;
+}
+
+/* Activity: the detail column is a command line or a device name and may be
+   long; it wraps rather than pushing the table wide. Times do not wrap. */
+.activity .detail {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 480px;
+}
+
+.activity .nowrap {
+  white-space: nowrap;
+}
+
+.activity .badge {
+  margin-left: 0;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -35,6 +35,8 @@ import { LoadingRow } from "../components/Loading";
 import { PickerField } from "../components/Picker";
 import { Field, Modal } from "../components/Modal";
 import { RsopDialog } from "../components/RsopDialog";
+import { Terminal } from "../components/Terminal";
+import { ActivityTable } from "../components/ActivityTable";
 import {
   DeleteDialog,
   EDITABLE,
@@ -101,7 +103,7 @@ export function ObjectDetail() {
   const dn = params.get("dn") ?? "";
 
   const [object, setObject] = useState<DirectoryObject | null>(null);
-  const [tab, setTab] = useState<Tab>("general");
+  const [tab, setTab] = useState<Tab>((params.get("tab") as Tab) || "general");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<
     "password" | "second-factor" | "photo" | "move" | "members" | "delete" | "rsop" | "offboard" | null
@@ -158,6 +160,7 @@ export function ObjectDetail() {
     ...(object.objectType === "group" ? [{ id: "members" as Tab, label: "Members" }] : []),
     ...(object.objectType === "ou" ? [] : [{ id: "memberof" as Tab, label: "Member of" }]),
     { id: "policy", label: "Policy" },
+    ...(object.objectType === "user" ? [{ id: "activity" as Tab, label: "Activity" }] : []),
     ...(isComputer
       ? [
           { id: "machine" as Tab, label: "Machine" },
@@ -373,6 +376,16 @@ export function ObjectDetail() {
         )}
 
       {isComputer && tab === "files" && <FilesTab hostname={machineName} />}
+
+      {object.objectType === "user" && tab === "activity" && (
+        <>
+          <p className="muted">
+            What this person did on the domain's machines — sign-ins, sudo, second-factor
+            answers — as their agents reported it.
+          </p>
+          <ActivityTable principal={text(object.sAMAccountName)} compact />
+        </>
+      )}
 
       {isComputer && tab === "shell" && <ShellTab dn={dn} hostname={machineName} />}
       {isComputer && tab === "logs" && <LogsTab dn={dn} name={machineName} />}
@@ -901,34 +914,8 @@ function ComputerTabs({ dn, tab }: { dn: string; tab: Tab }) {
           </tbody>
         </table>
 
-        <h3 className="section-title">History</h3>
-        <table className="data">
-          <thead>
-            <tr>
-              <th scope="col">When</th>
-              <th scope="col">What</th>
-              <th scope="col">Who</th>
-              <th scope="col">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.events.map((event, index) => (
-              <tr key={index}>
-                <td>{when(event.occurred_at)}</td>
-                <td>{event.kind}</td>
-                <td>{event.principal || "—"}</td>
-                <td className="mono">{event.detail ?? ""}</td>
-              </tr>
-            ))}
-            {detail.events.length === 0 && (
-              <tr>
-                <td colSpan={4} className="empty">
-                  Nothing recorded yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <h3 className="section-title">What happened here</h3>
+        <ActivityTable dn={dn} compact />
       </>
     );
   }
@@ -1281,145 +1268,19 @@ function InstallPackageDialog({
  * which group is worth opening.
  */
 /**
- * A shell on the machine, for troubleshooting it from here.
- *
- * Not a terminal — there is no pty, so no job control, no curses program and
- * nothing that stops to ask a question. What it does keep is the working
- * directory, so cd carries from one command to the next, and what somebody
- * has typed, so the arrow keys walk it. Everything else starts fresh: a
- * variable exported in one command is gone in the next.
- *
- * This is root on that machine. It is its own right rather than something
- * that comes with reading a computer, and every command is in the audit log
- * with who ran it and what came back.
+ * A terminal on the machine: a login shell on a pseudo-terminal there, and
+ * the console's terminal emulator here. Root on that machine, its own right,
+ * the whole session in the audit log when it ends.
  */
 function ShellTab({ dn, hostname }: { dn: string; hostname: string }) {
-  const [command, setCommand] = useState("");
-  const [cwd, setCwd] = useState("/");
-  const [lines, setLines] = useState<
-    { command: string; cwd: string; output: string; failed: string }[]
-  >([]);
-  // Every command typed, newest last, whether or not it worked — the arrow
-  // keys walk this rather than the transcript, so clearing the screen does
-  // not lose what was typed before it.
-  const [typed, setTyped] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [recalled, setRecalled] = useState<number | null>(null);
-  const transcript = useRef<HTMLDivElement | null>(null);
-
-  // A terminal scrolls to what just happened.
-  useEffect(() => {
-    transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
-  }, [lines]);
-
-  async function run() {
-    const entry = command.trim();
-    if (!entry || busy) return;
-    setCommand("");
-    setRecalled(null);
-    setTyped((was) => (was[was.length - 1] === entry ? was : [...was, entry]));
-
-    // Handled here rather than sent: clear empties this screen, and the
-    // machine's own clear would send terminal escapes nothing here reads.
-    if (entry === "clear") {
-      setLines([]);
-      return;
-    }
-
-    setBusy(true);
-    const at = cwd;
-    try {
-      const result = await api.servers.shell(dn, entry, cwd);
-      setCwd(result.cwd || cwd);
-      setLines((was) => [
-        ...was,
-        { command: entry, cwd: at, output: result.output, failed: result.failed },
-      ]);
-    } catch (err) {
-      setLines((was) => [
-        ...was,
-        {
-          command: entry,
-          cwd: at,
-          output: "",
-          failed: err instanceof ApiError ? err.message : String(err),
-        },
-      ]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function keys(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      void run();
-      return;
-    }
-    // Ctrl-L, where a terminal puts it.
-    if (event.key === "l" && event.ctrlKey) {
-      event.preventDefault();
-      setLines([]);
-      return;
-    }
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-    if (typed.length === 0) return;
-    event.preventDefault();
-    const next =
-      event.key === "ArrowUp"
-        ? Math.max(0, (recalled ?? typed.length) - 1)
-        : Math.min(typed.length, (recalled ?? typed.length) + 1);
-    setRecalled(next);
-    setCommand(next >= typed.length ? "" : typed[next]);
-  }
-
-  const prompt = `root@${hostname.split(".")[0]}:${cwd}#`;
-
   return (
     <>
       <p className="muted">
-        Each command runs as root on this machine and finishes before the next one starts.{" "}
-        <code>cd</code> carries over; nothing else does. <code>clear</code> empties this screen.
-        Every command is recorded in the audit log.
+        A root shell on this machine, as if signed in at it. Everything typed and everything
+        printed is recorded in the audit log when the session ends; a session nobody types into
+        for half an hour is closed.
       </p>
-
-      <div className="command-output shell-transcript" role="log" ref={transcript}>
-        {lines.map((line, index) => (
-          <div key={index}>
-            <p className="mono shell-prompt">
-              <strong>
-                root@{hostname.split(".")[0]}:{line.cwd}#
-              </strong>{" "}
-              {line.command}
-            </p>
-            {line.output && <pre>{line.output}</pre>}
-            {line.failed && <pre className="alert">{line.failed}</pre>}
-          </div>
-        ))}
-        {lines.length === 0 && <p className="muted">Nothing run yet.</p>}
-      </div>
-
-      <div className="picker-field">
-        <span className="mono shell-prompt" aria-hidden="true">
-          {prompt}
-        </span>
-        <input
-          aria-label={`Command on ${hostname}`}
-          className="mono"
-          placeholder="journalctl -u odm-agent -n 50"
-          value={command}
-          disabled={busy}
-          onChange={(event) => setCommand(event.target.value)}
-          onKeyDown={keys}
-        />
-        <button
-          type="button"
-          className="primary"
-          disabled={busy || !command.trim()}
-          onClick={() => void run()}
-        >
-          {busy ? "Running…" : "Run"}
-        </button>
-      </div>
+      <Terminal dn={dn} hostname={hostname} />
     </>
   );
 }

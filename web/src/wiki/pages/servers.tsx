@@ -97,29 +97,30 @@ export function Content() {
           />
         </Section>
 
-        <Section title="Running a command on a machine">
+        <Section title="A terminal on a machine">
           <p>
-            A computer object has a <strong>Shell</strong> tab. What is typed there runs as root on
-            that machine and its output comes back &mdash; a round trip of about a second, because
-            the agent already holds a request open for work.
+            A computer object has a <strong>Shell</strong> tab, and what it opens is a terminal:
+            a login shell for root on a pseudo-terminal on that machine, with the console&rsquo;s
+            own terminal emulator at this end. It behaves the way an SSH session does &mdash;
+            prompts, colours, a pager, an editor, Ctrl-C, tab completion, job control &mdash;
+            because to the shell it is one. The window resizing resizes the terminal there too.
           </p>
           <p>
-            The working directory carries from one command to the next, so <C>cd</C> works and the
-            prompt shows where you are. The arrow keys walk what has been typed, and{" "}
-            <C>clear</C> or Ctrl-L empties the screen.
-          </p>
-          <p>
-            It is not a terminal. There is no pty, so there is no job control, no full-screen
-            program and nothing to type at a prompt: a command that stops to ask a question waits
-            until its timeout and is killed. Nothing but the directory survives between commands
-            &mdash; a variable exported in one is gone in the next. Write one line that does the
-            whole thing.
+            The agent dials the console to carry it; the machine listens on nothing new, and a
+            machine that can reach the console for policy can be reached this way. The shell runs
+            as a transient unit of its own, outside the agent&rsquo;s sandbox, so it is an
+            ordinary root shell rather than a restricted one. A session nobody has typed into for
+            half an hour is closed, as is any past eight hours; <strong>New session</strong> opens
+            another.
           </p>
           <Note>
-            This is root on that machine, so it is its own right rather than something that comes
-            with reading a computer object, and it is checked against that machine the way any
-            other change to it is. Every command is written to the audit log with who ran it, from
-            where, and what came back &mdash; including the ones that failed.
+            This is root on that machine, so it is its own right (<C>computer.shell</C>) rather
+            than something that comes with reading a computer object, and it is checked against
+            that machine the way any other change to it is. When a session ends, the whole of it
+            &mdash; everything typed and the last of what was printed &mdash; is written to the
+            audit log as <C>computer.shell.session</C>, with who, from where and for how long; and
+            the machine&rsquo;s own <strong>Activity</strong> shows it beside the sudo commands
+            typed at the machine itself, which is what it is.
           </Note>
         </Section>
 

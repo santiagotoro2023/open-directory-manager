@@ -4,7 +4,10 @@ module odm.example.org/agent
 
 go 1.23
 
-require github.com/jcmturner/gokrb5/v8 v8.4.4
+require (
+	github.com/jcmturner/gokrb5/v8 v8.4.4
+	golang.org/x/net v0.33.0
+)
 
 require (
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
@@ -14,5 +17,4 @@ require (
 	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
 )

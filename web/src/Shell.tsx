@@ -16,6 +16,7 @@ import {
   Database,
   FolderOpen,
   HardDriveDownload,
+  Activity as ActivityIcon,
   ScrollText,
   Server,
   ShieldCheck,
@@ -105,6 +106,7 @@ const NAV = [
   { label: "Server Roles", to: "/roles", icon: Server, permission: "role.read" },
   { label: "Delegation", to: "/delegation", icon: ShieldCheck, domainAdmin: true },
   { label: "Deleted Objects", to: "/recyclebin", icon: Trash2, permission: "recyclebin.read" },
+  { label: "Activity", to: "/activity", icon: ActivityIcon, permission: "audit.read" },
   { label: "Audit Log", to: "/audit", icon: ScrollText, permission: "audit.read" },
   { label: "Wiki", to: "/wiki", icon: BookOpen },
 ];

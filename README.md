@@ -67,7 +67,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.11.0_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.12.0_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -150,7 +150,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Remote access | WireGuard tunnels, exportable client configurations, and always-on for managed machines |
 | Network access | RADIUS for wired, wireless and VPN sign-in, with per-group rules and VLAN assignment |
 | Client enrolment | Unattended Debian installation over the network, joining the domain on first boot |
-| Machine management | Model, serial and drive health from SMART, installed software, local accounts to add and remove, sign-in history, watching a signed-in person's screen with their consent, recent logs filtered to errors and exportable, updates, restart, a remote agent update, a shell that runs as root and keeps its working directory, a file browser that shows and changes owner, group and mode, and disk-encryption status with an escrowed recovery key — on the computer object itself, starting within a second rather than at the next check-in |
+| Machine management | Model, serial and drive health from SMART, installed software, local accounts to add and remove, sign-in history, watching a signed-in person's screen with their consent, recent logs filtered to errors and exportable, updates, restart, a remote agent update, a terminal — a real root login shell on a pseudo-terminal, carried over the agent's own connection, its whole transcript in the audit log when it ends — a file browser that shows and changes owner, group and mode, and disk-encryption status with an escrowed recovery key — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, re-issues the console's own certificate, and withdraws one to a revocation list every issued certificate points at |
 | Passwords | The local password policy for accounts that live on a machine itself, set as a policy-object setting; helpdesk resets. The domain's own password rules are set with `samba-tool domain passwordsettings`, the way any AD-compatible tool sets them, rather than duplicated as console state |
 | Pictures | A person's picture set on their account and shown by every machine they sign in to, at the login screen and in the desktop |
@@ -161,6 +161,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Operations | Health dashboard on Overview, replication, domain backups taken by the controller's own agent, a security baseline measuring the domain against a checklist, and a configuration export: every object, zone and setting in one readable file, importable into a new domain from the console or from `setup.sh --import` |
 | Recycle bin | Every delete snapshotted and restorable within the retention window, into its old container or another one, keeping the security identifier it had |
 | Audit | Every change with actor, outcome and before-and-after state |
+| Activity | What people did at the machines, from every machine's own journal in one place: each sign-in and failed one, each sudo command and refused one, su, phone approvals and refusals, password changes, local accounts, USB devices, boots — filterable by machine, person, kind and time, on a computer object, on a user object, or domain-wide, and exportable as CSV |
 | Clients | One `.deb`: `odm-client-install`, `odm-agent` and the role installers. The join configures the resolver, Samba, Kerberos and SSSD, and starts the agent |
 
 ## Architecture
@@ -245,7 +246,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.11.0   # -> dist/odm-client_0.11.0_amd64.deb
+bash packaging/deb/build-in-container.sh 0.12.0   # -> dist/odm-client_0.12.0_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

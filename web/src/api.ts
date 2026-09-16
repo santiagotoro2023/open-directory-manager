@@ -41,6 +41,37 @@ export interface DirectoryObject {
   [attribute: string]: unknown;
 }
 
+export interface ActivityEntry {
+  id: string;
+  computer_dn: string;
+  hostname: string;
+  kind: string;
+  principal: string;
+  occurred_at: string;
+  detail: string;
+  service: string;
+  source: string;
+}
+
+export type ActivityQuery = {
+  dn?: string;
+  hostname?: string;
+  principal?: string;
+  kind?: string;
+  service?: string;
+  since?: string;
+  until?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export interface ActivitySummary {
+  hours: number;
+  kinds: { kind: string; total: number; machines: number; people: number }[];
+  watched: string[];
+}
+
 export interface AuditEntry {
   id: string;
   occurred_at: string;
@@ -1009,6 +1040,23 @@ export class ApiError extends Error {
 
 let csrfToken = "";
 
+/**
+ * The WebSocket a terminal session runs over.
+ *
+ * Same origin, same cookie; the first message is the CSRF token, which is
+ * what proves the page opening this is the console and not another site
+ * the browser happened to have the cookie for.
+ */
+export function terminalSocket(session: string): WebSocket {
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  const socket = new WebSocket(
+    `${scheme}://${window.location.host}/api/v1/servers/computer/shell/session/${session}`,
+  );
+  socket.binaryType = "arraybuffer";
+  socket.addEventListener("open", () => socket.send(JSON.stringify({ csrf: csrfToken })));
+  return socket;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = init.method ?? "GET";
   const headers = new Headers(init.headers);
@@ -1832,6 +1880,27 @@ export const api = {
         "/servers/computer/shell",
         json({ dn, command, cwd, timeout_seconds: timeoutSeconds }),
       ),
+
+    /** Ask for a terminal on the machine. The session id names the
+     *  WebSocket to attach to; see terminalSocket. */
+    openTerminal: (dn: string, cols: number, rows: number) =>
+      request<{ session: string; node: string }>(
+        "/servers/computer/shell/session",
+        json({ dn, cols, rows }),
+      ),
+  },
+
+  activity: {
+    list: (params: ActivityQuery) =>
+      request<{ entries: ActivityEntry[]; limit: number; offset: number }>(
+        `/activity${qs(params)}`,
+      ),
+    kinds: () => request<{ families: Record<string, string[]>; kinds: string[] }>("/activity/kinds"),
+    summary: (hours = 24, dn?: string) =>
+      request<ActivitySummary>(`/activity/summary${qs({ hours, dn })}`),
+    /** Where the CSV of the same list is. A link, not a request: the
+     *  browser downloads it. */
+    exportUrl: (params: ActivityQuery) => `/api/v1/activity/export${qs(params)}`,
   },
 
   shares: {

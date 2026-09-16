@@ -35,6 +35,7 @@ from . import (
     radius,
     remotedesktop,
     roles,
+    routes_activity,
     routes_admx,
     routes_agent,
     routes_audit,
@@ -181,6 +182,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_packages.router)
     app.include_router(routes_events.router)
     app.include_router(routes_join.router)
+    app.include_router(routes_activity.router)
     app.include_router(routes_audit.router)
 
     # The revocation list, where the certificates this domain issues say it

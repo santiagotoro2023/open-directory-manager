@@ -607,6 +607,9 @@ def test_every_task_with_a_subject_moves_something_on():
         # A command run for troubleshooting moves nothing on: its answer is
         # what it printed, and it is the audit log that keeps it.
         "shell-run",
+        # A terminal only asks the agent to connect; the session runs over
+        # that connection and the audit log keeps it, transcript and all.
+        "shell-session",
     }
 
     routes = pathlib.Path("odm")

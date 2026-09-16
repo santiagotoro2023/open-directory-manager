@@ -104,6 +104,7 @@ func runEnrolFactor(args []string) int {
 		if err == nil {
 			fmt.Println()
 			fmt.Println("  Set up. You will be asked for a code from now on.")
+			noteActivity("second factor: enrolled for %s (code)", *username)
 			if len(done.RecoveryCodes) > 0 {
 				fmt.Println()
 				fmt.Println("  Keep these somewhere other than the device, in case you lose it.")
@@ -240,6 +241,7 @@ func enrolPhone(
 		if state.Confirmed || state.AlreadyEnrolled {
 			fmt.Println()
 			fmt.Println("  Phone set up. Sign-ins will ask for your approval there.")
+			noteActivity("second factor: enrolled for %s (phone)", username)
 			return phoneDone
 		}
 	}

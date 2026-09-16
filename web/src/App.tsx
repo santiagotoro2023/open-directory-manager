@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Login } from "./Login";
 import { Shell } from "./Shell";
+import { Activity } from "./pages/Activity";
 import { Audit } from "./pages/Audit";
 import { Certificates } from "./pages/Certificates";
 import { Controllers } from "./pages/Controllers";
@@ -73,6 +74,7 @@ export function App() {
           <Route path="operations" element={<Navigate to="/" replace />} />
           <Route path="recyclebin" element={<RecycleBin />} />
           <Route path="wiki/*" element={<Wiki />} />
+          <Route path="activity" element={<Activity />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
