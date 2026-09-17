@@ -90,6 +90,7 @@ def _public(row: asyncpg.Record, node: str, settings: Settings) -> dict[str, Any
         "node_fqdn": node,
         "vault_url": vaultproxy.vault_url(settings),
         "ca_ready": ca.initialised(settings),
+        "mail_domain": settings.domain,
         "org_client_id": row["org_client_id"],
         "org_configured": bool(row["org_client_id"] and row["org_client_secret"]),
         "sync_groups": list(row["sync_groups"] or []) if isinstance(row["sync_groups"], list)

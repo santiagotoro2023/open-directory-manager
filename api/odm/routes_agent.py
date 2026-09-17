@@ -985,6 +985,15 @@ async def agent_task_result(
         # failed; the reason is the twenty lines above it, and an operator
         # reading this in the console cannot go and look at the machine.
         detail = "\n".join(body.output.strip().splitlines()[-40:])[-4000:] or None
+        if task["kind"] == "passwords-apply" and body.ok:
+            # The vault's admin token travels in the summary; kept on the
+            # row so the Passwords page can show it to an administrator.
+            for word in body.output.replace(";", " ").split():
+                if word.startswith("admin_token="):
+                    await conn.execute(
+                        "UPDATE password_manager SET admin_token = $1 WHERE id = 1",
+                        word.removeprefix("admin_token=").rstrip(")"),
+                    )
         if task["kind"] == "role-install" and task["subject"]:
             await conn.execute(
                 """

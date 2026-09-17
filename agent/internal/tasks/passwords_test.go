@@ -46,7 +46,8 @@ func TestThePasswordManagerIsConfiguredAndItsSyncWiredToTheGroups(t *testing.T) 
 	envFile, _ := os.ReadFile(env.Path(vaultEnvPath))
 	for _, want := range []string{"DOMAIN=https://vault.corp.example.internal", "ADMIN_TOKEN=secret", "SMTP_HOST=mail.corp.example.internal", "SMTP_SECURITY=starttls", "ROCKET_TLS=",
 		"SSO_ENABLED=true", "SSO_ONLY=true", "SSO_AUTHORITY=https://odm.corp.example.internal:8443/api/v1/oidc",
-		"SSO_CLIENT_SECRET=sso-secret", "SSO_AUTH_ONLY_NOT_SESSION=true", "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"} {
+		"SSO_CLIENT_SECRET=sso-secret", "SSO_AUTH_ONLY_NOT_SESSION=true", "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
+		"SIGNUPS_DOMAINS_WHITELIST=corp.example.internal"} {
 		if !strings.Contains(string(envFile), want) {
 			t.Errorf("env lacks %q:\n%s", want, envFile)
 		}

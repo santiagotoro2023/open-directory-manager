@@ -3795,3 +3795,23 @@ h4.subsection {
   outline: none;
   border-color: var(--accent);
 }
+
+/* A secret shown on request, with its show and copy buttons beside it. */
+.token-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.token-row code {
+  padding: 4px 8px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  word-break: break-all;
+}
+.token-row button.small {
+  padding: 4px 6px;
+  min-height: 0;
+}

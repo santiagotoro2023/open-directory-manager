@@ -405,6 +405,7 @@ export interface PasswordManagerStatus {
   node_fqdn: string;
   vault_url: string;
   ca_ready: boolean;
+  mail_domain: string;
   org_client_id: string;
   org_configured: boolean;
   sync_groups: string[];

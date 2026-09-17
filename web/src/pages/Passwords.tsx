@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Check, ExternalLink, KeyRound, RefreshCw } from "lucide-react";
+import { Check, Copy, ExternalLink, Eye, EyeOff, KeyRound, RefreshCw } from "lucide-react";
 import { ApiError, api, type PasswordManagerStatus } from "../api";
 import { InfoPanel } from "../components/DocsLink";
 import { Loading } from "../components/Loading";
@@ -27,6 +27,7 @@ export function Passwords() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [form, setForm] = useState({
     org_client_id: "",
     org_client_secret: "",
@@ -233,9 +234,38 @@ export function Passwords() {
                       {vaultUrl}/admin
                     </a>
                     <div className="muted">
-                      Its token is in <span className="mono">/etc/odm/vaultwarden/admin-token</span> on
-                      that server.
+                      Vaultwarden&rsquo;s own page for users, organisations and a test mail. It asks
+                      for this token:
                     </div>
+                    {status.admin_token ? (
+                      <div className="token-row">
+                        <code className="mono">
+                          {showToken ? status.admin_token : "•".repeat(24)}
+                        </code>
+                        <button
+                          type="button"
+                          className="ghost small"
+                          aria-label={showToken ? "Hide the token" : "Show the token"}
+                          onClick={() => setShowToken((was) => !was)}
+                        >
+                          {showToken ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost small"
+                          aria-label="Copy the token"
+                          onClick={() => void navigator.clipboard?.writeText(status.admin_token)}
+                        >
+                          <Copy size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="muted">
+                        Not reported yet — press <strong>Apply and sync now</strong>; the server sends
+                        it back with the result. (It is also in{" "}
+                        <span className="mono">/etc/odm/vaultwarden/admin-token</span> there.)
+                      </div>
+                    )}
                   </dd>
                 </dl>
               ) : (
@@ -257,10 +287,13 @@ export function Passwords() {
                   Open the{" "}
                   <button type="button" className="inline-link" onClick={() => setTab("vault")}>
                     Vault tab
-                  </button>{" "}
-                  and create an account. This first account is the organisation&rsquo;s owner: use
-                  an administrator&rsquo;s domain account, so it is the same person who signs in
-                  here.
+                  </button>
+                  . The vault asks for an e-mail address first: type the domain account&rsquo;s
+                  address &mdash; its mail attribute, or <em>name@domain</em> where it has none
+                  (an administrator here: <span className="mono">administrator@{status.mail_domain}</span>) &mdash;
+                  then <strong>Use single sign-on</strong>. The console signs you in, the vault
+                  makes your account, and you choose a master password. This first account is
+                  the organisation&rsquo;s owner.
                 </li>
                 <li>
                   <strong>New organisation</strong> &mdash; the domain&rsquo;s name will do. Inside

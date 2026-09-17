@@ -68,9 +68,13 @@ export function Content() {
               done.
             </li>
             <li>
-              <strong>Passwords</strong> → the <strong>Vault</strong> tab: create the first
-              account and, in it, an organisation with a collection per team. This first account
-              is the organisation&rsquo;s owner; the console never holds its password.
+              <strong>Passwords</strong> → the <strong>Vault</strong> tab. The vault asks for an
+              e-mail address first: the domain account&rsquo;s address &mdash; its mail attribute,
+              or <C>name@domain</C> where it has none &mdash; then <strong>Use single sign-on</strong>.
+              The console signs you in, the vault makes the account (any address at the domain
+              may make one that way, and only that way), and you choose a master password. In it,
+              create an organisation with a collection per team. This first account is the
+              organisation&rsquo;s owner; the console never holds its master password.
             </li>
             <li>
               In the organisation, <strong>Settings</strong> → <strong>API key</strong>. Paste
@@ -226,9 +230,10 @@ export function Content() {
 
         <Section title="The admin page">
           <p>
-            Vaultwarden&rsquo;s own admin page is at <C>/vault/admin</C> on the console, behind
-            the token the installer printed (it is in <C>/etc/odm/vaultwarden/admin-token</C> on
-            the server). It shows users, lets one be deleted or its two-factor reset, and sends a test
+            Vaultwarden&rsquo;s own admin page is at <C>/vault/admin</C> on the console, behind a
+            token the installer made. The Setup tab shows it (step 2, with a show and a copy
+            button) once the server has reported it back, which it does with every Apply; it is
+            also in <C>/etc/odm/vaultwarden/admin-token</C> on the server. It shows users, lets one be deleted or its two-factor reset, and sends a test
             mail. Everything the console sets it sets through the environment file, so a change
             made on the admin page to a setting the console owns is overwritten at the next apply.
           </p>

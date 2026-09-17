@@ -81,7 +81,7 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 			"SMTP_SECURITY", "SIGNUPS_ALLOWED", "INVITATIONS_ALLOWED", "ORG_GROUPS_ENABLED",
 			"SSO_ENABLED", "SSO_ONLY", "SSO_AUTHORITY", "SSO_CLIENT_ID", "SSO_CLIENT_SECRET",
 			"SSO_SIGNUPS_MATCH_EMAIL", "SSO_AUTH_ONLY_NOT_SESSION", "SSO_SCOPES",
-			"SSO_CLIENT_CACHE_EXPIRATION", "SSL_CERT_FILE", "":
+			"SSO_CLIENT_CACHE_EXPIRATION", "SSL_CERT_FILE", "SIGNUPS_DOMAINS_WHITELIST", "":
 			continue
 		}
 		kept = append(kept, line)
@@ -92,6 +92,18 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 		"SIGNUPS_ALLOWED=false",
 		"INVITATIONS_ALLOWED=true",
 		"ORG_GROUPS_ENABLED=true",
+	}
+	// A domain account is a vault account: anyone the console signs in
+	// with an address at the domain may create theirs at that first sign-in,
+	// invited or not — and with sign-in through the console the only way to
+	// hold such an address is to have the domain account. Nobody else can
+	// sign up, which SIGNUPS_ALLOWED=false above says.
+	mailDomain, _ := payload["mail_domain"].(string)
+	if strings.ContainsAny(mailDomain, " \n\"'@") {
+		mailDomain = ""
+	}
+	if mailDomain != "" {
+		lines = append(lines, "SIGNUPS_DOMAINS_WHITELIST="+mailDomain)
 	}
 	if host, _ := payload["smtp_host"].(string); host != "" && !strings.ContainsAny(host, " \n\"'") {
 		port := intOf(payload["smtp_port"], 587)
@@ -147,6 +159,14 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 	if _, err := env.Run.Run(ctx, "systemctl", "restart", "vaultwarden.service"); err != nil {
 		return "", fmt.Errorf("restarting the vault: %w", err)
 	}
+	// The admin page's token, made by the installer and printed once there:
+	// reported to the console so the Passwords page can show it, rather
+	// than asking an operator to go and read a file on the server.
+	if token, err := os.ReadFile(env.Path(vaultConf + "/admin-token")); err == nil {
+		if trimmed := strings.TrimSpace(string(token)); trimmed != "" && !strings.ContainsAny(trimmed, " \n") {
+			notes = append(notes, "admin_token="+trimmed)
+		}
+	}
 
 	// The directory sync, when the organisation's key is known.
 	clientID, _ := payload["org_client_id"].(string)
@@ -169,10 +189,6 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 	groupDNs, err := stringList(payload["sync_group_dns"], dnRE)
 	if err != nil {
 		return "", fmt.Errorf("sync groups: %w", err)
-	}
-	mailDomain, _ := payload["mail_domain"].(string)
-	if strings.ContainsAny(mailDomain, " \n\"'@") {
-		mailDomain = ""
 	}
 	if account == "" || password == "" || host == "" || baseDN == "" {
 		return "", fmt.Errorf("the sync's directory account was not sent")
