@@ -3826,6 +3826,13 @@ h4.subsection {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.collection-card > p.muted {
+  margin: 0;
+}
+.collection-card > table.data {
+  margin-top: 4px;
 }
 .collection-head .section-title {
   display: inline-flex;

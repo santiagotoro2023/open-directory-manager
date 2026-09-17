@@ -7,7 +7,7 @@ import { Loading } from "../components/Loading";
 import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 
-type Tab = "seats" | "collections" | "vault";
+type Tab = "seats" | "collections";
 
 /**
  * The password manager, managed here and nowhere else.
@@ -16,7 +16,9 @@ type Tab = "seats" | "collections" | "vault";
  * own, so everything an administrator decides is decided on this page:
  * who has a seat (domain groups and accounts), which collections exist,
  * and which groups see each one. The vault itself — the extension, the
- * app, the Vault tab — is for using passwords, not administering them.
+ * app, or its own tab from the button up top — is for using passwords,
+ * not administering them. (It is not shown in a frame here: the web
+ * vault's unlock does not work inside one.)
  */
 export function Passwords() {
   const [tab, setTab] = useState<Tab>("seats");
@@ -119,8 +121,7 @@ export function Passwords() {
               disabled={busy}
               onClick={() =>
                 void run(async () => {
-                  const answer = await api.passwords.apply();
-                  setNotice(answer.summary);
+                  await api.passwords.apply();
                 })
               }
             >
@@ -266,7 +267,7 @@ export function Passwords() {
           </p>
 
           <nav className="tabs" aria-label="Password manager views">
-            {(["seats", "collections", "vault"] as Tab[]).map((current) => (
+            {(["seats", "collections"] as Tab[]).map((current) => (
               <button
                 key={current}
                 type="button"
@@ -274,7 +275,7 @@ export function Passwords() {
                 aria-current={tab === current ? "true" : undefined}
                 onClick={() => setTab(current)}
               >
-                {current === "seats" ? "Seats" : current === "collections" ? "Collections" : "Vault"}
+                {current === "seats" ? "Seats" : "Collections"}
               </button>
             ))}
           </nav>
@@ -483,11 +484,6 @@ export function Passwords() {
             </>
           )}
 
-          {tab === "vault" && (
-            <div className="vault-frame">
-              <iframe src={vaultHere} title="The vault" />
-            </div>
-          )}
         </>
       )}
 

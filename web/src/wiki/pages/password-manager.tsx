@@ -44,7 +44,8 @@ export function Content() {
           collections exist, which domain groups see each one &mdash; is decided on the Passwords
           page and reconciled into the vault by the console. People sign in with their domain
           account, through the console, and use the vault &mdash; the browser extension, the
-          desktop app, the Vault tab. Nobody administers it there.
+          desktop app, or its own tab from <strong>Open the vault</strong>. Nobody administers it
+          there.
         </p>
 
         <Example title="Set it up">
