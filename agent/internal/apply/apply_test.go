@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -660,6 +661,37 @@ func TestTrustAnchorIsInstalledAndTheBundleRebuilt(t *testing.T) {
 	install, _ := certificates["Install"].([]string)
 	if len(install) != 1 || install[0] != mozillaCertDir+"/odm-odm-root-ca.crt" {
 		t.Errorf("Firefox Install policy = %v", certificates)
+	}
+}
+
+func TestChromiumTrustIsWrittenPerPersonBySignInScript(t *testing.T) {
+	env, runner := testEnv(t)
+	// Two homes on the machine already.
+	for _, name := range []string{"ada", "sam"} {
+		if err := os.MkdirAll(filepath.Join(env.Root, "home", name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	results := applyTrustedCertificates(context.Background(), policy.Settings{
+		TrustedCerts: []policy.TrustedCert{{Name: "odm-root-ca", CertificatePEM: testAnchor}},
+	}, env)
+	if statuses(results)["trusted_certificates:browsers"] != "success" {
+		t.Fatalf("results = %+v", results)
+	}
+	if read(t, env, trustAnchorDir+"/odm-nssdb.list") != "odm:odm-odm-root-ca\n" {
+		t.Error("the anchor list names the wrong nickname")
+	}
+	script := read(t, env, nssdbHook)
+	if strings.Contains(script, `[ "" `) {
+		t.Error("a variable went missing from the script")
+	}
+	if sh, err := exec.LookPath("sh"); err == nil {
+		if out, err := exec.Command(sh, "-n", env.Path(nssdbHook)).CombinedOutput(); err != nil {
+			t.Fatalf("the script does not parse: %s", out)
+		}
+	}
+	if !runner.ran(nssdbHook, "ada") || !runner.ran(nssdbHook, "sam") {
+		t.Errorf("existing homes were not done at apply time: %v", runner.commands)
 	}
 }
 

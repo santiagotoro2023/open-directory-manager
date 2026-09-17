@@ -922,10 +922,27 @@ for           %Engineers      (optional)`}</Code>
 
         <Section title="Trusted certificates">
           <p>
-            A PEM certificate is installed as a trust anchor in{" "}
-            <C>/usr/local/share/ca-certificates</C> and the bundle is rebuilt with{" "}
-            <C>update-ca-certificates</C>. A payload carrying a private key is refused.
+            A PEM certificate is installed as a trust anchor everywhere a Linux machine keeps
+            trust, because no two of them read the same place. A payload carrying a private key
+            is refused.
           </p>
+          <Reference
+            headers={["Who trusts it", "How"]}
+            rows={[
+              [
+                "The system — curl, apt, SSSD, Python, Go, the agent",
+                "The certificate in /usr/local/share/ca-certificates, and update-ca-certificates rebuilds the bundle.",
+              ],
+              [
+                "Firefox",
+                "Firefox on Linux does not read the system store (Mozilla's ImportEnterpriseRoots is Windows and macOS only), so the certificate is written a second time to /usr/lib/mozilla/certificates and named, by full path, in the Certificates → Install policy Firefox does read.",
+              ],
+              [
+                "Chromium, Chrome, Edge, Brave",
+                "They keep trust in NSS, one database per person (~/.pki/nssdb). A sign-in script the agent installs (/etc/odm/scripts/logon/odm-trust-nssdb, run by the PAM hook before any browser starts) adds each anchor there with certutil as that person, and the agent runs it once for every home already on the machine. Anchors ODM added carry an odm: nickname; one that leaves the policy is removed the same way. A browser already open needs restarting.",
+              ],
+            ]}
+          />
         </Section>
 
         <Section title="Desktop background">
@@ -965,9 +982,9 @@ for           %Engineers      (optional)`}</Code>
         <Section title="Domain authority">
           <p>
             The two settings above, filled in from the domain&rsquo;s own certificate authority
-            without pasting anything: the root goes into the system trust store, Firefox is
-            told to read that store and Chromium is handed the certificate through its policy
-            file, and &mdash; when <strong>machine certificate</strong> is on &mdash; the
+            without pasting anything: the root goes into the system trust store, into
+            Firefox&rsquo;s certificate directory and into each person&rsquo;s NSS database for
+            Chromium (see Trusted certificates above), and &mdash; when <strong>machine certificate</strong> is on &mdash; the
             machine enrols a <C>client</C> certificate for itself at the path given. Resolved
             each time the policy is applied, so an authority created or re-created after the
             policy was written is followed at the next refresh, and a domain with no authority

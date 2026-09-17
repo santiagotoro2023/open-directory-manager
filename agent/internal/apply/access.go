@@ -230,6 +230,99 @@ func trustAnchorFile(name string) string {
 	return "odm-" + strings.ReplaceAll(name, ".", "-") + ".crt"
 }
 
+// Chromium, Chrome, Edge and Brave on Linux keep their trust in NSS, in a
+// database per person (~/.pki/nssdb), and read neither the system store nor
+// Firefox's directory. The one documented way in is certutil against that
+// database, as that person — so it is done at each sign-in by the PAM hook
+// (before any browser starts), and once, at apply time, for everybody who
+// already has a home on the machine. Anchors ODM added carry an "odm:"
+// nickname; one no longer in policy is removed by the same script.
+const nssdbHook = "/etc/odm/scripts/logon/odm-trust-nssdb"
+
+// nssdbScript is that script. $1 is the account to act for (the PAM hook
+// passes none and it reads $PAM_USER); the anchors are listed in the file
+// the trust applier writes beside it.
+const nssdbScript = `#!/bin/sh
+` + Header + `# Puts the domain's trust anchors into one person's NSS database, which is
+# where Chromium and Chrome on Linux look. Run by PAM at sign-in, and by the
+# agent for existing homes.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+user="${1:-$PAM_USER}"
+[ -n "$user" ] || exit 0
+[ "$(id -u "$user" 2>/dev/null || echo 0)" -ge 1000 ] || exit 0
+command -v certutil >/dev/null 2>&1 || exit 0
+home=$(getent passwd "$user" | cut -d: -f6)
+[ -n "$home" ] && [ -d "$home" ] || exit 0
+db="$home/.pki/nssdb"
+wanted="` + trustAnchorDir + `/odm-nssdb.list"
+as_user() { runuser -u "$user" -- "$@"; }
+if [ ! -f "$db/cert9.db" ]; then
+  as_user mkdir -p "$db" || exit 0
+  as_user certutil -N -d "sql:$db" --empty-password >/dev/null 2>&1 || exit 0
+fi
+# Anchors ODM added before and policy no longer names.
+as_user certutil -L -d "sql:$db" 2>/dev/null | awk '/^odm:/ { sub(/ +[a-zA-Z,]*$/, ""); print }' |
+while IFS= read -r nick; do
+  [ -n "$nick" ] || continue
+  if ! grep -qxF "$nick" "$wanted" 2>/dev/null; then
+    as_user certutil -D -d "sql:$db" -n "$nick" >/dev/null 2>&1 || true
+  fi
+done
+[ -f "$wanted" ] || exit 0
+while IFS= read -r nick; do
+  [ -n "$nick" ] || continue
+  file="` + trustAnchorDir + `/${nick#odm:}.crt"
+  [ -f "$file" ] || continue
+  as_user certutil -D -d "sql:$db" -n "$nick" >/dev/null 2>&1 || true
+  as_user certutil -A -d "sql:$db" -t "C,," -n "$nick" -i "$file" >/dev/null 2>&1 || true
+done < "$wanted"
+exit 0
+`
+
+// trustNSSDatabases writes the script and its anchor list, makes sure
+// certutil exists, and runs the script for every home already on the
+// machine so the change does not wait for the next sign-in.
+func trustNSSDatabases(ctx context.Context, s policy.Settings, env Env) []policy.Result {
+	var results []policy.Result
+	var names []string
+	for _, anchor := range s.TrustedCerts {
+		names = append(names, "odm:"+strings.TrimSuffix(trustAnchorFile(anchor.Name), ".crt"))
+	}
+	if err := env.WriteFile(trustAnchorDir+"/odm-nssdb.list", strings.Join(names, "\n")+"\n", 0o644, "root", "root"); err != nil {
+		return append(results, policy.Fail("trusted_certificates:browsers", err))
+	}
+	if err := env.WriteFile(nssdbHook, nssdbScript, 0o755, "root", "root"); err != nil {
+		return append(results, policy.Fail("trusted_certificates:browsers", err))
+	}
+	if env.Run == nil {
+		return results
+	}
+	if _, err := os.Stat(env.Path("/usr/bin/certutil")); err != nil && env.Root == "" {
+		if out, err := Unsandboxed(ctx, env, "apt-get", "-y", "-o", "DPkg::Lock::Timeout=600", "install", "libnss3-tools"); err != nil {
+			return append(results, policy.Result{
+				Setting: "trusted_certificates:browsers", Status: "failed",
+				Reason: "installing libnss3-tools (certutil): " + strings.TrimSpace(lastLine(out)),
+			})
+		}
+	}
+	// Everyone with a home on this machine, not only whoever signs in next.
+	entries, _ := os.ReadDir(env.Path("/home"))
+	done := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := env.Run.Run(ctx, nssdbHook, entry.Name()); err == nil {
+			done++
+		}
+	}
+	return append(results, policy.Result{
+		Setting: "trusted_certificates:browsers", Status: "success",
+		Reason: fmt.Sprintf("Chromium trust written for %d home(s); the rest at sign-in", done),
+	})
+}
+
 // Trust anchors (CLAUDE.md §4): certificates the domain's own authority
 // issues are only useful once machines trust the root that signed them.
 // Debian reads anchors from /usr/local/share/ca-certificates and rebuilds
@@ -268,6 +361,7 @@ func applyTrustedCertificates(ctx context.Context, s policy.Settings, env Env) [
 	if installed {
 		results = append(results, runAll(ctx, env, "trusted_certificates:refresh",
 			[]string{"update-ca-certificates"}))
+		results = append(results, trustNSSDatabases(ctx, s, env)...)
 	}
 	return results
 }
