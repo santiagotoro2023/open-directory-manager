@@ -50,7 +50,9 @@ export function RecycleBin() {
       } else {
         await api.recyclebin.restore(item.id, container || undefined);
         setNotice(
-          `Restored ${item.object_dn}. It has a new SID, so re-grant any access that named the old one; accounts come back disabled.`,
+          item.object_type === "gpo"
+            ? `Restored ${item.display_name} with its settings and links; machines pick it up at their next refresh.`
+            : `Restored ${item.object_dn}. It has a new SID, so re-grant any access that named the old one; accounts come back disabled.`,
         );
       }
       setConfirming(null);

@@ -499,10 +499,14 @@ async def delete_gpo(
         row = await pool.fetchrow("SELECT * FROM gpo WHERE guid = $1", guid)
         if row is None:
             raise objects.NotFound("no such group policy object")
-        targets = [
-            r["target_dn"]
-            for r in await pool.fetch("SELECT target_dn FROM gpo_link WHERE gpo_guid = $1", guid)
-        ]
+        link_rows = await pool.fetch(
+            "SELECT target_dn, link_order, enforced, enabled FROM gpo_link WHERE gpo_guid = $1",
+            guid,
+        )
+        targets = [r["target_dn"] for r in link_rows]
+        # The links whole, not only where they pointed: a restore puts each
+        # back with its order, enforcement and state.
+        links = [dict(r) for r in link_rows]
         entry.before = _gpo_json(row)
 
         # A policy object is as deletable-by-accident as a user, and the
@@ -520,7 +524,7 @@ async def delete_gpo(
             f"CN={{{guid}}},CN=Policies,CN=System,{settings.base_dn}",
             row["display_name"],
             db.dumps(_gpo_json(row)),
-            json.dumps(targets),
+            json.dumps(links),
             session.principal,
             timedelta(days=settings.retention_days),
         )
@@ -533,6 +537,94 @@ async def delete_gpo(
         for target in targets:
             await _mirror_links(pool, settings, target)
         await _applied(pool, session.principal)
+
+
+async def restore_gpo(
+    pool: asyncpg.Pool, settings: Settings, snapshot: dict[str, Any], principal: str
+) -> dict[str, Any]:
+    """Put a deleted policy object back from its recycle-bin snapshot: the
+    object with its settings, filter and targeting, its SYSVOL half, and
+    every link it had — to whichever of its containers still exist.
+
+    Called by the recycle bin, whose other objects live in the directory;
+    a policy object lives here, so it is the one it hands over.
+    """
+    attributes = snapshot["attributes"]
+    try:
+        guid = uuid.UUID(str(attributes.get("guid")))
+    except ValueError as exc:
+        raise objects.ObjectError("the snapshot names no policy object") from exc
+    name = str(attributes.get("display_name") or "").strip()
+    if not name:
+        raise objects.ObjectError("the snapshot has no name to restore under")
+    if await pool.fetchval("SELECT 1 FROM gpo WHERE guid = $1", guid):
+        raise objects.ObjectError("a policy object with this id exists already")
+    if await pool.fetchval("SELECT 1 FROM gpo WHERE lower(display_name) = lower($1)", name):
+        raise objects.ObjectError(f"a policy object called {name!r} exists already")
+
+    if sysvol.enabled(settings):
+        async with _bound(settings, write=True) as conn:
+            await run_in_threadpool(sysvol.create, conn, settings, str(guid), name)
+    await pool.execute(
+        """
+        INSERT INTO gpo (guid, display_name, description, enabled, settings,
+                         security_filter, targeting, created_by)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
+        """,
+        guid,
+        name,
+        str(attributes.get("description") or ""),
+        bool(attributes.get("enabled", True)),
+        json.dumps(attributes.get("settings") or {}),
+        json.dumps(attributes.get("security_filter") or []),
+        json.dumps(attributes.get("targeting") or {}),
+        principal,
+    )
+
+    # Snapshots before 0.16.5 kept only the target names.
+    links: list[dict[str, Any]] = []
+    for link in snapshot.get("members") or []:
+        if isinstance(link, str):
+            links.append({"target_dn": link})
+        elif isinstance(link, dict) and link.get("target_dn"):
+            links.append(link)
+    relinked: list[str] = []
+    unlinked: list[str] = []
+    for link in links:
+        target = str(link["target_dn"])
+        try:
+            async with _bound(settings, write=False) as conn:
+                await run_in_threadpool(objects.get, conn, settings, target)
+        except Exception:  # noqa: BLE001 - a container gone since is reported, not raised
+            unlinked.append(target)
+            continue
+        order = link.get("link_order")
+        await pool.execute(
+            """
+            INSERT INTO gpo_link (gpo_guid, target_dn, link_order, enforced, enabled)
+            VALUES ($1, $2,
+                    coalesce($3::integer,
+                             (SELECT coalesce(max(link_order), 0) + 1 FROM gpo_link
+                              WHERE target_dn = $2)),
+                    $4, $5)
+            ON CONFLICT (gpo_guid, target_dn) DO NOTHING
+            """,
+            guid,
+            target,
+            int(order) if order is not None else None,
+            bool(link.get("enforced", False)),
+            bool(link.get("enabled", True)),
+        )
+        relinked.append(target)
+        await _mirror_links(pool, settings, target)
+    await _applied(pool, principal)
+    return {
+        "guid": str(guid),
+        "display_name": name,
+        "distinguishedName": snapshot["object_dn"],
+        "links_restored": relinked,
+        "links_not_restored": unlinked,
+    }
 
 
 # ------------------------------------------------------------------- links ---

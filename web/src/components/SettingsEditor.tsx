@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { SearchSelect } from "./SearchSelect";
+import {
+  KEYBOARD_LAYOUT_OPTIONS,
+  LOCALE_OPTIONS,
+  TIMEZONE_OPTIONS,
+  keyboardVariantOptions,
+} from "../data/regional";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import {
   ApiError,
@@ -3852,21 +3859,6 @@ function PowerEditor({
   );
 }
 
-const LOCALES: { value: string; label: string }[] = [
-  { value: "en_US.UTF-8", label: "English (US)" },
-  { value: "en_GB.UTF-8", label: "English (UK)" },
-  { value: "de_DE.UTF-8", label: "Deutsch (Deutschland)" },
-  { value: "de_CH.UTF-8", label: "Deutsch (Schweiz)" },
-  { value: "de_AT.UTF-8", label: "Deutsch (Österreich)" },
-  { value: "fr_FR.UTF-8", label: "Français (France)" },
-  { value: "fr_CH.UTF-8", label: "Français (Suisse)" },
-  { value: "it_IT.UTF-8", label: "Italiano" },
-  { value: "es_ES.UTF-8", label: "Español" },
-  { value: "nl_NL.UTF-8", label: "Nederlands" },
-  { value: "pt_BR.UTF-8", label: "Português (Brasil)" },
-  { value: "pl_PL.UTF-8", label: "Polski" },
-  { value: "sv_SE.UTF-8", label: "Svenska" },
-];
 
 function RegionalEditor({
   settings,
@@ -3906,76 +3898,76 @@ function RegionalEditor({
       ) : (
         <>
           <div className="field-grid">
-            <label className="field">
+            <div className="field">
               <span>Language</span>
-              <input
-                list="odm-locales"
+              <SearchSelect
+                ariaLabel="Language"
+                options={LOCALE_OPTIONS}
                 value={current.locale}
-                onChange={(e) => set({ locale: e.target.value })}
-                placeholder="de_CH.UTF-8"
+                allowCustom
+                onChange={(value) => set({ locale: String(value) })}
+                placeholder="Choose a language…"
               />
-              <datalist id="odm-locales">
-                {LOCALES.map((entry) => (
-                  <option key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </option>
-                ))}
-              </datalist>
-              <small>As locale-gen names it: language_TERRITORY.UTF-8.</small>
-            </label>
-            <label className="field">
+              <small>The system language: the login screen, the desktop and every program.</small>
+            </div>
+            <div className="field">
               <span>Formats</span>
-              <input
-                list="odm-locales"
+              <SearchSelect
+                ariaLabel="Formats"
+                options={LOCALE_OPTIONS}
                 value={current.formats_locale}
-                onChange={(e) => set({ formats_locale: e.target.value })}
-                placeholder="Same as the language"
+                allowCustom
+                emptyLabel="Same as the language"
+                onChange={(value) => set({ formats_locale: String(value) })}
               />
               <small>Dates, numbers, currency and paper size, when they differ from the language.</small>
-            </label>
-            <label className="field">
+            </div>
+            <div className="field">
               <span>Other languages to offer</span>
-              <input
-                value={current.additional_locales.join(", ")}
-                onChange={(e) =>
-                  set({
-                    additional_locales: e.target.value
-                      .split(",")
-                      .map((part) => part.trim())
-                      .filter(Boolean),
-                  })
-                }
-                placeholder="fr_CH.UTF-8, it_CH.UTF-8"
+              <SearchSelect
+                ariaLabel="Other languages"
+                options={LOCALE_OPTIONS}
+                value={current.additional_locales}
+                multiple
+                allowCustom
+                onChange={(value) => set({ additional_locales: value as string[] })}
+                placeholder="None"
               />
-              <small>Generated on the machine so people may choose them.</small>
-            </label>
-            <label className="field">
+              <small>Generated on the machine so people may switch to them.</small>
+            </div>
+            <div className="field">
               <span>Keyboard layout</span>
-              <input
+              <SearchSelect
+                ariaLabel="Keyboard layout"
+                options={KEYBOARD_LAYOUT_OPTIONS}
                 value={current.keyboard_layout}
-                onChange={(e) => set({ keyboard_layout: e.target.value })}
-                placeholder="ch"
+                allowCustom
+                onChange={(value) => set({ keyboard_layout: String(value), keyboard_variant: "" })}
+                placeholder="Choose a layout…"
               />
-              <small>An XKB layout: us, gb, de, ch, fr, es, it…</small>
-            </label>
-            <label className="field">
+            </div>
+            <div className="field">
               <span>Keyboard variant</span>
-              <input
+              <SearchSelect
+                ariaLabel="Keyboard variant"
+                options={keyboardVariantOptions(current.keyboard_layout)}
                 value={current.keyboard_variant}
-                onChange={(e) => set({ keyboard_variant: e.target.value })}
-                placeholder="de_nodeadkeys"
+                allowCustom
+                emptyLabel="The layout's default"
+                onChange={(value) => set({ keyboard_variant: String(value) })}
               />
-              <small>Empty for the layout's default.</small>
-            </label>
-            <label className="field">
+            </div>
+            <div className="field">
               <span>Time zone</span>
-              <input
+              <SearchSelect
+                ariaLabel="Time zone"
+                options={TIMEZONE_OPTIONS}
                 value={current.timezone}
-                onChange={(e) => set({ timezone: e.target.value })}
-                placeholder="Europe/Zurich"
+                allowCustom
+                onChange={(value) => set({ timezone: String(value) })}
+                placeholder="Choose a time zone…"
               />
-              <small>Region/City, as the IANA database names it.</small>
-            </label>
+            </div>
           </div>
           <label className="checkbox">
             <input

@@ -47,6 +47,10 @@ export function Content() {
               ["Its members, if it was a group", "Yes"],
               ["Its security identifier and object GUID", "No — the directory issues new ones"],
               ["Its password", "No"],
+              [
+                "A policy object: its settings, filter, targeting and every link",
+                "Yes — the object under the same id, its SYSVOL half, and each link with its order, enforcement and state, to every container that still exists",
+              ],
             ]}
           />
         </Section>

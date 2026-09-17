@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from . import audit, objects
+from . import audit, objects, routes_policy
 from .config import Settings, get_settings
 from .routes_directory import _audit_context, _bound
 from .security import get_pool, require_admin, requires
@@ -123,6 +123,27 @@ async def restore(
         }
         entry.object_dn = row["object_dn"]
         entry.object_type = row["object_type"]
+
+        if row["object_type"] == "gpo":
+            # A policy object lives in ODM's own store and SYSVOL, not in
+            # the directory: the policy module puts it back, links and all.
+            restored = await routes_policy.restore_gpo(
+                pool, settings, snapshot, session.principal
+            )
+            await pool.execute(
+                "UPDATE deleted_object SET restored_at = now(), restored_by = $2"
+                " WHERE id = $1::uuid",
+                body.id,
+                session.principal,
+            )
+            entry.after = restored
+            missing = restored["links_not_restored"]
+            entry.detail = (
+                "policy object restored with every link"
+                if not missing
+                else "policy object restored; containers gone since: " + ", ".join(missing)
+            )
+            return restored
 
         async with _bound(settings, write=True) as conn:
             dn = await run_in_threadpool(

@@ -3684,3 +3684,114 @@ h4.subsection {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------------------------------------------------------- search select -- */
+/* A dropdown with a search box (locales, layouts, time zones). The closed
+   control is an input's shape; the open list is Select's, with a filter. */
+.search-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.search-select:focus-visible,
+.search-select.open {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(79 70 229 / 0.15);
+}
+
+.search-select-value,
+.search-select-placeholder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-select-placeholder {
+  color: var(--text-muted);
+}
+
+.search-select small,
+.search-select-menu li button small {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+}
+
+.search-select-caret {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.search-select-chips {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-select .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 9px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.search-select .chip button {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.search-select .chip button:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.search-select-menu {
+  padding: 6px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-select-menu ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.search-select-search {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.search-select-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
