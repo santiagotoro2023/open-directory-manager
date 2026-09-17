@@ -256,19 +256,40 @@ async def remove_instance(
     session: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
 ):
-    """Deregister a role instance.
+    """Remove a role from its node.
 
-    This removes ODM's record of the role, not the packages on the node —
-    tearing a running DHCP server down from a web UI is not something that
-    should happen behind one click.
+    The node's agent runs uninstall.sh --role <name>: services stopped,
+    units and configuration removed, the role's data (vaults, shares,
+    queues) kept on disk. The record goes to "removing" and to "removed"
+    when the node reports back; a role that was never installed (failed,
+    or the node is gone) is simply deregistered.
     """
     row = await pool.fetchrow("SELECT * FROM server_role WHERE id = $1::uuid", id)
     if row is None:
         raise objects.NotFound("no such role instance")
     async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE server_role SET state = 'removed', updated_at = now() WHERE id = $1::uuid", id
-        )
+        if row["state"] == "active":
+            await tasks.enqueue(
+                conn,
+                node_fqdn=row["node_fqdn"],
+                kind="role-remove",
+                payload={"role": row["role_name"]},
+                subject=str(row["id"]),
+                requested_by=session.principal,
+            )
+            await conn.execute(
+                "UPDATE server_role SET state = 'removing', updated_at = now()"
+                " WHERE id = $1::uuid",
+                id,
+            )
+            detail = "the node's agent removes it; data on the node is kept"
+        else:
+            await conn.execute(
+                "UPDATE server_role SET state = 'removed', updated_at = now()"
+                " WHERE id = $1::uuid",
+                id,
+            )
+            detail = "deregistered; it was not active on the node"
         await audit.record(
             conn,
             actor=session.principal,
@@ -278,5 +299,5 @@ async def remove_instance(
             outcome="success",
             object_type="role",
             object_dn=f"{row['role_name']}@{row['node_fqdn']}",
-            detail="deregistered; packages on the node are left running",
+            detail=detail,
         )

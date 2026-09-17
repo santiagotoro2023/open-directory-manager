@@ -93,7 +93,12 @@ Volume=$CONF/tls:/tls:ro,Z
 # The machine's own trust bundle, so the vault can reach the console — the
 # domain's OpenID provider — whose certificate the domain authority issued.
 Volume=/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-PublishPort=8222:8222
+# The host's network, not a container network of its own: the vault has to
+# resolve the console by the domain's own DNS, and on a domain controller
+# that resolver is 127.0.0.1 — which inside a container network is the
+# container. Seen live as "Failed to discover OpenID provider". The vault
+# listens on the host's port 8222 directly.
+Network=host
 AutoUpdate=registry
 
 [Service]

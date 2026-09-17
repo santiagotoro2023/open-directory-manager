@@ -89,7 +89,7 @@ export function Content() {
               [
                 "Password manager",
                 "Vaultwarden, the open-source Bitwarden server, reached at the console's own address (/vault): seats and groups from the domain groups you choose, sign-in with the domain account through the console, the extension and the desktop app on workstations by policy. Needs the certificate authority.",
-                "Nothing at install. The vault itself, the organisation's key, the groups and the sign-in are under Passwords.",
+                "Nothing at install. The vault itself, the organisation's key, the groups and the sign-in are under Passwords. Removing it leaves the vaults in /var/lib/odm/vaultwarden on the server.",
               ],
               [
                 "Monitoring",
@@ -132,7 +132,8 @@ export function Content() {
               ["installing", "The installer is running. The list refreshes while it does."],
               ["active", "The installer finished successfully."],
               ["failed", "The installer failed. The reason is shown on the row."],
-              ["removed", "Deregistered from ODM. The packages are still running on the node."],
+              ["removing", "The node's agent is running uninstall.sh --role for it."],
+              ["removed", "Gone from the node: services stopped, configuration removed, data kept. Or, for a role that was never active there, simply forgotten."],
             ]}
           />
           <Note>
@@ -241,10 +242,18 @@ export function Content() {
           </Note>
         </Section>
 
-        <Section title="Deregistering">
+        <Section title="Removing a role">
           <p>
-            Deregistering removes ODM&rsquo;s record of the role. It does not uninstall packages or
-            stop services on the node; do that on the node itself.
+            <strong>Remove</strong> on an active role has the node&rsquo;s agent run{" "}
+            <C>uninstall.sh --role &lt;name&gt;</C> &mdash; the same script that takes a whole
+            machine apart, held to that one role: its services stopped, its units and
+            configuration removed, the packages left installed (<C>--purge-packages</C> by hand
+            if wanted). What the role held for people stays on disk &mdash; the vaults under{" "}
+            <C>/var/lib/odm/vaultwarden</C>, a file server&rsquo;s share directories, a print
+            server&rsquo;s queues &mdash; because a role can be removed by mistake and data cannot
+            be un-removed. Installing the role again on the same machine finds that data. A role
+            that failed to install, or whose node is gone, is <strong>forgotten</strong> instead:
+            the record goes, nothing is asked of the node.
           </p>
         </Section>
 

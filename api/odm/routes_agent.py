@@ -994,6 +994,21 @@ async def agent_task_result(
                         "UPDATE password_manager SET admin_token = $1 WHERE id = 1",
                         word.removeprefix("admin_token=").rstrip(")"),
                     )
+        if task["kind"] == "role-remove" and task["subject"]:
+            # Removed for good when the node says so; back to active,
+            # with the reason, when it could not.
+            await conn.execute(
+                """
+                UPDATE server_role
+                SET state = CASE WHEN $2 THEN 'removed' ELSE 'active' END,
+                    last_error = CASE WHEN $2 THEN NULL ELSE $3 END,
+                    updated_at = now()
+                WHERE id = $1::uuid
+                """,
+                task["subject"],
+                body.ok,
+                detail,
+            )
         if task["kind"] == "role-install" and task["subject"]:
             await conn.execute(
                 """
@@ -1246,7 +1261,10 @@ async def agent_role_script(
     served to a machine in this domain, like everything else the agent asks
     for.
     """
-    installer = ROLE_DIR / f"install-{role}-role.sh"
+    # "uninstall" is not a role: it is the script that takes one away,
+    # served the same way so a node removes a role the way this console
+    # does it, not the way the release it was joined with did.
+    installer = ROLE_DIR / ("uninstall.sh" if role == "uninstall" else f"install-{role}-role.sh")
     common = ROLE_DIR / "odm-role-common.sh"
     if not installer.is_file():
         raise objects.NotFound(f"this console has no installer for {role}")

@@ -80,6 +80,8 @@ func RunWithProgress(
 	switch task.Kind {
 	case "role-install":
 		output, err = installRole(ctx, task.Payload, env, progress)
+	case "role-remove":
+		output, err = removeRole(ctx, task.Payload, env, progress)
 	case "console-certificate":
 		output, err = applyConsoleCertificate(ctx, env)
 	case "share-apply":
@@ -248,6 +250,29 @@ func installRole(
 	// it refused chrony while the console was installing the time server.
 	defer apply.SuspendSoftwareControl(env)()
 	return unsandboxed(ctx, env, progress, installer, arguments...)
+}
+
+// removeRole takes one role off this machine: uninstall.sh --role <name>,
+// the console's copy of the script, so the teardown matches the console
+// that asked. The role's data stays on disk; the script says so.
+func removeRole(
+	ctx context.Context, payload map[string]any, env apply.Env, progress Progress,
+) (string, error) {
+	role, _ := payload["role"].(string)
+	if !safeRole.MatchString(role) {
+		return "", fmt.Errorf("invalid role name %q", role)
+	}
+	script := env.Path(filepath.Join(RoleDir, "uninstall.sh"))
+	if err := refreshInstaller(ctx, env, "uninstall", script); err != nil {
+		fmt.Fprintln(os.Stderr, "odm-agent: role remover:", err)
+	}
+	if _, err := os.Stat(script); err != nil {
+		return "", fmt.Errorf("%s is not on this machine; reinstall the agent package", script)
+	}
+	if env.Run == nil {
+		return "", fmt.Errorf("no command runner")
+	}
+	return unsandboxed(ctx, env, progress, script, "--role", role, "--yes")
 }
 
 // refreshInstaller replaces this machine's copy of a role installer with the

@@ -66,7 +66,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             return response
         if request.method not in SAFE_METHODS:
             origin = request.headers.get("origin")
-            allowed = get_settings().allowed_origins
+            settings = get_settings()
+            # The console's own published address counts as itself: the
+            # OpenID sign-in page is reached under it (the vault sends
+            # people to console_url), and its form posts back from there.
+            allowed = {*settings.allowed_origins, settings.console_url.rstrip("/")}
             if origin is not None and origin not in allowed:
                 return JSONResponse(
                     {"detail": "origin not allowed"}, status_code=status.HTTP_403_FORBIDDEN

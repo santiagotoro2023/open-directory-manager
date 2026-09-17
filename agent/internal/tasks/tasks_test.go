@@ -213,6 +213,39 @@ func TestAnUnknownRoleInstallerIsRefusedRatherThanExecuted(t *testing.T) {
 	}
 }
 
+func TestRemovingARoleRunsTheUninstallerForThatRoleOnly(t *testing.T) {
+	env, runner := testEnv(t)
+	script := env.Path(filepath.Join(RoleDir, "uninstall.sh"))
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := Run(context.Background(), Task{
+		ID: "1", Kind: "role-remove", Payload: map[string]any{"role": "password-manager"},
+	}, env)
+	if !result.OK {
+		t.Fatalf("removal failed: %s", result.Output)
+	}
+	found := false
+	for _, command := range runner.commands {
+		if strings.HasSuffix(command[0], "uninstall.sh") &&
+			strings.Join(command[1:], " ") == "--role password-manager --yes" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("uninstall.sh --role was not run: %v", runner.commands)
+	}
+	bad := Run(context.Background(), Task{
+		ID: "2", Kind: "role-remove", Payload: map[string]any{"role": "x; reboot"},
+	}, env)
+	if bad.OK {
+		t.Fatal("a role name with a shell metacharacter was accepted")
+	}
+}
+
 func TestAnUnknownTaskKindFailsLoudly(t *testing.T) {
 	env, _ := testEnv(t)
 	result := Run(context.Background(), Task{ID: "1", Kind: "reboot-everything"}, env)

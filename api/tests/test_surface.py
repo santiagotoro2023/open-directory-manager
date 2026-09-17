@@ -620,7 +620,7 @@ def test_every_task_with_a_subject_moves_something_on():
     from odm.routes_agent import FINISHED_BY_TASK
 
     # Kinds that finish somewhere of their own, outside the table.
-    handled_separately = {"role-install", "domain-backup"}
+    handled_separately = {"role-install", "role-remove", "domain-backup"}
     # Kinds that answer a question rather than change a thing.
     no_subject = {
         "browse", "make-directory", "printer-discover", "console-certificate",

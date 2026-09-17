@@ -42,6 +42,7 @@ install -m 0644 "$REPO/deploy/odm-agent.service" "$ROOT/lib/systemd/system/odm-a
 # A member server is given a role by its own agent running one of these.
 install -m 0755 "$REPO"/deploy/install-*-role.sh "$ROOT/usr/lib/odm/roles/"
 install -m 0644 "$REPO/deploy/odm-role-common.sh" "$ROOT/usr/lib/odm/roles/"
+install -m 0755 "$REPO/deploy/uninstall.sh" "$ROOT/usr/lib/odm/roles/"
 install -m 0755 "$REPO/deploy/odm-apply-console-certificate" "$ROOT/usr/lib/odm/roles/"
 
 # cifs-utils and keyutils are what a drive map and a roaming profile are made

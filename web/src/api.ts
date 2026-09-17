@@ -1114,7 +1114,7 @@ export interface RoleInstance {
   id: string;
   role_name: string;
   node_fqdn: string;
-  state: "pending" | "installing" | "active" | "failed" | "removed";
+  state: "pending" | "installing" | "active" | "failed" | "removing" | "removed";
   config: Record<string, string>;
   last_error: string | null;
   installed_by: string | null;

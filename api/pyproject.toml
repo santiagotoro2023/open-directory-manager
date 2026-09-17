@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "odm-api"
-version = "0.16.7"
+version = "0.16.8"
 description = "Open Directory Manager control-plane API"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,7 +29,7 @@ dependencies = [
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
-    "ruff==0.16.7",
+    "ruff==0.16.8",
 ]
 
 [project.scripts]

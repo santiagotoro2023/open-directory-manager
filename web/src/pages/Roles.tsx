@@ -21,6 +21,7 @@ const STATE_BADGE: Record<string, string> = {
   failed: "failure",
   installing: "",
   pending: "",
+  removing: "",
   removed: "",
 };
 
@@ -61,7 +62,7 @@ export function Roles() {
   // An install is apt work and service restarts. While one is running the
   // machine reports what it has printed every few seconds, so poll for it.
   useEffect(() => {
-    if (!installed.some((instance) => instance.state === "installing")) return;
+    if (!installed.some((instance) => instance.state === "installing" || instance.state === "removing")) return;
     const timer = setInterval(() => void load(), 4000);
     return () => clearInterval(timer);
   }, [installed, load]);
@@ -231,12 +232,18 @@ function RoleDetail({
                   <button
                     type="button"
                     className="ghost"
+                    disabled={instance.state === "removing"}
                     onClick={async () => {
+                      const question =
+                        instance.state === "active"
+                          ? `Remove the ${instance.role_name} role from ${instance.node_fqdn}? Its services stop and its configuration is removed there; its data (vaults, shares, queues) stays on disk.`
+                          : `Forget the ${instance.role_name} role on ${instance.node_fqdn}?`;
+                      if (!window.confirm(question)) return;
                       await api.roles.remove(instance.id).catch(() => undefined);
                       onChanged();
                     }}
                   >
-                    Deregister
+                    {instance.state === "active" ? "Remove" : instance.state === "removing" ? "Removing…" : "Forget"}
                   </button>
                 </td>
               </tr>

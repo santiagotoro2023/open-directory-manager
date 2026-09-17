@@ -101,18 +101,23 @@ async def vault(
     url = f"https://{target}:{VAULT_PORT}{PREFIX}/{path}"
     if request.url.query:
         url += "?" + request.url.query
-    headers: dict[str, str] = {
-        k: v for k, v in request.headers.items() if k.lower() not in _SKIP
-    }
-    headers["host"] = request.headers.get("host", "")
-    headers["x-forwarded-proto"] = "https"
-    headers["x-forwarded-host"] = request.headers.get("host", "")
+    # Raw bytes, not decoded strings: a header a browser sends with a
+    # character outside ASCII (Bitwarden's device name, a German
+    # Accept-Language variant) would otherwise fail to re-encode on the
+    # way out — seen live as a 500 on the vault's SSO prevalidate call.
+    headers: list[tuple[bytes, bytes]] = [
+        (k, v) for k, v in request.headers.raw
+        if k.decode("latin-1").lower() not in _SKIP and k.lower() != b"x-forwarded-for"
+    ]
+    host = request.headers.get("host", "")
+    headers.append((b"host", host.encode("latin-1", "replace")))
+    headers.append((b"x-forwarded-proto", b"https"))
+    headers.append((b"x-forwarded-host", host.encode("latin-1", "replace")))
     if request.client:
-        headers["x-real-ip"] = request.client.host
+        headers.append((b"x-real-ip", request.client.host.encode()))
         forwarded = request.headers.get("x-forwarded-for")
-        headers["x-forwarded-for"] = (
-            f"{forwarded}, {request.client.host}" if forwarded else request.client.host
-        )
+        chain = f"{forwarded}, {request.client.host}" if forwarded else request.client.host
+        headers.append((b"x-forwarded-for", chain.encode("latin-1", "replace")))
     client = _client(settings)
     upstream_request = client.build_request(
         request.method, url, headers=headers, content=request.stream()
@@ -122,17 +127,20 @@ async def vault(
     except httpx.HTTPError as exc:
         log.warning("vault at %s unreachable: %s", target, exc)
         return _unavailable("the vault cannot be reached")
-    response_headers = {
-        k: v for k, v in upstream.headers.multi_items() if k.lower() not in _SKIP
-    }
+    response_headers = [
+        (k, v) for k, v in upstream.headers.raw
+        if k.decode("latin-1").lower() not in _SKIP and k.lower() != b"x-frame-options"
+    ]
     # The console shows the vault in a frame of its own page: same origin,
     # so the vault's own frame-ancestors 'self' allows it, and this must not
     # be tightened to DENY by the console's defaults.
-    response_headers["X-Frame-Options"] = "SAMEORIGIN"
-    return StreamingResponse(
-        upstream.aiter_raw(), status_code=upstream.status_code, headers=response_headers,
+    response_headers.append((b"x-frame-options", b"SAMEORIGIN"))
+    response = StreamingResponse(
+        upstream.aiter_raw(), status_code=upstream.status_code,
         background=BackgroundTask(upstream.aclose),
     )
+    response.raw_headers = response_headers
+    return response
 
 
 @router.websocket(PREFIX + "/notifications/hub")
