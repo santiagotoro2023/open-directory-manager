@@ -33,7 +33,8 @@ def test_a_start_page_and_bookmarks_reach_both_browsers_in_their_own_words():
     assert ff["PasswordManagerEnabled"] is False
     assert ff["DisablePrivateBrowsing"] is True
     assert ff["SanitizeOnShutdown"]["History"] is True
-    assert ff["ExtensionSettings"]["uBlock0@raymondhill.net"]["installation_mode"] == "force_installed"
+    ublock = ff["ExtensionSettings"]["uBlock0@raymondhill.net"]
+    assert ublock["installation_mode"] == "force_installed"
     assert ff["ExtensionSettings"]["*"]["installation_mode"] == "blocked"
     assert ff["Proxy"]["Mode"] == "manual" and ff["Proxy"]["HTTPProxy"].endswith(":3128")
 
@@ -54,9 +55,13 @@ def test_unset_means_the_browser_is_left_alone():
 
 def test_typed_settings_fold_over_what_a_template_produced():
     settings = {
-        "browser": {"firefox": {"DisableTelemetry": False, "Cookies": {"Behavior": "reject-tracker"}}},
+        "browser": {
+            "firefox": {"DisableTelemetry": False, "Cookies": {"Behavior": "reject-tracker"}}
+        },
         "firefox_policy": {"telemetry": "block"},
-        "chromium_policy": {"developer_tools": "block", "extra": {"HttpsOnlyMode": "force_enabled"}},
+        "chromium_policy": {
+            "developer_tools": "block", "extra": {"HttpsOnlyMode": "force_enabled"}
+        },
     }
     browserpolicy.fold(settings)
     assert "firefox_policy" not in settings and "chromium_policy" not in settings
