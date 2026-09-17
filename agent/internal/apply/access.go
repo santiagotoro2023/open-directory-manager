@@ -216,7 +216,19 @@ func withRoot(values []string, keep string) []string {
 	return append(values, keep)
 }
 
-const trustAnchorDir = "/usr/local/share/ca-certificates"
+const (
+	trustAnchorDir = "/usr/local/share/ca-certificates"
+	// Where Firefox on Linux looks for certificates its Install policy names.
+	// Firefox does not read the system store on Linux — ImportEnterpriseRoots
+	// is Windows and macOS only (Mozilla bug 1600509) — so every anchor is
+	// written a second time, here, and named in the Firefox policy.
+	mozillaCertDir = "/usr/lib/mozilla/certificates"
+)
+
+// trustAnchorFile is the file name an anchor is kept under, in both places.
+func trustAnchorFile(name string) string {
+	return "odm-" + strings.ReplaceAll(name, ".", "-") + ".crt"
+}
 
 // Trust anchors (CLAUDE.md §4): certificates the domain's own authority
 // issues are only useful once machines trust the root that signed them.
@@ -240,8 +252,12 @@ func applyTrustedCertificates(ctx context.Context, s policy.Settings, env Env) [
 			body += "\n"
 		}
 		// update-ca-certificates only considers files ending in .crt.
-		path := trustAnchorDir + "/odm-" + strings.ReplaceAll(anchor.Name, ".", "-") + ".crt"
+		path := trustAnchorDir + "/" + trustAnchorFile(anchor.Name)
 		if err := env.WriteFile(path, body, 0o644, "root", "root"); err != nil {
+			results = append(results, policy.Fail(setting, err))
+			continue
+		}
+		if err := env.WriteFile(mozillaCertDir+"/"+trustAnchorFile(anchor.Name), body, 0o644, "root", "root"); err != nil {
 			results = append(results, policy.Fail(setting, err))
 			continue
 		}

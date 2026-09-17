@@ -338,12 +338,15 @@ def _page(
     headers = {
         # Its own policy: the stylesheet above, the brand mark, a form that
         # posts back here, and the redirect onwards to the client (which a
-        # browser holds a submitted form to as well).
+        # browser holds a submitted form to as well). Framable by the
+        # console itself: the vault is shown inside the Passwords page, and
+        # its sign-in comes here inside that same frame.
         "Content-Security-Policy": (
             f"default-src 'none'; img-src 'self'; style-src 'nonce-{nonce}'; "
             f"form-action 'self' {target.scheme}://{target.netloc}; "
-            "base-uri 'none'; frame-ancestors 'none'"
+            "base-uri 'none'; frame-ancestors 'self'"
         ),
+        "X-Frame-Options": "SAMEORIGIN",
     }
     if negotiate:
         headers["WWW-Authenticate"] = "Negotiate"

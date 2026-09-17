@@ -647,6 +647,26 @@ func TestTrustAnchorIsInstalledAndTheBundleRebuilt(t *testing.T) {
 	if statuses(results)["trusted_certificates:odm-root-ca"] != "success" {
 		t.Fatalf("results = %+v", results)
 	}
+
+	// Firefox on Linux does not read the system store: the anchor is written
+	// where its Install policy looks, and that policy names it by full path.
+	if read(t, env, mozillaCertDir+"/odm-odm-root-ca.crt") != body {
+		t.Error("the anchor was not written for Firefox")
+	}
+	firefox := firefoxPolicy(policy.Settings{
+		TrustedCerts: []policy.TrustedCert{{Name: "odm-root-ca", CertificatePEM: testAnchor}},
+	})
+	certificates := firefox["Certificates"].(map[string]any)
+	install, _ := certificates["Install"].([]string)
+	if len(install) != 1 || install[0] != mozillaCertDir+"/odm-odm-root-ca.crt" {
+		t.Errorf("Firefox Install policy = %v", certificates)
+	}
+}
+
+func TestTheAgentsOwnTrustFileIsNeverPruned(t *testing.T) {
+	if !neverPrune("/etc/odm/tls/api-ca.pem") {
+		t.Fatal("the console's certificate is what the agent reaches the console with")
+	}
 }
 
 func TestSomethingThatIsNotACertificateIsSkipped(t *testing.T) {

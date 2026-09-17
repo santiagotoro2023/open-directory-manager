@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"os"
 	"os/exec"
@@ -37,7 +38,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.16.2"
+const version = "0.16.3"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -649,13 +650,28 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	if err != nil {
 		return err
 	}
+	env := apply.NewEnv(root)
 	api, err := client.New(cfg, version)
 	if err != nil {
-		return err
+		// The console's certificate file gone from disk — an older agent
+		// pruned it on the pass after fetching it — is healed the same way
+		// a stale one is: fetched again from the domain, then tried again.
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if _, healErr := trust.FromDomain(ctx, cfg, configPath, env); healErr != nil {
+			return fmt.Errorf("%w; and fetching it from the domain: %v", err, healErr)
+		}
+		fmt.Println("fetched the console's certificate from the domain")
+		if cfg, err = config.Load(configPath); err != nil {
+			return err
+		}
+		if api, err = client.New(cfg, version); err != nil {
+			return err
+		}
 	}
 	defer api.Close()
 
-	env := apply.NewEnv(root)
 	env.Version = version
 	env.Download = api.DownloadAgent
 	env.DownloadPackage = api.DownloadPackage

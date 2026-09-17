@@ -269,6 +269,15 @@ sudo deploy/setup.sh --console-fqdn <this controller's name>`}</Code>
             headers={["What", "Where"]}
             rows={[
               ["Server", <C key="pa1">/etc/ntfy/server.yml</C>],
+              [
+                "Its certificate",
+                <>
+                  <C key="pa5">/etc/odm/tls/phone.crt</C> — the phone server&rsquo;s own, made once
+                  from the console&rsquo;s and then left alone, because phones pin the certificate
+                  they were shown. Replacing the console&rsquo;s certificate does not change it;
+                  a phone never sees &ldquo;the fingerprint has changed&rdquo; for that reason.
+                </>,
+              ],
               ["Publishing token (root only)", <C key="pa2">/etc/ntfy/odm-token</C>],
               ["Control plane settings", <C key="pa3">ODM_NTFY_* in /etc/odm/odm.env</C>],
               ["Logs", <C key="pa4">journalctl -u ntfy</C>],

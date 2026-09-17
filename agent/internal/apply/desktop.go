@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"odm.example.org/agent/internal/policy"
@@ -71,7 +72,11 @@ func applyBrowser(_ context.Context, s policy.Settings, env Env) []policy.Result
 // domain certificate authority installed into /usr/local/share/ca-certificates
 // is trusted by everything on the machine except the browser somebody uses to
 // reach the console — which then warns about the domain's own certificate.
-// ImportEnterpriseRoots is Mozilla's documented switch for exactly this.
+// ImportEnterpriseRoots is Mozilla's switch for exactly this on Windows and
+// macOS, and does nothing on Linux (bug 1600509) — which is what the console
+// with a domain-issued certificate and a client saying SEC_ERROR_UNKNOWN_ISSUER
+// looked like. The Install policy is the Linux way: each anchor by full path,
+// written to /usr/lib/mozilla/certificates by the trust applier.
 func firefoxPolicy(s policy.Settings) map[string]any {
 	settings := map[string]any{}
 	if s.Browser != nil {
@@ -91,6 +96,21 @@ func firefoxPolicy(s policy.Settings) map[string]any {
 		}
 	}
 	certificates["ImportEnterpriseRoots"] = true
+	install := []string{}
+	if existing, ok := certificates["Install"].([]any); ok {
+		for _, entry := range existing {
+			if name, ok := entry.(string); ok {
+				install = append(install, name)
+			}
+		}
+	}
+	for _, anchor := range s.TrustedCerts {
+		path := mozillaCertDir + "/" + trustAnchorFile(anchor.Name)
+		if !slices.Contains(install, path) {
+			install = append(install, path)
+		}
+	}
+	certificates["Install"] = install
 	settings["Certificates"] = certificates
 	return settings
 }

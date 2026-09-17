@@ -806,7 +806,7 @@ async def trust_anchor(settings: Settings = Depends(get_settings)) -> Response:
     else:
         try:
             pem = await run_in_threadpool(
-                lambda: Path(CONSOLE_CERTIFICATE).read_text(encoding="ascii")
+                lambda: Path(push.phone_certificate_path()).read_text(encoding="ascii")
             )
         except OSError as exc:
             raise objects.NotFound("the console has no certificate on disk") from exc

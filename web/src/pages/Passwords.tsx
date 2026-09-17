@@ -127,6 +127,11 @@ export function Passwords() {
   const usable = Boolean(status?.installed && status.ca_ready);
   const groupCount = form.sync_groups.split(",").filter((part) => part.trim()).length;
   const vaultUrl = status?.vault_url ?? "";
+  // The vault at this console's own origin, whichever name the browser
+  // reached the console by: the page, the frame and the vault's own
+  // requests then share one origin, which is what its frame-ancestors and
+  // the browser's cookie rules require.
+  const vaultHere = "/vault/";
 
   return (
     <div className="content">
@@ -140,7 +145,7 @@ export function Passwords() {
             <button
               type="button"
               className="ghost"
-              onClick={() => window.open(vaultUrl + "/", "_blank", "noopener")}
+              onClick={() => window.open(vaultHere, "_blank", "noopener")}
             >
               <ExternalLink size={15} aria-hidden="true" />
               Open in a tab
@@ -177,7 +182,7 @@ export function Passwords() {
 
       {tab === "vault" && status && (
         <div className="vault-frame">
-          <iframe src={vaultUrl + "/"} title="The vault" />
+          <iframe src={vaultHere} title="The vault" />
         </div>
       )}
 
@@ -189,7 +194,7 @@ export function Passwords() {
             account. The steps below are in the order they happen; a green one is done.
           </InfoPanel>
 
-          <ol className="wizard">
+          <ol className="setup-steps">
             <Step
               n={1}
               done={status.ca_ready}
@@ -224,7 +229,7 @@ export function Passwords() {
                   </dd>
                   <dt>Admin page</dt>
                   <dd>
-                    <a href={vaultUrl + "/admin"} target="_blank" rel="noopener">
+                    <a href={vaultHere + "admin"} target="_blank" rel="noopener">
                       {vaultUrl}/admin
                     </a>
                     <div className="muted">
@@ -428,7 +433,7 @@ export function Passwords() {
             </Step>
 
             {usable && (
-              <li className="wizard-save">
+              <li className="setup-save">
                 <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
                   {busy ? "Saving…" : "Save and apply steps 4–7"}
                 </button>
@@ -499,18 +504,18 @@ function Step({
 }) {
   const state = done ? "done" : disabled ? "waiting" : "open";
   return (
-    <li className={`wizard-step ${state}`} aria-disabled={disabled || undefined}>
-      <div className="wizard-marker" aria-hidden="true">
+    <li className={`setup-step ${state}`} aria-disabled={disabled || undefined}>
+      <div className="setup-marker" aria-hidden="true">
         {done ? <Check size={16} /> : n}
       </div>
-      <div className="wizard-body">
+      <div className="setup-body">
         <h3>
           {title}
           {optional && <span className="badge">optional</span>}
           {done && <span className="badge success">done</span>}
         </h3>
         <p className="muted">{what}</p>
-        <div className="wizard-content">{children}</div>
+        <div className="setup-content">{children}</div>
       </div>
     </li>
   );

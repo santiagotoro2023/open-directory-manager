@@ -158,6 +158,14 @@ var neverPruned = map[string]bool{
 	// rebuild is known good; a pass that finds it still there is a pass
 	// interrupted mid-rebuild, which is the one moment it must survive.
 	"/var/lib/odm/initrd-backup.img": true,
+	// The console's certificate, which this agent verifies the control plane
+	// with. Written by the domain join and again by the agent when the
+	// console's certificate changes (trust.FromDomain) — conditionally, so
+	// the pass after a heal would otherwise prune it, and an agent whose
+	// ca_cert file is gone cannot reach the console to be told anything.
+	// Seen live: "removed:/etc/odm/tls/api-ca.pem success", then
+	// "read ca_cert: no such file or directory" on every poll.
+	"/etc/odm/tls/api-ca.pem": true,
 }
 
 // neverPrune reports whether a path is one of those.

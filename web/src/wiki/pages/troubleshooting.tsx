@@ -1117,6 +1117,20 @@ export function Content() {
                 </>,
               ],
               [
+                <>The ntfy app says the server&rsquo;s certificate fingerprint has changed</>,
+                <>
+                  Before 0.16.3 the phone server presented the console&rsquo;s own certificate, so
+                  replacing that one (Certificates → Replace console certificate) changed what
+                  every phone had pinned. Since 0.16.3 the phone server has a certificate of its
+                  own, <C key="pc1">/etc/odm/tls/phone.crt</C>, made once from the console&rsquo;s
+                  — the one phones had pinned, where the previous one is still on disk — and
+                  never replaced with the console&rsquo;s. Run <C key="pc2">deploy/setup.sh</C>{" "}
+                  (or <C key="pc3">install-phone-approvals.sh</C>) once on the controller and the
+                  phones are back without touching them. A phone that did have to re-trust: delete
+                  the subscription in the app and subscribe again, tapping Trust once.
+                </>,
+              ],
+              [
                 <>
                   The policy was switched from the code to approval on the phone, but sign-in
                   still asks for a code

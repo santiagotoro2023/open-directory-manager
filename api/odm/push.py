@@ -462,6 +462,18 @@ def methods_no_longer_asked_for(old: dict | None, new: dict | None) -> set[str]:
 # walkthrough has to say so, first.
 
 CONSOLE_CERTIFICATE = "/etc/odm/tls/api.crt"
+# The phone-approval server's own certificate. Phones pin the certificate they
+# were shown once, so the server they talk to must keep presenting that one
+# however often the console's own certificate is replaced — the two were one
+# file until 0.16.3, and replacing the console's silenced every phone.
+# Absent on a controller set up before then, until setup.sh runs again.
+PHONE_CERTIFICATE = "/etc/odm/tls/phone.crt"
+
+
+def phone_certificate_path() -> str:
+    from pathlib import Path
+
+    return PHONE_CERTIFICATE if Path(PHONE_CERTIFICATE).exists() else CONSOLE_CERTIFICATE
 
 
 def phone_trust(settings: Settings, override: str = "") -> str:
@@ -477,15 +489,15 @@ def phone_trust(settings: Settings, override: str = "") -> str:
 
 
 def certificate_fingerprint(settings: Settings) -> str:
-    """SHA-256 of the console's certificate, the way the app shows it when
-    it asks — so a person can compare before tapping Trust."""
+    """SHA-256 of the phone server's certificate, the way the app shows it
+    when it asks — so a person can compare before tapping Trust."""
     from pathlib import Path
 
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes
 
     try:
-        pem = Path(CONSOLE_CERTIFICATE).read_text(encoding="ascii")
+        pem = Path(phone_certificate_path()).read_text(encoding="ascii")
         leaf = x509.load_pem_x509_certificate(pem.encode("ascii", "replace"))
     except (OSError, ValueError, TypeError):
         return ""
@@ -493,14 +505,14 @@ def certificate_fingerprint(settings: Settings) -> str:
 
 
 def trust_state(settings: Settings) -> str:
-    """What the console's certificate is: "self-signed", "domain-ca", or
-    "public"."""
+    """What the phone server's certificate is: "self-signed", "domain-ca",
+    or "public"."""
     from pathlib import Path
 
     from . import ca
 
     try:
-        pem = Path(CONSOLE_CERTIFICATE).read_text(encoding="ascii")
+        pem = Path(phone_certificate_path()).read_text(encoding="ascii")
     except OSError:
         return "self-signed"
     if ca.is_self_signed(pem):

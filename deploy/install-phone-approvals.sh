@@ -91,6 +91,37 @@ if ! id -nG ntfy | tr ' ' '\n' | grep -qx "$SERVICE_GROUP"; then
     usermod -aG "$SERVICE_GROUP" ntfy
 fi
 
+# ----------------------------------------------------------- certificate ----
+# The phone server's own certificate, made once and then left alone. Phones
+# pin the certificate they were shown when they subscribed, so this must not
+# change when the console's does: until 0.16.3 the two were the same file,
+# and replacing the console's certificate put "the fingerprint has changed"
+# on every phone. The first copy is whichever certificate phones have
+# already pinned — the one the console presented before its last
+# replacement, where there was one — and otherwise the console's current
+# certificate.
+if [[ ! -s "$TLS_DIR/phone.crt" || ! -s "$TLS_DIR/phone.key" ]]; then
+    SOURCE="api"
+    if [[ -s "$TLS_DIR/api.crt.previous" && -s "$TLS_DIR/api.key.previous" ]]; then
+        SOURCE="api"
+        # Only a self-signed predecessor is one phones pinned; a certificate
+        # from an authority was trusted through the authority instead.
+        if [[ "$(openssl x509 -noout -issuer -in "$TLS_DIR/api.crt.previous")" == \
+              "$(openssl x509 -noout -subject -in "$TLS_DIR/api.crt.previous")" ]]; then
+            cp -a "$TLS_DIR/api.crt.previous" "$TLS_DIR/phone.crt"
+            cp -a "$TLS_DIR/api.key.previous" "$TLS_DIR/phone.key"
+            SOURCE="previous"
+        fi
+    fi
+    if [[ "$SOURCE" == "api" ]]; then
+        cp -a "$TLS_DIR/api.crt" "$TLS_DIR/phone.crt"
+        cp -a "$TLS_DIR/api.key" "$TLS_DIR/phone.key"
+    fi
+    chown root:"$SERVICE_GROUP" "$TLS_DIR/phone.crt" "$TLS_DIR/phone.key"
+    chmod 0644 "$TLS_DIR/phone.crt"
+    chmod 0640 "$TLS_DIR/phone.key"
+fi
+
 # --------------------------------------------------------------- config ----
 install -d -m 0755 /etc/ntfy
 install -d -m 0750 -o ntfy -g ntfy /var/lib/ntfy /var/cache/ntfy
@@ -100,8 +131,8 @@ cat > /etc/ntfy/server.yml <<CONF
 base-url: "https://${CONSOLE_FQDN}:${PUBLIC_PORT}"
 listen-https: ":${PUBLIC_PORT}"
 listen-http: "127.0.0.1:${LOOPBACK_PORT}"
-cert-file: "${TLS_DIR}/api.crt"
-key-file: "${TLS_DIR}/api.key"
+cert-file: "${TLS_DIR}/phone.crt"
+key-file: "${TLS_DIR}/phone.key"
 cache-file: "/var/cache/ntfy/cache.db"
 cache-duration: "1h"
 auth-file: "/var/lib/ntfy/user.db"
