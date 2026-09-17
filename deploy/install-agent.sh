@@ -64,6 +64,9 @@ install -m 0644 "$(dirname "$0")/odm-role-common.sh" /usr/lib/odm/roles/
 # restart itself.
 HELPER="$(dirname "$0")/odm-apply-console-certificate"
 [[ -f "$HELPER" ]] && install -m 0755 "$HELPER" /usr/lib/odm/roles/
+# And what takes a role away again (uninstall.sh --role), which the console
+# serves to every node from here.
+[[ -f "$(dirname "$0")/uninstall.sh" ]] && install -m 0755 "$(dirname "$0")/uninstall.sh" /usr/lib/odm/roles/
 
 # The network-boot role hands installed machines something to join the domain
 # with, and that something is this binary. Without it the role refuses to

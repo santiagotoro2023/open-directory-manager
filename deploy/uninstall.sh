@@ -228,30 +228,9 @@ ROLE_TIME="no";        [[ -f /etc/odm/time-server ]] && ROLE_TIME="yes"
 ROLE_MONITORING="no";  [[ -f /etc/odm/monitoring-role ]] && ROLE_MONITORING="yes"
 ROLE_PASSWORDS="no";   [[ -f /etc/containers/systemd/vaultwarden.container ]] && ROLE_PASSWORDS="yes"
 
-# ------------------------------------------------------------- one role ---
-# Asked for one role: its teardown alone, found by the same detection as
-# the full run, with every found-on-this-machine flag but its own turned
-# off so nothing else's teardown has anything to do.
-if [[ -n "$ONLY_ROLE" ]]; then
-    role_known "$ONLY_ROLE" || { echo "unknown role: $ONLY_ROLE" >&2; exit 2; }
-    fn="teardown_${ONLY_ROLE//-/_}"
-    case "$ONLY_ROLE" in
-        remote-desktop-broker) fn="teardown_remote_desktop_broker" ;;
-        certificate-authority) fn="teardown_certificate_authority" ;;
-    esac
-    declare -F "$fn" >/dev/null || { echo "no teardown for $ONLY_ROLE" >&2; exit 2; }
-    say "${B}Removing the $ONLY_ROLE role from this machine${R}"
-    [[ "$DRY_RUN" == "yes" ]] && note "Dry run: nothing below actually happens."
-    # Every detection variable this role's teardown gates on stays as
-    # detected; a role that is not here is reported and nothing happens.
-    "$fn"
-    [[ "$PURGE_PACKAGES" == "yes" && ${#PURGE_LIST[@]} -gt 0 ]] && \
-        maybe apt-get -y purge "${PURGE_LIST[@]}"
-    exit 0
-fi
-
 # ------------------------------------------------------------- reporting ---
 
+if [[ -z "$ONLY_ROLE" ]]; then
 clear 2>/dev/null || true
 cat <<BANNER
 ${B}Open Directory Manager — uninstall${R}
@@ -317,6 +296,7 @@ fi
 
 echo
 say "${B}Removing…${R}"
+fi
 
 # ------------------------------------------------------------------ roles --
 
@@ -626,6 +606,29 @@ teardown_pxe() {
     note "  /etc/nginx/sites-enabled/default was removed when this role was installed and is not restored."
     ok "PXE role removed"
 }
+
+# ------------------------------------------------------------- one role ---
+# Asked for one role: its teardown alone, gated by the same detection as
+# the full run, and nothing else — no banner, no confirmation, no other
+# role touched.
+if [[ -n "$ONLY_ROLE" ]]; then
+    role_known "$ONLY_ROLE" || { echo "unknown role: $ONLY_ROLE" >&2; exit 2; }
+    fn="teardown_${ONLY_ROLE//-/_}"
+    case "$ONLY_ROLE" in
+        remote-desktop-broker) fn="teardown_remote_desktop_broker" ;;
+        certificate-authority) fn="teardown_certificate_authority" ;;
+    esac
+    declare -F "$fn" >/dev/null || { echo "no teardown for $ONLY_ROLE" >&2; exit 2; }
+    say "${B}Removing the $ONLY_ROLE role from this machine${R}"
+    [[ "$DRY_RUN" == "yes" ]] && note "Dry run: nothing below actually happens."
+    # Every detection variable this role's teardown gates on stays as
+    # detected; a role that is not here is reported and nothing happens.
+    "$fn"
+    [[ "$PURGE_PACKAGES" == "yes" && ${#PURGE_LIST[@]} -gt 0 ]] && \
+        maybe apt-get -y purge "${PURGE_LIST[@]}"
+    exit 0
+fi
+
 
 teardown_dhcp
 teardown_file_server
