@@ -774,10 +774,21 @@ function AlertsTab() {
             <tr key={alert.id}>
               <td className="nowrap">{new Date(alert.started_at).toLocaleString()}</td>
               <td><span className={`badge ${alert.severity === "critical" ? "failure" : ""}`}>{alert.severity}</span></td>
-              <td>{alert.rule_name}</td>
-              <td>{alert.host.split(".")[0]}</td>
-              <td>{alert.message}{alert.suppressed && <span className="muted"> · in maintenance, nobody told</span>}</td>
-              <td>{alert.state === "firing" ? <span className="badge failure">firing</span> : <span className="badge success">resolved {alert.resolved_at && new Date(alert.resolved_at).toLocaleTimeString()}</span>}</td>
+              <td className="nowrap">{alert.rule_name}</td>
+              <td className="nowrap">{alert.host.split(".")[0]}</td>
+              <td className="wide">{alert.message}{alert.suppressed && <span className="muted"> · in maintenance, nobody told</span>}</td>
+              <td className="nowrap">
+                {alert.state === "firing" ? (
+                  <span className="badge failure">firing</span>
+                ) : (
+                  <>
+                    <span className="badge success">resolved</span>
+                    {alert.resolved_at && (
+                      <span className="muted"> {new Date(alert.resolved_at).toLocaleTimeString()}</span>
+                    )}
+                  </>
+                )}
+              </td>
             </tr>
           ))}
           {!loaded && <LoadingRow colSpan={6} />}

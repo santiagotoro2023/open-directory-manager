@@ -10,6 +10,7 @@ import {
   type TrustAnchor,
 } from "../api";
 import { WATCH, useLive } from "../live";
+import { MoreMenu } from "../components/MoreMenu";
 import { InfoPanel } from "../components/DocsLink";
 import { FileInput } from "../components/FileInput";
 import { Field, Modal } from "../components/Modal";
@@ -152,30 +153,26 @@ export function Certificates() {
           <Download size={15} aria-hidden="true" />
           Root certificate
         </a>
-        <button
-          type="button"
-          className="ghost"
-          onClick={() =>
-            void run(
-              () => api.ca.publish(),
-              "Published. Every trusted certificate is now in one policy object; agents install them on their next refresh.",
-            )
-          }
-        >
-          Publish to domain
-        </button>
-        <button type="button" className="ghost" onClick={() => setDialog("console")}>
-          Replace console certificate
-        </button>
-        <button type="button" className="ghost" onClick={() => setDialog("console-request")}>
-          Signing request
-        </button>
-        <button type="button" className="ghost" onClick={() => setDialog("console-upload")}>
-          Upload a certificate
-        </button>
         <button type="button" className="ghost" onClick={() => setDialog("sign")}>
           Sign a request
         </button>
+        <MoreMenu
+          items={[
+            {
+              label: "Publish to domain",
+              onSelect: () =>
+                void run(
+                  () => api.ca.publish(),
+                  "Published. Every trusted certificate is now in one policy object; agents install them on their next refresh.",
+                ),
+            },
+            { separator: true },
+            { label: "Console certificate", heading: true },
+            { label: "Replace console certificate", onSelect: () => setDialog("console") },
+            { label: "Create a signing request", onSelect: () => setDialog("console-request") },
+            { label: "Upload a certificate", onSelect: () => setDialog("console-upload") },
+          ]}
+        />
         <button type="button" className="primary" onClick={() => setDialog("issue")}>
           <Plus size={15} aria-hidden="true" />
           Issue certificate
