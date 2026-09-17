@@ -213,7 +213,7 @@ if [[ -f "$SECRETS_FILE" ]]; then
     {
         printf '\n# --- Phone approvals (ntfy, from install-phone-approvals.sh) ---\n'
         printf 'ODM_NTFY_URL=http://127.0.0.1:%s\n' "$LOOPBACK_PORT"
-        printf 'ODM_NTFY_PUBLIC_URL=https://%s:%s\n' "" ""
+        printf 'ODM_NTFY_PUBLIC_URL=https://%s:%s\n' "$CONSOLE_FQDN" "$PUBLIC_PORT"
         printf 'ODM_NTFY_TOKEN=%s\n' "$(cat "$TOKEN_FILE")"
     } >> "$SECRETS_FILE"
 fi
