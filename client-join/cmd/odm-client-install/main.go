@@ -21,7 +21,7 @@ import (
 	"odm.example.org/client-join/join"
 )
 
-const version = "0.16.11"
+const version = "0.16.12"
 
 func main() {
 	flags := flag.NewFlagSet("odm-client-install", flag.ContinueOnError)

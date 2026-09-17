@@ -2159,8 +2159,8 @@ export const api = {
       smtp_password: string;
     }) =>
       request<PasswordManagerStatus & { task: string }>("/passwords", {
-        method: "PUT",
         ...json(body),
+        method: "PUT",
       }),
     apply: () => request<{ task: string }>("/passwords/apply", json({})),
   },

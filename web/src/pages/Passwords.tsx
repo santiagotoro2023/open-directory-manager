@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, ExternalLink, Eye, EyeOff, KeyRound, RefreshCw } from "lucide-react";
 import { ApiError, api, type PasswordManagerStatus } from "../api";
@@ -28,7 +28,11 @@ export function Passwords() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showToken, setShowToken] = useState(false);
-  const [form, setForm] = useState({
+  // What the person is typing is theirs until it is saved: the status
+  // refresh every fifteen seconds must not put the server's values back
+  // over it (it did, and took a pasted client id with it).
+  const dirty = useRef(false);
+  const [form, setFormState] = useState({
     org_client_id: "",
     org_client_secret: "",
     sync_groups: "",
@@ -42,13 +46,22 @@ export function Passwords() {
     smtp_password: "",
   });
 
+  const setForm = useCallback((next: typeof form) => {
+    dirty.current = true;
+    setFormState(next);
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const result = await api.passwords.status();
       setStatus(result);
       // The vault once it is usable; the walkthrough until then.
       setTab((current) => current ?? (result.installed && result.org_configured ? "vault" : "setup"));
-      setForm((current) => ({
+      if (dirty.current) {
+        setError(null);
+        return;
+      }
+      setFormState((current) => ({
         ...current,
         org_client_id: result.org_client_id,
         sync_groups: result.sync_groups.map((group) => `%${group}`).join(", "),
@@ -93,7 +106,8 @@ export function Passwords() {
         smtp_username: form.smtp_username,
         smtp_password: form.smtp_password,
       });
-      setForm((current) => ({ ...current, org_client_secret: "", smtp_password: "" }));
+      setFormState((current) => ({ ...current, org_client_secret: "", smtp_password: "" }));
+      dirty.current = false;
       setNotice("Saved and sent to the server; the first sync runs now.");
       await load();
     } catch (err) {
