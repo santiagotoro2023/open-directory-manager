@@ -3843,3 +3843,31 @@ h4.subsection {
 .collection-head .section-title .badge {
   text-transform: none;
 }
+
+/* Bulk actions over ticked rows: the tick column, and the bar of what to
+   do with them. */
+table.data th.check,
+table.data td.check {
+  width: 1%;
+  padding-right: 4px;
+}
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.bulk-channels {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 4px 10px;
+  background: var(--surface-recessed);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.bulk-channels .checkbox {
+  padding: 0;
+  gap: 6px;
+}

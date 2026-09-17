@@ -415,12 +415,19 @@ def describe(rule: Any, host: str, metric: str, value: float) -> str:
 async def notify(
     pool: Any, settings: Settings, rule: Any, title: str, message: str, *, resolved: bool = False
 ) -> None:
-    """Tell every channel the rule names that takes this severity."""
-    if not rule["channels"]:
-        return
-    channels = await pool.fetch(
-        "SELECT * FROM monitor_channel WHERE id = ANY($1::uuid[])", list(rule["channels"])
-    )
+    """Tell the channels the rule names — or, when it names none, every
+    channel — that take this severity.
+
+    A rule names channels to narrow, not to opt in: a new channel should
+    start hearing about everything at once, not after somebody has opened
+    each of a dozen rules and ticked it. A channel's own "takes" setting
+    is what keeps warnings off a phone meant for critical alerts."""
+    if rule["channels"]:
+        channels = await pool.fetch(
+            "SELECT * FROM monitor_channel WHERE id = ANY($1::uuid[])", list(rule["channels"])
+        )
+    else:
+        channels = await pool.fetch("SELECT * FROM monitor_channel")
     for channel in channels:
         if rule["severity"] == "warning" and channel["min_severity"] == "critical":
             continue

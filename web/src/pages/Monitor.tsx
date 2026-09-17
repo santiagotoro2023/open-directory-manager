@@ -824,6 +824,9 @@ function RulesTab() {
   const [editing, setEditing] = useState<(Omit<MonitorRule, "id"> & { id?: string }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Bulk: which rules are ticked, and which channels a bulk "tell" sets.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkChannels, setBulkChannels] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -868,16 +871,75 @@ function RulesTab() {
     }
   }
 
+  // The same change to every ticked rule, one save each — the API knows
+  // rules one at a time, and a dozen saves are quicker than a dozen dialogs.
+  async function bulk(change: (rule: MonitorRule) => Partial<MonitorRule> | null, confirmText?: string) {
+    const chosen = rules.filter((rule) => selected.has(rule.id));
+    if (chosen.length === 0) return;
+    if (confirmText && !window.confirm(confirmText)) return;
+    setBusy(true);
+    try {
+      for (const rule of chosen) {
+        const next = change(rule);
+        if (next === null) await api.monitor.deleteRule(rule.id);
+        else {
+          const { id, ...body } = { ...rule, ...next };
+          await api.monitor.updateRule(id, body);
+        }
+      }
+      setSelected(new Set());
+      await load();
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const allSelected = rules.length > 0 && rules.every((rule) => selected.has(rule.id));
+
   return (
     <>
       {error && <p className="alert" role="alert">{error}</p>}
       <div className="toolbar">
+        {selected.size > 0 ? (
+          <div className="bulk-bar">
+            <span className="muted">{selected.size} rule{selected.size === 1 ? "" : "s"} ticked:</span>
+            <span className="bulk-channels">
+              tell
+              {channels.map((c) => (
+                <label key={c.id} className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={bulkChannels.includes(c.id)}
+                    onChange={(e) => setBulkChannels(e.target.checked ? [...bulkChannels, c.id] : bulkChannels.filter((x) => x !== c.id))}
+                  />
+                  {c.name}
+                </label>
+              ))}
+              <button type="button" className="small secondary" disabled={busy} onClick={() => void bulk(() => ({ channels: bulkChannels }))}>
+                {bulkChannels.length ? "Set" : "Set to every channel"}
+              </button>
+            </span>
+            <button type="button" className="small secondary" disabled={busy} onClick={() => void bulk(() => ({ enabled: true }))}>Enable</button>
+            <button type="button" className="small secondary" disabled={busy} onClick={() => void bulk(() => ({ enabled: false }))}>Disable</button>
+            <button type="button" className="small danger" disabled={busy} onClick={() => void bulk(() => null, `Delete ${selected.size} rule(s)?`)}>Delete</button>
+          </div>
+        ) : null}
         <span className="spacer" />
         <button type="button" className="secondary" onClick={() => setEditing({ ...BLANK_RULE })}>New rule</button>
       </div>
       <table className="data">
         <thead>
           <tr>
+            <th scope="col" className="check">
+              <input
+                type="checkbox"
+                aria-label="Tick every rule"
+                checked={allSelected}
+                onChange={(e) => setSelected(e.target.checked ? new Set(rules.map((rule) => rule.id)) : new Set())}
+              />
+            </th>
             <th scope="col">Rule</th>
             <th scope="col">Condition</th>
             <th scope="col">For</th>
@@ -888,15 +950,28 @@ function RulesTab() {
           </tr>
         </thead>
         <tbody>
-          {!loaded && <LoadingRow colSpan={7} />}
+          {!loaded && <LoadingRow colSpan={8} />}
           {loaded && rules.map((rule) => (
             <tr key={rule.id} className={rule.enabled ? "" : "muted"}>
+              <td className="check">
+                <input
+                  type="checkbox"
+                  aria-label={`Tick ${rule.name}`}
+                  checked={selected.has(rule.id)}
+                  onChange={(e) => {
+                    const next = new Set(selected);
+                    if (e.target.checked) next.add(rule.id);
+                    else next.delete(rule.id);
+                    setSelected(next);
+                  }}
+                />
+              </td>
               <td>{rule.name}{!rule.enabled && <span className="badge">off</span>}<br /><span className="muted">{rule.description}</span></td>
               <td className="mono">{metricMeta(rule.metric).label} {rule.op === "gt" ? ">" : "<"} {rule.threshold}</td>
               <td>{minutes(rule.for_seconds)}</td>
               <td><span className={`badge ${rule.severity === "critical" ? "failure" : ""}`}>{rule.severity}</span></td>
               <td>{rule.scope_kind === "all" ? "every machine" : rule.scope_kind === "group" ? groupName.get(rule.scope) ?? "(deleted group)" : rule.scope}</td>
-              <td>{rule.channels.map((c) => channelName.get(c) ?? "?").join(", ") || <span className="muted">nobody</span>}</td>
+              <td>{rule.channels.map((c) => channelName.get(c) ?? "?").join(", ") || <span className="muted">{channels.length ? "every channel" : "nobody yet"}</span>}</td>
               <td className="row-actions">
                 <button type="button" className="small secondary" onClick={() => setEditing(rule)}>Edit</button>
                 <button type="button" className="small danger" onClick={() => void remove(rule)}>Delete</button>
@@ -966,7 +1041,7 @@ function RulesTab() {
               </Select>
             </Field>
           )}
-          <Field label="Tell">
+          <Field label="Tell" hint="None ticked: every channel that takes this severity. Tick some to narrow it to those.">
             <div className="checkbox-list">
               {channels.map((c) => (
                 <label key={c.id} className="checkbox">
@@ -1033,7 +1108,7 @@ function ChannelsTab() {
   }
 
   async function remove(channel: MonitorChannel) {
-    if (!window.confirm(`Delete the channel "${channel.name}"? Rules naming it tell nobody.`)) return;
+    if (!window.confirm(`Delete the channel "${channel.name}"? Rules naming it alone fall back to every remaining channel.`)) return;
     try {
       await api.monitor.deleteChannel(channel.id);
       await load();

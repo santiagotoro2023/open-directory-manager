@@ -252,12 +252,12 @@ async def ensure_owner_account(
 # --- bootstrap and reconcile ------------------------------------------------
 
 
-async def _admin_invite(http: httpx.Client, node: str, admin_token: str, email: str) -> None:
-    """Vaultwarden's admin page can invite an address that nobody in the
-    organisation could yet: the first one, the console's own."""
+async def _admin(http: httpx.Client, node: str, admin_token: str) -> tuple[str, httpx.Cookies]:
+    """A session with Vaultwarden's admin page: what can see and delete
+    users and organisations regardless of any key."""
     base = _vault_base(node)
 
-    def go() -> None:
+    def go() -> httpx.Cookies:
         response = http.post(
             f"{base}/admin",
             data={"token": admin_token},
@@ -266,11 +266,19 @@ async def _admin_invite(http: httpx.Client, node: str, admin_token: str, email: 
         )
         if response.status_code >= 400:
             raise KeeperError(f"the vault's admin page refused the token: {response.status_code}")
+        return response.cookies
+
+    return base, await run_in_threadpool(go)
+
+
+async def _admin_invite(http: httpx.Client, node: str, admin_token: str, email: str) -> None:
+    """Vaultwarden's admin page can invite an address that nobody in the
+    organisation could yet: the first one, the console's own."""
+    base, cookies = await _admin(http, node, admin_token)
+
+    def go() -> None:
         response = http.post(
-            f"{base}/admin/invite",
-            json={"email": email},
-            cookies=response.cookies,
-            follow_redirects=False,
+            f"{base}/admin/invite", json={"email": email}, cookies=cookies, follow_redirects=False
         )
         if response.status_code >= 400 and "already exists" not in response.text.lower():
             raise KeeperError(
@@ -280,36 +288,110 @@ async def _admin_invite(http: httpx.Client, node: str, admin_token: str, email: 
     await run_in_threadpool(go)
 
 
+async def _admin_users(http: httpx.Client, node: str, admin_token: str) -> list[dict[str, Any]]:
+    base, cookies = await _admin(http, node, admin_token)
+
+    def go() -> list[dict[str, Any]]:
+        response = http.get(
+            f"{base}/admin/users", cookies=cookies, headers={"Accept": "application/json"}
+        )
+        if response.status_code >= 400:
+            raise KeeperError(
+                f"the vault's admin page would not list users: {response.status_code}"
+            )
+        answer = response.json()
+        return list(answer if isinstance(answer, list) else bitwarden.field(answer, "data", []))
+
+    return await run_in_threadpool(go)
+
+
+async def _admin_delete(
+    http: httpx.Client, node: str, admin_token: str, what: str, id: str
+) -> None:
+    """Delete a user or an organisation through the admin page."""
+    base, cookies = await _admin(http, node, admin_token)
+
+    def go() -> None:
+        response = http.post(
+            f"{base}/admin/{what}/{id}/delete", json={}, cookies=cookies, follow_redirects=False
+        )
+        if response.status_code >= 400 and response.status_code != 404:
+            raise KeeperError(
+                f"could not delete {what} {id}: {response.status_code} {response.text[:200]}"
+            )
+
+    await run_in_threadpool(go)
+
+
+async def _forget_organisation(conn: asyncpg.Connection) -> None:
+    await conn.execute(
+        """
+        UPDATE password_manager
+        SET org_id = '', org_key = '', org_name = '', owner_password = '',
+            members = '[]'::jsonb, updated_at = now()
+        WHERE id = 1
+        """
+    )
+    await conn.execute("UPDATE vault_collection SET vault_id = ''")
+
+
 async def bootstrap(pool: asyncpg.Pool, settings: Settings, http: httpx.Client, node: str) -> None:
     """The organisation, made once: the console's account invited by the
     vault's admin page, signed in, given a master password, and made the
-    owner of an organisation named after the domain."""
+    owner of an organisation named after the domain.
+
+    Two states are recognised and put right rather than reported: a vault
+    emptied since (its data removed with the role, or the role put on
+    another server), where the console starts again; and a console account
+    whose master password the console no longer has (a record reset while
+    the vault kept its data), where the account and its organisation are
+    deleted through the admin page and made anew. Anything transient — the
+    vault restarting, the node unreachable — is raised and tried again."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM password_manager WHERE id = 1")
-        if row["org_id"] and await _organisation_exists(pool, settings, http, node, row):
-            return
-        if row["org_id"]:
-            # The vault was emptied (its data removed with the role, or the
-            # role put on another server): what the console remembers is of
-            # a vault that no longer exists. Start again.
-            log.warning(
-                "password manager: the vault no longer knows organisation %s; making it again",
-                row["org_name"],
-            )
-            await conn.execute(
-                """
-                UPDATE password_manager
-                SET org_id = '', org_key = '', org_name = '', owner_password = '',
-                    members = '[]'::jsonb, updated_at = now()
-                WHERE id = 1
-                """
-            )
-            await conn.execute("UPDATE vault_collection SET vault_id = ''")
-            row = await conn.fetchrow("SELECT * FROM password_manager WHERE id = 1")
         if not row["admin_token"]:
             raise KeeperError("waiting for the vault's admin token from the server (press Apply)")
         owner = await ensure_owner_account(conn, settings, row)
-        await _admin_invite(http, node, row["admin_token"], owner)
+        users = await _admin_users(http, node, row["admin_token"])
+        known = {str(bitwarden.field(u, "email", "")).lower(): u for u in users}
+        present = owner.lower() in known
+
+        if row["org_id"]:
+            if present and await _organisation_exists(pool, settings, http, node, row):
+                return
+            log.warning(
+                "password manager: the vault no longer holds organisation %s as the console "
+                "remembers it; making it again",
+                row["org_name"],
+            )
+            if present:
+                await _admin_delete(http, node, row["admin_token"], "organizations", row["org_id"])
+                await _admin_delete(
+                    http,
+                    node,
+                    row["admin_token"],
+                    "users",
+                    str(bitwarden.field(known[owner.lower()], "id")),
+                )
+                present = False
+            await _forget_organisation(conn)
+            row = await conn.fetchrow("SELECT * FROM password_manager WHERE id = 1")
+        elif present and not row["owner_password"]:
+            # The vault kept the console's account from an earlier life and
+            # the console lost the password to it: the account goes, and
+            # comes back fresh.
+            log.warning("password manager: replacing the console's vault account")
+            await _admin_delete(
+                http,
+                node,
+                row["admin_token"],
+                "users",
+                str(bitwarden.field(known[owner.lower()], "id")),
+            )
+            present = False
+
+        if not present:
+            await _admin_invite(http, node, row["admin_token"], owner)
         user = await run_in_threadpool(directory.authorize_principal, settings, owner)
         client, token = await sign_in(pool, settings, http, node, user)
         password = row["owner_password"] or secrets.token_urlsafe(32)
@@ -367,17 +449,19 @@ async def _organisation_exists(
     pool: asyncpg.Pool, settings: Settings, http: httpx.Client, node: str, row: asyncpg.Record
 ) -> bool:
     """Whether the vault still has the organisation the console remembers:
-    the console's account signs in and finds it among its organisations."""
+    the console's account signs in and finds it among its organisations.
+    A vault that cannot be reached is not a vault that lost it — that is
+    raised, and tried again later."""
+    user = await run_in_threadpool(directory.authorize_principal, settings, row["owner_account"])
     try:
-        user = await run_in_threadpool(
-            directory.authorize_principal, settings, row["owner_account"]
-        )
         client, token = await sign_in(pool, settings, http, node, user)
-        if not has_master_password(token):
+    except bitwarden.VaultError as exc:
+        if "invitation" in str(exc).lower() or "signup" in str(exc).lower():
             return False
-        profile = await run_in_threadpool(client.profile)
-    except (KeeperError, bitwarden.VaultError, httpx.HTTPError):
+        raise
+    if not has_master_password(token) or not row["owner_password"]:
         return False
+    profile = await run_in_threadpool(client.profile)
     organisations = bitwarden.field(profile, "organizations", []) or []
     return any(str(bitwarden.field(o, "id", "")) == row["org_id"] for o in organisations)
 

@@ -26,8 +26,11 @@ export function Content() {
 
         <Example title="Be told on your phone when a disk is nearly full">
           <strong>Monitoring → Channels → New channel</strong>, kind <em>Phone</em>, then{" "}
-          <strong>Scan</strong> with the ntfy app. <strong>Rules</strong> → edit{" "}
-          <em>Filesystem almost full</em> → tick the channel under <strong>Tell</strong>.
+          <strong>Scan</strong> with the ntfy app. That is all: a rule that names no channel
+          tells every channel, so the phone hears about every rule from then on. To keep one rule
+          to one phone, edit the rule and tick that channel under <strong>Tell</strong> &mdash; or
+          tick several rules in the list and set what they tell, enable, disable or delete them
+          together.
         </Example>
         <Example title="Watch the file servers on a screen">
           <strong>Hosts &amp; groups → New group</strong> with the file servers in it.{" "}
@@ -72,7 +75,8 @@ export function Content() {
             every sample in the window breaks the rule — and the window is actually covered, so a
             single bad reading at the start of a gap is not read as an hour-long condition — an
             alert opens for that machine and that series; when the samples come back within
-            limits, it resolves. Both transitions are told to the rule&rsquo;s channels.
+            limits, it resolves. Both transitions are told to the rule&rsquo;s channels &mdash;
+            every channel that takes the severity, unless the rule ticks some to narrow it.
           </p>
           <Reference
             headers={["Field", "Notes"]}
