@@ -83,6 +83,7 @@ type Settings struct {
 	Power                *PowerSettings         `json:"power,omitempty"`
 	ScreenLock           *ScreenLock            `json:"screen_lock,omitempty"`
 	RemovableStorage     *RemovableStorage      `json:"removable_storage,omitempty"`
+	DeviceControl        *DeviceControl         `json:"device_control,omitempty"`
 	DesktopTheme         *DesktopTheme          `json:"desktop_theme,omitempty"`
 	SecondFactor         *SecondFactor          `json:"second_factor,omitempty"`
 	FirstRun             *FirstRun              `json:"first_run,omitempty"`
@@ -99,6 +100,14 @@ type Settings struct {
 	LogonHours           []LogonHoursRule       `json:"logon_hours,omitempty"`
 	FirmwareUpdates      *FirmwareUpdates       `json:"firmware_updates,omitempty"`
 	WebApps              []WebApp               `json:"web_apps,omitempty"`
+}
+
+// DeviceControl is whether Bluetooth, cameras and microphones may be used.
+type DeviceControl struct {
+	Bluetooth  string   `json:"bluetooth"`
+	Camera     string   `json:"camera"`
+	Microphone string   `json:"microphone"`
+	AllowedUSB []string `json:"allowed_usb"`
 }
 
 // Regional is the language, keyboard, time zone and formats of a machine.

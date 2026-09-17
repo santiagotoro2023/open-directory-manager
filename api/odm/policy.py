@@ -68,6 +68,7 @@ DICT_CATEGORIES = (
     "power",
     "screen_lock",
     "removable_storage",
+    "device_control",
     "desktop_theme",
     "second_factor",
     "first_run",

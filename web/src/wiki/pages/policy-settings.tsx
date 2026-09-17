@@ -141,6 +141,11 @@ export function Content() {
               ],
               ["Always-on VPN", "single value", "A tunnel the machine holds up from boot."],
               [
+                "Peripherals",
+                "single value",
+                "Bluetooth, cameras and microphones allowed or blocked, machine-wide.",
+              ],
+              [
                 "Regional settings",
                 "single value",
                 "Language, formats, keyboard layout and time zone for the whole machine.",
@@ -987,6 +992,36 @@ for           %Engineers      (optional)`}</Code>
             domain authority &mdash; so an access point claiming to be the corporate network
             with a certificate from anywhere else is refused.
           </p>
+        </Section>
+
+        <Section title="Peripherals">
+          <p>
+            Whether Bluetooth, cameras and microphones may be used on the machine at all.
+            Bluetooth and cameras are refused at the kernel: a udev rule in{" "}
+            <C>/etc/udev/rules.d/98-odm-devices.rules</C> deauthorises a USB device by the class
+            of its interface (a wireless controller, a video device) the moment it appears, so no
+            driver ever binds to it, and <C>/etc/modprobe.d/odm-devices.conf</C> keeps the
+            drivers for an internal radio or camera (<C>btusb</C>, <C>uvcvideo</C>) from loading
+            &mdash; unloaded at once, the radio switched off with <C>rfkill</C>. Microphones are
+            refused in the sound server instead: every capture device is a disabled input node
+            in WirePlumber&rsquo;s configuration, so the speakers keep working.
+          </p>
+          <Reference
+            headers={["Field", "Meaning"]}
+            rows={[
+              ["Bluetooth, Cameras, Microphones", "Allowed, or blocked for everybody on the machine."],
+              [
+                "Always allowed USB devices",
+                "vendor:product ids, as lsusb prints them, that skip the rules — the one approved conference camera.",
+              ],
+            ]}
+          />
+          <Note>
+            Allowing a device again re-authorises what was refused and unblocks the radio at the
+            next refresh; a camera that was in use may need to be re-plugged. Removing the
+            setting altogether does the same. A machine whose sound server is not WirePlumber
+            (a bare server) has no microphones to refuse.
+          </Note>
         </Section>
 
         <Section title="Regional settings">

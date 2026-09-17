@@ -55,6 +55,7 @@ var appliers = []applier{
 	{"fonts", applyFonts},
 	{"session", applySession},
 	{"removable_storage", applyRemovableStorage},
+	{"device_control", applyDeviceControl},
 	{"second_factor", applySecondFactor},
 	{"first_run", applyFirstRun},
 	{"always_on_vpn", applyAlwaysOnVpn},

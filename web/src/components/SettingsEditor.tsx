@@ -1234,6 +1234,17 @@ const SPECIAL: SpecialSpec[] = [
     doc: "firmware-updates",
   },
   {
+    key: "device_control",
+    title: "Peripherals",
+    half: "Computer",
+    group: "Security",
+    help:
+      "Whether Bluetooth, cameras and microphones may be used on the machine. Radios and " +
+      "cameras are refused at the kernel, microphones in the sound server; a device named by " +
+      "id is let through regardless.",
+    doc: "peripherals",
+  },
+  {
     key: "screen_lock",
     title: "Screen lock",
     half: "Computer",
@@ -1378,6 +1389,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "power") return settings.power ? 1 : 0;
   if (key === "screen_lock") return settings.screen_lock ? 1 : 0;
   if (key === "regional") return settings.regional ? 1 : 0;
+  if (key === "device_control") return settings.device_control ? 1 : 0;
   if (key === "firmware_updates") return settings.firmware_updates ? 1 : 0;
   if (key === "removable_storage") return settings.removable_storage ? 1 : 0;
   if (key === "desktop_theme") return settings.desktop_theme ? 1 : 0;
@@ -1552,6 +1564,9 @@ export function SettingsEditor({
             <ScreenLockEditor settings={settings} onChange={onChange} />
           )}
           {selected === "regional" && <RegionalEditor settings={settings} onChange={onChange} />}
+          {selected === "device_control" && (
+            <DeviceControlEditor settings={settings} onChange={onChange} />
+          )}
           {selected === "firmware_updates" && (
             <FirmwareUpdatesEditor settings={settings} onChange={onChange} />
           )}
@@ -3910,6 +3925,84 @@ function RegionalEditor({
             />
             Let people choose another language or layout in their own settings
           </label>
+        </>
+      )}
+    </>
+  );
+}
+
+function DeviceControlEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.device_control;
+  function set(changes: Partial<NonNullable<PolicySettings["device_control"]>>) {
+    onChange({
+      ...settings,
+      device_control: {
+        bluetooth: "allow",
+        camera: "allow",
+        microphone: "allow",
+        allowed_usb: [],
+        ...current,
+        ...changes,
+      },
+    });
+  }
+  const choice = (
+    label: string,
+    key: "bluetooth" | "camera" | "microphone",
+    hint: string,
+  ) =>
+    current && (
+      <label className="field">
+        <span>{label}</span>
+        <select value={current[key]} onChange={(e) => set({ [key]: e.target.value as "allow" | "block" })}>
+          <option value="allow">Allowed</option>
+          <option value="block">Blocked</option>
+        </select>
+        <small>{hint}</small>
+      </label>
+    );
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("device_control")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, device_control: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <div className="field-grid">
+            {choice("Bluetooth", "bluetooth", "The radio is switched off and its driver kept from loading; a USB adapter is refused.")}
+            {choice("Cameras", "camera", "Webcams — internal and USB — are refused before any driver binds to them.")}
+            {choice("Microphones", "microphone", "Every capture device is disabled in the sound server; speakers keep working.")}
+            <label className="field">
+              <span>Always allowed USB devices</span>
+              <input
+                value={current.allowed_usb.join(", ")}
+                placeholder="046d:085e, 0bda:8153"
+                onChange={(e) =>
+                  set({
+                    allowed_usb: e.target.value
+                      .split(",")
+                      .map((part) => part.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
+              <small>vendor:product ids as lsusb prints them, separated by commas — the approved conference camera.</small>
+            </label>
+          </div>
         </>
       )}
     </>

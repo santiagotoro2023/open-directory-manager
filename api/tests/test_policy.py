@@ -484,3 +484,16 @@ def test_a_web_app_icon_may_be_uploaded_as_a_png_data_url():
         WebApp(name="Teams", url=teams, icon_url="data:text/html;base64,PGh0bWw+")
     with pytest.raises(ValueError):
         WebApp(name="Teams", url=teams, icon_url="https://x.example/" + "a" * 2100)
+
+
+def test_device_control_takes_usb_ids_as_lsusb_prints_them():
+    import pytest
+
+    from odm.policy_schema import DeviceControl
+
+    rule = DeviceControl(bluetooth="block", camera="block", allowed_usb=["046D:085E"])
+    assert rule.allowed_usb == ["046d:085e"]
+    with pytest.raises(ValueError):
+        DeviceControl(allowed_usb=["logitech"])
+    with pytest.raises(ValueError):
+        DeviceControl(camera="maybe")

@@ -374,6 +374,12 @@ export interface PolicySettings {
     allow_user_change: boolean;
   };
   logon_hours?: Record<string, unknown>[];
+  device_control?: {
+    bluetooth: "allow" | "block";
+    camera: "allow" | "block";
+    microphone: "allow" | "block";
+    allowed_usb: string[];
+  };
   firmware_updates?: {
     enabled: boolean;
     mode: "report" | "install";

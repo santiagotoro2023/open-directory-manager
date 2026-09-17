@@ -40,6 +40,7 @@ LOCALE_RE = re.compile(r"^[a-z]{2,3}(_[A-Z]{2})?(@[a-z]+)?\.UTF-8$")
 XKB_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 TIMEZONE_RE = re.compile(r"^[A-Z][A-Za-z_+-]{1,30}(/[A-Za-z0-9_+-]{1,30}){0,2}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+USB_ID_RE = re.compile(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$")
 
 Name = Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -665,6 +666,37 @@ class RemovableStorage(Strict):
         return value
 
 
+class DeviceControl(Strict):
+    """Bluetooth, cameras and microphones: allowed or not, machine-wide.
+
+    Radios and webcams are what a factory floor, an exam room and a secure
+    office switch off; a laptop that must not pair with anything is a common
+    request. Bluetooth and cameras are refused at the kernel — the USB
+    interface classes deauthorised by udev and the drivers kept from loading
+    — so no application can reach them; microphones are refused in the sound
+    server, where every capture stream starts, so the speakers keep working.
+    A device named by vendor:product id is let through regardless, for the
+    one approved conference camera.
+    """
+
+    bluetooth: Literal["allow", "block"] = "allow"
+    camera: Literal["allow", "block"] = "allow"
+    microphone: Literal["allow", "block"] = "allow"
+    # USB devices allowed whatever the rules above say, as vendor:product in
+    # hex — 046d:085e — the way lsusb prints them.
+    allowed_usb: Annotated[
+        list[Annotated[str, Field(max_length=9)]], Field(default_factory=list, max_length=64)
+    ]
+
+    @field_validator("allowed_usb")
+    @classmethod
+    def _ids(cls, value: list[str]) -> list[str]:
+        for entry in value:
+            if not USB_ID_RE.match(entry):
+                raise ValueError(f"{entry!r} is not a vendor:product id such as 046d:085e")
+        return [entry.lower() for entry in value]
+
+
 class SysctlSetting(Strict):
     """One kernel parameter, as sysctl names it."""
 
@@ -1273,6 +1305,7 @@ class PolicySettings(Strict):
     power: PowerSettings | None = None
     screen_lock: ScreenLock | None = None
     removable_storage: RemovableStorage | None = None
+    device_control: DeviceControl | None = None
     desktop_theme: DesktopTheme | None = None
     second_factor: SecondFactor | None = None
     first_run: FirstRun | None = None
