@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import (
@@ -293,9 +293,23 @@ def _serve_console(app: FastAPI, settings: Settings) -> None:
         raise RuntimeError(f"ODM_CONSOLE_DIR={root} contains no index.html")
 
     app.mount("/assets", StaticFiles(directory=root / "assets"), name="assets")
+    canonical = settings.console_url.rstrip("/")
+    canonical_host = canonical.removeprefix("https://").removeprefix("http://").lower()
 
     @app.get("/{path:path}", include_in_schema=False)
-    async def console(path: str) -> Response:
+    async def console(path: str, request: Request) -> Response:
+        # One name for the console. It answers under every name its
+        # certificate carries, but the vault, the OpenID sign-in and every
+        # link the console publishes are at console_url; a browser that
+        # arrived by the machine's own name and then met the vault's sign-in
+        # at the published one had a second origin inside a frame, with a
+        # certificate to accept and no way to be asked. Sent to the
+        # published name first, everything after is one origin.
+        host = request.headers.get("host", "").lower()
+        wants_page = "text/html" in request.headers.get("accept", "")
+        if canonical_host and host and host != canonical_host and wants_page:
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(f"{canonical}/{path}{query}", status_code=307)
         candidate = (root / path).resolve()
         # Only ever a file inside the console directory.
         if path and candidate.is_file() and candidate.is_relative_to(root.resolve()):

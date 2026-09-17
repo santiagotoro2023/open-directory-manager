@@ -2,11 +2,14 @@ package tasks
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"odm.example.org/agent/internal/apply"
 )
@@ -56,8 +59,16 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 	}
 	var notes []string
 
-	// The certificate, from the domain authority where there is one.
-	if boolean(payload["server_certificate"], false) && env.Certificate != nil {
+	// The certificate, from the domain authority where there is one — asked
+	// for once, not at every apply: the one on disk is kept while it is the
+	// authority's and has more than a month to run, or every Save on the
+	// Passwords page would put another certificate on the authority's list.
+	if boolean(payload["server_certificate"], false) && env.Certificate != nil &&
+		vaultCertificateUsable(env.Path(vaultCertPath), time.Now()) {
+		env.Keep(vaultCertPath)
+		env.Keep(vaultKeyPath)
+		notes = append(notes, "certificate from the domain authority (kept)")
+	} else if boolean(payload["server_certificate"], false) && env.Certificate != nil {
 		certPEM, keyPEM, _, err := env.Certificate(ctx, "server")
 		if err != nil {
 			notes = append(notes, fmt.Sprintf("certificate not issued: %v", err))
@@ -238,6 +249,29 @@ type bwdcSettings struct {
 	// console's sign-in says sam@domain for such a person, and the sync has
 	// to invite the same address, or the seat and the sign-in never meet.
 	mailDomain string
+}
+
+// vaultCertificateUsable reports whether the certificate at path is one
+// worth keeping: issued by something other than itself, and valid for more
+// than thirty days from now. The installer's self-signed one, or one
+// nearing its end, is replaced.
+func vaultCertificateUsable(path string, now time.Time) bool {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return false
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+	if cert.Issuer.String() == cert.Subject.String() {
+		return false
+	}
+	return cert.NotAfter.After(now.Add(30 * 24 * time.Hour))
 }
 
 // ensureBwdc fetches Bitwarden's directory connector once: the latest

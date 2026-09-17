@@ -2,9 +2,18 @@ package tasks
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"odm.example.org/agent/internal/apply"
 )
@@ -113,5 +122,55 @@ func TestWithoutAnOrganisationKeyOnlyTheVaultIsConfigured(t *testing.T) {
 		if strings.Contains(strings.Join(call, " "), "bwdc") && !strings.Contains(strings.Join(call, " "), "disable") {
 			t.Errorf("the connector must not be touched: %v", call)
 		}
+	}
+}
+
+func TestTheVaultKeepsACertificateTheAuthorityIssuedAndReplacesItsOwn(t *testing.T) {
+	dir := t.TempDir()
+	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Example CA"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(10 * 365 * 24 * time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	caDER, _ := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	caCert, _ := x509.ParseCertificate(caDER)
+	leafKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	write := func(name string, template, parent *x509.Certificate, key *ecdsa.PrivateKey) string {
+		der, err := x509.CreateCertificate(rand.Reader, template, parent, &leafKey.PublicKey, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	issued := write("issued.pem", &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "vault.example"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(365 * 24 * time.Hour),
+	}, caCert, caKey)
+	expiring := write("expiring.pem", &x509.Certificate{
+		SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "vault.example"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(10 * 24 * time.Hour),
+	}, caCert, caKey)
+	selfTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(4), Subject: pkix.Name{CommonName: "vault.example"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(365 * 24 * time.Hour),
+	}
+	self := write("self.pem", selfTemplate, selfTemplate, leafKey)
+
+	if !vaultCertificateUsable(issued, time.Now()) {
+		t.Error("a certificate from the authority with a year to run must be kept")
+	}
+	if vaultCertificateUsable(expiring, time.Now()) {
+		t.Error("a certificate with ten days to run must be replaced")
+	}
+	if vaultCertificateUsable(self, time.Now()) {
+		t.Error("the installer's self-signed certificate must be replaced")
+	}
+	if vaultCertificateUsable(filepath.Join(dir, "missing.pem"), time.Now()) {
+		t.Error("no certificate is not a usable one")
 	}
 }
