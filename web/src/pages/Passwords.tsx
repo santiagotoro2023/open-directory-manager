@@ -1,129 +1,83 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy, ExternalLink, Eye, EyeOff, KeyRound, RefreshCw } from "lucide-react";
-import { ApiError, api, type PasswordManagerStatus } from "../api";
+import { ExternalLink, FolderLock, KeyRound, Plus, RefreshCw, Trash2, Users } from "lucide-react";
+import { ApiError, api, type PasswordManagerStatus, type VaultCollection } from "../api";
 import { InfoPanel } from "../components/DocsLink";
 import { Loading } from "../components/Loading";
+import { Field, Modal } from "../components/Modal";
 import { PickerField } from "../components/Picker";
 
-type Tab = "vault" | "setup";
+type Tab = "seats" | "collections" | "vault";
 
 /**
- * The password manager: Vaultwarden on a member server, reached at the
- * console's own address and shown here, with the directory deciding who
- * has a seat.
+ * The password manager, managed here and nowhere else.
  *
- * The Vault tab is the vault itself — its address is /vault on this
- * console, the same one the extension and the app use, so what an
- * administrator does here is what they would do there: the organisation,
- * its collections, which group sees which. That work stays in the vault
- * because the server cannot read a vault and neither can the console; that
- * is the point of it. The Setup tab walks through everything else in
- * order, saying at each step whether it is done, what to do and where.
+ * The console owns the vault's organisation through an account of its
+ * own, so everything an administrator decides is decided on this page:
+ * who has a seat (domain groups and accounts), which collections exist,
+ * and which groups see each one. The vault itself — the extension, the
+ * app, the Vault tab — is for using passwords, not administering them.
  */
 export function Passwords() {
-  const [tab, setTab] = useState<Tab | null>(null);
+  const [tab, setTab] = useState<Tab>("seats");
   const [status, setStatus] = useState<PasswordManagerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showToken, setShowToken] = useState(false);
-  // What the person is typing is theirs until it is saved: the status
-  // refresh every fifteen seconds must not put the server's values back
-  // over it (it did, and took a pasted client id with it).
   const dirty = useRef(false);
-  const [form, setFormState] = useState({
-    org_client_id: "",
-    org_client_secret: "",
-    sync_groups: "",
-    sync_every_hours: 1,
-    sso_enabled: true,
-    sso_only: true,
-    smtp_host: "",
-    smtp_port: 587,
-    smtp_from: "",
-    smtp_username: "",
-    smtp_password: "",
-  });
+  const [seats, setSeatsState] = useState({ groups: "", users: "" });
+  const [setup, setSetup] = useState({ groups: "", users: "", password: "" });
+  const [newCollection, setNewCollection] = useState<string | null>(null);
+  const [rename, setRename] = useState<{ id: string; name: string } | null>(null);
+  const [grant, setGrant] = useState<{ id: string; group: string; readOnly: boolean } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<VaultCollection | null>(null);
 
-  const setForm = useCallback((next: typeof form) => {
+  const setSeats = useCallback((next: typeof seats) => {
     dirty.current = true;
-    setFormState(next);
+    setSeatsState(next);
+  }, []);
+
+  const apply = useCallback((result: PasswordManagerStatus) => {
+    setStatus(result);
+    if (!dirty.current) {
+      setSeatsState({
+        groups: result.seat_groups.map((g) => `%${g}`).join(", "),
+        users: result.seat_users.join(", "),
+      });
+    }
   }, []);
 
   const load = useCallback(async () => {
     try {
-      const result = await api.passwords.status();
-      setStatus(result);
-      // The vault once it is usable; the walkthrough until then.
-      setTab((current) => current ?? (result.installed && result.org_configured ? "vault" : "setup"));
-      if (dirty.current) {
-        setError(null);
-        return;
-      }
-      setFormState((current) => ({
-        ...current,
-        org_client_id: result.org_client_id,
-        sync_groups: result.sync_groups.map((group) => `%${group}`).join(", "),
-        sync_every_hours: result.sync_every_hours,
-        sso_enabled: result.sso_enabled,
-        sso_only: result.sso_only,
-        smtp_host: result.smtp_host,
-        smtp_port: result.smtp_port,
-        smtp_from: result.smtp_from,
-        smtp_username: result.smtp_username,
-      }));
+      apply(await api.passwords.status());
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
     }
-  }, []);
+  }, [apply]);
 
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(), 15_000);
+    const timer = setInterval(() => void load(), 10_000);
     return () => clearInterval(timer);
   }, [load]);
 
-  async function save() {
-    setBusy(true);
-    setNotice(null);
-    try {
-      const groups = form.sync_groups
-        .split(",")
-        .map((part) => part.trim().replace(/^%/, ""))
-        .filter(Boolean);
-      await api.passwords.configure({
-        org_client_id: form.org_client_id,
-        org_client_secret: form.org_client_secret,
-        sync_groups: groups,
-        sync_every_hours: form.sync_every_hours,
-        sso_enabled: form.sso_enabled,
-        sso_only: form.sso_only,
-        smtp_host: form.smtp_host,
-        smtp_port: form.smtp_port,
-        smtp_from: form.smtp_from,
-        smtp_username: form.smtp_username,
-        smtp_password: form.smtp_password,
-      });
-      setFormState((current) => ({ ...current, org_client_secret: "", smtp_password: "" }));
-      dirty.current = false;
-      setNotice("Saved and sent to the server; the first sync runs now.");
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+  function split(text: string): string[] {
+    return text
+      .split(",")
+      .map((part) => part.trim().replace(/^%/, ""))
+      .filter(Boolean);
   }
 
-  async function applyNow() {
+  async function run(work: () => Promise<PasswordManagerStatus | void>, done?: string) {
     setBusy(true);
     setNotice(null);
     try {
-      await api.passwords.apply();
-      setNotice("Sent to the server; a sync runs now.");
-      await load();
+      const result = await work();
+      if (result) apply(result);
+      else await load();
+      if (done) setNotice(done);
+      setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : String(err));
     } finally {
@@ -140,12 +94,6 @@ export function Passwords() {
   }
 
   const usable = Boolean(status?.installed && status.ca_ready);
-  const groupCount = form.sync_groups.split(",").filter((part) => part.trim()).length;
-  const vaultUrl = status?.vault_url ?? "";
-  // The vault at this console's own origin, whichever name the browser
-  // reached the console by: the page, the frame and the vault's own
-  // requests then share one origin, which is what its frame-ancestors and
-  // the browser's cookie rules require.
   const vaultHere = "/vault/";
 
   return (
@@ -155,7 +103,7 @@ export function Passwords() {
           <KeyRound size={20} aria-hidden="true" /> Passwords
         </h1>
         <span className="spacer" />
-        {usable && (
+        {status?.ready && (
           <>
             <button
               type="button"
@@ -163,11 +111,21 @@ export function Passwords() {
               onClick={() => window.open(vaultHere, "_blank", "noopener")}
             >
               <ExternalLink size={15} aria-hidden="true" />
-              Open in a tab
+              Open the vault
             </button>
-            <button type="button" className="ghost" disabled={busy} onClick={() => void applyNow()}>
+            <button
+              type="button"
+              className="ghost"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const answer = await api.passwords.apply();
+                  setNotice(answer.summary);
+                })
+              }
+            >
               <RefreshCw size={15} aria-hidden="true" />
-              Apply and sync now
+              Apply now
             </button>
           </>
         )}
@@ -180,390 +138,462 @@ export function Passwords() {
       )}
       {notice && <p className="muted">{notice}</p>}
 
-      <nav className="tabs" aria-label="Password manager views">
-        {(["vault", "setup"] as Tab[]).map((current) => (
-          <button
-            key={current}
-            type="button"
-            className={tab === current ? "tab active" : "tab"}
-            aria-current={tab === current ? "true" : undefined}
-            disabled={current === "vault" && !usable}
-            onClick={() => setTab(current)}
-          >
-            {current === "vault" ? "Vault" : "Setup"}
-          </button>
-        ))}
-      </nav>
-
-      {tab === "vault" && status && (
-        <div className="vault-frame">
-          <iframe src={vaultHere} title="The vault" />
-        </div>
-      )}
-
-      {tab === "setup" && status && (
+      {status && !status.installed && (
         <>
           <InfoPanel page="password-manager">
-            Vaultwarden, the open-source Bitwarden server, as part of the domain: reached at this
-            console&rsquo;s own address, seats and teams from domain groups, sign-in with the domain
-            account. The steps below are in the order they happen; a green one is done.
+            Vaultwarden, the open-source Bitwarden server, run and managed by ODM. Seats,
+            collections and who sees them are decided on this page; people sign in with their
+            domain account and use the vault, never administer it.
           </InfoPanel>
-
-          <ol className="setup-steps">
-            <Step
-              n={1}
-              done={status.ca_ready}
-              title="A certificate authority"
-              what="The console carries the vault's traffic over TLS it checks against the domain's own authority, so the domain needs one."
-            >
-              {status.ca_ready ? (
-                <p className="muted">The domain has one. Nothing to do.</p>
-              ) : (
-                <Link className="button-link" to="/certificates">
-                  Set one up under Certificates
-                </Link>
-              )}
-            </Step>
-
-            <Step
-              n={2}
-              done={status.installed}
-              title="The password-manager role on a server"
-              what="Any member server. Nobody connects to it directly: the vault lives at the console's address, and the console sends the server its address and certificate the moment the install finishes."
-            >
-              {status.installed ? (
-                <dl className="definition">
-                  <dt>Vault</dt>
-                  <dd className="mono">{vaultUrl}</dd>
-                  <dt>Carried to</dt>
-                  <dd className="mono">{status.node_fqdn}</dd>
-                  <dt>Last applied</dt>
-                  <dd>
-                    {status.last_applied_at ? new Date(status.last_applied_at).toLocaleString() : "never"}
-                    {status.last_result && <span className="muted"> · {status.last_result}</span>}
-                  </dd>
-                  <dt>Admin page</dt>
-                  <dd>
-                    <a href={vaultHere + "admin"} target="_blank" rel="noopener">
-                      {vaultUrl}/admin
-                    </a>
-                    <div className="muted">
-                      Vaultwarden&rsquo;s own page for users, organisations and a test mail. It asks
-                      for this token:
-                    </div>
-                    {status.admin_token ? (
-                      <div className="token-row">
-                        <code className="mono">
-                          {showToken ? status.admin_token : "•".repeat(24)}
-                        </code>
-                        <button
-                          type="button"
-                          className="ghost small"
-                          aria-label={showToken ? "Hide the token" : "Show the token"}
-                          onClick={() => setShowToken((was) => !was)}
-                        >
-                          {showToken ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost small"
-                          aria-label="Copy the token"
-                          onClick={() => void navigator.clipboard?.writeText(status.admin_token)}
-                        >
-                          <Copy size={14} aria-hidden="true" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="muted">
-                        Not reported yet — press <strong>Apply and sync now</strong>; the server sends
-                        it back with the result. (It is also in{" "}
-                        <span className="mono">/etc/odm/vaultwarden/admin-token</span> there.)
-                      </div>
-                    )}
-                  </dd>
-                </dl>
-              ) : (
-                <Link className="button-link" to="/roles">
-                  Install it under Server Roles
-                </Link>
-              )}
-            </Step>
-
-            <Step
-              n={3}
-              done={usable && status.org_configured}
-              title="The organisation, in the vault"
-              what="A vault holds passwords per person; an organisation is what teams share. It is made inside the vault, by a person, because the server cannot read a vault and neither can this console."
-              disabled={!usable}
-            >
-              <ol className="wiki-steps">
-                <li>
-                  Open the{" "}
-                  <button type="button" className="inline-link" onClick={() => setTab("vault")}>
-                    Vault tab
-                  </button>
-                  . The vault asks for an e-mail address first: type the domain account&rsquo;s
-                  address &mdash; its mail attribute, or <em>name@domain</em> where it has none
-                  (an administrator here: <span className="mono">administrator@{status.mail_domain}</span>) &mdash;
-                  then <strong>Use single sign-on</strong>. The console signs you in, the vault
-                  makes your account, and you choose a master password. This first account is
-                  the organisation&rsquo;s owner.
-                </li>
-                <li>
-                  <strong>New organisation</strong> &mdash; the domain&rsquo;s name will do. Inside
-                  it, <strong>Collections</strong> → one per team (Sales, Finance, IT).
-                </li>
-                <li>
-                  <strong>Organisation</strong> → <strong>Settings</strong> → <strong>API key</strong>{" "}
-                  → <strong>View API key</strong>. Copy the client id and secret into step 4.
-                </li>
-              </ol>
-            </Step>
-
-            <Step
-              n={4}
-              done={status.org_configured}
-              title="Connect the organisation"
-              what="With its API key, the server keeps the organisation's members and groups in step with the directory. The secret is shown once in the vault and never here."
-              disabled={!usable}
-            >
-              <div className="field-grid">
-                <label className="field">
-                  <span>Client id</span>
-                  <input
-                    value={form.org_client_id}
-                    placeholder="organization.xxxxxxxx-…"
-                    onChange={(e) => setForm({ ...form, org_client_id: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  <span>Client secret</span>
-                  <input
-                    type="password"
-                    value={form.org_client_secret}
-                    placeholder={status.org_configured ? "unchanged" : ""}
-                    autoComplete="new-password"
-                    onChange={(e) => setForm({ ...form, org_client_secret: e.target.value })}
-                  />
-                </label>
-              </div>
-            </Step>
-
-            <Step
-              n={5}
-              done={status.org_configured && status.sync_groups.length > 0}
-              title="Who gets a seat"
-              what="Everyone in these domain groups is invited; each group becomes a group of the organisation with the same members. Someone who leaves them all loses the seat at the next sync."
-              disabled={!usable}
-            >
-              <div className="field-grid">
-                <label className="field">
-                  <span>Groups</span>
-                  <PickerField
-                    kind="principal"
-                    as="principal"
-                    ariaLabel="Groups"
-                    placeholder="%Sales, %Finance"
-                    multiple
-                    value={form.sync_groups}
-                    onChange={(value) => setForm({ ...form, sync_groups: value })}
-                  />
-                  <small>
-                    {groupCount === 0
-                      ? "Empty invites nobody."
-                      : `${groupCount} group${groupCount === 1 ? "" : "s"}.`}
-                  </small>
-                </label>
-                <label className="field">
-                  <span>Sync every (hours)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={168}
-                    value={form.sync_every_hours}
-                    onChange={(e) => setForm({ ...form, sync_every_hours: Number(e.target.value) })}
-                  />
-                  <small>Also runs at every Save and every Apply.</small>
-                </label>
-              </div>
-            </Step>
-
-            <Step
-              n={6}
-              done={status.installed}
-              title="How people sign in"
-              what="The console is the domain's OpenID provider. The vault sends people here; a browser on a domain-joined desktop signs them in with the ticket it already holds, no typing. Each person still chooses a master password the first time — it is what encrypts their vault, and nothing on the server can stand in for it."
-              disabled={!usable}
-            >
-              <div className="field-grid">
-                <div className="field">
-                  <label className="checkbox">
-                    <input
-                      type="checkbox"
-                      checked={form.sso_enabled}
-                      onChange={(e) => setForm({ ...form, sso_enabled: e.target.checked })}
-                    />
-                    Sign in with the domain account
-                  </label>
-                  <small>Off, the vault asks for its own account password, as Bitwarden does anywhere.</small>
-                </div>
-                <div className="field">
-                  <label className="checkbox">
-                    <input
-                      type="checkbox"
-                      checked={form.sso_only}
-                      disabled={!form.sso_enabled}
-                      onChange={(e) => setForm({ ...form, sso_only: e.target.checked })}
-                    />
-                    … and only that way
-                  </label>
-                  <small>
-                    The vault&rsquo;s own password sign-in is off, so a disabled domain account is a
-                    closed vault at once.
-                  </small>
-                </div>
-              </div>
-            </Step>
-
-            <Step
-              n={7}
-              done={status.smtp_configured}
-              title="Invitations by mail"
-              optional
-              what="A person invited is told by mail. Without a relay the invitation still exists — the organisation's owner sees it under Members and can hand the link over — but a relay is what makes joining self-service."
-              disabled={!usable}
-            >
-              <div className="field-grid">
-                <label className="field">
-                  <span>Mail server</span>
-                  <input
-                    value={form.smtp_host}
-                    placeholder="mail.corp.example.internal"
-                    onChange={(e) => setForm({ ...form, smtp_host: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  <span>Port</span>
-                  <input
-                    type="number"
-                    value={form.smtp_port}
-                    onChange={(e) => setForm({ ...form, smtp_port: Number(e.target.value) })}
-                  />
-                  <small>587 with STARTTLS, or 465.</small>
-                </label>
-                <label className="field">
-                  <span>From</span>
-                  <input
-                    value={form.smtp_from}
-                    placeholder="vault@corp.example.internal"
-                    onChange={(e) => setForm({ ...form, smtp_from: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  <span>User name</span>
-                  <input
-                    value={form.smtp_username}
-                    onChange={(e) => setForm({ ...form, smtp_username: e.target.value })}
-                  />
-                </label>
-                <label className="field">
-                  <span>Password</span>
-                  <input
-                    type="password"
-                    value={form.smtp_password}
-                    placeholder={status.smtp_configured ? "unchanged" : ""}
-                    autoComplete="new-password"
-                    onChange={(e) => setForm({ ...form, smtp_password: e.target.value })}
-                  />
-                </label>
-              </div>
-            </Step>
-
-            {usable && (
-              <li className="setup-save">
-                <button type="button" className="primary" disabled={busy} onClick={() => void save()}>
-                  {busy ? "Saving…" : "Save and apply steps 4–7"}
-                </button>
-                <span className="muted">Sends everything to the server and runs a sync now.</span>
+          <div className="detail-card">
+            <h3 className="section-title">Two things first</h3>
+            <ol className="wiki-steps">
+              <li>
+                {status.ca_ready ? (
+                  <>A certificate authority — the domain has one.</>
+                ) : (
+                  <>
+                    A certificate authority:{" "}
+                    <Link to="/certificates">set one up under Certificates</Link>. The console
+                    carries the vault&rsquo;s traffic over TLS it checks against it.
+                  </>
+                )}
               </li>
-            )}
-
-            <Step
-              n={8}
-              title="Give each group its collection"
-              what="Once the first sync has run, the organisation's groups mirror the domain groups. Which collection each sees is decided once, in the vault; after that, joining the domain group is what gives someone the team's passwords."
-              disabled={!status.org_configured}
-            >
-              <ol className="wiki-steps">
-                <li>
-                  <button type="button" className="inline-link" onClick={() => setTab("vault")}>
-                    Vault tab
-                  </button>{" "}
-                  → <strong>Organisation</strong> → <strong>Groups</strong>: each group → its
-                  collection.
-                </li>
-                <li>
-                  <strong>Members</strong>: someone who has accepted shows as <em>Accepted</em>{" "}
-                  &mdash; tick and <strong>Confirm</strong>. That is the moment the
-                  organisation&rsquo;s key is handed to them, which only a person holding that key
-                  can do.
-                </li>
-              </ol>
-            </Step>
-
-            <Step
-              n={9}
-              title="Put it on the workstations"
-              what="Bitwarden's browser extension and desktop app arrive by policy, already pointed at this vault, and leave when the policy does."
-              disabled={!status.org_configured}
-            >
-              <p>
-                <Link className="button-link" to="/policy">
-                  Group Policy
-                </Link>{" "}
-                → the workstations&rsquo; policy object → <strong>Computer</strong> →{" "}
-                <strong>Software and drivers</strong> → <strong>Password manager</strong>.
-              </p>
-            </Step>
-          </ol>
+              <li>
+                The password-manager role on a member server:{" "}
+                <Link to="/roles">install it under Server Roles</Link>. Any member server; nobody
+                connects to it directly — the vault is{" "}
+                <span className="mono">{status.vault_url}</span>, on this console.
+              </li>
+            </ol>
+          </div>
         </>
       )}
-    </div>
-  );
-}
 
-function Step({
-  n,
-  title,
-  what,
-  done = false,
-  optional = false,
-  disabled = false,
-  children,
-}: {
-  n: number;
-  title: string;
-  what: string;
-  done?: boolean;
-  optional?: boolean;
-  disabled?: boolean;
-  children: ReactNode;
-}) {
-  const state = done ? "done" : disabled ? "waiting" : "open";
-  return (
-    <li className={`setup-step ${state}`} aria-disabled={disabled || undefined}>
-      <div className="setup-marker" aria-hidden="true">
-        {done ? <Check size={16} /> : n}
-      </div>
-      <div className="setup-body">
-        <h3>
-          {title}
-          {optional && <span className="badge">optional</span>}
-          {done && <span className="badge success">done</span>}
-        </h3>
-        <p className="muted">{what}</p>
-        <div className="setup-content">{children}</div>
-      </div>
-    </li>
+      {status && status.installed && !status.ready && (
+        <>
+          <InfoPanel page="password-manager">
+            One press sets everything up: the vault gets its address and certificate, the console
+            makes its own account in it and an organisation named after the domain, and from then
+            on the seats and collections are kept in step by the console.
+          </InfoPanel>
+          {!usable && (
+            <p className="alert" role="alert">
+              The domain needs a certificate authority first —{" "}
+              <Link to="/certificates">Certificates</Link>.
+            </p>
+          )}
+          <div className="detail-card">
+            <h3 className="section-title">Set up the vault</h3>
+            <div className="field-grid">
+              <label className="field">
+                <span>Groups whose members get a seat</span>
+                <PickerField
+                  kind="group"
+                  as="principal"
+                  ariaLabel="Groups"
+                  placeholder="%Sales, %Finance"
+                  multiple
+                  value={setup.groups}
+                  onChange={(value) => setSetup({ ...setup, groups: value })}
+                />
+                <small>Nesting included. Changeable later, under Seats.</small>
+              </label>
+              <label className="field">
+                <span>Accounts that get a seat besides</span>
+                <PickerField
+                  kind="user"
+                  as="name"
+                  ariaLabel="Accounts"
+                  placeholder="ada, sam"
+                  multiple
+                  value={setup.users}
+                  onChange={(value) => setSetup({ ...setup, users: value })}
+                />
+                <small>You get one regardless.</small>
+              </label>
+              <label className="field">
+                <span>Your domain password</span>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={setup.password}
+                  onChange={(e) => setSetup({ ...setup, password: e.target.value })}
+                />
+                <small>
+                  Optional. Given, your vault account&rsquo;s master password is set to it now, so
+                  the vault opens with the password you already know. Left empty, you choose one at
+                  your first sign-in. The console keeps neither.
+                </small>
+              </label>
+            </div>
+            <div className="actions-row">
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || !usable}
+                onClick={() =>
+                  void run(async () => {
+                    const answer = await api.passwords.setup({
+                      seat_groups: split(setup.groups),
+                      seat_users: split(setup.users),
+                      my_password: setup.password,
+                    });
+                    setSetup({ ...setup, password: "" });
+                    setNotice(answer.summary);
+                    return answer;
+                  })
+                }
+              >
+                {busy ? "Setting up…" : "Set up the vault"}
+              </button>
+              {status.last_sync_result && <span className="muted">{status.last_sync_result}</span>}
+            </div>
+          </div>
+        </>
+      )}
+
+      {status?.ready && (
+        <>
+          <p className="muted">
+            Organisation <strong>{status.org_name}</strong> on{" "}
+            <span className="mono">{status.node_fqdn}</span>, owned by the console&rsquo;s account{" "}
+            <span className="mono">{status.owner_account}</span>.{" "}
+            {status.last_sync_at
+              ? `Last reconciled ${new Date(status.last_sync_at).toLocaleString()}: ${status.last_sync_result}`
+              : "Not reconciled yet."}
+            {status.sync_requested && " · a pass is due"}
+          </p>
+
+          <nav className="tabs" aria-label="Password manager views">
+            {(["seats", "collections", "vault"] as Tab[]).map((current) => (
+              <button
+                key={current}
+                type="button"
+                className={tab === current ? "tab active" : "tab"}
+                aria-current={tab === current ? "true" : undefined}
+                onClick={() => setTab(current)}
+              >
+                {current === "seats" ? "Seats" : current === "collections" ? "Collections" : "Vault"}
+              </button>
+            ))}
+          </nav>
+
+          {tab === "seats" && (
+            <>
+              <InfoPanel page="password-manager">
+                A seat is a vault account. The members of these groups and these accounts are
+                invited; at their first sign-in (domain account, through the console) their vault
+                is made and the console confirms them. Someone who leaves loses the seat at the
+                next pass.
+              </InfoPanel>
+              <div className="detail-card">
+                <div className="field-grid">
+                  <label className="field">
+                    <span>Groups whose members get a seat</span>
+                    <PickerField
+                      kind="group"
+                      as="principal"
+                      ariaLabel="Groups"
+                      placeholder="%Sales, %Finance"
+                      multiple
+                      value={seats.groups}
+                      onChange={(value) => setSeats({ ...seats, groups: value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Accounts that get a seat besides</span>
+                    <PickerField
+                      kind="user"
+                      as="name"
+                      ariaLabel="Accounts"
+                      placeholder="ada, sam"
+                      multiple
+                      value={seats.users}
+                      onChange={(value) => setSeats({ ...seats, users: value })}
+                    />
+                  </label>
+                </div>
+                <div className="actions-row">
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const result = await api.passwords.seats({
+                          seat_groups: split(seats.groups),
+                          seat_users: split(seats.users),
+                        });
+                        dirty.current = false;
+                        return result;
+                      }, "Saved; the vault is brought in step within a few seconds.")
+                    }
+                  >
+                    Save seats
+                  </button>
+                </div>
+              </div>
+
+              <h3 className="section-title">
+                <Users size={15} aria-hidden="true" /> People with a seat
+              </h3>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Address</th>
+                    <th scope="col">State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {status.members.map((member) => (
+                    <tr key={member.email}>
+                      <td className="nowrap">{member.name || "—"}</td>
+                      <td className="mono">{member.email}</td>
+                      <td className="nowrap">
+                        <span
+                          className={`badge ${member.status === "confirmed" ? "success" : member.status === "revoked" ? "failure" : ""}`}
+                        >
+                          {member.status === "invited"
+                            ? "invited — has not signed in yet"
+                            : member.status === "accepted"
+                              ? "signed in — being confirmed"
+                              : member.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {status.members.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="empty">
+                        Nobody yet — save seats above, or wait for the next pass.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          {tab === "collections" && (
+            <>
+              <InfoPanel page="password-manager">
+                A collection is a folder of shared passwords. Give it to domain groups: their
+                members see it in the vault, and may add to it unless read-only. The console makes
+                the collection and the groups in the vault and keeps them in step.
+              </InfoPanel>
+              <div className="actions-row">
+                <button type="button" className="primary" onClick={() => setNewCollection("")}>
+                  <Plus size={15} aria-hidden="true" />
+                  New collection
+                </button>
+              </div>
+              {status.collections.map((collection) => (
+                <div className="detail-card collection-card" key={collection.id}>
+                  <div className="collection-head">
+                    <h3 className="section-title">
+                      <FolderLock size={15} aria-hidden="true" /> {collection.name}
+                      {!collection.in_vault && <span className="badge">not in the vault yet</span>}
+                    </h3>
+                    <span className="spacer" />
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setRename({ id: collection.id, name: collection.name })}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setGrant({ id: collection.id, group: "", readOnly: false })}
+                    >
+                      <Plus size={14} aria-hidden="true" />
+                      Give to a group
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      aria-label={`Delete ${collection.name}`}
+                      onClick={() => setConfirmDelete(collection)}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  </div>
+                  {collection.access.length === 0 ? (
+                    <p className="muted">Nobody sees this collection yet.</p>
+                  ) : (
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th scope="col">Group</th>
+                          <th scope="col">May</th>
+                          <th scope="col" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {collection.access.map((entry) => (
+                          <tr key={entry.group_name}>
+                            <td className="nowrap">%{entry.group_name}</td>
+                            <td className="wide">
+                              <label className="checkbox">
+                                <input
+                                  type="checkbox"
+                                  checked={!entry.read_only}
+                                  disabled={busy}
+                                  onChange={(e) =>
+                                    void run(() =>
+                                      api.passwords.collections.grant(
+                                        collection.id,
+                                        entry.group_name,
+                                        !e.target.checked,
+                                      ),
+                                    )
+                                  }
+                                />
+                                change and add passwords
+                              </label>
+                            </td>
+                            <td className="nowrap">
+                              <button
+                                type="button"
+                                className="ghost"
+                                disabled={busy}
+                                onClick={() =>
+                                  void run(() =>
+                                    api.passwords.collections.revoke(
+                                      collection.id,
+                                      entry.group_name,
+                                    ),
+                                  )
+                                }
+                              >
+                                Take away
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ))}
+              {status.collections.length === 0 && <p className="muted">No collections yet.</p>}
+            </>
+          )}
+
+          {tab === "vault" && (
+            <div className="vault-frame">
+              <iframe src={vaultHere} title="The vault" />
+            </div>
+          )}
+        </>
+      )}
+
+      {newCollection !== null && (
+        <Modal
+          title="New collection"
+          submitLabel="Create"
+          onClose={() => setNewCollection(null)}
+          onSubmit={() =>
+            void run(async () => {
+              const result = await api.passwords.collections.create(newCollection);
+              setNewCollection(null);
+              return result;
+            })
+          }
+        >
+          <Field label="Name" hint="A team or a purpose: Sales, Finance, Servers.">
+            <input
+              value={newCollection}
+              autoFocus
+              onChange={(e) => setNewCollection(e.target.value)}
+            />
+          </Field>
+        </Modal>
+      )}
+
+      {rename && (
+        <Modal
+          title="Rename collection"
+          submitLabel="Rename"
+          onClose={() => setRename(null)}
+          onSubmit={() =>
+            void run(async () => {
+              const result = await api.passwords.collections.rename(rename.id, rename.name);
+              setRename(null);
+              return result;
+            })
+          }
+        >
+          <Field label="Name">
+            <input
+              value={rename.name}
+              autoFocus
+              onChange={(e) => setRename({ ...rename, name: e.target.value })}
+            />
+          </Field>
+        </Modal>
+      )}
+
+      {grant && (
+        <Modal
+          title="Give the collection to a group"
+          submitLabel="Give"
+          onClose={() => setGrant(null)}
+          onSubmit={() =>
+            void run(async () => {
+              const result = await api.passwords.collections.grant(
+                grant.id,
+                grant.group.replace(/^%/, ""),
+                grant.readOnly,
+              );
+              setGrant(null);
+              return result;
+            })
+          }
+        >
+          <Field label="Group" hint="Its members see the collection in their vault.">
+            <PickerField
+              kind="group"
+              as="principal"
+              ariaLabel="Group"
+              placeholder="%Sales"
+              value={grant.group}
+              onChange={(value) => setGrant({ ...grant, group: value })}
+            />
+          </Field>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={grant.readOnly}
+              onChange={(e) => setGrant({ ...grant, readOnly: e.target.checked })}
+            />
+            Read-only: they may use the passwords but not change or add any
+          </label>
+        </Modal>
+      )}
+
+      {confirmDelete && (
+        <Modal
+          title="Delete collection"
+          submitLabel="Delete"
+          onClose={() => setConfirmDelete(null)}
+          onSubmit={() =>
+            void run(async () => {
+              const result = await api.passwords.collections.remove(confirmDelete.id);
+              setConfirmDelete(null);
+              return result;
+            })
+          }
+        >
+          <p>
+            <strong>{confirmDelete.name}</strong> is removed from the vault with every password in
+            it, for everyone. There is no recycle bin for this.
+          </p>
+        </Modal>
+      )}
+    </div>
   );
 }

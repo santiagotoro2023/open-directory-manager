@@ -36,7 +36,7 @@ CONF=/etc/odm/vaultwarden
 DATA=/var/lib/odm/vaultwarden
 FQDN=$(hostname -f)
 
-odm_apt_install podman unzip curl openssl
+odm_apt_install podman curl openssl
 
 install -d -m 0750 "$CONF" "$CONF/tls"
 install -d -m 0700 "$DATA"
@@ -126,8 +126,7 @@ Password-manager role installed on $FQDN.
   Admin page      https://<console>/vault/admin   token: $ADMIN_TOKEN
   Data            $DATA (the vaults, encrypted end to end)
 
-Sign-ups are closed; the directory sync invites people, and they sign in
-with their domain account. Next: Passwords in the console — open the vault
-there, create the organisation, paste its API key, and choose the groups
-whose members get a seat.
+Sign-ups are closed; the console invites people, and they sign in with
+their domain account. Next: Passwords in the console — choose who gets a
+seat and press Set up the vault. Collections and access are managed there.
 SUMMARY

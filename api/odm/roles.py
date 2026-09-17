@@ -421,18 +421,17 @@ REGISTRY: dict[str, Role] = {
         name="password-manager",
         title="Password manager",
         summary=(
-            "Vaultwarden — the open-source Bitwarden server — with seats handed out by "
-            "domain group, sign-in with the domain account, and the extension and the "
-            "desktop app pointed at it by policy."
+            "Vaultwarden — the open-source Bitwarden server — managed from the console: "
+            "seats by domain group, collections and who sees them, sign-in with the domain "
+            "account, the extension and the desktop app by policy."
         ),
-        packages=("podman", "unzip", "curl"),
+        packages=("podman", "curl"),
         ui_section="passwords",
         notes=(
             "Needs the certificate authority: the vault is reached at the console's own "
             "address (/vault) and the console carries the traffic to this machine over "
-            "TLS it verifies. Then, under Passwords: open the vault, create the "
-            "organisation, paste its API key, and choose the groups whose members get a "
-            "seat."
+            "TLS it verifies. Then, under Passwords: choose who gets a seat and press "
+            "Set up the vault; collections and access are managed there too."
         ),
     ),
     "file-server": Role(

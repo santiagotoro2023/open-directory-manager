@@ -400,27 +400,38 @@ export interface PolicySettings {
   web_apps?: Record<string, unknown>[];
 }
 
+export interface VaultMember {
+  email: string;
+  name: string;
+  status: "invited" | "accepted" | "confirmed" | "revoked";
+}
+
+export interface VaultCollection {
+  id: string;
+  name: string;
+  in_vault: boolean;
+  access: { group_name: string; read_only: boolean }[];
+}
+
 export interface PasswordManagerStatus {
   installed: boolean;
   node_fqdn: string;
   vault_url: string;
   ca_ready: boolean;
   mail_domain: string;
-  org_client_id: string;
-  org_configured: boolean;
-  sync_groups: string[];
-  sync_every_hours: number;
-  sso_enabled: boolean;
-  sso_only: boolean;
-  sync_account: string;
-  smtp_host: string;
-  smtp_port: number;
-  smtp_from: string;
-  smtp_username: string;
-  smtp_configured: boolean;
-  admin_token: string;
+  ready: boolean;
+  org_name: string;
+  owner_account: string;
+  seat_groups: string[];
+  seat_users: string[];
+  members: VaultMember[];
+  collections: VaultCollection[];
+  admin_token_known: boolean;
   last_applied_at: string | null;
   last_result: string;
+  last_sync_at: string | null;
+  last_sync_result: string;
+  sync_requested: boolean;
   updated_at: string | null;
 }
 
@@ -2145,24 +2156,36 @@ export const api = {
 
   passwords: {
     status: () => request<PasswordManagerStatus>("/passwords"),
-    configure: (body: {
-      org_client_id: string;
-      org_client_secret: string;
-      sync_groups: string[];
-      sync_every_hours: number;
-      sso_enabled: boolean;
-      sso_only: boolean;
-      smtp_host: string;
-      smtp_port: number;
-      smtp_from: string;
-      smtp_username: string;
-      smtp_password: string;
-    }) =>
-      request<PasswordManagerStatus & { task: string }>("/passwords", {
-        ...json(body),
-        method: "PUT",
-      }),
-    apply: () => request<{ task: string }>("/passwords/apply", json({})),
+    setup: (body: { seat_groups: string[]; seat_users: string[]; my_password: string }) =>
+      request<PasswordManagerStatus & { task: string; summary: string }>(
+        "/passwords/setup",
+        json(body),
+      ),
+    seats: (body: { seat_groups: string[]; seat_users: string[] }) =>
+      request<PasswordManagerStatus>("/passwords/seats", { ...json(body), method: "PUT" }),
+    apply: () => request<{ task: string; summary: string }>("/passwords/apply", json({})),
+    collections: {
+      create: (name: string) =>
+        request<PasswordManagerStatus>("/passwords/collections", json({ name })),
+      rename: (id: string, name: string) =>
+        request<PasswordManagerStatus>(`/passwords/collections${qs({ id })}`, {
+          ...json({ name }),
+          method: "PUT",
+        }),
+      remove: (id: string) =>
+        request<PasswordManagerStatus>(`/passwords/collections${qs({ id })}`, {
+          method: "DELETE",
+        }),
+      grant: (id: string, group_name: string, read_only: boolean) =>
+        request<PasswordManagerStatus>(`/passwords/collections/access${qs({ id })}`, {
+          ...json({ group_name, read_only }),
+          method: "PUT",
+        }),
+      revoke: (id: string, group: string) =>
+        request<PasswordManagerStatus>(`/passwords/collections/access${qs({ id, group })}`, {
+          method: "DELETE",
+        }),
+    },
   },
 
   monitor: {

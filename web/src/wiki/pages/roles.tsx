@@ -88,8 +88,8 @@ export function Content() {
               ],
               [
                 "Password manager",
-                "Vaultwarden, the open-source Bitwarden server, reached at the console's own address (/vault): seats and groups from the domain groups you choose, sign-in with the domain account through the console, the extension and the desktop app on workstations by policy. Needs the certificate authority.",
-                "Nothing at install. The vault itself, the organisation's key, the groups and the sign-in are under Passwords. Removing it leaves the vaults in /var/lib/odm/vaultwarden on the server.",
+                "Vaultwarden, the open-source Bitwarden server, reached at the console's own address (/vault) and managed entirely from the console: seats by domain group, collections and who sees them, sign-in with the domain account. Needs the certificate authority.",
+                "Nothing at install. Everything is under Passwords. Removing it leaves the vaults in /var/lib/odm/vaultwarden on the server.",
               ],
               [
                 "Monitoring",

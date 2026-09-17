@@ -3815,3 +3815,24 @@ h4.subsection {
   padding: 4px 6px;
   min-height: 0;
 }
+
+/* A collection on the Passwords page: its name and actions on one line,
+   the groups that see it underneath. */
+.collection-card {
+  margin-bottom: 14px;
+}
+.collection-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.collection-head .section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.collection-head .section-title .badge {
+  text-transform: none;
+}

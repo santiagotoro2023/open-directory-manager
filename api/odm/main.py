@@ -63,6 +63,7 @@ from . import (
     routes_shares,
     routes_vpn,
     shares,
+    vaultkeeper,
     vaultproxy,
     vpn,
 )
@@ -111,6 +112,7 @@ async def lifespan(app: FastAPI):
 
     background = [
         asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool)),
+        asyncio.create_task(vaultkeeper.reconcile_loop(app.state.pool, settings)),
         asyncio.create_task(routes_operations.backup_loop(app.state.pool, settings)),
         # A group whose membership is a query is only true if something keeps
         # answering the question.

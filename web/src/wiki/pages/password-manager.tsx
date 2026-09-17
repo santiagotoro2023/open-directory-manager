@@ -16,7 +16,7 @@ export const meta: WikiPageMeta = {
   title: "Password manager",
   section: "Administration",
   summary:
-    "A vault for the domain, inside the console: seats and groups from the directory, sign-in with the domain account.",
+    "A vault for the domain, managed entirely from the console: seats, collections and who sees them.",
   keywords: [
     "password manager",
     "vault",
@@ -38,212 +38,140 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          The password-manager role runs Vaultwarden, the open-source Bitwarden server, and
-          makes it part of the domain. Its address is the console&rsquo;s own &mdash;{" "}
-          <C>https://&lt;console&gt;/vault</C> &mdash; whichever member server carries it: the
-          console shows it on the Passwords page and carries every request to that server, so
-          there is one address, one certificate and one sign-in for the whole thing. There are
-          no accounts of its own to make and no groups of its own to keep: a person has a seat
-          because they are in a domain group, the vault&rsquo;s groups are the domain&rsquo;s
-          groups with the same members, kept in step by a sync on the server, and people sign in
-          with their domain account &mdash; through the console, which is the domain&rsquo;s
-          OpenID provider, and without typing anything on a domain-joined desktop whose browser
-          hands over the ticket it already holds. What is <em>in</em> a vault, the server cannot
-          read &mdash; every vault is encrypted with a key only its owner has &mdash; which is the
-          point of a password manager and the one thing this role does not change.
+          The password-manager role runs Vaultwarden, the open-source Bitwarden server, and the
+          console runs it: the console owns the vault&rsquo;s organisation through an account of
+          its own, and everything an administrator decides &mdash; who has a seat, which
+          collections exist, which domain groups see each one &mdash; is decided on the Passwords
+          page and reconciled into the vault by the console. People sign in with their domain
+          account, through the console, and use the vault &mdash; the browser extension, the
+          desktop app, the Vault tab. Nobody administers it there.
         </p>
 
         <Example title="Set it up">
           <Steps>
             <li>
-              A certificate authority, under <strong>Certificates</strong>, if the domain has
-              none yet: the console carries the vault&rsquo;s traffic over TLS it verifies
-              against it, and refuses to carry anything until it can.
+              A certificate authority under <strong>Certificates</strong>, if the domain has none:
+              the console carries the vault&rsquo;s traffic over TLS it verifies against it.
             </li>
             <li>
               <strong>Server Roles</strong> → <strong>Password manager</strong> →{" "}
-              <strong>Install on a server</strong> &mdash; any member server; nobody connects to it
-              directly. The installer prints the admin page&rsquo;s token once, and the console
-              sends the vault its address and certificate the moment the install is reported
-              done.
+              <strong>Install on a server</strong>. Any member server; nobody connects to it
+              directly. The vault is <C>https://&lt;console&gt;/vault</C>.
             </li>
             <li>
-              <strong>Passwords</strong> → the <strong>Vault</strong> tab. The vault asks for an
-              e-mail address first: the domain account&rsquo;s address &mdash; its mail attribute,
-              or <C>name@domain</C> where it has none &mdash; then <strong>Use single sign-on</strong>.
-              The console signs you in, the vault makes the account (any address at the domain
-              may make one that way, and only that way), and you choose a master password. In it,
-              create an organisation with a collection per team. This first account is the
-              organisation&rsquo;s owner; the console never holds its master password.
+              <strong>Passwords</strong> → choose the groups whose members get a seat, any
+              accounts besides, and &mdash; optionally &mdash; type your own domain password, then{" "}
+              <strong>Set up the vault</strong>. The console sends the server its address and
+              certificate, makes its own account in the vault and an organisation named after the
+              domain, invites everyone with a seat, and &mdash; with your password given &mdash;
+              sets your vault&rsquo;s master password to it. Nothing to copy, nothing to paste.
             </li>
             <li>
-              In the organisation, <strong>Settings</strong> → <strong>API key</strong>. Paste
-              the client id and secret on the <strong>Setup</strong> tab.
-            </li>
-            <li>
-              Choose the groups whose members get a seat &mdash; <C>%Sales</C>,{" "}
-              <C>%Finance</C> &mdash; and <strong>Save and apply</strong>. The server fetches
-              the directory connector, binds to the domain with a read-only account the console
-              made for it, and invites everybody in those groups.
-            </li>
-            <li>
-              Back in the organisation, its <strong>Groups</strong> now mirror those directory
-              groups. Give each its collection, once. From then on, joining the domain group is
-              what gives someone the team&rsquo;s vault, and leaving it takes it away at the next
-              sync.
+              <strong>Collections</strong>: make one per team, give it to the domain groups that
+              should see it. Done; the console keeps the vault in step from here on.
             </li>
           </Steps>
         </Example>
 
-        <Example title="Put it on every workstation">
+        <Example title="Put it on the workstations">
           <strong>Group Policy</strong> → the policy object → <strong>Computer</strong> →{" "}
-          <strong>Password manager</strong>. Tick the browser extension, the desktop app, or both:
-          Bitwarden&rsquo;s extension is installed in Firefox and Chromium and its desktop app on
-          the machine, each pointed at the domain&rsquo;s vault so nobody types a server address,
-          and each removed again when the policy stops reaching the machine. The browsers&rsquo;
-          own password saving is turned off alongside, so the vault is the one place a password
-          is offered from.
+          <strong>Password manager</strong>: Bitwarden&rsquo;s browser extension and/or desktop
+          app, already pointed at the vault, removed when the policy goes.
         </Example>
 
         <Example title="What a person sees">
-          A mail (or a word from the administrator) says they have a seat. They open the vault
-          &mdash; the extension or the app is already there, already pointed at it &mdash; press{" "}
-          <strong>Log in with single sign-on</strong>, and are signed in with their domain account:
-          on their own workstation, with no prompt at all. The first time, they choose a master
-          password; after that the extension unlocks with it or with a PIN, and the team&rsquo;s
-          passwords are simply there.
+          They open the vault (the extension is already there), press{" "}
+          <strong>Log in with single sign-on</strong>, type their address &mdash; the mail
+          attribute, or <C>name@domain</C> &mdash; and are signed in with their domain account,
+          on their own workstation with no prompt at all. The first time they choose a master
+          password; from then on the vault unlocks with it or a PIN, and their team&rsquo;s
+          collections are simply there.
         </Example>
 
-        <Where>
-          Passwords &mdash; the Vault tab is the vault, the Setup tab what the console decides
-          &mdash; once a server carries the password-manager role; the extension and the app under
-          a policy object&rsquo;s Computer settings.
-        </Where>
+        <Where>Passwords; the extension and the app under a policy object&rsquo;s Computer settings.</Where>
       </Quickstart>
 
       <Details>
-        <Section title="What the directory decides, and what it cannot">
+        <Section title="What the console holds, and what it cannot read">
           <p>
-            Seats and teams come from the directory and nowhere else. A person&rsquo;s seat is
-            their domain account &mdash; the vault knows them by the address the directory holds
-            for them, or their account name at the domain where none is set &mdash; and sign-ups
-            are closed, so the only way in is to be in one of the chosen groups. The
-            organisation&rsquo;s groups are the domain groups, created and emptied by the sync; the
-            one decision made inside the vault is which collection each group sees, and it is made
-            once, because the group keeps its collection however its membership changes.
-          </p>
-          <p>
-            Signing in is the domain&rsquo;s too. The vault is a client of the console&rsquo;s
-            OpenID Connect provider (<C>/api/v1/oidc</C>), registered by the console when the
-            role is configured; <strong>Log in with single sign-on</strong> sends the person to
-            the console, which accepts the Kerberos ticket the browser offers &mdash; the one the
-            desktop session got at login &mdash; or, from a machine without one, their domain
-            name and password on the console&rsquo;s own page, with the same lockout as the
-            console&rsquo;s sign-in. The vault is told who they are and their address, and never
-            sees a password. With <strong>and only that way</strong> ticked the vault&rsquo;s own
-            password sign-in is switched off, so a disabled domain account is a closed vault at
-            once.
-          </p>
-          <p>
-            What the directory cannot do is unlock a vault. A vault is encrypted end to end with a
-            key derived from its owner&rsquo;s master password; the server holds only ciphertext,
-            and so does the console. That is why each person chooses a master password of their
-            own the first time they sign in &mdash; no server that could stand in for it would be
-            a password manager worth having. The extension asks for it once; after that it stays
-            signed in and unlocks with it, a PIN or the machine&rsquo;s biometrics, the way
-            Bitwarden itself works in any organisation.
+            The console&rsquo;s vault account is a domain user, <C>odm-vault</C>, made by the
+            console; its master password is random and kept in the console&rsquo;s database like
+            its other secrets. It owns the organisation, and the console keeps the
+            organisation&rsquo;s key too &mdash; confirming a member (handing them the key, wrapped
+            with their public key) and naming a collection are things only a holder of that key
+            can do. That is the extent of it: what is <em>in</em> a collection is encrypted by the
+            people who put it there, and personal vaults are encrypted with each person&rsquo;s
+            own master password, which nothing on the server or in the console ever sees.
           </p>
           <Note>
-            This is the same arrangement as Bitwarden&rsquo;s own enterprise deployment &mdash;
-            directory connector plus single sign-on &mdash; with the provider, the connector, its
-            account, its certificate and its schedule all set up and kept running by the role, and
-            the clients by policy.
+            The master password remains each person&rsquo;s own. Given at setup, the
+            administrator&rsquo;s domain password becomes their vault&rsquo;s master password once
+            &mdash; derived into keys on the spot and not kept &mdash; because it is the password
+            they already know. Everyone else chooses theirs at first sign-in. Changing a domain
+            password later does not change a master password; there is no key on any server that
+            could.
           </Note>
+        </Section>
+
+        <Section title="How the vault is kept in step">
+          <p>
+            Every five minutes, and within seconds of any change on the Passwords page, the
+            console signs its account into the vault through single sign-on (it is the OpenID
+            provider, so it issues its own code and never needs a password) and makes the vault
+            match:
+          </p>
+          <Reference
+            headers={["In the console", "In the vault"]}
+            rows={[
+              [
+                "Seats: groups and accounts",
+                "Every member of those groups (nesting included, disabled accounts left out) and every named account is invited; whoever has signed in since is confirmed; whoever is no longer entitled is removed from the organisation.",
+              ],
+              [
+                "Groups",
+                "Each domain group involved — with a seat, or with access to a collection — is a group of the organisation with the same members.",
+              ],
+              [
+                "Collections and access",
+                "Each collection exists under its name; the groups the console gives it are the groups that see it, read-only where the console says so. A collection removed here is removed there, with its contents.",
+              ],
+            ]}
+          />
+          <p>
+            The result of the last pass is on the page, and the state of each seat: invited (has
+            not signed in yet), signed in (being confirmed), confirmed.
+          </p>
         </Section>
 
         <Section title="One address">
           <p>
             The vault answers at <C>/vault</C> on the console, and the console forwards each
-            request &mdash; the web vault&rsquo;s pages, the extension&rsquo;s and the app&rsquo;s
-            calls, the live-update socket &mdash; to the server carrying the role, on port 8222,
-            over TLS checked against the domain authority. The vault is told its own address is
-            the console&rsquo;s (<C>DOMAIN</C> in its configuration), so every link it makes,
-            every invitation it sends and the OpenID callback it registers point at the console.
-            The console&rsquo;s own gates step aside for that path: the vault does its own
-            sign-in, sets its own headers and answers the browser extensions&rsquo; cross-origin
-            requests itself, so none of the console&rsquo;s origin, CORS or content-security rules
-            are applied to it &mdash; only transport security is.
+            request to the server carrying the role, on port 8222, over TLS checked against the
+            domain authority. The vault is told its own address is the console&rsquo;s, so every
+            link it makes and the OpenID callback it registers point at the console; the console
+            sends a browser that arrives under another of its names to the published one first,
+            so the console, the vault and the sign-in are one origin.
           </p>
-          <Note>
-            The Passwords page shows the vault in a frame of the same origin, which is why the
-            vault&rsquo;s own <C>frame-ancestors &apos;self&apos;</C> allows it. <strong>Open in a
-            tab</strong> is the same address without the console around it, for a second monitor
-            or a longer session.
-          </Note>
-        </Section>
-
-        <Section title="The sync">
-          <p>
-            The server runs Bitwarden&rsquo;s directory connector (<C>bwdc</C>) on a systemd timer,
-            every hour unless told otherwise, and once at each <strong>Apply</strong>. It binds to
-            the domain over LDAPS as <C>odm-passwords-sync</C>, a domain user with no memberships
-            and a random password the console made when the organisation key was first saved;
-            it reads what any domain user may read &mdash; names, mail addresses and group
-            members. It syncs exactly the chosen groups and the members of those groups: anyone
-            in them is invited, anyone who leaves them all is removed from the organisation, and
-            a disabled account is removed too.
-          </p>
-          <Reference
-            headers={["On the server", "Holds"]}
-            rows={[
-              [<C key="a">/etc/odm/vaultwarden/env</C>, "The vault's address, mail relay and admin token"],
-              [<C key="b">/etc/odm/vaultwarden/tls/</C>, "Its certificate, from the domain authority once configured"],
-              [<C key="c">/var/lib/odm/vaultwarden/</C>, "The vaults themselves, encrypted; back this up"],
-              [<C key="d">/opt/odm/bwdc/</C>, "The directory connector"],
-              [<C key="e">odm-bwdc-sync.timer</C>, "The sync's schedule; journalctl -u odm-bwdc-sync for its log"],
-            ]}
-          />
-          <Note>
-            A person is told about their invitation by mail, if a relay is set under{" "}
-            <strong>Invitations by mail</strong>. Without one the invitation still exists; the
-            organisation&rsquo;s owner sees it under <strong>Members</strong> and can hand the link
-            over. The relay is what makes joining self-service.
-          </Note>
         </Section>
 
         <Section title="The certificate">
           <p>
-            People and their browsers only ever see the console&rsquo;s certificate. Between the
-            console and the server carrying the vault there is a second one: the vault starts
-            with a self-signed certificate so the service comes up, and the configuration the
-            console sends when the install is reported done &mdash; and at every{" "}
-            <strong>Apply</strong> &mdash; replaces it with one from the domain authority, in the
-            server&rsquo;s name, which is what the console checks before forwarding anything. The
-            vault in turn has to trust the console&rsquo;s certificate to send people there to sign
-            in: the container carries the server&rsquo;s own trust bundle, which holds the domain
-            authority once the agent has installed it, so the console&rsquo;s own certificate
-            should be one the authority issued (<strong>Certificates</strong> →{" "}
-            <strong>Replace console certificate</strong>) rather than the self-signed one setup
-            starts with.
-          </p>
-        </Section>
-
-        <Section title="The admin page">
-          <p>
-            Vaultwarden&rsquo;s own admin page is at <C>/vault/admin</C> on the console, behind a
-            token the installer made. The Setup tab shows it (step 2, with a show and a copy
-            button) once the server has reported it back, which it does with every Apply; it is
-            also in <C>/etc/odm/vaultwarden/admin-token</C> on the server. It shows users, lets one be deleted or its two-factor reset, and sends a test
-            mail. Everything the console sets it sets through the environment file, so a change
-            made on the admin page to a setting the console owns is overwritten at the next apply.
+            People only ever see the console&rsquo;s certificate. Between the console and the
+            server carrying the vault there is a second one, from the domain authority, issued when
+            the role is set up and kept while it has a month or more to run. The vault trusts the
+            console&rsquo;s certificate through the server&rsquo;s own trust bundle, which the
+            container carries — so the console&rsquo;s own certificate should be one the authority
+            issued (<strong>Certificates</strong> → <strong>Replace console certificate</strong>).
           </p>
         </Section>
 
         <Section title="Removing the role">
           <p>
-            <C>deploy/uninstall.sh</C> on the server stops the container and the sync, and leaves{" "}
-            <C>/var/lib/odm/vaultwarden</C> in place: the vaults are the one thing on that machine
-            that cannot be made again.
+            <strong>Server Roles</strong> → <strong>Remove</strong> stops the vault and removes its
+            configuration from the server; <C>/var/lib/odm/vaultwarden</C> &mdash; the vaults
+            themselves &mdash; stays, because it cannot be made again. The console&rsquo;s record
+            of the organisation stays too, so installing the role again on the same server finds
+            everything as it was.
           </p>
         </Section>
       </Details>
