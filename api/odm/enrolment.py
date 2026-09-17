@@ -14,6 +14,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from ldap3 import MODIFY_REPLACE, Connection
+
+from . import objects
 from .config import Settings
 from .dns import SAMBA_TOOL, DnsError, DnsUnavailable, available, message
 
@@ -83,6 +86,38 @@ def _add_spn(principal: str, account: str) -> None:
         _run("spn", "add", principal, account, KERBEROS)
     except EnrolmentError:
         pass
+
+
+def rename_machine(conn: Connection, settings: Settings, dn: str, new_short: str) -> str:
+    """Give an existing computer object a new name, in place.
+
+    The object stays where it is — same organizational unit, same group
+    memberships, same policy links — and only what names it changes: the
+    relative name, sAMAccountName, dNSHostName, and the service principal
+    names. The account's keys are replaced afterwards by provision_machine,
+    which hands the machine a keytab under the new principals. Returns the
+    new distinguished name.
+    """
+    new_short = short_name(validate_hostname(new_short))
+    canonical = objects.normalize_dn(settings, dn)
+    current = objects.get(conn, settings, canonical)
+    if current.get("objectType") != "computer":
+        raise EnrolmentError("only a computer can be renamed this way")
+    parent = canonical.split(",", 1)[1]
+    new_dn = objects.move(conn, settings, canonical, parent, new_short)
+    fqdn = f"{new_short}.{settings.domain}".lower()
+    spns = [f"{service}/{name}" for service in ("host", "cifs") for name in (new_short, fqdn)]
+    conn.modify(
+        new_dn,
+        {
+            "sAMAccountName": [(MODIFY_REPLACE, [f"{new_short}$"])],
+            "dNSHostName": [(MODIFY_REPLACE, [fqdn])],
+            "servicePrincipalName": [(MODIFY_REPLACE, spns)],
+        },
+    )
+    if conn.result and conn.result.get("result") not in (0, None):
+        raise EnrolmentError(f"renaming the account: {conn.result.get('description')}")
+    return new_dn
 
 
 def provision_machine(settings: Settings, hostname: str, container_dn: str) -> bytes:

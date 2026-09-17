@@ -97,9 +97,18 @@ type Settings struct {
 	AgentUpdate          *AgentUpdate           `json:"agent_update,omitempty"`
 	Agent                *AgentConfig           `json:"agent,omitempty"`
 	Regional             *Regional              `json:"regional,omitempty"`
-	LogonHours           []LogonHoursRule       `json:"logon_hours,omitempty"`
-	FirmwareUpdates      *FirmwareUpdates       `json:"firmware_updates,omitempty"`
-	WebApps              []WebApp               `json:"web_apps,omitempty"`
+	// Hostname is the name the console assigned under a Computer names
+	// policy — present only while the machine still has to take it.
+	Hostname        *Hostname        `json:"hostname,omitempty"`
+	LogonHours      []LogonHoursRule `json:"logon_hours,omitempty"`
+	FirmwareUpdates *FirmwareUpdates `json:"firmware_updates,omitempty"`
+	WebApps         []WebApp         `json:"web_apps,omitempty"`
+}
+
+// Hostname is the name a machine should take.
+type Hostname struct {
+	Wanted string `json:"wanted"`
+	FQDN   string `json:"fqdn"`
 }
 
 // DeviceControl is whether Bluetooth, cameras and microphones may be used.

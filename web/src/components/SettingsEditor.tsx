@@ -6,6 +6,7 @@ import {
   type AdmxSelection,
   type CustomPackageMeta,
   type ItemTargeting,
+  type BrowserSettings,
   type PolicySettings,
 } from "../api";
 import { AdmxEditor } from "./AdmxEditor";
@@ -1234,6 +1235,37 @@ const SPECIAL: SpecialSpec[] = [
     doc: "firmware-updates",
   },
   {
+    key: "firefox_policy",
+    title: "Firefox",
+    half: "Computer",
+    group: "Software and drivers",
+    help:
+      "Firefox, in plain settings: start page, bookmarks, extensions, the password manager, " +
+      "history, proxy, sites — written to Firefox's own policies.json on every machine.",
+    doc: "firefox",
+  },
+  {
+    key: "chromium_policy",
+    title: "Chromium and Chrome",
+    half: "Computer",
+    group: "Software and drivers",
+    help:
+      "Chromium and Chrome, in plain settings: start page, bookmarks, extensions, the password " +
+      "manager, history, proxy, sites — written to the browsers' managed-policy directory.",
+    doc: "chromium-and-chrome",
+  },
+  {
+    key: "computer_names",
+    title: "Computer names",
+    half: "Computer",
+    group: "System configuration",
+    help:
+      "What the machines this policy reaches are called: a template with a number in it, or " +
+      "the hardware serial. A machine whose name does not fit is handed the next free number " +
+      "and renamed — account, keytab and DNS record with it.",
+    doc: "computer-names",
+  },
+  {
     key: "device_control",
     title: "Peripherals",
     half: "Computer",
@@ -1390,6 +1422,9 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "screen_lock") return settings.screen_lock ? 1 : 0;
   if (key === "regional") return settings.regional ? 1 : 0;
   if (key === "device_control") return settings.device_control ? 1 : 0;
+  if (key === "computer_names") return settings.computer_names ? 1 : 0;
+  if (key === "firefox_policy") return settings.firefox_policy ? 1 : 0;
+  if (key === "chromium_policy") return settings.chromium_policy ? 1 : 0;
   if (key === "firmware_updates") return settings.firmware_updates ? 1 : 0;
   if (key === "removable_storage") return settings.removable_storage ? 1 : 0;
   if (key === "desktop_theme") return settings.desktop_theme ? 1 : 0;
@@ -1564,6 +1599,15 @@ export function SettingsEditor({
             <ScreenLockEditor settings={settings} onChange={onChange} />
           )}
           {selected === "regional" && <RegionalEditor settings={settings} onChange={onChange} />}
+          {selected === "firefox_policy" && (
+            <BrowserSettingsEditor which="firefox_policy" settings={settings} onChange={onChange} />
+          )}
+          {selected === "chromium_policy" && (
+            <BrowserSettingsEditor which="chromium_policy" settings={settings} onChange={onChange} />
+          )}
+          {selected === "computer_names" && (
+            <ComputerNamesEditor settings={settings} onChange={onChange} />
+          )}
           {selected === "device_control" && (
             <DeviceControlEditor settings={settings} onChange={onChange} />
           )}
@@ -3926,6 +3970,355 @@ function RegionalEditor({
             Let people choose another language or layout in their own settings
           </label>
         </>
+      )}
+    </>
+  );
+}
+
+const BLANK_BROWSER: BrowserSettings = {
+  start_page: "unset",
+  homepage: "",
+  homepage_locked: true,
+  bookmarks_folder: "",
+  bookmarks: [],
+  bookmarks_bar: "unset",
+  extensions_install: [],
+  extensions_block: [],
+  extensions_user_install: "unset",
+  password_manager: "unset",
+  autofill: "unset",
+  history: "unset",
+  private_browsing: "unset",
+  developer_tools: "unset",
+  telemetry: "unset",
+  sync_accounts: "unset",
+  popups: "unset",
+  default_search: "",
+  default_search_url: "",
+  download_directory: "",
+  proxy_mode: "unset",
+  proxy_server: "",
+  proxy_pac_url: "",
+  proxy_bypass: [],
+  blocked_sites: [],
+  allowed_sites: [],
+  first_run_pages: "unset",
+  default_browser_check: "unset",
+  extra: {},
+};
+
+const lines = (value: string[]) => value.join("\n");
+const fromLines = (text: string) => text.split("\n").map((line) => line.trim()).filter(Boolean);
+
+/** Firefox and Chromium share one editor: the settings are the same words,
+ *  and the control plane says them in each browser's own policy names. */
+function BrowserSettingsEditor({
+  which,
+  settings,
+  onChange,
+}: {
+  which: "firefox_policy" | "chromium_policy";
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings[which];
+  const firefox = which === "firefox_policy";
+  function set(changes: Partial<BrowserSettings>) {
+    onChange({ ...settings, [which]: { ...BLANK_BROWSER, ...current, ...changes } });
+  }
+  const choice = (
+    label: string,
+    key: keyof BrowserSettings,
+    hint: string,
+    options: [string, string][] = [["unset", "Leave as it is"], ["allow", "Allowed"], ["block", "Blocked"]],
+  ) =>
+    current && (
+      <label className="field">
+        <span>{label}</span>
+        <select value={String(current[key])} onChange={(e) => set({ [key]: e.target.value } as Partial<BrowserSettings>)}>
+          {options.map(([value, text]) => (
+            <option key={value} value={value}>
+              {text}
+            </option>
+          ))}
+        </select>
+        <small>{hint}</small>
+      </label>
+    );
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor(which)}
+        actions={current && <RemoveSetting onRemove={() => onChange({ ...settings, [which]: undefined })} />}
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <>
+          <h4 className="subsection">Start and bookmarks</h4>
+          <div className="field-grid">
+            {choice("When the browser opens", "start_page", "What the first window shows.", [
+              ["unset", "Leave as it is"],
+              ["homepage", "The home page"],
+              ["previous-session", "The previous session"],
+              ["new-tab", "A new tab"],
+            ])}
+            <label className="field">
+              <span>Home page</span>
+              <input
+                value={current.homepage}
+                placeholder="https://intranet.corp.example.internal/"
+                onChange={(e) => set({ homepage: e.target.value })}
+              />
+              <small>Empty leaves the browser's own.</small>
+            </label>
+            {choice("Bookmarks bar", "bookmarks_bar", "Whether the bar under the address field shows.", [
+              ["unset", "Leave as it is"],
+              ["always", "Always shown"],
+              ["never", "Hidden"],
+            ])}
+            <label className="field">
+              <span>Bookmarks folder</span>
+              <input
+                value={current.bookmarks_folder}
+                placeholder="Example Corp"
+                onChange={(e) => set({ bookmarks_folder: e.target.value })}
+              />
+              <small>The managed bookmarks below appear in a folder of this name.</small>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={current.homepage_locked}
+              onChange={(e) => set({ homepage_locked: e.target.checked })}
+            />
+            People may not change the home page
+          </label>
+          <label className="field">
+            <span>Managed bookmarks</span>
+            <textarea
+              rows={4}
+              value={current.bookmarks.map((entry) => `${entry.name} = ${entry.url}`).join("\n")}
+              placeholder={"Tickets = https://tickets.corp.example.internal/\nWiki = https://wiki.corp.example.internal/"}
+              onChange={(e) =>
+                set({
+                  bookmarks: fromLines(e.target.value)
+                    .map((line) => {
+                      const [name, ...rest] = line.split("=");
+                      return { name: name.trim(), url: rest.join("=").trim() };
+                    })
+                    .filter((entry) => entry.name && entry.url),
+                })
+              }
+            />
+            <small>One per line: name = address. They cannot be edited or removed by the person.</small>
+          </label>
+
+          <h4 className="subsection">Extensions</h4>
+          <div className="field-grid">
+            <label className="field">
+              <span>Install for everybody</span>
+              <textarea
+                rows={3}
+                value={lines(current.extensions_install)}
+                placeholder={firefox ? "uBlock0@raymondhill.net = https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi" : "cjpalhdlnbpafiamejdnhcphjbkeiagm"}
+                onChange={(e) => set({ extensions_install: fromLines(e.target.value) })}
+              />
+              <small>
+                {firefox
+                  ? "One per line: the add-on id, = and the .xpi address (both on the add-on's page under \"See all versions\"), or just its addons.mozilla.org slug."
+                  : "One per line: the 32-letter id from the Web Store address, or id;update-url for one hosted elsewhere."}
+              </small>
+            </label>
+            <label className="field">
+              <span>Never allowed</span>
+              <textarea
+                rows={3}
+                value={lines(current.extensions_block)}
+                onChange={(e) => set({ extensions_block: fromLines(e.target.value) })}
+              />
+              <small>One id per line.</small>
+            </label>
+            {choice("People installing their own", "extensions_user_install", "Blocked leaves only the ones above.")}
+          </div>
+
+          <h4 className="subsection">Privacy and security</h4>
+          <div className="field-grid">
+            {choice("Password manager", "password_manager", "The browser offering to save and fill passwords.")}
+            {choice("Form autofill", "autofill", "Addresses and payment cards.")}
+            {choice("History", "history", "What the browser remembers between sessions.", [
+              ["unset", "Leave as it is"],
+              ["keep", "Kept"],
+              ["clear-on-exit", "Cleared when the browser closes"],
+              ["disabled", "Not recorded"],
+            ])}
+            {choice("Private browsing", "private_browsing", firefox ? "Private windows." : "Incognito windows.")}
+            {choice("Developer tools", "developer_tools", "F12 and the inspector.")}
+            {choice("Telemetry", "telemetry", "Usage reports to the browser's maker.")}
+            {choice("Browser accounts and sync", "sync_accounts", firefox ? "Signing in to a Firefox account." : "Signing in to a Google account in the browser.")}
+            {choice("Pop-up windows", "popups", "Windows a page opens by itself.")}
+          </div>
+
+          <h4 className="subsection">Search and downloads</h4>
+          <div className="field-grid">
+            <label className="field">
+              <span>Default search engine</span>
+              <input
+                value={current.default_search}
+                placeholder="DuckDuckGo"
+                onChange={(e) => set({ default_search: e.target.value })}
+              />
+              <small>{firefox ? "A name Firefox ships (Google, DuckDuckGo, Bing…) — the ESR honours it — or one added with the address below." : "Shown as the engine's name."}</small>
+            </label>
+            <label className="field">
+              <span>Search address</span>
+              <input
+                value={current.default_search_url}
+                placeholder="https://search.example.internal/?q={searchTerms}"
+                onChange={(e) => set({ default_search_url: e.target.value })}
+              />
+              <small>For an engine of your own, with {"{searchTerms}"} where the words go.</small>
+            </label>
+            <label className="field">
+              <span>Download folder</span>
+              <input
+                value={current.download_directory}
+                placeholder="/home/${user}/Downloads"
+                onChange={(e) => set({ download_directory: e.target.value })}
+              />
+              <small>Empty leaves the browser's own; set, the browser stops asking where.</small>
+            </label>
+          </div>
+
+          <h4 className="subsection">Proxy</h4>
+          <div className="field-grid">
+            {choice("Proxy", "proxy_mode", "How the browser reaches the web.", [
+              ["unset", "Leave as it is"],
+              ["system", "The system's proxy settings"],
+              ["none", "No proxy"],
+              ["manual", "A proxy server"],
+              ["pac", "An auto-configuration script"],
+            ])}
+            <label className="field">
+              <span>Proxy server</span>
+              <input
+                value={current.proxy_server}
+                placeholder="proxy.corp.example.internal:3128"
+                onChange={(e) => set({ proxy_server: e.target.value })}
+              />
+              <small>host:port, for a proxy server.</small>
+            </label>
+            <label className="field">
+              <span>Auto-configuration script</span>
+              <input
+                value={current.proxy_pac_url}
+                placeholder="https://proxy.corp.example.internal/proxy.pac"
+                onChange={(e) => set({ proxy_pac_url: e.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Bypass for</span>
+              <textarea
+                rows={2}
+                value={lines(current.proxy_bypass)}
+                placeholder={"*.corp.example.internal\n10.0.0.0/8"}
+                onChange={(e) => set({ proxy_bypass: fromLines(e.target.value) })}
+              />
+            </label>
+          </div>
+
+          <h4 className="subsection">Sites</h4>
+          <div className="field-grid">
+            <label className="field">
+              <span>Blocked sites</span>
+              <textarea
+                rows={3}
+                value={lines(current.blocked_sites)}
+                placeholder={"facebook.com\n*.tiktok.com"}
+                onChange={(e) => set({ blocked_sites: fromLines(e.target.value) })}
+              />
+              <small>One per line. <code>*</code> blocks everything but the exceptions.</small>
+            </label>
+            <label className="field">
+              <span>Exceptions</span>
+              <textarea
+                rows={3}
+                value={lines(current.allowed_sites)}
+                placeholder="intranet.corp.example.internal"
+                onChange={(e) => set({ allowed_sites: fromLines(e.target.value) })}
+              />
+            </label>
+          </div>
+
+          <h4 className="subsection">Housekeeping</h4>
+          <div className="field-grid">
+            {choice("First-run and what's-new pages", "first_run_pages", "The welcome tabs a fresh browser opens.", [
+              ["unset", "Leave as it is"],
+              ["hide", "Never shown"],
+            ])}
+            {choice("Default-browser prompt", "default_browser_check", "\"Make this your default browser?\"", [
+              ["unset", "Leave as it is"],
+              ["hide", "Never asked"],
+            ])}
+          </div>
+          <JsonField
+            label="Anything else, by policy name"
+            value={current.extra}
+            onChange={(value) => set({ extra: value })}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
+function ComputerNamesEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.computer_names;
+  const template = current?.template ?? "";
+  const example = template.includes("{serial}")
+    ? template.replace("{serial}", "pf3x9q")
+    : template.replace(/\{n(?::(\d))?\}/, (_m, width) => "42".padStart(Number(width ?? 1), "0"));
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("computer_names")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, computer_names: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => onChange({ ...settings, computer_names: { template: "WS-{n:4}" } })} />
+      ) : (
+        <div className="field-grid">
+          <label className="field">
+            <span>Template</span>
+            <input
+              value={template}
+              placeholder="WS-{n:4}"
+              onChange={(e) => onChange({ ...settings, computer_names: { template: e.target.value } })}
+            />
+            <small>
+              Letters, digits and dashes around <code>{"{n}"}</code> (<code>{"{n:4}"}</code> pads to four
+              digits) or <code>{"{serial}"}</code>, the hardware serial. Example:{" "}
+              <strong>{example || "—"}</strong>
+            </small>
+          </label>
+          <p className="muted">
+            Link this to the organizational unit the workstations live in. A machine already fitting
+            the pattern keeps its name; one carrying a server role, or a domain controller, is never
+            renamed.
+          </p>
+        </div>
       )}
     </>
   );

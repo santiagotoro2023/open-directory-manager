@@ -77,6 +77,13 @@ type Env struct {
 	// returns its path. Empty where there is nothing to ask, the same as
 	// Download and RoleScript.
 	DownloadPackage func(ctx context.Context, dir, packageID string) (path string, err error)
+	// Rename asks the console to rename this machine's account to the short
+	// name the Computer names policy assigned, and returns the new keytab.
+	// Empty where there is nothing to ask.
+	Rename func(ctx context.Context, hostname string) (fqdn string, keytab []byte, err error)
+	// KeytabPath is where this machine's keytab lives, for a rename to
+	// replace it. Set by the agent from its configuration.
+	KeytabPath string
 }
 
 // Unsandboxed runs a command the way PID 1 would, outside this service's own

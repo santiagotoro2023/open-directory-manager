@@ -13,7 +13,7 @@ from typing import Any
 import asyncpg
 from ldap3 import Connection
 
-from . import admx, ca, directory, objects, policy
+from . import admx, browserpolicy, ca, directory, objects, policy
 from .config import Settings
 
 Inputs = tuple[dict[str, policy.Gpo], list[policy.Link], set[str]]
@@ -182,6 +182,7 @@ async def build(
         target=target,
     )
     await apply_admx(pool, document)
+    browserpolicy.fold(document["settings"])
     await attach_vpn(pool, document, target.dn)
     await attach_custom_packages(pool, document)
     attach_certificates(settings, document)

@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -732,6 +733,25 @@ func (c *Client) DownloadAgent(ctx context.Context, beside string) (path, versio
 // DownloadPackage fetches a custom .deb into the given directory and returns
 // its path. The name on disk is the console's own, not trusted from
 // anywhere else: it only ever names a file inside dir.
+// Rename takes the name the Computer names policy assigned: the console
+// renames the account and hands back a keytab under the new principals.
+// The old ticket is what authenticates this call, so it is made before the
+// machine changes anything about itself.
+func (c *Client) Rename(ctx context.Context, hostname string) (fqdn string, keytab []byte, err error) {
+	var answer struct {
+		Hostname string `json:"hostname"`
+		Keytab   string `json:"keytab"`
+	}
+	if err := c.postJSON(ctx, "/api/v1/agent/rename", map[string]string{"hostname": hostname}, &answer); err != nil {
+		return "", nil, err
+	}
+	raw, err := base64.StdEncoding.DecodeString(answer.Keytab)
+	if err != nil {
+		return "", nil, fmt.Errorf("keytab: %w", err)
+	}
+	return answer.Hostname, raw, nil
+}
+
 func (c *Client) DownloadPackage(ctx context.Context, dir, packageID string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()

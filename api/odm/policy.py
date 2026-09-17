@@ -58,6 +58,8 @@ LIST_KEYS: dict[str, tuple[str, ...]] = {
 # Categories that are objects rather than lists; merged one level deep.
 DICT_CATEGORIES = (
     "browser",
+    "firefox_policy",
+    "chromium_policy",
     "wallpaper",
     "agent",
     "updates",
@@ -69,6 +71,7 @@ DICT_CATEGORIES = (
     "screen_lock",
     "removable_storage",
     "device_control",
+    "computer_names",
     "desktop_theme",
     "second_factor",
     "first_run",

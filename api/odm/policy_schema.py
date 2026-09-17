@@ -296,6 +296,90 @@ class TrustedCertificate(Strict):
         return value
 
 
+Choice = Literal["unset", "allow", "block"]
+
+
+class Bookmark(Strict):
+    name: Annotated[str, Field(min_length=1, max_length=120)]
+    url: Annotated[str, Field(min_length=1, max_length=2048)]
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        if not value.startswith(("https://", "http://", "file://")):
+            raise ValueError("a bookmark is a web address")
+        return value
+
+
+class BrowserSettings(Strict):
+    """Firefox or Chromium, in the console's own words; browserpolicy.py
+    turns it into the browser's managed policy. Every choice has an
+    "unset", which leaves the browser alone — "allowed" and "not mentioned"
+    are different things to a policy."""
+
+    start_page: Literal["unset", "homepage", "previous-session", "new-tab"] = "unset"
+    homepage: Annotated[str, Field(max_length=2048)] = ""
+    homepage_locked: bool = True
+    bookmarks_folder: Annotated[str, Field(max_length=64)] = ""
+    bookmarks: Annotated[list[Bookmark], Field(default_factory=list, max_length=100)]
+    bookmarks_bar: Literal["unset", "always", "never"] = "unset"
+    # Firefox: `id=https://…/latest.xpi` or an addons.mozilla.org slug;
+    # Chromium: the 32-letter Web Store id, or `id;update-url`.
+    extensions_install: Annotated[
+        list[Annotated[str, Field(max_length=512)]], Field(default_factory=list, max_length=50)
+    ]
+    extensions_block: Annotated[
+        list[Annotated[str, Field(max_length=128)]], Field(default_factory=list, max_length=100)
+    ]
+    extensions_user_install: Choice = "unset"
+    password_manager: Choice = "unset"  # noqa: S105  (a choice, not a secret)
+    autofill: Choice = "unset"
+    history: Literal["unset", "keep", "clear-on-exit", "disabled"] = "unset"
+    private_browsing: Choice = "unset"
+    developer_tools: Choice = "unset"
+    telemetry: Choice = "unset"
+    sync_accounts: Choice = "unset"
+    popups: Choice = "unset"
+    default_search: Annotated[str, Field(max_length=64)] = ""
+    default_search_url: Annotated[str, Field(max_length=2048)] = ""
+    download_directory: Annotated[str, Field(max_length=512)] = ""
+    proxy_mode: Literal["unset", "system", "none", "manual", "pac"] = "unset"
+    proxy_server: Annotated[str, Field(max_length=253)] = ""
+    proxy_pac_url: Annotated[str, Field(max_length=2048)] = ""
+    proxy_bypass: Annotated[
+        list[Annotated[str, Field(max_length=253)]], Field(default_factory=list, max_length=50)
+    ]
+    blocked_sites: Annotated[
+        list[Annotated[str, Field(max_length=253)]], Field(default_factory=list, max_length=500)
+    ]
+    allowed_sites: Annotated[
+        list[Annotated[str, Field(max_length=253)]], Field(default_factory=list, max_length=500)
+    ]
+    first_run_pages: Literal["unset", "hide"] = "unset"
+    default_browser_check: Literal["unset", "hide"] = "unset"
+    # Anything else, by its native policy name. The escape hatch for the
+    # setting nobody modelled yet.
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("homepage", "default_search_url", "proxy_pac_url")
+    @classmethod
+    def _addresses(cls, value: str) -> str:
+        if value and not value.startswith(("https://", "http://", "file://")):
+            raise ValueError("a web address starts with https://")
+        if any(character in value for character in " \n\r\x00\"'"):
+            raise ValueError("a web address cannot contain spaces or quotes")
+        return value
+
+    @field_validator("extensions_install", "extensions_block", "blocked_sites", "allowed_sites",
+                     "proxy_bypass")
+    @classmethod
+    def _lines(cls, value: list[str]) -> list[str]:
+        for entry in value:
+            if any(character in entry for character in "\n\r\x00\"'") or entry.strip() != entry:
+                raise ValueError(f"{entry!r} is not a single entry")
+        return value
+
+
 class BrowserPolicy(Strict):
     """Written to each browser's documented managed-policy location."""
 
@@ -664,6 +748,27 @@ class RemovableStorage(Strict):
             if not PRINCIPAL_RE.match(principal):
                 raise ValueError(f"{principal!r} is not a user or %group")
         return value
+
+
+class ComputerNames(Strict):
+    """What the machines this policy reaches are called.
+
+    A template with one number in it — WS-{n:4} — or the hardware serial —
+    LT-{serial}. A machine whose name already fits is left alone; one that
+    does not is handed the next free number by the control plane (which is
+    the only thing that can see the whole fleet), renamed, and its account,
+    keytab and DNS record follow. Meant for workstations and laptops: a
+    machine carrying a server role keeps the name its role was set up with.
+    """
+
+    template: Annotated[str, Field(min_length=3, max_length=40)] = "WS-{n:4}"
+
+    @field_validator("template")
+    @classmethod
+    def _template(cls, value: str) -> str:
+        from .naming import validate_template  # noqa: PLC0415  (naming imports objects)
+
+        return validate_template(value)
 
 
 class DeviceControl(Strict):
@@ -1284,6 +1389,8 @@ class PolicySettings(Strict):
     ]
     admx: Annotated[list[AdmxSelection], Field(default_factory=list, max_length=500)]
     browser: BrowserPolicy | None = None
+    firefox_policy: BrowserSettings | None = None
+    chromium_policy: BrowserSettings | None = None
     wallpaper: Wallpaper | None = None
     roaming_profile: RoamingProfile | None = None
     updates: SystemUpdates | None = None
@@ -1306,6 +1413,7 @@ class PolicySettings(Strict):
     screen_lock: ScreenLock | None = None
     removable_storage: RemovableStorage | None = None
     device_control: DeviceControl | None = None
+    computer_names: ComputerNames | None = None
     desktop_theme: DesktopTheme | None = None
     second_factor: SecondFactor | None = None
     first_run: FirstRun | None = None

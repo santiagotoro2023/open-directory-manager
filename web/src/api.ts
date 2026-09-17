@@ -374,6 +374,9 @@ export interface PolicySettings {
     allow_user_change: boolean;
   };
   logon_hours?: Record<string, unknown>[];
+  computer_names?: { template: string };
+  firefox_policy?: BrowserSettings;
+  chromium_policy?: BrowserSettings;
   device_control?: {
     bluetooth: "allow" | "block";
     camera: "allow" | "block";
@@ -387,6 +390,40 @@ export interface PolicySettings {
     reboot_when_needed: boolean;
   };
   web_apps?: Record<string, unknown>[];
+}
+
+export type BrowserChoice = "unset" | "allow" | "block";
+
+export interface BrowserSettings {
+  start_page: "unset" | "homepage" | "previous-session" | "new-tab";
+  homepage: string;
+  homepage_locked: boolean;
+  bookmarks_folder: string;
+  bookmarks: { name: string; url: string }[];
+  bookmarks_bar: "unset" | "always" | "never";
+  extensions_install: string[];
+  extensions_block: string[];
+  extensions_user_install: BrowserChoice;
+  password_manager: BrowserChoice;
+  autofill: BrowserChoice;
+  history: "unset" | "keep" | "clear-on-exit" | "disabled";
+  private_browsing: BrowserChoice;
+  developer_tools: BrowserChoice;
+  telemetry: BrowserChoice;
+  sync_accounts: BrowserChoice;
+  popups: BrowserChoice;
+  default_search: string;
+  default_search_url: string;
+  download_directory: string;
+  proxy_mode: "unset" | "system" | "none" | "manual" | "pac";
+  proxy_server: string;
+  proxy_pac_url: string;
+  proxy_bypass: string[];
+  blocked_sites: string[];
+  allowed_sites: string[];
+  first_run_pages: "unset" | "hide";
+  default_browser_check: "unset" | "hide";
+  extra: Record<string, unknown>;
 }
 
 export interface Targeting {

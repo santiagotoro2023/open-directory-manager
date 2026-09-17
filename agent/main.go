@@ -37,7 +37,7 @@ import (
 	"odm.example.org/agent/internal/trust"
 )
 
-const version = "0.14.3"
+const version = "0.15.0"
 
 const serialPath = "/var/lib/odm/last-serial"
 const addressesPath = "/var/lib/odm/last-addresses"
@@ -659,6 +659,8 @@ func applyOnce(ctx context.Context, configPath, root, username string, force boo
 	env.Version = version
 	env.Download = api.DownloadAgent
 	env.DownloadPackage = api.DownloadPackage
+	env.Rename = api.Rename
+	env.KeytabPath = cfg.Keytab
 
 	fetch := func() (*policy.Document, error) {
 		if username != "" {

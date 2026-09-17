@@ -71,6 +71,10 @@ var appliers = []applier{
 	{"remote_desktop_session", applyRemoteDesktopSession},
 	// What opens a connection file, on a machine whose policy hands them out.
 	{"remote_desktop_client", applyRemoteDesktopClient},
+	// A rename replaces the keytab and restarts the agent, so it comes once
+	// everything else has been applied and reported; the update after it,
+	// for the same reason.
+	{"hostname", applyHostname},
 	// Last of the machine settings: it replaces this binary and schedules a
 	// restart, so everything else has already been applied and reported.
 	{"agent_update", applyAgentUpdate},

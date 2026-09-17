@@ -497,3 +497,25 @@ def test_device_control_takes_usb_ids_as_lsusb_prints_them():
         DeviceControl(allowed_usb=["logitech"])
     with pytest.raises(ValueError):
         DeviceControl(camera="maybe")
+
+
+def test_computer_name_templates_render_and_recognise_their_own_names():
+    import pytest
+
+    from odm import naming
+    from odm.policy_schema import ComputerNames
+
+    ComputerNames(template="WS-{n:4}")
+    ComputerNames(template="LT-{serial}")
+    with pytest.raises(ValueError):
+        ComputerNames(template="WS")
+    with pytest.raises(ValueError):
+        ComputerNames(template="WS {n}")
+    assert naming.render("WS-{n:4}", number=42) == "WS-0042"
+    assert naming.render("ws{n}", number=7) == "ws7"
+    assert naming.render("LT-{serial}", serial="PF-3X9/Q") == "LT-pf3x9q"
+    assert naming.fits("WS-{n:4}", "ws-0042")
+    assert naming.fits("WS-{n:4}", "WS-12")
+    assert not naming.fits("WS-{n:4}", "ws-0042b")
+    assert not naming.fits("WS-{n:4}", "alice-laptop")
+    assert naming.describe("WS-{n:4}") == {"example": "WS-0042"}

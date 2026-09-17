@@ -29,7 +29,10 @@ from . import (
     agentupdate,
     audit,
     ca,
+    dns,
+    enrolment,
     monitor,
+    naming,
     objects,
     push,
     routes_dc,
@@ -45,7 +48,7 @@ from . import (
 from .auth import _accept_spnego
 from .config import Settings, get_settings
 from .routes_directory import _bound
-from .security import get_pool
+from .security import client_ip, get_pool
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
@@ -131,6 +134,37 @@ async def agent_policy(
             os_id=os_id,
             ip_addresses=tuple(ip or ()),
         )
+    # A name policy: the control plane decides the name, once, and says it
+    # on every pull until the machine has taken it.
+    template = ((document.get("settings") or {}).get("computer_names") or {}).get("template")
+    if template:
+        # A machine carrying a role keeps the name the role was set up with,
+        # and a controller its own; the policy is for workstations.
+        carrying = await pool.fetchval(
+            "SELECT count(*) FROM server_role WHERE lower(node_fqdn) = lower($1)"
+            " AND state <> 'removed'",
+            machine.hostname,
+        )
+        if carrying:
+            template = None
+    if template:
+        short = machine.hostname.split(".", 1)[0]
+        fact = await pool.fetchrow(
+            "SELECT hardware FROM computer_fact WHERE lower(computer_dn) = lower($1)", machine.dn
+        )
+        serial = ""
+        if fact and fact["hardware"]:
+            serial = str((json.loads(fact["hardware"]) or {}).get("serial") or "")
+        async with _bound(settings, write=False) as conn:
+            wanted = await naming.assign(
+                pool, conn, settings, dn=machine.dn, current_short=short,
+                template=template, serial=serial,
+            )
+        if wanted:
+            document["settings"]["hostname"] = {
+                "wanted": wanted.lower(),
+                "fqdn": f"{wanted.lower()}.{settings.domain}",
+            }
     # The interval is a domain setting and only a domain setting: a machine
     # polling on something nobody can see is the failure this has to avoid.
     # The control plane's configured value is the fallback, so a machine has a
@@ -149,6 +183,105 @@ async def agent_policy(
             "size": offer.size,
         }
     return document
+
+
+class RenameRequest(BaseModel):
+    hostname: Annotated[str, Field(min_length=1, max_length=63, pattern=r"^[A-Za-z0-9-]+$")]
+
+
+@router.post("/rename")
+async def agent_rename(
+    body: RenameRequest,
+    request: Request,
+    machine: Machine = Depends(require_machine),
+    pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Take the name the Computer names policy assigned.
+
+    The machine may only take the name the control plane gave it, and only
+    while it still holds the old one. The directory object is renamed in
+    place (same organizational unit, same memberships, same links), the
+    account's keys are replaced, and the keytab for the new principals is
+    handed back; the machine renames itself with it (apply/hostname.go).
+    Everything the console keeps about the machine follows the new
+    distinguished name, and the old DNS record is withdrawn.
+    """
+    wanted = body.hostname.lower()
+    assignment = await pool.fetchrow(
+        "SELECT name FROM hostname_assignment WHERE lower(computer_dn) = lower($1)", machine.dn
+    )
+    if assignment is None or str(assignment["name"]).lower() != wanted:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "that name was not assigned to this machine")
+    old_dn = machine.dn
+    old_short = machine.hostname.split(".", 1)[0].lower()
+    fqdn = f"{wanted}.{settings.domain}"
+
+    async with _bound(settings, write=True) as conn:
+        new_dn = await run_in_threadpool(enrolment.rename_machine, conn, settings, old_dn, wanted)
+    # The container is only used for a machine that does not exist yet.
+    keytab = await run_in_threadpool(
+        enrolment.provision_machine, settings, fqdn, new_dn.split(",", 1)[1]
+    )
+
+    async with pool.acquire() as conn:
+        addresses: list[str] = []
+        fact = await conn.fetchrow(
+            "SELECT addresses FROM computer_fact WHERE lower(computer_dn) = lower($1)", old_dn
+        )
+        if fact and fact["addresses"]:
+            addresses = json.loads(fact["addresses"])
+        for table in (
+            "computer_fact", "computer_event", "agent_report", "computer_log",
+            "local_administrator", "disk_recovery_key", "enrolled_certificate",
+            "hostname_assignment",
+        ):
+            with contextlib.suppress(Exception):
+                await conn.execute(
+                    f"UPDATE {table} SET computer_dn = $1 WHERE lower(computer_dn) = lower($2)",  # noqa: S608
+                    new_dn, old_dn,
+                )
+        with contextlib.suppress(Exception):
+            await conn.execute(
+                "UPDATE computer_fact SET hostname = $1 WHERE lower(computer_dn) = lower($2)",
+                fqdn, new_dn,
+            )
+            await conn.execute(
+                "UPDATE node_task SET subject = $1 WHERE lower(subject) = lower($2)", new_dn, old_dn
+            )
+            await conn.execute(
+                "UPDATE hostname_assignment SET renamed_at = now()"
+                " WHERE lower(computer_dn) = lower($1)",
+                new_dn,
+            )
+        await audit.record(
+            conn,
+            actor=f"machine:{old_short}",
+            source_ip=client_ip(request),
+            action="computer.rename",
+            outcome="success",
+            object_type="computer",
+            object_dn=new_dn,
+            detail=f"{old_short} is now {wanted}, by the Computer names policy",
+            before={"dn": old_dn, "hostname": machine.hostname},
+            after={"dn": new_dn, "hostname": fqdn},
+        )
+    # The old A record, so the old name stops answering. Best effort: the
+    # machine registers its new one itself when SSSD restarts.
+    for address in addresses:
+        if ":" in address:
+            continue
+        with contextlib.suppress(Exception):
+            await run_in_threadpool(
+                dns.delete_record, settings, settings.domain, old_short, "A", address
+            )
+
+    return {
+        "hostname": fqdn,
+        "dn": new_dn,
+        "realm": settings.realm,
+        "keytab": base64.b64encode(keytab).decode("ascii"),
+    }
 
 
 @router.get("/second-factor")

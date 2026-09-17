@@ -141,6 +141,11 @@ export function Content() {
               ],
               ["Always-on VPN", "single value", "A tunnel the machine holds up from boot."],
               [
+                "Computer names",
+                "single value",
+                "A template — WS-{n:4} — every machine the policy reaches is renamed to fit.",
+              ],
+              [
                 "Peripherals",
                 "single value",
                 "Bluetooth, cameras and microphones allowed or blocked, machine-wide.",
@@ -221,7 +226,13 @@ export function Content() {
                 "single value",
                 "A home directory on a share, following the person between machines.",
               ],
-              ["Browser policy", "per key", "Managed policy for Chromium, Chrome and Firefox."],
+              ["Firefox", "single value", "Firefox in plain settings, written to its policies.json."],
+              [
+                "Chromium and Chrome",
+                "single value",
+                "Chromium and Chrome in plain settings, written to their managed-policy directory.",
+              ],
+              ["Browser policy", "per key", "Raw managed policy for Chromium, Chrome and Firefox."],
               [
                 "Administrative templates",
                 "policy identifier",
@@ -994,6 +1005,40 @@ for           %Engineers      (optional)`}</Code>
           </p>
         </Section>
 
+        <Section title="Computer names">
+          <p>
+            What the machines the policy reaches are called. The template is letters, digits
+            and dashes around one placeholder: <C>{"{n}"}</C> for the next free number
+            (<C>{"{n:4}"}</C> pads it to four digits &mdash; <C>WS-0042</C>) or{" "}
+            <C>{"{serial}"}</C> for the hardware serial (<C>LT-pf3x9q</C>). Link it to the
+            organizational unit the workstations live in.
+          </p>
+          <p>
+            The control plane decides the name, because it is the only thing that can see the
+            whole fleet: at a machine&rsquo;s policy pull, one whose name does not already fit
+            the pattern is handed one past the highest number in use &mdash; in the directory or
+            already handed out &mdash; and the assignment is remembered, so the same machine is
+            told the same name however often it asks. A machine that already fits is left alone.
+          </p>
+          <Reference
+            headers={["Step", "Where"]}
+            rows={[
+              ["The agent asks the console to rename it, with its old ticket", "POST /agent/rename, refused for any name but the assigned one"],
+              ["The computer object is renamed in place", "Same organizational unit, memberships and links; sAMAccountName, dNSHostName and the service principal names follow"],
+              ["The account's keys are replaced and a keytab issued", "Under the new principals; the old DNS record is withdrawn"],
+              ["The machine renames itself", "The keytab written, hostnamectl, /etc/hosts, SSSD's cache cleared and SSSD restarted (which registers the new name in DNS), the agent restarted"],
+            ]}
+          />
+          <Note>
+            A domain controller and any machine carrying a server role keep their names: their
+            services were set up under them. The rename is in the audit log as{" "}
+            <C>computer.rename</C>, and everything the console keeps about the machine
+            &mdash; facts, activity, its local administrator, its recovery keys &mdash; follows
+            the new distinguished name. A person signed in during the rename keeps their session;
+            the new name is what they see at the next sign-in.
+          </Note>
+        </Section>
+
         <Section title="Peripherals">
           <p>
             Whether Bluetooth, cameras and microphones may be used on the machine at all.
@@ -1634,13 +1679,69 @@ remmina`}</Code>
             <C>/etc/firefox/policies/policies.json</C>.
           </p>
           <p>
-            Configure both by importing the browser&rsquo;s own administrative template, which is
-            what Chrome and Firefox publish for the purpose: every setting arrives with a name, a
-            type and a description, and the console renders a form from it. The editor no longer
-            offers a hand-written policy document for a new policy object. One set before this is
-            still applied, and appears under Browser policy so it can be read and removed once the
-            template has replaced it.
+            Three ways reach those files, and they combine. The <strong>Firefox</strong> and{" "}
+            <strong>Chromium and Chrome</strong> settings below are the plain ones; an imported
+            administrative template (the browser&rsquo;s own ADMX) covers everything else by
+            its own names; and a raw <strong>Browser policy</strong> document set before the
+            typed settings existed is still applied. Where two name the same policy, the typed
+            setting wins over the template.
           </p>
+        </Section>
+
+        <Section title="Firefox">
+          <p>
+            Firefox in the console&rsquo;s own words, turned into <C>policies.json</C> by the
+            control plane with Firefox&rsquo;s documented policy names. Every choice has a{" "}
+            <em>Leave as it is</em>: a policy that says nothing about the password manager lets
+            people decide, one that allows it stops another policy from blocking it, and one that
+            blocks it does.
+          </p>
+          <Reference
+            headers={["Setting", "Firefox policy"]}
+            rows={[
+              ["When the browser opens, Home page, locked", "Homepage: URL, StartPage, Locked"],
+              ["Bookmarks folder, managed bookmarks, bookmarks bar", "ManagedBookmarks, DisplayBookmarksToolbar"],
+              [
+                "Install for everybody",
+                "ExtensionSettings … force_installed with the .xpi address; give the add-on id, = and the address from the add-on's page (See all versions), or its addons.mozilla.org slug where the slug is the id",
+              ],
+              ["Never allowed, People installing their own", "ExtensionSettings … blocked, and * blocked"],
+              ["Password manager, Form autofill", "PasswordManagerEnabled, AutofillAddressEnabled, AutofillCreditCardEnabled"],
+              ["History", "SanitizeOnShutdown (cleared when closed), or places.history.enabled locked off and DisableFormHistory (not recorded)"],
+              ["Private browsing, Developer tools, Telemetry, Accounts and sync, Pop-ups", "DisablePrivateBrowsing, DisableDeveloperTools, DisableTelemetry, DisableFirefoxAccounts, PopupBlocking"],
+              ["Default search engine, Search address", "SearchEngines: Default, and Add for an engine of your own — the ESR honours it"],
+              ["Download folder", "DefaultDownloadDirectory, PromptForDownloadLocation off"],
+              ["Proxy", "Proxy: Mode, HTTPProxy/SSLProxy, AutoConfigURL, Passthrough, Locked"],
+              ["Blocked sites, Exceptions", "WebsiteFilter: Block, Exceptions"],
+              ["First-run pages, Default-browser prompt", "OverrideFirstRunPage, OverridePostUpdatePage, NoDefaultBookmarks; DontCheckDefaultBrowser"],
+              ["Anything else", "Any policy by its documented name, as JSON"],
+            ]}
+          />
+        </Section>
+
+        <Section title="Chromium and Chrome">
+          <p>
+            The same settings for Chromium and Chrome, written to both browsers&rsquo;
+            managed-policy directories with Chrome&rsquo;s documented policy names.
+          </p>
+          <Reference
+            headers={["Setting", "Chrome policy"]}
+            rows={[
+              ["When the browser opens, Home page", "RestoreOnStartup (4 with RestoreOnStartupURLs, 1, 5), HomepageLocation, ShowHomeButton"],
+              ["Bookmarks folder, managed bookmarks, bookmarks bar", "ManagedBookmarks, BookmarkBarEnabled"],
+              ["Install for everybody", "ExtensionInstallForcelist with the Web Store update address; the 32-letter id from the store's address, or id;update-url"],
+              ["Never allowed, People installing their own", "ExtensionInstallBlocklist (and * for everything), with ExtensionInstallAllowlist for the ones installed"],
+              ["Password manager, Form autofill", "PasswordManagerEnabled, AutofillAddressEnabled, AutofillCreditCardEnabled"],
+              ["History", "ClearBrowsingDataOnExitList, or SavingBrowserHistoryDisabled"],
+              ["Private browsing, Developer tools, Telemetry, Accounts and sync, Pop-ups", "IncognitoModeAvailability, DeveloperToolsAvailability, MetricsReportingEnabled, BrowserSignin and SyncDisabled, DefaultPopupsSetting"],
+              ["Default search engine, Search address", "DefaultSearchProviderEnabled, DefaultSearchProviderName, DefaultSearchProviderSearchURL"],
+              ["Download folder", "DownloadDirectory, PromptForDownloadLocation off"],
+              ["Proxy", "ProxyMode, ProxyServer, ProxyPacUrl, ProxyBypassList"],
+              ["Blocked sites, Exceptions", "URLBlocklist, URLAllowlist"],
+              ["First-run pages, Default-browser prompt", "PromotionalTabsEnabled off; DefaultBrowserSettingEnabled off"],
+              ["Anything else", "Any policy by its documented name, as JSON"],
+            ]}
+          />
         </Section>
 
         <Section title="Agent settings">
