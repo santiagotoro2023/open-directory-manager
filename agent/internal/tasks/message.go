@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -35,19 +36,27 @@ func sendMessage(ctx context.Context, payload map[string]any, env apply.Env) (st
 		urgency = "normal"
 	}
 	sessions := graphicalSessions(ctx, env)
+	tool := notifyTool()
+	if tool == "" && len(sessions) > 0 {
+		// Neither gdbus nor notify-send: the smallest thing that can put a
+		// notification up is libnotify-bin, fetched the first time a message
+		// is sent rather than shipped to every machine.
+		if _, err := apply.Unsandboxed(ctx, env, "apt-get", "install", "-y", "--no-install-recommends", "libnotify-bin"); err == nil {
+			tool = notifyTool()
+		}
+	}
 	shown := 0
 	var problems []string
 	for _, session := range sessions {
-		// A critical notification stays until dismissed; a normal one goes
-		// after a while. Either way it is the desktop's own, with the
-		// console's name on it.
-		args := []string{"--app-name=Open Directory Manager", "--icon=dialog-information",
-			"--urgency=" + urgency}
-		if urgency != "critical" {
-			args = append(args, "--expire-time=60000")
+		if tool == "" {
+			problems = append(problems, session.user+": no way to show a notification on this machine (install libnotify-bin)")
+			continue
 		}
-		args = append(args, "--", title, text)
-		if _, err := runAs(ctx, env, session, "notify-send", args...); err != nil {
+		// A critical notification stays until dismissed; a normal one goes
+		// after a minute. Either way it is the desktop's own, with the
+		// console's name on it.
+		name, args := notifyCommand(tool, title, text, urgency)
+		if _, err := runAs(ctx, env, session, name, args...); err != nil {
 			problems = append(problems, session.user+": "+shortReason(err))
 			continue
 		}
@@ -64,6 +73,41 @@ func sendMessage(ctx context.Context, payload map[string]any, env apply.Env) (st
 		summary += "; not shown to " + strings.Join(problems, ", ")
 	}
 	return summary, nil
+}
+
+// notifyTool is what this machine can put a notification up with: gdbus,
+// which every GNOME machine has (it is glib's), or notify-send, which is a
+// package of its own that a desktop does not necessarily carry. Replaced in
+// tests.
+var notifyTool = func() string {
+	for _, candidate := range []string{"gdbus", "notify-send"} {
+		if _, err := exec.LookPath(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// notifyCommand is the command line for one notification through the tool.
+func notifyCommand(tool, title, text, urgency string) (string, []string) {
+	if tool == "gdbus" {
+		level, expire := "1", "60000"
+		if urgency == "critical" {
+			level, expire = "2", "0"
+		}
+		return "gdbus", []string{
+			"call", "--session", "--dest", "org.freedesktop.Notifications",
+			"--object-path", "/org/freedesktop/Notifications",
+			"--method", "org.freedesktop.Notifications.Notify",
+			"Open Directory Manager", "0", "dialog-information", title, text, "[]",
+			"{'urgency': <byte " + level + ">}", expire,
+		}
+	}
+	args := []string{"--app-name=Open Directory Manager", "--icon=dialog-information", "--urgency=" + urgency}
+	if urgency != "critical" {
+		args = append(args, "--expire-time=60000")
+	}
+	return "notify-send", append(args, "--", title, text)
 }
 
 // graphicalSessions is every desktop somebody has open on this machine.

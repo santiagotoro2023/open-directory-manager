@@ -26,6 +26,9 @@ func (r *sessionsRunner) Run(_ context.Context, name string, args ...string) (st
 }
 
 func TestAMessageReachesEveryDesktopAndTheTerminals(t *testing.T) {
+	saved := notifyTool
+	notifyTool = func() string { return "notify-send" }
+	defer func() { notifyTool = saved }()
 	run := &sessionsRunner{}
 	env := apply.Env{Root: t.TempDir(), Run: run}
 	out, err := sendMessage(context.Background(), map[string]any{
@@ -58,6 +61,30 @@ func TestAMessageReachesEveryDesktopAndTheTerminals(t *testing.T) {
 	}
 	if !walled {
 		t.Error("the terminals never heard")
+	}
+}
+
+func TestWithoutLibnotifyTheDesktopIsToldOverDbus(t *testing.T) {
+	saved := notifyTool
+	notifyTool = func() string { return "gdbus" }
+	defer func() { notifyTool = saved }()
+	run := &sessionsRunner{}
+	env := apply.Env{Root: t.TempDir(), Run: run}
+	if _, err := sendMessage(context.Background(), map[string]any{"text": "Hello", "urgency": "critical"}, env); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, call := range run.calls {
+		line := strings.Join(call, " ")
+		if strings.Contains(line, "org.freedesktop.Notifications.Notify") {
+			found = true
+			if !strings.Contains(line, "{'urgency': <byte 2>}") || !strings.Contains(line, "Hello") {
+				t.Errorf("gdbus call lacks the message or its urgency: %s", line)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no notification over D-Bus: %v", run.calls)
 	}
 }
 
