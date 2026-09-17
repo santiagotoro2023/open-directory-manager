@@ -183,6 +183,13 @@ export function RecycleBin() {
               The snapshot is destroyed and the object can never be restored. This does not wait for
               the retention window.
             </p>
+          ) : confirming.item.object_type === "gpo" ? (
+            <p className="muted">
+              The policy object comes back under the same id with its settings, security filter
+              and targeting, and every link it had — {confirming.item.members.length} of them — in
+              their old order, to each container that still exists. Machines pick it up at their
+              next refresh.
+            </p>
           ) : (
             <>
               <p className="muted">
