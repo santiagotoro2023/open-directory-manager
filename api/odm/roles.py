@@ -417,6 +417,23 @@ REGISTRY: dict[str, Role] = {
             "channels, maintenance windows and dashboards are under Monitoring."
         ),
     ),
+    "password-manager": Role(
+        name="password-manager",
+        title="Password manager",
+        summary=(
+            "Vaultwarden — the open-source Bitwarden server — with seats handed out by "
+            "domain group, sign-in with the domain account, and the extension and the "
+            "desktop app pointed at it by policy."
+        ),
+        packages=("podman", "unzip", "curl"),
+        ui_section="passwords",
+        notes=(
+            "Runs on port 443 of the machine it is installed on, so choose one that "
+            "does not already serve HTTPS. Then, under Passwords: create the organisation "
+            "in the vault, paste its API key, and choose the groups whose members get a "
+            "seat."
+        ),
+    ),
     "file-server": Role(
         name="file-server",
         title="File server",

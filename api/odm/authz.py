@@ -95,6 +95,9 @@ PERMISSIONS: tuple[str, ...] = (
     # and dashboards.
     "monitor.read",
     "monitor.write",
+    # The password manager: seeing its state, and configuring it.
+    "passwords.read",
+    "passwords.write",
     "rbac.write",
     "ca.read",
     "ca.issue",

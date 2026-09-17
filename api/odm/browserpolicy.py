@@ -227,11 +227,96 @@ def _chromium_extension(entry: str) -> str:
     return f"{entry.strip()};https://clients2.google.com/service/update2/crx"
 
 
-def fold(settings: dict[str, Any]) -> None:
+# Bitwarden's browser extension, as each store names it.
+BITWARDEN_FIREFOX_ID = "{446900e4-71c2-419f-a6a7-df9c091e268b}"
+BITWARDEN_FIREFOX_XPI = (
+    "https://addons.mozilla.org/firefox/downloads/latest/bitwarden-password-manager/latest.xpi"
+)
+BITWARDEN_CHROME_ID = "nngceckbapebfimnlniiiahkandclblb"
+
+
+def password_manager_extension(
+    spec: dict[str, Any], vault_url: str, console_url: str = ""
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The extension force-installed and pointed at the vault, for both
+    browsers, in the managed-storage shape Bitwarden documents for its
+    self-hosted deployments.
+
+    The console is also named as a place the browser may hand a Kerberos
+    ticket to: the vault's sign-in goes through the console (it is the
+    domain's OpenID provider), and a browser that trusts it with the
+    ticket the desktop session already holds signs the person in without
+    a prompt."""
+    firefox: dict[str, Any] = {}
+    chromium: dict[str, Any] = {}
+    if not spec.get("browser_extension", True) or not vault_url:
+        return firefox, chromium
+    environment = {"environment": {"base": vault_url}}
+    console_host = console_url.removeprefix("https://").split("/")[0].split(":")[0]
+    if spec.get("firefox", True):
+        firefox["ExtensionSettings"] = {
+            BITWARDEN_FIREFOX_ID: {
+                "installation_mode": "force_installed", "install_url": BITWARDEN_FIREFOX_XPI,
+            }
+        }
+        firefox["3rdparty"] = {"Extensions": {BITWARDEN_FIREFOX_ID: environment}}
+        if spec.get("disable_browser_managers", True):
+            firefox["PasswordManagerEnabled"] = False
+        if console_host:
+            firefox["Authentication"] = {"SPNEGO": [console_host]}
+    if spec.get("chromium", True):
+        chromium["ExtensionInstallForcelist"] = [
+            f"{BITWARDEN_CHROME_ID};https://clients2.google.com/service/update2/crx"
+        ]
+        chromium["3rdparty"] = {"extensions": {BITWARDEN_CHROME_ID: environment}}
+        if spec.get("disable_browser_managers", True):
+            chromium["PasswordManagerEnabled"] = False
+        if console_host:
+            chromium["AuthServerAllowlist"] = console_host
+    return firefox, chromium
+
+
+def _merge_extension(target: dict[str, Any], addition: dict[str, Any]) -> None:
+    """Add without clobbering: another setting's ExtensionSettings or
+    force-list keeps its entries."""
+    for key, value in addition.items():
+        current = target.get(key)
+        if isinstance(value, dict) and isinstance(current, dict):
+            if key == "3rdparty":
+                for kind, entries in value.items():
+                    target[key].setdefault(kind, {}).update(entries)
+            else:
+                current.update(value)
+        elif isinstance(value, list) and isinstance(current, list):
+            target[key] = current + [entry for entry in value if entry not in current]
+        else:
+            target[key] = value
+
+
+def fold(settings: dict[str, Any], vault_url: str = "", console_url: str = "") -> None:
     """Turn the typed settings in a merged document into native browser
-    policy, on top of whatever an ADMX template already produced."""
+    policy, on top of whatever an ADMX template already produced.
+
+    The password-manager setting is split here: its browser half becomes
+    native policy, and what is left — whether the desktop app is wanted,
+    and the vault it points at, resolved — stays for the agent."""
     browser = settings.get("browser") or {}
     changed = False
+    manager = settings.get("password_manager")
+    if manager:
+        resolved = manager.get("vault_url") or vault_url
+        firefox_add, chromium_add = password_manager_extension(manager, resolved, console_url)
+        if firefox_add:
+            browser.setdefault("firefox", {})
+            _merge_extension(browser["firefox"], firefox_add)
+            changed = True
+        if chromium_add:
+            browser.setdefault("chromium", {})
+            _merge_extension(browser["chromium"], chromium_add)
+            changed = True
+        settings["password_manager"] = {
+            "vault_url": resolved, "desktop_app": bool(manager.get("desktop_app")),
+        }
     for key, translate in (("firefox_policy", firefox), ("chromium_policy", chromium)):
         raw = settings.pop(key, None)
         if not raw:

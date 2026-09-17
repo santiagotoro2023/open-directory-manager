@@ -72,6 +72,7 @@ DICT_CATEGORIES = (
     "removable_storage",
     "device_control",
     "computer_names",
+    "password_manager",
     "desktop_theme",
     "second_factor",
     "first_run",

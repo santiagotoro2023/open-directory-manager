@@ -129,6 +129,8 @@ func RunWithProgress(
 		output, err = setLocalUserPassword(ctx, task.Payload, env)
 	case "message":
 		output, err = sendMessage(ctx, task.Payload, env)
+	case "passwords-apply":
+		output, err = applyPasswordManager(ctx, task.Payload, env, progress)
 	case "local-user-remove":
 		output, err = removeLocalUser(ctx, task.Payload, env)
 	case "printer-apply":

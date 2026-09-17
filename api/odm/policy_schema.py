@@ -750,6 +750,30 @@ class RemovableStorage(Strict):
         return value
 
 
+class PasswordManager(Strict):
+    """The domain's password manager on a machine: Bitwarden's browser
+    extension and/or its desktop app, installed for everybody and pointed at
+    the domain's own vault, so nobody types a server address or is tempted
+    by the browser's built-in manager instead. Both go when the setting does."""
+
+    # Empty takes the vault the password-manager role publishes.
+    vault_url: Annotated[str, Field(max_length=253)] = ""
+    browser_extension: bool = True
+    firefox: bool = True
+    chromium: bool = True
+    desktop_app: bool = False
+    # Switch the browsers' own password managers off, so there is one.
+    disable_browser_managers: bool = True
+
+    @field_validator("vault_url")
+    @classmethod
+    def _url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if value and (not value.startswith("https://") or any(c in value for c in " \n\r\x00\"'")):
+            raise ValueError("the vault's address is an https:// address")
+        return value
+
+
 class ComputerNames(Strict):
     """What the machines this policy reaches are called.
 
@@ -1414,6 +1438,7 @@ class PolicySettings(Strict):
     removable_storage: RemovableStorage | None = None
     device_control: DeviceControl | None = None
     computer_names: ComputerNames | None = None
+    password_manager: PasswordManager | None = None
     desktop_theme: DesktopTheme | None = None
     second_factor: SecondFactor | None = None
     first_run: FirstRun | None = None

@@ -51,7 +51,8 @@ UNKNOWN_ROLES=()
 # matches deploy/install-*-role.sh is a role this script does not yet know
 # how to remove — see the header comment.
 KNOWN_ROLES=(dhcp file-server print-server radius remote-desktop-broker
-             session-host vpn certificate-authority pxe time monitoring)
+             session-host vpn certificate-authority pxe time monitoring
+             password-manager)
 role_known() {
     local slug="$1" k
     for k in "${KNOWN_ROLES[@]}"; do [[ "$k" == "$slug" ]] && return 0; done
@@ -219,6 +220,7 @@ ROLE_CA="no";          [[ -d /var/lib/odm/ca ]] && ROLE_CA="yes"
 ROLE_PXE="no";         [[ -f /etc/dnsmasq.d/odm-pxe.conf || -d /srv/odm-preseed ]] && ROLE_PXE="yes"
 ROLE_TIME="no";        [[ -f /etc/odm/time-server ]] && ROLE_TIME="yes"
 ROLE_MONITORING="no";  [[ -f /etc/odm/monitoring-role ]] && ROLE_MONITORING="yes"
+ROLE_PASSWORDS="no";   [[ -f /etc/containers/systemd/vaultwarden.container ]] && ROLE_PASSWORDS="yes"
 
 # ------------------------------------------------------------- reporting ---
 
@@ -569,6 +571,21 @@ teardown_monitoring() {
     ok "Monitoring role removed"
 }
 
+teardown_password_manager() {
+    [[ "$ROLE_PASSWORDS" == "yes" ]] || return 0
+    say "Password-manager role"
+    maybe systemctl disable --now odm-bwdc-sync.timer
+    maybe systemctl stop vaultwarden.service
+    run rm -f /etc/containers/systemd/vaultwarden.container
+    run rm -f /etc/systemd/system/odm-bwdc-sync.service /etc/systemd/system/odm-bwdc-sync.timer
+    maybe systemctl daemon-reload
+    maybe podman rm -f vaultwarden
+    run rm -rf /etc/odm/vaultwarden /var/lib/odm/bwdc /opt/odm/bwdc
+    [[ "$PURGE_PACKAGES" == "yes" ]] && PURGE_LIST+=(podman)
+    note "  /var/lib/odm/vaultwarden — the vaults themselves — is kept; remove it by hand once it is backed up."
+    ok "Password-manager role removed"
+}
+
 teardown_pxe() {
     [[ "$ROLE_PXE" == "yes" ]] || return 0
     say "PXE role"
@@ -593,6 +610,7 @@ teardown_certificate_authority
 teardown_pxe
 teardown_time
 teardown_monitoring
+teardown_password_manager
 teardown_pam
 teardown_policy_artefacts
 

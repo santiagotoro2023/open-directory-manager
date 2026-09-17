@@ -151,6 +151,11 @@ export function Content() {
                 "Bluetooth, cameras and microphones allowed or blocked, machine-wide.",
               ],
               [
+                "Password manager",
+                "single value",
+                "Bitwarden's browser extension and/or desktop app, pointed at the domain's vault.",
+              ],
+              [
                 "Regional settings",
                 "single value",
                 "Language, formats, keyboard layout and time zone for the whole machine.",
@@ -1066,6 +1071,46 @@ for           %Engineers      (optional)`}</Code>
             next refresh; a camera that was in use may need to be re-plugged. Removing the
             setting altogether does the same. A machine whose sound server is not WirePlumber
             (a bare server) has no microphones to refuse.
+          </Note>
+        </Section>
+
+        <Section title="Password manager">
+          <p>
+            The domain&rsquo;s vault on the machine &mdash; the one the password-manager role
+            runs, unless <strong>Vault address</strong> says otherwise &mdash; as Bitwarden&rsquo;s
+            browser extension, its desktop app, or both. Both arrive pointed at the vault, so
+            nobody types a server address, and both go when the setting no longer reaches the
+            machine.
+          </p>
+          <Reference
+            headers={["Field", "What happens"]}
+            rows={[
+              [
+                "Browser extension",
+                "Native browser policy beside anything the Firefox and Chromium settings produce: Firefox's ExtensionSettings force-installs it from Mozilla's add-on store and its 3rdparty block hands it the vault's address; Chromium's ExtensionInstallForcelist and 3rdparty do the same from the Web Store. The browsers themselves remove a force-installed extension once the policy stops naming it.",
+              ],
+              [
+                "Desktop app",
+                "Bitwarden's own Debian package, from the newest desktop release on its release page, installed by the agent (checked for a newer one daily) and removed with apt when the setting goes. A hook at sign-in gives a person's copy the vault's address the first time, before the app ever asks for a server.",
+              ],
+              [
+                "Turn off the browsers' own password saving",
+                "PasswordManagerEnabled is false in both browsers, so the vault is the one place a password is offered from.",
+              ],
+            ]}
+          />
+          <p>
+            The same policy names the console as a place the browser may hand its Kerberos ticket
+            to (Firefox&rsquo;s <C>Authentication.SPNEGO</C>, Chromium&rsquo;s{" "}
+            <C>AuthServerAllowlist</C>): the vault&rsquo;s sign-in goes through the console, and a
+            browser that trusts it with the ticket the desktop session already holds signs the
+            person in without a prompt.
+          </p>
+          <Note>
+            The setting does nothing on a machine without a vault to point at &mdash; install the
+            password-manager role first, or give a vault address. A person&rsquo;s own data file for
+            the desktop app is left alone when the app is removed: it holds their session, which is
+            theirs.
           </Note>
         </Section>
 

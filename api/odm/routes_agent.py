@@ -954,6 +954,13 @@ FINISHED_BY_TASK = {
         UPDATE rd_collection SET state = $2, last_error = $3, updated_at = now()
         WHERE id = $1::uuid
     """,
+    # One row, so the subject is a name rather than an id; $1 is unused.
+    "passwords-apply": """
+        UPDATE password_manager SET last_result = CASE WHEN $2 = 'active' THEN 'applied'
+                                                       ELSE coalesce($3, 'failed') END,
+                                    last_applied_at = now()
+        WHERE id = 1 AND $1 = 'password-manager'
+    """,
 }
 
 

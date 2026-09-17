@@ -84,6 +84,7 @@ type Settings struct {
 	ScreenLock           *ScreenLock            `json:"screen_lock,omitempty"`
 	RemovableStorage     *RemovableStorage      `json:"removable_storage,omitempty"`
 	DeviceControl        *DeviceControl         `json:"device_control,omitempty"`
+	PasswordManager      *PasswordManager       `json:"password_manager,omitempty"`
 	DesktopTheme         *DesktopTheme          `json:"desktop_theme,omitempty"`
 	SecondFactor         *SecondFactor          `json:"second_factor,omitempty"`
 	FirstRun             *FirstRun              `json:"first_run,omitempty"`
@@ -109,6 +110,14 @@ type Settings struct {
 type Hostname struct {
 	Wanted string `json:"wanted"`
 	FQDN   string `json:"fqdn"`
+}
+
+// PasswordManager is what is left of the password-manager setting once the
+// control plane has turned its browser half into browser policy: whether the
+// desktop app is wanted, and the vault it points at.
+type PasswordManager struct {
+	VaultURL   string `json:"vault_url"`
+	DesktopApp bool   `json:"desktop_app"`
 }
 
 // DeviceControl is whether Bluetooth, cameras and microphones may be used.

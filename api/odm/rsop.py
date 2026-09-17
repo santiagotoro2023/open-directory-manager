@@ -182,7 +182,16 @@ async def build(
         target=target,
     )
     await apply_admx(pool, document)
-    browserpolicy.fold(document["settings"])
+    vault_url = ""
+    if "password_manager" in document["settings"]:
+        vault_url = await pool.fetchval("SELECT vault_url FROM password_manager WHERE id = 1") or ""
+        if not vault_url:
+            node = await pool.fetchval(
+                "SELECT node_fqdn FROM server_role WHERE role_name = 'password-manager'"
+                " AND state = 'active' ORDER BY updated_at DESC LIMIT 1"
+            )
+            vault_url = f"https://{node}" if node else ""
+    browserpolicy.fold(document["settings"], vault_url, settings.console_url)
     await attach_vpn(pool, document, target.dn)
     await attach_custom_packages(pool, document)
     attach_certificates(settings, document)

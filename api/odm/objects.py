@@ -619,6 +619,23 @@ def find_user(conn: Connection, settings: Settings, sam_account_name: str) -> di
     return _entry(found[0])
 
 
+def find_group(conn: Connection, settings: Settings, name: str) -> dict[str, Any]:
+    """Resolve a group by its account name or its common name."""
+    name = name.strip().lstrip("%")
+    if not name or len(name) > 64:
+        raise NotFound("group could not be resolved")
+    needle = escape_filter_chars(name)
+    found = _search(
+        conn,
+        safe_dn(settings.base_dn),
+        f"(&(objectClass=group)(|(sAMAccountName={needle})(cn={needle})))",
+        TYPES["group"].attributes,
+    )
+    if len(found) != 1:
+        raise NotFound(f"group {name!r} could not be resolved unambiguously")
+    return _entry(found[0])
+
+
 def photo_of(conn: Connection, settings: Settings, dn: str) -> str | None:
     """One account's picture, base64, or nothing.
 

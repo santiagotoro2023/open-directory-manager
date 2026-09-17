@@ -87,6 +87,11 @@ export function Content() {
                 "Nothing. The printers are added under Printers.",
               ],
               [
+                "Password manager",
+                "Vaultwarden, the open-source Bitwarden server: seats and groups from the domain groups you choose, sign-in with the domain account through the console, the extension and the desktop app on workstations by policy.",
+                "Nothing at install; it takes port 443. The organisation's key, the groups and the sign-in are under Passwords.",
+              ],
+              [
                 "Monitoring",
                 "Metrics from every machine, alerts, probes of what has no agent, dashboards. The node carrying it runs the probes.",
                 "Nothing. Groups, rules, channels, windows and dashboards are under Monitoring.",

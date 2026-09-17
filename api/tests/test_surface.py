@@ -41,6 +41,19 @@ PUBLIC = {
     # wall: no session, a token as long as one, and nothing on it but the
     # numbers the dashboard draws. Clearing the token ends the link.
     ("GET", "/api/v1/monitor/public/{token}"),
+    # The console as an OpenID Connect provider. Discovery and the signing
+    # keys are public by the protocol's design and say nothing but where the
+    # endpoints are and how to verify a token; the sign-in page authenticates
+    # a ticket or a credential the way the login endpoints above do, and
+    # issues a code only to a registered client's registered address; the
+    # token endpoint authenticates the client, and userinfo the token.
+    ("GET", "/api/v1/oidc/.well-known/openid-configuration"),
+    ("GET", "/api/v1/oidc/jwks"),
+    ("GET", "/api/v1/oidc/authorize"),
+    ("POST", "/api/v1/oidc/authorize"),
+    ("POST", "/api/v1/oidc/token"),
+    ("GET", "/api/v1/oidc/userinfo"),
+    ("POST", "/api/v1/oidc/userinfo"),
 }
 
 

@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Globe,
   KeyRound,
+  Lock,
   LayoutDashboard,
   LogOut,
   MonitorSmartphone,
@@ -96,6 +97,14 @@ const NAV = [
     icon: KeyRound,
     permission: "ca.read",
     roles: ["certificate-authority"],
+  },
+  {
+    label: "Passwords",
+    group: "Services",
+    to: "/passwords",
+    icon: Lock,
+    permission: "passwords.read",
+    roles: ["password-manager"],
   },
   {
     label: "Client Enrolment",

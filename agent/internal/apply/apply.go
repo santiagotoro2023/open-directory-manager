@@ -56,6 +56,7 @@ var appliers = []applier{
 	{"session", applySession},
 	{"removable_storage", applyRemovableStorage},
 	{"device_control", applyDeviceControl},
+	{"password_manager", applyPasswordManager},
 	{"second_factor", applySecondFactor},
 	{"first_run", applyFirstRun},
 	{"always_on_vpn", applyAlwaysOnVpn},

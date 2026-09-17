@@ -55,6 +55,9 @@ class DirectoryUser:
     group_sids: tuple[str, ...] = ()
     group_dns: tuple[str, ...] = ()
     is_domain_admin: bool = False
+    # The account's mail address, where one is set; what the vault knows a
+    # person by.
+    mail: str = ""
 
 
 def read_sid(value: object) -> str | None:
@@ -267,7 +270,7 @@ def _lookup_user(
         settings.base_dn,
         filt,
         ["distinguishedName", "sAMAccountName", "userPrincipalName", "displayName",
-         "userAccountControl", "objectSid"],
+         "userAccountControl", "objectSid", "mail"],
     )
     if len(entries) != 1:
         # 0 = gone between bind and search; >1 = ambiguous, never guess in an
@@ -286,6 +289,7 @@ def _lookup_user(
         user_principal_name=str(attrs.get("userPrincipalName") or upn),
         display_name=str(attrs.get("displayName") or attrs.get("sAMAccountName") or sam),
         sid=read_sid(attrs.get("objectSid")),
+        mail=str(attrs.get("mail") or ""),
     )
 
 

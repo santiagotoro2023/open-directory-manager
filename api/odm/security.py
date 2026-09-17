@@ -61,9 +61,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                     {"detail": "origin not allowed"}, status_code=status.HTTP_403_FORBIDDEN
                 )
         response: Response = await call_next(request)
+        # A page that brings its own policy (the OpenID sign-in page, which
+        # has to be allowed to post to itself and be redirected onwards)
+        # keeps it; every other document is the console.
+        own_policy = "content-security-policy" in response.headers
         for key, value in _RESPONSE_HEADERS.items():
             response.headers.setdefault(key, value)
-        if response.headers.get("content-type", "").startswith("text/html"):
+        if not own_policy and response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Content-Security-Policy"] = _CONSOLE_CSP
         return response
 

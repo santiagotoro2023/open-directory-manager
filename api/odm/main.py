@@ -32,6 +32,7 @@ from . import (
     ldappool,
     monitor,
     objects,
+    oidc,
     printers,
     radius,
     remotedesktop,
@@ -50,6 +51,7 @@ from . import (
     routes_monitor,
     routes_operations,
     routes_packages,
+    routes_passwords,
     routes_policy,
     routes_printers,
     routes_radius,
@@ -178,6 +180,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_printers.router)
     app.include_router(routes_remotedesktop.router)
     app.include_router(routes_vpn.router)
+    app.include_router(routes_passwords.router)
+    app.include_router(oidc.router)
     app.include_router(routes_radius.router)
     app.include_router(routes_dc.router)
     app.include_router(routes_rbac.router)

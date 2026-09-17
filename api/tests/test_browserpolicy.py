@@ -71,3 +71,39 @@ def test_typed_settings_fold_over_what_a_template_produced():
     assert settings["browser"]["chromium"] == {
         "DeveloperToolsAvailability": 2, "HttpsOnlyMode": "force_enabled",
     }
+
+
+def test_the_password_manager_extension_is_installed_and_pointed_at_the_vault():
+    settings = {
+        "browser": {
+            "firefox": {"ExtensionSettings": {"other@example": {"installation_mode": "allowed"}}}
+        },
+        "password_manager": {"firefox": True, "chromium": True, "desktop_app": True},
+    }
+    browserpolicy.fold(
+        settings, "https://vault.corp.example.internal", "https://odm.corp.example.internal:8443"
+    )
+    firefox = settings["browser"]["firefox"]
+    assert firefox["ExtensionSettings"]["other@example"] == {"installation_mode": "allowed"}
+    bitwarden = firefox["ExtensionSettings"][browserpolicy.BITWARDEN_FIREFOX_ID]
+    assert bitwarden["installation_mode"] == "force_installed"
+    assert firefox["3rdparty"]["Extensions"][browserpolicy.BITWARDEN_FIREFOX_ID] == {
+        "environment": {"base": "https://vault.corp.example.internal"}
+    }
+    assert firefox["PasswordManagerEnabled"] is False
+    assert firefox["Authentication"] == {"SPNEGO": ["odm.corp.example.internal"]}
+    chromium = settings["browser"]["chromium"]
+    assert chromium["AuthServerAllowlist"] == "odm.corp.example.internal"
+    assert chromium["ExtensionInstallForcelist"][0].startswith(browserpolicy.BITWARDEN_CHROME_ID)
+    managed = chromium["3rdparty"]["extensions"][browserpolicy.BITWARDEN_CHROME_ID]
+    assert managed["environment"]["base"]
+    # What the agent gets: the resolved vault, and whether the desktop app is wanted.
+    assert settings["password_manager"] == {
+        "vault_url": "https://vault.corp.example.internal", "desktop_app": True,
+    }
+
+    # No vault yet: nothing to point at, so nothing is written.
+    plain = {"password_manager": {"browser_extension": True}}
+    browserpolicy.fold(plain, "")
+    assert "browser" not in plain
+    assert plain["password_manager"] == {"vault_url": "", "desktop_app": False}

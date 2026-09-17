@@ -375,6 +375,14 @@ export interface PolicySettings {
   };
   logon_hours?: Record<string, unknown>[];
   computer_names?: { template: string };
+  password_manager?: {
+    vault_url: string;
+    browser_extension: boolean;
+    firefox: boolean;
+    chromium: boolean;
+    desktop_app: boolean;
+    disable_browser_managers: boolean;
+  };
   firefox_policy?: BrowserSettings;
   chromium_policy?: BrowserSettings;
   device_control?: {
@@ -390,6 +398,28 @@ export interface PolicySettings {
     reboot_when_needed: boolean;
   };
   web_apps?: Record<string, unknown>[];
+}
+
+export interface PasswordManagerStatus {
+  installed: boolean;
+  node_fqdn: string;
+  vault_url: string;
+  org_client_id: string;
+  org_configured: boolean;
+  sync_groups: string[];
+  sync_every_hours: number;
+  sso_enabled: boolean;
+  sso_only: boolean;
+  sync_account: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_from: string;
+  smtp_username: string;
+  smtp_configured: boolean;
+  admin_token: string;
+  last_applied_at: string | null;
+  last_result: string;
+  updated_at: string | null;
 }
 
 export type BrowserChoice = "unset" | "allow" | "block";
@@ -2109,6 +2139,29 @@ export const api = {
         "/servers/computer/shell/session",
         json({ dn, cols, rows }),
       ),
+  },
+
+  passwords: {
+    status: () => request<PasswordManagerStatus>("/passwords"),
+    configure: (body: {
+      vault_url: string;
+      org_client_id: string;
+      org_client_secret: string;
+      sync_groups: string[];
+      sync_every_hours: number;
+      sso_enabled: boolean;
+      sso_only: boolean;
+      smtp_host: string;
+      smtp_port: number;
+      smtp_from: string;
+      smtp_username: string;
+      smtp_password: string;
+    }) =>
+      request<PasswordManagerStatus & { task: string }>("/passwords", {
+        method: "PUT",
+        ...json(body),
+      }),
+    apply: () => request<{ task: string }>("/passwords/apply", json({})),
   },
 
   monitor: {

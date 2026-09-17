@@ -1266,6 +1266,18 @@ const SPECIAL: SpecialSpec[] = [
     doc: "computer-names",
   },
   {
+    key: "password_manager",
+    title: "Password manager",
+    half: "Computer",
+    group: "Software and drivers",
+    help:
+      "The domain's vault on the machine: Bitwarden's browser extension in Firefox and " +
+      "Chromium, its desktop app, or both — installed, pointed at the vault the " +
+      "password-manager role runs, and removed again when the setting goes. People sign in " +
+      "with their domain account.",
+    doc: "password-manager",
+  },
+  {
     key: "device_control",
     title: "Peripherals",
     half: "Computer",
@@ -1422,6 +1434,7 @@ function countOf(settings: PolicySettings, key: string): number {
   if (key === "screen_lock") return settings.screen_lock ? 1 : 0;
   if (key === "regional") return settings.regional ? 1 : 0;
   if (key === "device_control") return settings.device_control ? 1 : 0;
+  if (key === "password_manager") return settings.password_manager ? 1 : 0;
   if (key === "computer_names") return settings.computer_names ? 1 : 0;
   if (key === "firefox_policy") return settings.firefox_policy ? 1 : 0;
   if (key === "chromium_policy") return settings.chromium_policy ? 1 : 0;
@@ -1610,6 +1623,9 @@ export function SettingsEditor({
           )}
           {selected === "device_control" && (
             <DeviceControlEditor settings={settings} onChange={onChange} />
+          )}
+          {selected === "password_manager" && (
+            <PasswordManagerEditor settings={settings} onChange={onChange} />
           )}
           {selected === "firmware_updates" && (
             <FirmwareUpdatesEditor settings={settings} onChange={onChange} />
@@ -4397,6 +4413,93 @@ function DeviceControlEditor({
             </label>
           </div>
         </>
+      )}
+    </>
+  );
+}
+
+function PasswordManagerEditor({
+  settings,
+  onChange,
+}: {
+  settings: PolicySettings;
+  onChange: (next: PolicySettings) => void;
+}) {
+  const current = settings.password_manager;
+  function set(changes: Partial<NonNullable<PolicySettings["password_manager"]>>) {
+    onChange({
+      ...settings,
+      password_manager: {
+        vault_url: "",
+        browser_extension: true,
+        firefox: true,
+        chromium: true,
+        desktop_app: false,
+        disable_browser_managers: true,
+        ...current,
+        ...changes,
+      },
+    });
+  }
+  const toggle = (
+    label: string,
+    key: "browser_extension" | "firefox" | "chromium" | "desktop_app" | "disable_browser_managers",
+    hint: string,
+  ) =>
+    current && (
+      <div className="field">
+        <label className="checkbox">
+          <input type="checkbox" checked={current[key]} onChange={(e) => set({ [key]: e.target.checked })} />
+          {label}
+        </label>
+        {hint && <small>{hint}</small>}
+      </div>
+    );
+
+  return (
+    <>
+      <SettingHeading
+        meta={specialFor("password_manager")}
+        actions={
+          current && (
+            <RemoveSetting onRemove={() => onChange({ ...settings, password_manager: undefined })} />
+          )
+        }
+      />
+      {!current ? (
+        <EmptySetting onAdd={() => set({})} />
+      ) : (
+        <div className="field-grid">
+          <label className="field">
+            <span>Vault address</span>
+            <input
+              value={current.vault_url}
+              placeholder="the password-manager role's address"
+              onChange={(e) => set({ vault_url: e.target.value })}
+            />
+            <small>
+              Leave empty to use the vault the password-manager role runs; set it only to point
+              at a vault elsewhere.
+            </small>
+          </label>
+          {toggle(
+            "Browser extension",
+            "browser_extension",
+            "Bitwarden's extension, installed by browser policy and pointed at the vault; the browser removes it when this goes.",
+          )}
+          {current.browser_extension && toggle("… in Firefox", "firefox", "")}
+          {current.browser_extension && toggle("… in Chromium and Chrome", "chromium", "")}
+          {toggle(
+            "Desktop app",
+            "desktop_app",
+            "Bitwarden's desktop app from its own release, installed on the machine and pointed at the vault; removed when this goes.",
+          )}
+          {toggle(
+            "Turn off the browsers' own password saving",
+            "disable_browser_managers",
+            "So the vault is the one place a password is kept and offered.",
+          )}
+        </div>
       )}
     </>
   );
