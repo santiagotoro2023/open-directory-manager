@@ -42,6 +42,10 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 		return "", fmt.Errorf("the vault's address %q is not an https:// address", vaultURL)
 	}
 	var notes []string
+	// Restarted only for a change: a restart drops every connection the
+	// console has open to the vault, and an Apply that changed nothing used
+	// to restart it anyway — into the middle of the console's own sign-in.
+	changed := false
 
 	// The certificate, from the domain authority where there is one — asked
 	// for once, not at every apply: the one on disk is kept while it is the
@@ -61,6 +65,7 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 		} else if err := env.WriteFile(vaultCertPath, certPEM, 0o644, "root", "root"); err != nil {
 			return "", err
 		} else {
+			changed = true
 			notes = append(notes, "certificate from the domain authority")
 		}
 	}
@@ -70,6 +75,9 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 	existing, _ := os.ReadFile(env.Path(vaultEnvPath))
 	var kept []string
 	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.HasPrefix(line, "#") {
+			continue // the header is written fresh each time
+		}
 		key, _, _ := strings.Cut(line, "=")
 		switch key {
 		case "DOMAIN", "SMTP_HOST", "SMTP_PORT", "SMTP_FROM", "SMTP_USERNAME", "SMTP_PASSWORD",
@@ -118,11 +126,19 @@ func applyPasswordManager(ctx context.Context, payload map[string]any, env apply
 		return "", fmt.Errorf("the console sent no OpenID provider for the vault to sign people in with")
 	}
 	body := strings.Join(append(lines, kept...), "\n") + "\n"
+	if string(existing) != body {
+		changed = true
+	}
 	if err := env.WriteFile(vaultEnvPath, body, 0o600, "root", "root"); err != nil {
 		return "", fmt.Errorf("writing %s: %w", vaultEnvPath, err)
 	}
-	if _, err := env.Run.Run(ctx, "systemctl", "restart", "vaultwarden.service"); err != nil {
-		return "", fmt.Errorf("restarting the vault: %w", err)
+	if changed {
+		if _, err := env.Run.Run(ctx, "systemctl", "restart", "vaultwarden.service"); err != nil {
+			return "", fmt.Errorf("restarting the vault: %w", err)
+		}
+		notes = append(notes, "vault restarted")
+	} else {
+		notes = append(notes, "nothing changed, vault left running")
 	}
 	// The admin page's token, made by the installer and printed once there:
 	// reported to the console so the Passwords page can show it, rather

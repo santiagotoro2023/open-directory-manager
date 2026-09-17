@@ -286,8 +286,26 @@ async def bootstrap(pool: asyncpg.Pool, settings: Settings, http: httpx.Client, 
     owner of an organisation named after the domain."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM password_manager WHERE id = 1")
-        if row["org_id"]:
+        if row["org_id"] and await _organisation_exists(pool, settings, http, node, row):
             return
+        if row["org_id"]:
+            # The vault was emptied (its data removed with the role, or the
+            # role put on another server): what the console remembers is of
+            # a vault that no longer exists. Start again.
+            log.warning(
+                "password manager: the vault no longer knows organisation %s; making it again",
+                row["org_name"],
+            )
+            await conn.execute(
+                """
+                UPDATE password_manager
+                SET org_id = '', org_key = '', org_name = '', owner_password = '',
+                    members = '[]'::jsonb, updated_at = now()
+                WHERE id = 1
+                """
+            )
+            await conn.execute("UPDATE vault_collection SET vault_id = ''")
+            row = await conn.fetchrow("SELECT * FROM password_manager WHERE id = 1")
         if not row["admin_token"]:
             raise KeeperError("waiting for the vault's admin token from the server (press Apply)")
         owner = await ensure_owner_account(conn, settings, row)
@@ -343,6 +361,25 @@ async def bootstrap(pool: asyncpg.Pool, settings: Settings, http: httpx.Client, 
             str(bitwarden.field(first, "id", "")) if first else "",
         )
         log.info("password manager: organisation %s made in the vault", org_name)
+
+
+async def _organisation_exists(
+    pool: asyncpg.Pool, settings: Settings, http: httpx.Client, node: str, row: asyncpg.Record
+) -> bool:
+    """Whether the vault still has the organisation the console remembers:
+    the console's account signs in and finds it among its organisations."""
+    try:
+        user = await run_in_threadpool(
+            directory.authorize_principal, settings, row["owner_account"]
+        )
+        client, token = await sign_in(pool, settings, http, node, user)
+        if not has_master_password(token):
+            return False
+        profile = await run_in_threadpool(client.profile)
+    except (KeeperError, bitwarden.VaultError, httpx.HTTPError):
+        return False
+    organisations = bitwarden.field(profile, "organizations", []) or []
+    return any(str(bitwarden.field(o, "id", "")) == row["org_id"] for o in organisations)
 
 
 async def reconcile(pool: asyncpg.Pool, settings: Settings) -> str:

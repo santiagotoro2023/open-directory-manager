@@ -220,6 +220,24 @@ async def dispatch(
     return str(task_id)
 
 
+async def _reconcile_patiently(pool: asyncpg.Pool, settings: Settings) -> str:
+    import asyncio  # noqa: PLC0415
+
+    last = ""
+    for attempt in range(12):
+        try:
+            return await vaultkeeper.reconcile(pool, settings)
+        except Exception as exc:  # noqa: BLE001 - reported on the page, retried by the loop
+            last = f"not yet: {exc}"
+            if attempt < 11:
+                await asyncio.sleep(5)
+    await pool.execute(
+        "UPDATE password_manager SET last_sync_result = $1, sync_requested = true WHERE id = 1",
+        last[:500],
+    )
+    return last
+
+
 async def _record(
     conn: asyncpg.Connection,
     request: Request,
@@ -286,17 +304,11 @@ async def setup(
             after={"seat_groups": body.seat_groups, "seat_users": seat_users},
         )
     # The organisation now, rather than at the next timer tick: the page
-    # is waiting. The node may still be applying its configuration — the
-    # keeper says so, and tries again by itself.
-    summary = ""
-    try:
-        summary = await vaultkeeper.reconcile(pool, settings)
-    except Exception as exc:  # noqa: BLE001 - reported on the page, retried by the loop
-        summary = f"not yet: {exc}"
-        await pool.execute(
-            "UPDATE password_manager SET last_sync_result = $1, sync_requested = true WHERE id = 1",
-            summary[:500],
-        )
+    # is waiting. The node is applying its configuration at the same
+    # moment — and restarting the vault for it — so the first attempts may
+    # find nobody listening; they are repeated for a minute before the
+    # keeper's own loop is left to finish the job.
+    summary = await _reconcile_patiently(pool, settings)
     if body.my_password and summary and not summary.startswith("not yet"):
         try:
             await vaultkeeper.set_master_password(pool, settings, me, body.my_password)
@@ -497,12 +509,5 @@ async def apply_now(
     async with pool.acquire() as conn:
         task_id = await dispatch(conn, settings, session.principal, sync_now=True)
         await _record(conn, request, session, "passwords.apply")
-    summary = ""
-    try:
-        summary = await vaultkeeper.reconcile(pool, settings)
-    except Exception as exc:  # noqa: BLE001 - reported, retried by the loop
-        summary = f"not yet: {exc}"
-        await pool.execute(
-            "UPDATE password_manager SET last_sync_result = $1 WHERE id = 1", summary[:500]
-        )
+    summary = await _reconcile_patiently(pool, settings)
     return {"task": task_id, "summary": summary}

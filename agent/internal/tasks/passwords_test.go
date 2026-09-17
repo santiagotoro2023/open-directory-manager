@@ -33,8 +33,9 @@ func TestTheVaultIsConfiguredForSignInThroughTheConsole(t *testing.T) {
 	if err := os.WriteFile(env.Path(vaultConf+"/admin-token"), []byte("secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	issuedPEM := issuedCertificatePEM(t, 365*24*time.Hour)
 	env.Certificate = func(_ context.Context, profile string) (string, string, string, error) {
-		return "-----BEGIN CERTIFICATE-----\ncert\n-----END CERTIFICATE-----\n", "key", "", nil
+		return issuedPEM, "key", "", nil
 	}
 	out, err := applyPasswordManager(context.Background(), map[string]any{
 		"vault_url": "https://odm.corp.example.internal:8443/vault", "server_certificate": true,
@@ -74,6 +75,20 @@ func TestTheVaultIsConfiguredForSignInThroughTheConsole(t *testing.T) {
 	}
 	if !restarted {
 		t.Error("the vault was not restarted")
+	}
+	// The same configuration again changes nothing and restarts nothing.
+	run.commands = nil
+	if _, err := applyPasswordManager(context.Background(), map[string]any{
+		"vault_url": "https://odm.corp.example.internal:8443/vault", "server_certificate": true,
+		"sso_authority": "https://odm.corp.example.internal:8443/api/v1/oidc",
+		"sso_client_id": "password-manager", "sso_client_secret": "sso-secret",
+	}, env, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range run.commands {
+		if strings.Contains(strings.Join(call, " "), "restart") {
+			t.Errorf("an unchanged configuration restarted the vault: %v", call)
+		}
 	}
 	if _, err := applyPasswordManager(context.Background(), map[string]any{"vault_url": "https://x/vault"}, env, nil); err == nil {
 		t.Error("a configuration without the OpenID provider must be refused")
@@ -128,4 +143,27 @@ func TestTheVaultKeepsACertificateTheAuthorityIssuedAndReplacesItsOwn(t *testing
 	if vaultCertificateUsable(filepath.Join(dir, "missing.pem"), time.Now()) {
 		t.Error("no certificate is not a usable one")
 	}
+}
+
+// issuedCertificatePEM is a leaf certificate signed by a throwaway
+// authority, valid for the given time from now.
+func issuedCertificatePEM(t *testing.T, validFor time.Duration) string {
+	t.Helper()
+	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Example CA"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(10 * 365 * 24 * time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	caDER, _ := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	caCert, _ := x509.ParseCertificate(caDER)
+	leafKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	der, err := x509.CreateCertificate(rand.Reader, &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "vault.example"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(validFor),
+	}, caCert, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
