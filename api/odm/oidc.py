@@ -347,6 +347,13 @@ def _page(
             "base-uri 'none'; frame-ancestors 'self'"
         ),
         "X-Frame-Options": "SAMEORIGIN",
+        # The console's default is no-referrer, and a form posted under that
+        # policy carries "Origin: null" (Fetch: the origin is serialised as
+        # null when the referrer policy is no-referrer) — which the origin
+        # gate then refuses. Seen live as "origin not allowed" on the sign-in
+        # itself. Same-origin keeps the referrer inside the console and the
+        # Origin header real.
+        "Referrer-Policy": "same-origin",
     }
     if negotiate:
         headers["WWW-Authenticate"] = "Negotiate"

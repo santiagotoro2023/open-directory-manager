@@ -166,6 +166,8 @@ def test_the_code_flow_signs_a_person_in_with_their_domain_account(provider):
     assert 'name="password"' in page.text
     csp = page.headers["content-security-policy"]
     assert f"form-action 'self' {VAULT}" in csp and "style-src 'nonce-" in csp
+    # Under no-referrer the browser would post the form with Origin: null.
+    assert page.headers["referrer-policy"] == "same-origin"
 
     wrong = client.post(
         "/api/v1/oidc/authorize", data={**params, "username": "sam", "password": "no"}
