@@ -309,11 +309,15 @@ class ChannelBody(BaseModel):
 def _channel(row: asyncpg.Record, settings: Settings) -> dict[str, Any]:
     out = _row(row)
     if out["kind"] == "ntfy":
+        # For a phone channel the url column is the address phones reach the
+        # server at when it is not the controller's own — a port forwarded
+        # through a router — the same choice the second-factor policy offers.
+        outside = out["url"]
         out["available"] = push.configured(settings)
         out["subscribe_url"] = (
-            push.subscribe_url(settings, out["topic"]) if push.configured(settings) else ""
+            push.subscribe_url(settings, out["topic"], outside) if push.configured(settings) else ""
         )
-        out["server_url"] = push.server_url(settings) if push.configured(settings) else ""
+        out["server_url"] = push.server_url(settings, outside) if push.configured(settings) else ""
     return out
 
 
@@ -337,6 +341,8 @@ async def create_channel(
 ) -> dict[str, Any]:
     if body.kind == "webhook" and not body.url.startswith(("http://", "https://")):
         raise objects.ObjectError("a webhook needs an http(s) URL")
+    if body.kind == "ntfy" and body.url and not body.url.startswith(("http://", "https://")):
+        raise objects.ObjectError("the address phones use starts with https:// (or http://)")
     # An ntfy channel is a topic of its own, as unguessable as a phone's.
     topic = push.TOPIC_PREFIX + "alerts-" + secrets.token_urlsafe(9) if body.kind == "ntfy" else ""
     try:
@@ -348,7 +354,7 @@ async def create_channel(
             body.name,
             body.kind,
             topic,
-            body.url if body.kind == "webhook" else "",
+            body.url.rstrip("/"),
             body.min_severity,
         )
     except asyncpg.UniqueViolationError as exc:

@@ -1095,6 +1095,14 @@ function ChannelsTab() {
               <input value={adding.url} onChange={(e) => setAdding({ ...adding, url: e.target.value })} placeholder="https://chat.example.org/hooks/…" />
             </Field>
           )}
+          {adding.kind === "ntfy" && (
+            <Field
+              label="Address phones use"
+              hint="Optional. The controller's own address unless phones reach it through a router: then the public name and the port forwarded to 8444, as https://ntfy.example.org:8444. Same as the second-factor policy's setting."
+            >
+              <input value={adding.url} onChange={(e) => setAdding({ ...adding, url: e.target.value })} placeholder="https://ntfy.example.org:8444" />
+            </Field>
+          )}
           <Field label="Takes">
             <Select value={adding.min_severity} onChange={(e) => setAdding({ ...adding, min_severity: e.target.value as "warning" | "critical" })}>
               <option value="warning">Warnings and critical</option>

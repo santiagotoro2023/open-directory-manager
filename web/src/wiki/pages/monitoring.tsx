@@ -96,7 +96,11 @@ export function Content() {
           </p>
           <Note>
             A phone channel needs phone approvals set up on the controller (setup does this).
-            Without it the channel is listed as unavailable and nothing is sent.
+            Without it the channel is listed as unavailable and nothing is sent. A phone that
+            reaches the controller through a router rather than on the office network is given
+            the public address instead &mdash; <strong>Address phones use</strong> on the channel,
+            the name and the port forwarded to 8444 &mdash; the same setting the second-factor
+            policy offers.
           </Note>
         </Section>
 
