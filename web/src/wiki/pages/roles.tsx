@@ -88,8 +88,8 @@ export function Content() {
               ],
               [
                 "Password manager",
-                "Vaultwarden, the open-source Bitwarden server: seats and groups from the domain groups you choose, sign-in with the domain account through the console, the extension and the desktop app on workstations by policy.",
-                "Nothing at install; it takes port 443. The organisation's key, the groups and the sign-in are under Passwords.",
+                "Vaultwarden, the open-source Bitwarden server, reached at the console's own address (/vault): seats and groups from the domain groups you choose, sign-in with the domain account through the console, the extension and the desktop app on workstations by policy. Needs the certificate authority.",
+                "Nothing at install. The vault itself, the organisation's key, the groups and the sign-in are under Passwords.",
               ],
               [
                 "Monitoring",

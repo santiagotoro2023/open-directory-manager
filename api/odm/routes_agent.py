@@ -36,6 +36,7 @@ from . import (
     objects,
     push,
     routes_dc,
+    routes_passwords,
     rsop,
     sites,
     tasks,
@@ -969,6 +970,7 @@ async def agent_task_result(
     body: TaskResult,
     machine: Machine = Depends(require_machine),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ):
     """Record how a task went, and move whatever it was for to its new state."""
     async with pool.acquire() as conn:
@@ -996,6 +998,18 @@ async def agent_task_result(
                 "active" if body.ok else "failed",
                 None if body.ok else detail,
             )
+            if body.ok:
+                role_name = await conn.fetchval(
+                    "SELECT role_name FROM server_role WHERE id = $1::uuid", task["subject"]
+                )
+                if role_name == "password-manager":
+                    # The vault is reached through the console at once:
+                    # give it its address and its certificate now rather
+                    # than when somebody first saves the page.
+                    with contextlib.suppress(objects.ObjectError):
+                        await routes_passwords.dispatch(
+                            conn, settings, machine.hostname, sync_now=False
+                        )
         elif task["kind"] == "domain-backup" and task["subject"]:
             path, size = "", 0
             if body.ok:

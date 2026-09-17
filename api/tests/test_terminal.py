@@ -195,9 +195,15 @@ def test_every_websocket_route_is_gated():
         "/api/v1/agent/shell/{session_id}",
         "/api/v1/servers/computer/assist/session/{session_id}",
         "/api/v1/agent/assist/{session_id}",
+        # The vault's live-update socket, carried to the node; the vault
+        # authenticates it itself.
+        "/vault/notifications/hub",
+        "/vault/notifications/anonymous-hub",
     }
     for route in sockets:
         names = {d.call.__name__ for d in route.dependant.dependencies if d.call}
+        if route.path.startswith("/vault/"):
+            continue
         if route.path.startswith("/api/v1/agent/"):
             assert "require_machine_socket" in names, route.path
         else:

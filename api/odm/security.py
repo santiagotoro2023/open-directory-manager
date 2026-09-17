@@ -38,6 +38,8 @@ _CONSOLE_CSP = (
     "img-src 'self' data:; "
     "font-src 'self'; "
     "connect-src 'self'; "
+    # The vault, carried under /vault, shown inside the Passwords page.
+    "frame-src 'self'; "
     "base-uri 'none'; "
     "form-action 'none'; "
     "frame-ancestors 'none'"
@@ -53,6 +55,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/vault/"):
+            # The vault under the console's address: its own origin rules,
+            # its own headers, its own policy. Only transport security is
+            # the console's to add.
+            response: Response = await call_next(request)
+            response.headers.setdefault(
+                "Strict-Transport-Security", _RESPONSE_HEADERS["Strict-Transport-Security"]
+            )
+            return response
         if request.method not in SAFE_METHODS:
             origin = request.headers.get("origin")
             allowed = get_settings().allowed_origins

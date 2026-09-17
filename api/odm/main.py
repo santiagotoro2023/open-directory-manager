@@ -63,12 +63,25 @@ from . import (
     routes_shares,
     routes_vpn,
     shares,
+    vaultproxy,
     vpn,
 )
 from .config import Settings, get_settings
 from .security import CSRF_HEADER, SecurityHeadersMiddleware
 
 log = logging.getLogger("odm")
+
+
+class ConsoleCORSMiddleware(CORSMiddleware):
+    """The console's CORS, for the console's API. The vault carried under
+    /vault answers the browser extensions' cross-origin requests itself,
+    so those pass straight through."""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith(vaultproxy.PREFIX + "/"):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
 
 
 @asynccontextmanager
@@ -160,7 +173,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
     if settings.allowed_origins:
         app.add_middleware(
-            CORSMiddleware,
+            ConsoleCORSMiddleware,
             allow_origins=settings.allowed_origins,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
@@ -182,6 +195,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_vpn.router)
     app.include_router(routes_passwords.router)
     app.include_router(oidc.router)
+    app.include_router(vaultproxy.router)
     app.include_router(routes_radius.router)
     app.include_router(routes_dc.router)
     app.include_router(routes_rbac.router)

@@ -82,7 +82,7 @@ and run one command:
 
 ```bash
 sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.16.0_amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt install ./odm-client_0.16.1_amd64.deb
 sudo odm-client-install --domain corp.example.internal --admin-user Administrator
 ```
 
@@ -169,7 +169,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Machine management | Model, serial and drive health from SMART, installed software, local accounts to add and remove, sign-in history, a message on the screens of whoever is signed in (one machine or a selection), watching a signed-in person's screen with their consent — in a tab of the console itself, the VNC server on the machine's loopback and its bytes carried by the agent, so there is nothing to install and nothing to type — recent logs filtered to errors and exportable, updates, restart, a remote agent update, a terminal — a real root login shell on a pseudo-terminal, carried over the agent's own connection, its whole transcript in the audit log when it ends — a file browser that shows and changes owner, group and mode, and disk-encryption status with an escrowed recovery key — on the computer object itself, starting within a second rather than at the next check-in |
 | Certificates | An internal CA that issues certificates, autoenrols and renews them for machines, publishes trust by policy at the moment it is created, takes profiles of your own beside the built-in pair, re-issues the console's own certificate, and withdraws one to a revocation list every issued certificate points at |
 | Passwords | The local password policy for accounts that live on a machine itself, set as a policy-object setting; helpdesk resets. The domain's own password rules are set with `samba-tool domain passwordsettings`, the way any AD-compatible tool sets them, rather than duplicated as console state |
-| Password manager | A role that runs Vaultwarden (the open-source Bitwarden server) on a member server and makes it part of the domain: seats and the organisation's groups come from the domain groups you choose, kept in step by Bitwarden's directory connector on a timer with a read-only account the console makes; people sign in with their domain account, through the console — the domain's OpenID Connect provider — with no prompt at all from a domain-joined desktop; the certificate comes from the domain authority; and the extension and the desktop app arrive on workstations by policy, already pointed at the vault. Each person's master password stays their own: it is what encrypts their vault, and nothing on the server can stand in for it |
+| Password manager | A role that runs Vaultwarden (the open-source Bitwarden server) on a member server and makes it part of the domain — reached at the console's own address, `/vault`, shown inside the Passwords page and carried to whichever server holds it over TLS the console verifies, so there is one address, one certificate and one sign-in: seats and the organisation's groups come from the domain groups you choose, kept in step by Bitwarden's directory connector on a timer with a read-only account the console makes; people sign in with their domain account, through the console — the domain's OpenID Connect provider — with no prompt at all from a domain-joined desktop; the certificate comes from the domain authority; and the extension and the desktop app arrive on workstations by policy, already pointed at the vault. Each person's master password stays their own: it is what encrypts their vault, and nothing on the server can stand in for it |
 | Pictures | A person's picture set on their account and shown by every machine they sign in to, at the login screen and in the desktop |
 | Sign-in | A second factor, enrolled once with a QR code and asked for at the console and at the machine alike — on screen, over SSH, at sudo or over remote desktop — or approved with a tap on the phone instead: an Approve / Deny notification through a self-hosted [ntfy](https://ntfy.sh) server that the domain controller's setup installs (every release also ships a build of the ntfy Android app that trusts a self-signed server on a scanned code), nothing leaving the domain. The policy object is the source of truth: a method it stops asking for takes its enrolments with it, and an administrator can reset one account's second factor from its right-click menu or every account's from the Overview. Somebody who has not enrolled is walked through it at their next sign-in, full screen, and cannot get past it; the phone is set up the same way, and a policy can name the public address phones use when port 8444 is forwarded through a router |
 | Sites | Sites and subnets, so a machine reports where it is and prefers a controller near it |
@@ -197,7 +197,7 @@ with the optional roles — DHCP, file server, certificate authority and PXE.
 | Printing | CUPS, driverless or with an uploaded PPD |
 | Remote access | WireGuard |
 | Network access | FreeRADIUS, against the directory through winbind |
-| Password manager | Vaultwarden in a podman quadlet; Bitwarden's directory connector for seats and groups; the control plane as an OpenID Connect provider (`api/odm/oidc.py`) for sign-in |
+| Password manager | Vaultwarden in a podman quadlet, carried under the console's `/vault` by the control plane (`api/odm/vaultproxy.py`); Bitwarden's directory connector for seats and groups; the control plane as an OpenID Connect provider (`api/odm/oidc.py`) for sign-in |
 | Monitoring | The agent reading /proc and /sys; PostgreSQL holding a fortnight of samples; uPlot in the console |
 | Unattended install | Debian's own installer, preseeded, over proxy DHCP |
 
@@ -266,7 +266,7 @@ CI runs all of that plus `pip-audit`, `npm audit` and `govulncheck` on every
 push, and builds the client package:
 
 ```bash
-bash packaging/deb/build-in-container.sh 0.16.0   # -> dist/odm-client_0.16.0_amd64.deb
+bash packaging/deb/build-in-container.sh 0.16.1   # -> dist/odm-client_0.16.1_amd64.deb
 ```
 
 That builds both front ends in a container, so nothing but Docker is needed on

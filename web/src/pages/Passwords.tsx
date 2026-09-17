@@ -5,25 +5,30 @@ import { InfoPanel } from "../components/DocsLink";
 import { Loading } from "../components/Loading";
 import { PickerField } from "../components/Picker";
 
+type Tab = "vault" | "setup";
+
 /**
- * The password manager: Vaultwarden on a member server, with the directory
- * deciding who has a seat.
+ * The password manager: Vaultwarden on a member server, reached at the
+ * console's own address and shown here, with the directory deciding who
+ * has a seat.
  *
- * Three things are decided here and nowhere else: where the vault is, which
- * groups' members get a seat (the directory connector on the node keeps the
- * organisation's groups and members in step with them), and how the vault
- * sends its invitations. Everything about what is *in* the vault — the
- * organisation, its collections, which group sees which — is decided in the
- * vault itself, by its own administrator, because the server cannot read a
- * vault and neither can the console; that is the point of it.
+ * The Vault tab is the vault itself — its address is /vault on this
+ * console, the same one the extension and the app use, so what an
+ * administrator does here is what they would do there: the organisation,
+ * its collections, which group sees which. That work stays in the vault
+ * because the server cannot read a vault and neither can the console; that
+ * is the point of it. The Setup tab is what the console decides: which
+ * groups' members get a seat (the directory connector on the node keeps
+ * the organisation's groups and members in step with them), how people
+ * sign in, and how the vault sends its invitations.
  */
 export function Passwords() {
+  const [tab, setTab] = useState<Tab>("vault");
   const [status, setStatus] = useState<PasswordManagerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
-    vault_url: "",
     org_client_id: "",
     org_client_secret: "",
     sync_groups: "",
@@ -43,7 +48,6 @@ export function Passwords() {
       setStatus(result);
       setForm((current) => ({
         ...current,
-        vault_url: result.vault_url,
         org_client_id: result.org_client_id,
         sync_groups: result.sync_groups.map((group) => `%${group}`).join(", "),
         sync_every_hours: result.sync_every_hours,
@@ -75,7 +79,6 @@ export function Passwords() {
         .map((part) => part.trim().replace(/^%/, ""))
         .filter(Boolean);
       await api.passwords.configure({
-        vault_url: form.vault_url,
         org_client_id: form.org_client_id,
         org_client_secret: form.org_client_secret,
         sync_groups: groups,
@@ -123,9 +126,9 @@ export function Passwords() {
         <span className="spacer" />
         {status?.installed && (
           <>
-            <a className="button secondary" href={status.vault_url} target="_blank" rel="noopener">
+            <a className="button secondary" href={status.vault_url + "/"} target="_blank" rel="noopener">
               <ExternalLink size={15} aria-hidden="true" />
-              Open the vault
+              Open in a tab
             </a>
             <button type="button" className="secondary" disabled={busy} onClick={() => void applyNow()}>
               <RefreshCw size={15} aria-hidden="true" />
@@ -142,35 +145,80 @@ export function Passwords() {
       )}
       {notice && <p className="muted">{notice}</p>}
 
-      <InfoPanel page="password-manager">
-        Vaultwarden, the open-source Bitwarden server, run by the password-manager role. People
-        get a seat by being in a domain group and sign in with their domain account; inside the
-        vault, an organisation holds the collections and its administrator gives each group its
-        collection once. The browser extension and the desktop app are installed and pointed at
-        the vault by the <em>Password manager</em> policy setting.
-      </InfoPanel>
-
       {status && !status.installed && (
-        <div className="detail-card">
-          <h3 className="section-title">Not installed yet</h3>
-          <p className="muted">
-            Install the <strong>Password manager</strong> role on a member server under Server
-            Roles. It takes port 443 of that machine, so choose one that does not already serve
-            HTTPS. The vault, its data and the sync all live there.
-          </p>
-        </div>
+        <>
+          <InfoPanel page="password-manager">
+            Vaultwarden, the open-source Bitwarden server, run by the password-manager role and
+            reached at this console&rsquo;s own address. People get a seat by being in a domain
+            group and sign in with their domain account; the browser extension and the desktop app
+            arrive on workstations by the <em>Password manager</em> policy setting.
+          </InfoPanel>
+          <div className="detail-card">
+            <h3 className="section-title">Not installed yet</h3>
+            <p className="muted">
+              {status.ca_ready
+                ? "Install the "
+                : "Set up the certificate authority under Certificates first — the console carries the vault's traffic over TLS it verifies against it. Then install the "}
+              <strong>Password manager</strong> role on a member server under Server Roles. Nobody
+              connects to that server directly: the vault is <span className="mono">{status.vault_url}</span>,
+              on this console, whichever machine carries it.
+            </p>
+          </div>
+        </>
       )}
 
       {status?.installed && (
+        <nav className="tabs" aria-label="Password manager views">
+          {(["vault", "setup"] as Tab[]).map((current) => (
+            <button
+              key={current}
+              type="button"
+              className={tab === current ? "tab active" : "tab"}
+              aria-current={tab === current ? "true" : undefined}
+              onClick={() => setTab(current)}
+            >
+              {current === "vault" ? "Vault" : "Setup"}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {status?.installed && tab === "vault" && (
+        <div className="vault-frame">
+          {status.ca_ready ? (
+            <iframe src={status.vault_url + "/"} title="The vault" />
+          ) : (
+            <p className="alert" role="alert">
+              The vault needs the domain&rsquo;s certificate authority before the console will
+              carry traffic to it. Set one up under Certificates, then Apply here.
+            </p>
+          )}
+        </div>
+      )}
+
+      {status?.installed && tab === "setup" && (
         <>
+          <InfoPanel page="password-manager">
+            People get a seat by being in one of the groups below and sign in with their domain
+            account. Inside the vault, an organisation holds the collections and its administrator
+            gives each group its collection once; the browser extension and the desktop app arrive
+            on workstations by the <em>Password manager</em> policy setting.
+          </InfoPanel>
           <div className="detail-grid">
             <div className="detail-card">
               <h3 className="section-title">The vault</h3>
               <dl className="definition">
-                <dt>Server</dt>
-                <dd className="mono">{status.node_fqdn}</dd>
                 <dt>Address</dt>
                 <dd className="mono">{status.vault_url}</dd>
+                <dt>Carried to</dt>
+                <dd className="mono">{status.node_fqdn}</dd>
+                <dt>Admin page</dt>
+                <dd>
+                  <a href={status.vault_url + "/admin"} target="_blank" rel="noopener">
+                    {status.vault_url}/admin
+                  </a>
+                  <span className="muted"> — the token is in /etc/odm/vaultwarden/admin-token on that server</span>
+                </dd>
                 <dt>Organisation key</dt>
                 <dd>{status.org_configured ? "set — the directory sync runs" : "not set — no sync yet"}</dd>
                 <dt>Sign-in</dt>
@@ -193,8 +241,8 @@ export function Passwords() {
             <div className="detail-card">
               <h3 className="section-title">First time</h3>
               <ol className="wiki-steps">
-                <li>Open the vault and create the first account: it will be the organisation's owner.</li>
-                <li>In the vault, create an organisation (Example Corp) and its collections — one per team.</li>
+                <li>On the Vault tab, create the first account: it will be the organisation's owner.</li>
+                <li>Still there, create an organisation (Example Corp) and its collections — one per team.</li>
                 <li>Organisation → Settings → API key: paste the client id and secret below.</li>
                 <li>Choose the groups whose members get a seat, and save.</li>
                 <li>Back in the organisation: Groups now mirror those directory groups — give each its collection.</li>
@@ -205,15 +253,6 @@ export function Passwords() {
           <div className="detail-card">
             <h3 className="section-title">Directory sync</h3>
             <div className="field-grid">
-              <label className="field">
-                <span>Vault address</span>
-                <input
-                  value={form.vault_url}
-                  placeholder={`https://${status.node_fqdn}`}
-                  onChange={(e) => setForm({ ...form, vault_url: e.target.value })}
-                />
-                <small>What people and the browser extension connect to. The server's name unless you front it with another.</small>
-              </label>
               <label className="field">
                 <span>Organisation client id</span>
                 <input

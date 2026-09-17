@@ -10,10 +10,13 @@
 # /var/lib/odm/vaultwarden. Sign-ups are closed: people get in by being
 # invited, which is what the directory sync does.
 #
-# TLS: a self-signed certificate to start, so the service comes up; the
-# console replaces it with one from the domain's certificate authority when
-# it applies the role's configuration (passwords-apply), and every domain
-# member trusts that authority already.
+# Nobody connects to this machine directly: the vault's address is the
+# console's own, https://<console>/vault, and the console carries every
+# request here over TLS on port 8222, checked against the domain's
+# certificate authority. A self-signed certificate lets the service come
+# up; the console replaces it with one from the authority the moment the
+# install is reported done (passwords-apply), and refuses to forward
+# anything until it has.
 
 set -euo pipefail
 
@@ -59,14 +62,14 @@ chmod 0640 "$CONF/tls/server.key"
 if [[ ! -s "$CONF/env" ]]; then
     cat > "$CONF/env" <<ENV
 # Managed by Open Directory Manager. Local edits are overwritten.
-DOMAIN=https://$FQDN
+DOMAIN=https://$FQDN:8222/vault
 SIGNUPS_ALLOWED=false
 INVITATIONS_ALLOWED=true
 ORG_GROUPS_ENABLED=true
 SHOW_PASSWORD_HINT=false
 ADMIN_TOKEN=$ADMIN_TOKEN
 ROCKET_TLS={certs="/tls/server.pem",key="/tls/server.key"}
-ROCKET_PORT=443
+ROCKET_PORT=8222
 ENV
     chmod 0600 "$CONF/env"
 fi
@@ -90,7 +93,7 @@ Volume=$CONF/tls:/tls:ro,Z
 # The machine's own trust bundle, so the vault can reach the console — the
 # domain's OpenID provider — whose certificate the domain authority issued.
 Volume=/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-PublishPort=443:443
+PublishPort=8222:8222
 AutoUpdate=registry
 
 [Service]
@@ -114,12 +117,12 @@ cat <<SUMMARY
 
 Password-manager role installed on $FQDN.
 
-  Vault           https://$FQDN
-  Admin page      https://$FQDN/admin   token: $ADMIN_TOKEN
+  Vault           https://<console>/vault  (carried here by the console, port 8222)
+  Admin page      https://<console>/vault/admin   token: $ADMIN_TOKEN
   Data            $DATA (the vaults, encrypted end to end)
 
-The certificate is self-signed until the console applies the role's
-configuration; sign-ups are closed, and the directory sync invites people.
-Next: Passwords in the console — create the organisation in the vault, paste
-its API key, and choose the groups whose members get a seat.
+Sign-ups are closed; the directory sync invites people, and they sign in
+with their domain account. Next: Passwords in the console — open the vault
+there, create the organisation, paste its API key, and choose the groups
+whose members get a seat.
 SUMMARY

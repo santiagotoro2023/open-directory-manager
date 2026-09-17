@@ -52,26 +52,26 @@ def console(state, monkeypatch) -> TestClient:
 
 def test_status_says_whether_the_role_exists_and_where(console, state):
     body = console.get("/api/v1/passwords").json()
-    assert body["installed"] is False and body["vault_url"] == ""
+    assert body["installed"] is False
+    # The vault's address is the console's, whichever server carries it.
+    assert body["vault_url"] == "https://odm.corp.example.internal:8443/vault"
     state["installed"] = True
     body = console.get("/api/v1/passwords").json()
     assert body["installed"] is True
-    assert body["vault_url"] == "https://vault.corp.example.internal"
+    assert body["vault_url"] == "https://odm.corp.example.internal:8443/vault"
     assert body["org_configured"] is False
 
 
 def test_configuring_without_a_node_is_refused(console):
-    response = console.put(
-        "/api/v1/passwords", json={"vault_url": "https://vault.corp.example.internal"}
-    )
+    response = console.put("/api/v1/passwords", json={"sync_groups": ["%Sales"]})
     assert response.status_code == 400
     assert "not installed" in response.text
 
 
 def test_the_configuration_is_validated():
     with pytest.raises(ValueError):
-        PasswordManagerConfig(vault_url="http://plain.example")
-    with pytest.raises(ValueError):
         PasswordManagerConfig(sync_groups=["bad\\group"])
-    ok = PasswordManagerConfig(vault_url="https://vault.example/", sync_groups=["%Sales"])
-    assert ok.vault_url == "https://vault.example" and ok.sync_groups == ["Sales"]
+    with pytest.raises(ValueError):
+        PasswordManagerConfig(smtp_host="mail.example\nX=1")
+    ok = PasswordManagerConfig(sync_groups=["%Sales"])
+    assert ok.sync_groups == ["Sales"] and ok.sso_enabled and ok.sso_only

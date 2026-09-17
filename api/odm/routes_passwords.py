@@ -9,9 +9,16 @@ organisation's groups and members in step with the directory, and the
 organisation's administrator decides once which group sees which
 collection. Sales joins the domain group, and Sales sees the Sales vault.
 
-The console holds one row of configuration. Saving it, or pressing Apply,
-sends it to the node as a task: the certificate from the domain authority,
-the vault's address, the sync's credentials and its schedule.
+The vault is reached at the console's own address, /vault, and the console
+carries the traffic to the node (vaultproxy.py); people sign in with their
+domain account through the console's OpenID provider (oidc.py). So there
+is one address, one certificate and one sign-in for the whole thing, and
+the server it runs on is a detail nobody needs to know.
+
+The console holds one row of configuration. Saving it, pressing Apply, or
+installing the role sends it to the node as a task: the certificate from
+the domain authority, the vault's address, the sync's credentials and its
+schedule.
 """
 
 from __future__ import annotations
@@ -24,7 +31,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
-from . import audit, ca, objects, oidc, tasks
+from . import audit, ca, objects, oidc, tasks, vaultproxy
 from .config import Settings, get_settings
 from .policy_schema import PRINCIPAL_RE
 from .routes_directory import _bound
@@ -37,7 +44,6 @@ SYNC_ACCOUNT = "odm-passwords-sync"
 
 
 class PasswordManagerConfig(BaseModel):
-    vault_url: Annotated[str, Field(max_length=253)] = ""
     org_client_id: Annotated[str, Field(max_length=128)] = ""
     org_client_secret: Annotated[str, Field(max_length=256)] = ""
     sync_groups: Annotated[
@@ -53,16 +59,6 @@ class PasswordManagerConfig(BaseModel):
     smtp_from: Annotated[str, Field(max_length=253)] = ""
     smtp_username: Annotated[str, Field(max_length=253)] = ""
     smtp_password: Annotated[str, Field(max_length=256)] = ""
-
-    @field_validator("vault_url")
-    @classmethod
-    def _url(cls, value: str) -> str:
-        value = value.strip().rstrip("/")
-        if value and not value.startswith("https://"):
-            raise ValueError("the vault's address starts with https://")
-        if any(character in value for character in " \n\r\x00\"'"):
-            raise ValueError("the vault's address cannot contain spaces or quotes")
-        return value
 
     @field_validator("sync_groups")
     @classmethod
@@ -88,11 +84,12 @@ async def _node(pool: asyncpg.Pool) -> str:
     ) or ""
 
 
-def _public(row: asyncpg.Record, node: str) -> dict[str, Any]:
+def _public(row: asyncpg.Record, node: str, settings: Settings) -> dict[str, Any]:
     return {
         "installed": bool(node),
         "node_fqdn": node,
-        "vault_url": row["vault_url"] or (f"https://{node}" if node else ""),
+        "vault_url": vaultproxy.vault_url(settings),
+        "ca_ready": ca.initialised(settings),
         "org_client_id": row["org_client_id"],
         "org_configured": bool(row["org_client_id"] and row["org_client_secret"]),
         "sync_groups": list(row["sync_groups"] or []) if isinstance(row["sync_groups"], list)
@@ -117,10 +114,11 @@ def _public(row: asyncpg.Record, node: str) -> dict[str, Any]:
 async def status(
     _: Session = Depends(require_admin),
     pool: asyncpg.Pool = Depends(get_pool),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     row = await pool.fetchrow("SELECT * FROM password_manager WHERE id = 1")
     node = await _node(pool)
-    return _public(row, node)
+    return _public(row, node, settings)
 
 
 async def _ensure_sync_account(
@@ -171,9 +169,12 @@ async def _ensure_sync_account(
     return account, password
 
 
-async def _dispatch(
+async def dispatch(
     conn: asyncpg.Connection, settings: Settings, actor: str, *, sync_now: bool
 ) -> str:
+    """Send the configuration to the node. Also called when the role's
+    installation finishes, so the vault gets its certificate and its
+    address before anyone opens it."""
     row = await conn.fetchrow("SELECT * FROM password_manager WHERE id = 1")
     node = await conn.fetchval(
         "SELECT node_fqdn FROM server_role WHERE role_name = 'password-manager'"
@@ -181,7 +182,7 @@ async def _dispatch(
     )
     if not node:
         raise objects.ObjectError("the password-manager role is not installed anywhere yet")
-    vault_url = row["vault_url"] or f"https://{node}"
+    vault_url = vaultproxy.vault_url(settings)
     account, password = "", ""
     if row["org_client_id"] and row["org_client_secret"]:
         account, password = await _ensure_sync_account(conn, settings, row)
@@ -275,17 +276,17 @@ async def configure(
         await conn.execute(
             """
             UPDATE password_manager
-            SET vault_url = $1, org_client_id = $2, org_client_secret = $3, sync_groups = $4::jsonb,
-                sync_every_hours = $5, smtp_host = $6, smtp_port = $7, smtp_from = $8,
-                smtp_username = $9, smtp_password = $10, sso_enabled = $11, sso_only = $12,
+            SET org_client_id = $1, org_client_secret = $2, sync_groups = $3::jsonb,
+                sync_every_hours = $4, smtp_host = $5, smtp_port = $6, smtp_from = $7,
+                smtp_username = $8, smtp_password = $9, sso_enabled = $10, sso_only = $11,
                 updated_at = now()
             WHERE id = 1
             """,
-            body.vault_url, body.org_client_id, secret, json.dumps(body.sync_groups),
+            body.org_client_id, secret, json.dumps(body.sync_groups),
             body.sync_every_hours, body.smtp_host, body.smtp_port, body.smtp_from,
             body.smtp_username, smtp_password, body.sso_enabled, body.sso_only,
         )
-        task_id = await _dispatch(conn, settings, session.principal, sync_now=True)
+        task_id = await dispatch(conn, settings, session.principal, sync_now=True)
         await audit.record(
             conn,
             actor=session.principal,
@@ -296,13 +297,13 @@ async def configure(
             object_type="role",
             object_dn="password-manager",
             after={
-                "vault_url": body.vault_url, "sync_groups": body.sync_groups,
+                "sync_groups": body.sync_groups,
                 "sync_every_hours": body.sync_every_hours, "org": bool(body.org_client_id),
                 "sso_enabled": body.sso_enabled, "sso_only": body.sso_only,
             },
         )
         row = await conn.fetchrow("SELECT * FROM password_manager WHERE id = 1")
-    return {"task": task_id, **_public(row, await _node(pool))}
+    return {"task": task_id, **_public(row, await _node(pool), settings)}
 
 
 @router.post("/apply", status_code=202, dependencies=[Depends(requires("passwords.write"))])
@@ -314,7 +315,7 @@ async def apply_now(
 ) -> dict[str, Any]:
     """Send the configuration again, and run a sync now."""
     async with pool.acquire() as conn:
-        task_id = await _dispatch(conn, settings, session.principal, sync_now=True)
+        task_id = await dispatch(conn, settings, session.principal, sync_now=True)
         await audit.record(
             conn,
             actor=session.principal,

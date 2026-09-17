@@ -54,6 +54,15 @@ PUBLIC = {
     ("POST", "/api/v1/oidc/token"),
     ("GET", "/api/v1/oidc/userinfo"),
     ("POST", "/api/v1/oidc/userinfo"),
+    # The vault, carried under the console's address. It authenticates
+    # people itself, through the OpenID provider above; the console only
+    # forwards, and only to the node the role is on, over TLS it verifies.
+    ("GET", "/vault"),
+    ("GET", "/vault/{path:path}"),
+    ("POST", "/vault/{path:path}"),
+    ("PUT", "/vault/{path:path}"),
+    ("PATCH", "/vault/{path:path}"),
+    ("DELETE", "/vault/{path:path}"),
 }
 
 

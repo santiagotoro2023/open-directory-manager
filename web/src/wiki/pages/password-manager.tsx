@@ -16,7 +16,7 @@ export const meta: WikiPageMeta = {
   title: "Password manager",
   section: "Administration",
   summary:
-    "A vault for the domain: Vaultwarden on a member server, seats and groups from the directory, sign-in with the domain account.",
+    "A vault for the domain, inside the console: seats and groups from the directory, sign-in with the domain account.",
   keywords: [
     "password manager",
     "vault",
@@ -38,34 +38,43 @@ export function Content() {
     <>
       <Quickstart>
         <p>
-          The password-manager role runs Vaultwarden, the open-source Bitwarden server, on a
-          member server, and makes it part of the domain. There are no accounts of its own to
-          make and no groups of its own to keep: a person has a seat because they are in a domain
-          group, the vault&rsquo;s groups are the domain&rsquo;s groups with the same members, kept
-          in step by a sync on the server, and people sign in with their domain account &mdash;
-          through the console, which is the domain&rsquo;s OpenID provider, and without typing
-          anything on a domain-joined desktop whose browser hands over the ticket it already
-          holds. What is <em>in</em> a vault, the server cannot read &mdash; every vault is
-          encrypted with a key only its owner has &mdash; which is the point of a password
-          manager and the one thing this role does not change.
+          The password-manager role runs Vaultwarden, the open-source Bitwarden server, and
+          makes it part of the domain. Its address is the console&rsquo;s own &mdash;{" "}
+          <C>https://&lt;console&gt;/vault</C> &mdash; whichever member server carries it: the
+          console shows it on the Passwords page and carries every request to that server, so
+          there is one address, one certificate and one sign-in for the whole thing. There are
+          no accounts of its own to make and no groups of its own to keep: a person has a seat
+          because they are in a domain group, the vault&rsquo;s groups are the domain&rsquo;s
+          groups with the same members, kept in step by a sync on the server, and people sign in
+          with their domain account &mdash; through the console, which is the domain&rsquo;s
+          OpenID provider, and without typing anything on a domain-joined desktop whose browser
+          hands over the ticket it already holds. What is <em>in</em> a vault, the server cannot
+          read &mdash; every vault is encrypted with a key only its owner has &mdash; which is the
+          point of a password manager and the one thing this role does not change.
         </p>
 
         <Example title="Set it up">
           <Steps>
             <li>
-              <strong>Server Roles</strong> → <strong>Password manager</strong> →{" "}
-              <strong>Install on a server</strong>. It takes port 443 of that machine, so choose
-              one that does not already serve HTTPS. The installer prints the admin page&rsquo;s
-              token once.
+              A certificate authority, under <strong>Certificates</strong>, if the domain has
+              none yet: the console carries the vault&rsquo;s traffic over TLS it verifies
+              against it, and refuses to carry anything until it can.
             </li>
             <li>
-              Open <C>https://&lt;that server&gt;</C>, create the first account and, in it, an
-              organisation with a collection per team. This first account is the
-              organisation&rsquo;s owner; the console never holds its password.
+              <strong>Server Roles</strong> → <strong>Password manager</strong> →{" "}
+              <strong>Install on a server</strong> &mdash; any member server; nobody connects to it
+              directly. The installer prints the admin page&rsquo;s token once, and the console
+              sends the vault its address and certificate the moment the install is reported
+              done.
+            </li>
+            <li>
+              <strong>Passwords</strong> → the <strong>Vault</strong> tab: create the first
+              account and, in it, an organisation with a collection per team. This first account
+              is the organisation&rsquo;s owner; the console never holds its password.
             </li>
             <li>
               In the organisation, <strong>Settings</strong> → <strong>API key</strong>. Paste
-              the client id and secret under <strong>Passwords</strong> in the console.
+              the client id and secret on the <strong>Setup</strong> tab.
             </li>
             <li>
               Choose the groups whose members get a seat &mdash; <C>%Sales</C>,{" "}
@@ -102,8 +111,9 @@ export function Content() {
         </Example>
 
         <Where>
-          Passwords, once a server carries the password-manager role; the extension and the app
-          under a policy object&rsquo;s Computer settings.
+          Passwords &mdash; the Vault tab is the vault, the Setup tab what the console decides
+          &mdash; once a server carries the password-manager role; the extension and the app under
+          a policy object&rsquo;s Computer settings.
         </Where>
       </Quickstart>
 
@@ -147,6 +157,27 @@ export function Content() {
           </Note>
         </Section>
 
+        <Section title="One address">
+          <p>
+            The vault answers at <C>/vault</C> on the console, and the console forwards each
+            request &mdash; the web vault&rsquo;s pages, the extension&rsquo;s and the app&rsquo;s
+            calls, the live-update socket &mdash; to the server carrying the role, on port 8222,
+            over TLS checked against the domain authority. The vault is told its own address is
+            the console&rsquo;s (<C>DOMAIN</C> in its configuration), so every link it makes,
+            every invitation it sends and the OpenID callback it registers point at the console.
+            The console&rsquo;s own gates step aside for that path: the vault does its own
+            sign-in, sets its own headers and answers the browser extensions&rsquo; cross-origin
+            requests itself, so none of the console&rsquo;s origin, CORS or content-security rules
+            are applied to it &mdash; only transport security is.
+          </p>
+          <Note>
+            The Passwords page shows the vault in a frame of the same origin, which is why the
+            vault&rsquo;s own <C>frame-ancestors &apos;self&apos;</C> allows it. <strong>Open in a
+            tab</strong> is the same address without the console around it, for a second monitor
+            or a longer session.
+          </Note>
+        </Section>
+
         <Section title="The sync">
           <p>
             The server runs Bitwarden&rsquo;s directory connector (<C>bwdc</C>) on a systemd timer,
@@ -178,23 +209,26 @@ export function Content() {
 
         <Section title="The certificate">
           <p>
-            The vault starts with a self-signed certificate so the service comes up. The first{" "}
-            <strong>Save and apply</strong> replaces it with one from the domain&rsquo;s
-            certificate authority, in the server&rsquo;s name, and every domain member trusts that
-            authority already &mdash; so a browser, and the extension, reach the vault without a
-            warning. The vault in turn has to trust the console&rsquo;s certificate to send people
-            there: the container carries the server&rsquo;s own trust bundle, which holds the
-            domain authority once the agent has installed it. A certificate authority that is not
-            set up yet leaves both self-signed, and single sign-on refused by the vault until it
-            is; set it up under <strong>Certificates</strong> and apply again.
+            People and their browsers only ever see the console&rsquo;s certificate. Between the
+            console and the server carrying the vault there is a second one: the vault starts
+            with a self-signed certificate so the service comes up, and the configuration the
+            console sends when the install is reported done &mdash; and at every{" "}
+            <strong>Apply</strong> &mdash; replaces it with one from the domain authority, in the
+            server&rsquo;s name, which is what the console checks before forwarding anything. The
+            vault in turn has to trust the console&rsquo;s certificate to send people there to sign
+            in: the container carries the server&rsquo;s own trust bundle, which holds the domain
+            authority once the agent has installed it, so the console&rsquo;s own certificate
+            should be one the authority issued (<strong>Certificates</strong> →{" "}
+            <strong>Replace console certificate</strong>) rather than the self-signed one setup
+            starts with.
           </p>
         </Section>
 
         <Section title="The admin page">
           <p>
-            Vaultwarden&rsquo;s own admin page is at <C>/admin</C> on the vault, behind the token
-            the installer printed (it is in <C>/etc/odm/vaultwarden/admin-token</C> on the
-            server). It shows users, lets one be deleted or its two-factor reset, and sends a test
+            Vaultwarden&rsquo;s own admin page is at <C>/vault/admin</C> on the console, behind
+            the token the installer printed (it is in <C>/etc/odm/vaultwarden/admin-token</C> on
+            the server). It shows users, lets one be deleted or its two-factor reset, and sends a test
             mail. Everything the console sets it sets through the environment file, so a change
             made on the admin page to a setting the console owns is overwritten at the next apply.
           </p>

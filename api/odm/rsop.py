@@ -13,7 +13,7 @@ from typing import Any
 import asyncpg
 from ldap3 import Connection
 
-from . import admx, browserpolicy, ca, directory, objects, policy
+from . import admx, browserpolicy, ca, directory, objects, policy, vaultproxy
 from .config import Settings
 
 Inputs = tuple[dict[str, policy.Gpo], list[policy.Link], set[str]]
@@ -183,14 +183,8 @@ async def build(
     )
     await apply_admx(pool, document)
     vault_url = ""
-    if "password_manager" in document["settings"]:
-        vault_url = await pool.fetchval("SELECT vault_url FROM password_manager WHERE id = 1") or ""
-        if not vault_url:
-            node = await pool.fetchval(
-                "SELECT node_fqdn FROM server_role WHERE role_name = 'password-manager'"
-                " AND state = 'active' ORDER BY updated_at DESC LIMIT 1"
-            )
-            vault_url = f"https://{node}" if node else ""
+    if "password_manager" in document["settings"] and await vaultproxy.node(pool):
+        vault_url = vaultproxy.vault_url(settings)
     browserpolicy.fold(document["settings"], vault_url, settings.console_url)
     await attach_vpn(pool, document, target.dn)
     await attach_custom_packages(pool, document)

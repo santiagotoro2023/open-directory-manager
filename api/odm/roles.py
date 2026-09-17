@@ -428,9 +428,10 @@ REGISTRY: dict[str, Role] = {
         packages=("podman", "unzip", "curl"),
         ui_section="passwords",
         notes=(
-            "Runs on port 443 of the machine it is installed on, so choose one that "
-            "does not already serve HTTPS. Then, under Passwords: create the organisation "
-            "in the vault, paste its API key, and choose the groups whose members get a "
+            "Needs the certificate authority: the vault is reached at the console's own "
+            "address (/vault) and the console carries the traffic to this machine over "
+            "TLS it verifies. Then, under Passwords: open the vault, create the "
+            "organisation, paste its API key, and choose the groups whose members get a "
             "seat."
         ),
     ),

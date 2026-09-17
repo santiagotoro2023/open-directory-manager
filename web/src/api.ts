@@ -404,6 +404,7 @@ export interface PasswordManagerStatus {
   installed: boolean;
   node_fqdn: string;
   vault_url: string;
+  ca_ready: boolean;
   org_client_id: string;
   org_configured: boolean;
   sync_groups: string[];
@@ -2144,7 +2145,6 @@ export const api = {
   passwords: {
     status: () => request<PasswordManagerStatus>("/passwords"),
     configure: (body: {
-      vault_url: string;
       org_client_id: string;
       org_client_secret: string;
       sync_groups: string[];
