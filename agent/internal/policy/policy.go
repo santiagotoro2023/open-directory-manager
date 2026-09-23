@@ -274,15 +274,45 @@ type DashLayout struct {
 	AllowUserChange bool `json:"allow_user_change"`
 }
 
-// PowerSettings is when the machine turns its screen off and suspends.
+// PowerSettings is when the machine turns its screen off and suspends —
+// signed in, at the greeter, locked, or with nobody there at all.
 type PowerSettings struct {
-	ScreenOffACMinutes      int    `json:"screen_off_ac_minutes"`
-	ScreenOffBatteryMinutes int    `json:"screen_off_battery_minutes"`
-	SuspendACMinutes        int    `json:"suspend_ac_minutes"`
-	SuspendBatteryMinutes   int    `json:"suspend_battery_minutes"`
-	LidCloseAction          string `json:"lid_close_action"`
-	PowerButtonAction       string `json:"power_button_action"`
-	AllowUserChange         bool   `json:"allow_user_change"`
+	ScreenOffACMinutes      int `json:"screen_off_ac_minutes"`
+	ScreenOffBatteryMinutes int `json:"screen_off_battery_minutes"`
+	SuspendACMinutes        int `json:"suspend_ac_minutes"`
+	SuspendBatteryMinutes   int `json:"suspend_battery_minutes"`
+
+	// The greeter's own database, which no session setting reaches.
+	LoginScreenScreenOffMinutes int `json:"login_screen_screen_off_minutes"`
+	LoginScreenSuspendMinutes   int `json:"login_screen_suspend_minutes"`
+
+	LidCloseAction string `json:"lid_close_action"`
+	// Empty means the same as LidCloseAction.
+	LidCloseActionExternalPower string `json:"lid_close_action_external_power"`
+	LidCloseActionDocked        string `json:"lid_close_action_docked"`
+	PowerButtonAction           string `json:"power_button_action"`
+	SuspendKeyAction            string `json:"suspend_key_action"`
+	HibernateKeyAction          string `json:"hibernate_key_action"`
+
+	IdleAction        string `json:"idle_action"`
+	IdleActionMinutes int    `json:"idle_action_minutes"`
+
+	AllowSuspend   *bool `json:"allow_suspend"`
+	AllowHibernate *bool `json:"allow_hibernate"`
+
+	// Empty leaves UPower's configuration alone.
+	CriticalBatteryAction  string `json:"critical_battery_action"`
+	CriticalBatteryPercent int    `json:"critical_battery_percent"`
+
+	// Four settings whose safe value is true, from an agent that may be
+	// newer than the console handing it the document: absent has to read as
+	// the default rather than as false, or a policy written before these
+	// existed stops a fleet suspending at all.
+	DimScreen              *bool `json:"dim_screen"`
+	IdleBrightnessPercent  int   `json:"idle_brightness_percent"`
+	PowerSaverOnLowBattery *bool `json:"power_saver_on_low_battery"`
+
+	AllowUserChange bool `json:"allow_user_change"`
 }
 
 // ScreenLock is when the screen locks itself.

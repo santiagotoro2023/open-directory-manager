@@ -519,3 +519,39 @@ def test_computer_name_templates_render_and_recognise_their_own_names():
     assert not naming.fits("WS-{n:4}", "ws-0042b")
     assert not naming.fits("WS-{n:4}", "alice-laptop")
     assert naming.describe("WS-{n:4}") == {"example": "WS-0042"}
+
+
+def test_power_covers_the_greeter_and_the_refusals_as_well_as_the_timers():
+    import pytest
+
+    from odm.policy_schema import PowerSettings
+
+    # The defaults are what a machine gets by adding the setting and saving
+    # it, so they are the ones that have to be safe: nothing refused, and a
+    # greeter that does not suspend a machine nobody has signed into yet.
+    power = PowerSettings()
+    assert power.allow_suspend and power.allow_hibernate
+    assert power.login_screen_suspend_minutes == 0
+    assert power.idle_action == "ignore"
+    # Empty means "the same as closing the lid", which is what ODM wrote
+    # before the field existed — an existing policy keeps meaning it.
+    assert power.lid_close_action_external_power == ""
+    # And UPower's file is left alone until somebody asks for an action.
+    assert power.critical_battery_action == ""
+
+    power = PowerSettings(
+        idle_action="poweroff",
+        idle_action_minutes=45,
+        allow_suspend=False,
+        critical_battery_action="hibernate",
+        critical_battery_percent=5,
+    )
+    assert power.idle_action_minutes == 45
+    with pytest.raises(ValueError):
+        PowerSettings(idle_action="explode")
+    with pytest.raises(ValueError):
+        PowerSettings(critical_battery_action="ignore")  # UPower has no no-op
+    with pytest.raises(ValueError):
+        PowerSettings(critical_battery_percent=80)
+    with pytest.raises(ValueError):
+        PowerSettings(suspend_key_action="poweroff")  # not a sleep key action

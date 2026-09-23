@@ -248,8 +248,23 @@ export interface PolicySettings {
     screen_off_battery_minutes: number;
     suspend_ac_minutes: number;
     suspend_battery_minutes: number;
+    login_screen_screen_off_minutes: number;
+    login_screen_suspend_minutes: number;
     lid_close_action: string;
+    lid_close_action_external_power: string;
+    lid_close_action_docked: string;
     power_button_action: string;
+    suspend_key_action: string;
+    hibernate_key_action: string;
+    idle_action: string;
+    idle_action_minutes: number;
+    allow_suspend: boolean;
+    allow_hibernate: boolean;
+    critical_battery_action: string;
+    critical_battery_percent: number;
+    dim_screen: boolean;
+    idle_brightness_percent: number;
+    power_saver_on_low_battery: boolean;
     allow_user_change: boolean;
   };
   screen_lock?: {

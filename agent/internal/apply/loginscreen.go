@@ -69,11 +69,9 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 	// dropped that file database, so the distribution's own greeter settings
 	// stopped applying. Both are named instead, in the order that leaves
 	// ODM's own database winning where the two disagree.
-	profile := "user-db:user\nsystem-db:gdm\n"
-	if _, err := os.Stat(env.Path(debianGreeterConfig)); err == nil {
-		profile += "file-db:" + debianGreeterDB + "\n"
-	}
-	if err := env.WriteFile(greeterProfilePath, profile, 0o644, "root", "root"); err != nil {
+	if err := env.WriteFile(
+		greeterProfilePath, greeterProfile(env), 0o644, "root", "root",
+	); err != nil {
 		return []policy.Result{policy.Fail("login_screen", err)}
 	}
 
@@ -182,6 +180,17 @@ func applyLoginScreen(ctx context.Context, s policy.Settings, env Env) []policy.
 	// as the setting working sometimes and not others.
 	reloadGreeter(ctx, env)
 	return results
+}
+
+// greeterProfile is the two or three lines that tell GDM's dconf which
+// databases to read. Shared with the power applier, which writes the greeter
+// its own keys and needs the same profile in place to have them read.
+func greeterProfile(env Env) string {
+	profile := "user-db:user\nsystem-db:gdm\n"
+	if _, err := os.Stat(env.Path(debianGreeterConfig)); err == nil {
+		profile += "file-db:" + debianGreeterDB + "\n"
+	}
+	return profile
 }
 
 // reloadGreeter asks the greeter's own dconf-service to re-read its database,

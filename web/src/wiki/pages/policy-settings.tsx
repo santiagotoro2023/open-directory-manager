@@ -197,7 +197,11 @@ export function Content() {
                 "A desktop icon, a menu entry, or a place in the file manager.",
               ],
               ["Fonts", "file name", "A font installed for everybody on the machine."],
-              ["Power and suspend", "single value", "logind and the desktop's power settings."],
+              [
+                "Power and suspend",
+                "single value",
+                "The desktop, the login screen, logind and UPower \u2014 every layer that can put a machine to sleep.",
+              ],
               ["Screen lock", "single value", "When an idle screen locks itself."],
               [
                 "Removable storage",
@@ -1351,30 +1355,86 @@ For user or group %Finance`}</Code>
 
         <Section title="Power and suspend">
           <p>
-            When the screen turns off, when the machine suspends, and what the lid and the power
-            button do. Written to both <C>systemd-logind</C> and the desktop&rsquo;s own settings,
-            so a laptop closed at the login screen &mdash; where there is no session to hold a
-            setting &mdash; behaves the same way as one closed by somebody signed in.
+            When the screen turns off, when the machine suspends, what the lid and the buttons do,
+            and what happens on a battery that is nearly flat. A machine sleeps for four different
+            reasons and only one of them is a signed-in desktop&rsquo;s timer, so this setting
+            writes all four places rather than one.
           </p>
+          <Reference
+            headers={["Layer", "What it decides", "Where it is written"]}
+            rows={[
+              [
+                "The session",
+                "Screen off, suspend, dimming and the power saver while somebody is signed in — including while their screen is locked.",
+                "The machine's dconf database.",
+              ],
+              [
+                "The login screen",
+                "The same, before anybody has signed in.",
+                "The greeter's own dconf database, which is a different one.",
+              ],
+              [
+                "logind",
+                "The lid, the buttons, its own idle action, and whether the machine may suspend or hibernate at all.",
+                <C>/etc/systemd/logind.conf.d/50-odm.conf</C>,
+              ],
+              [
+                "UPower",
+                "What a nearly flat battery does.",
+                <C>/etc/UPower/UPower.conf</C>,
+              ],
+            ]}
+          />
           <Reference
             headers={["Field", "Notes"]}
             rows={[
-              ["Screen off on mains / on battery", "Minutes of inactivity. 0 never."],
+              [
+                "Screen off",
+                "Minutes of inactivity. 0 never. GNOME blanks on one timer for both power sources, so the mains value is the one it reads; the battery field is recorded beside it.",
+              ],
               [
                 "Suspend on mains / on battery",
                 "Minutes of inactivity. 0 never, which is the usual answer for a desktop.",
               ],
+              [
+                "At the login screen",
+                "Its own screen-off and suspend timers. GNOME's greeter suspends after twenty minutes on mains unless told otherwise, whatever the session policy says — which is why a machine nobody has signed into turns itself off while the policy reads never.",
+              ],
               ["Closing the lid", "Suspends, hibernates, locks, or does nothing."],
+              [
+                "Closing the lid on mains / when docked",
+                "The same answers, plus “same as closing the lid”. Docked means an external screen is attached.",
+              ],
               ["The power button", "The same, plus shutting down."],
+              ["The sleep and hibernate keys", "What the keyboard's own power keys do."],
+              [
+                "When the machine is idle, logind",
+                "Locks, suspends, hibernates, shuts down or does nothing, with no session involved — the layer a locked screen and an empty login screen have in common. It needs a time: 0 minutes is never, whatever the action says.",
+              ],
+              [
+                "Never let this machine suspend / hibernate",
+                "The flat refusals. Nothing on the machine can suspend it — not a timer, not the greeter, not an application asking politely. The only answer that holds for a machine that must never sleep.",
+              ],
+              [
+                "At the critical level",
+                "What UPower does when the battery reaches the percentage beside it. UPower has no “do nothing”; leaving this at “leave the machine's own setting alone” does not touch its file, and clearing it later puts the distribution's file back.",
+              ],
               [
                 "Let people change these",
-                "Off locks the keys in dconf, so the settings panel shows them and will not change them.",
+                "Off locks the keys in dconf, so the settings panel shows them and will not change them. The login screen's keys are always locked: nobody is signed in there to have a preference.",
               ],
             ]}
           />
           <Note>
             Where this and Screen lock both set a screen-off time, this one wins: two policies
             writing one key is a disagreement the machine cannot resolve, so only one writes it.
+          </Note>
+          <Note>
+            A machine that sleeps although every timer says never is nearly always one of two
+            layers this setting reaches and a session policy does not: the login screen&rsquo;s own
+            database, or logind. Set the login-screen suspend to 0, and if it must never sleep at
+            all, tick the two refusals &mdash; they hold against anything on the machine asking,
+            not just against a timer running out.
           </Note>
         </Section>
 

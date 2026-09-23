@@ -698,15 +698,65 @@ class PowerSettings(Strict):
     A machine setting: it is a property of the hardware in front of somebody,
     not of who they are, and a laptop that suspends mid-presentation is the
     same support call whoever is signed in.
+
+    A machine sleeps for more reasons than a signed-in desktop's timer, which
+    is why this covers four layers rather than one. The greeter has its own
+    dconf database and its own idea of when to suspend (GNOME's is twenty
+    minutes on mains), so a machine nobody has signed into yet sleeps on
+    settings no session policy ever reached. systemd-logind acts whether or
+    not anybody is signed in at all, which is the layer a locked screen and
+    an empty greeter have in common. UPower acts on a battery about to run
+    out. And the session's own keys are the ones people see in Settings.
     """
 
     # Minutes. 0 is never, as it is everywhere else in the policy.
     screen_off_ac_minutes: Annotated[int, Field(ge=0, le=1440)] = 10
+    # GNOME blanks on one timer, not one per power source; the mains value is
+    # the one written. Kept because logind's idle action reads it, and
+    # because taking a field out of a policy people have already saved is a
+    # worse trade than a field that documents what it does.
     screen_off_battery_minutes: Annotated[int, Field(ge=0, le=1440)] = 5
     suspend_ac_minutes: Annotated[int, Field(ge=0, le=1440)] = 0
     suspend_battery_minutes: Annotated[int, Field(ge=0, le=1440)] = 30
+
+    # The greeter, where nobody is signed in. Left alone by every session
+    # setting above, and the reason a machine "turns itself off at the login
+    # screen" while the policy says never.
+    login_screen_screen_off_minutes: Annotated[int, Field(ge=0, le=1440)] = 15
+    login_screen_suspend_minutes: Annotated[int, Field(ge=0, le=1440)] = 0
+
     lid_close_action: Literal["suspend", "hibernate", "lock", "ignore"] = "suspend"
+    # Empty is "the same as closing the lid", which is what ODM did before
+    # these two existed and so what an existing policy keeps meaning.
+    lid_close_action_external_power: Literal["", "suspend", "hibernate", "lock", "ignore"] = ""
+    lid_close_action_docked: Literal["", "suspend", "hibernate", "lock", "ignore"] = "ignore"
     power_button_action: Literal["suspend", "hibernate", "poweroff", "lock", "ignore"] = "suspend"
+    suspend_key_action: Literal["suspend", "hibernate", "lock", "ignore"] = "suspend"
+    hibernate_key_action: Literal["suspend", "hibernate", "lock", "ignore"] = "hibernate"
+
+    # logind's own idle action, which applies with no session at all: the
+    # greeter left alone, or a machine somebody locked and walked away from.
+    idle_action: Literal["ignore", "suspend", "hibernate", "poweroff", "lock"] = "ignore"
+    idle_action_minutes: Annotated[int, Field(ge=0, le=1440)] = 0
+
+    # The flat refusals. Off, nothing on the machine can suspend it — not a
+    # timer, not the greeter, not an application asking politely — which is
+    # the only answer that holds for a machine that must never sleep.
+    allow_suspend: bool = True
+    allow_hibernate: bool = True
+
+    # What happens when the battery is nearly out, which is a machine turning
+    # itself off for a reason no timer explains. Empty leaves UPower's
+    # configuration alone; UPower has no "do nothing" of its own.
+    critical_battery_action: Literal["", "poweroff", "hibernate", "hybrid_sleep"] = ""
+    critical_battery_percent: Annotated[int, Field(ge=1, le=20)] = 2
+
+    # Dimming is not sleeping, but it is the same panel and the same
+    # complaint. idle_brightness_percent is what it dims to.
+    dim_screen: bool = True
+    idle_brightness_percent: Annotated[int, Field(ge=1, le=100)] = 30
+    power_saver_on_low_battery: bool = True
+
     # Whether somebody signed in may then change any of it.
     allow_user_change: bool = False
 

@@ -3757,8 +3757,23 @@ function PowerEditor({
         screen_off_battery_minutes: 5,
         suspend_ac_minutes: 0,
         suspend_battery_minutes: 30,
+        login_screen_screen_off_minutes: 15,
+        login_screen_suspend_minutes: 0,
         lid_close_action: "suspend",
+        lid_close_action_external_power: "",
+        lid_close_action_docked: "ignore",
         power_button_action: "suspend",
+        suspend_key_action: "suspend",
+        hibernate_key_action: "hibernate",
+        idle_action: "ignore",
+        idle_action_minutes: 0,
+        allow_suspend: true,
+        allow_hibernate: true,
+        critical_battery_action: "",
+        critical_battery_percent: 2,
+        dim_screen: true,
+        idle_brightness_percent: 30,
+        power_saver_on_low_battery: true,
         allow_user_change: false,
         ...current,
         ...changes,
@@ -3778,16 +3793,17 @@ function PowerEditor({
         <EmptySetting onAdd={() => set({})} />
       ) : (
         <>
+          <h4 className="subsection">While somebody is signed in</h4>
           <div className="field-grid">
             <label className="field">
-              <span>Screen off on mains (minutes)</span>
+              <span>Screen off (minutes)</span>
               <input
                 type="number"
                 min={0}
                 value={current.screen_off_ac_minutes}
                 onChange={(e) => set({ screen_off_ac_minutes: Number(e.target.value) })}
               />
-              <small>{MINUTES_NEVER}</small>
+              <small>{MINUTES_NEVER}. GNOME blanks on one timer for both power sources.</small>
             </label>
             <label className="field">
               <span>Screen off on battery (minutes)</span>
@@ -3797,7 +3813,7 @@ function PowerEditor({
                 value={current.screen_off_battery_minutes}
                 onChange={(e) => set({ screen_off_battery_minutes: Number(e.target.value) })}
               />
-              <small>{MINUTES_NEVER}</small>
+              <small>Recorded; the mains value is the one the desktop reads.</small>
             </label>
             <label className="field">
               <span>Suspend on mains (minutes)</span>
@@ -3820,6 +3836,69 @@ function PowerEditor({
               <small>{MINUTES_NEVER}</small>
             </label>
             <label className="field">
+              <span>Dim the screen before it blanks</span>
+              <Select
+                value={current.dim_screen ? "yes" : "no"}
+                onChange={(e) => set({ dim_screen: e.target.value === "yes" })}
+              >
+                <option value="yes">Dims</option>
+                <option value="no">Stays at full brightness</option>
+              </Select>
+            </label>
+            <label className="field">
+              <span>Dimmed brightness (%)</span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={current.idle_brightness_percent}
+                onChange={(e) => set({ idle_brightness_percent: Number(e.target.value) })}
+              />
+            </label>
+            <label className="field">
+              <span>Power saver on a low battery</span>
+              <Select
+                value={current.power_saver_on_low_battery ? "yes" : "no"}
+                onChange={(e) => set({ power_saver_on_low_battery: e.target.value === "yes" })}
+              >
+                <option value="yes">Switches to power saver</option>
+                <option value="no">Stays as it is</option>
+              </Select>
+            </label>
+          </div>
+
+          <h4 className="subsection">At the login screen</h4>
+          <div className="field-grid">
+            <label className="field">
+              <span>Screen off (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.login_screen_screen_off_minutes}
+                onChange={(e) =>
+                  set({ login_screen_screen_off_minutes: Number(e.target.value) })
+                }
+              />
+              <small>{MINUTES_NEVER}</small>
+            </label>
+            <label className="field">
+              <span>Suspend (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.login_screen_suspend_minutes}
+                onChange={(e) => set({ login_screen_suspend_minutes: Number(e.target.value) })}
+              />
+              <small>
+                {MINUTES_NEVER}. The greeter reads its own database, where GNOME&rsquo;s own
+                default is twenty minutes.
+              </small>
+            </label>
+          </div>
+
+          <h4 className="subsection">The lid and the buttons</h4>
+          <div className="field-grid">
+            <label className="field">
               <span>Closing the lid</span>
               <Select
                 value={current.lid_close_action}
@@ -3830,6 +3909,33 @@ function PowerEditor({
                 <option value="lock">Locks the screen</option>
                 <option value="ignore">Does nothing</option>
               </Select>
+            </label>
+            <label className="field">
+              <span>Closing the lid on mains</span>
+              <Select
+                value={current.lid_close_action_external_power}
+                onChange={(e) => set({ lid_close_action_external_power: e.target.value })}
+              >
+                <option value="">Same as closing the lid</option>
+                <option value="suspend">Suspends</option>
+                <option value="hibernate">Hibernates</option>
+                <option value="lock">Locks the screen</option>
+                <option value="ignore">Does nothing</option>
+              </Select>
+            </label>
+            <label className="field">
+              <span>Closing the lid when docked</span>
+              <Select
+                value={current.lid_close_action_docked}
+                onChange={(e) => set({ lid_close_action_docked: e.target.value })}
+              >
+                <option value="">Same as closing the lid</option>
+                <option value="suspend">Suspends</option>
+                <option value="hibernate">Hibernates</option>
+                <option value="lock">Locks the screen</option>
+                <option value="ignore">Does nothing</option>
+              </Select>
+              <small>An external screen attached.</small>
             </label>
             <label className="field">
               <span>The power button</span>
@@ -3844,7 +3950,103 @@ function PowerEditor({
                 <option value="ignore">Does nothing</option>
               </Select>
             </label>
+            <label className="field">
+              <span>The sleep key</span>
+              <Select
+                value={current.suspend_key_action}
+                onChange={(e) => set({ suspend_key_action: e.target.value })}
+              >
+                <option value="suspend">Suspends</option>
+                <option value="hibernate">Hibernates</option>
+                <option value="lock">Locks the screen</option>
+                <option value="ignore">Does nothing</option>
+              </Select>
+            </label>
+            <label className="field">
+              <span>The hibernate key</span>
+              <Select
+                value={current.hibernate_key_action}
+                onChange={(e) => set({ hibernate_key_action: e.target.value })}
+              >
+                <option value="hibernate">Hibernates</option>
+                <option value="suspend">Suspends</option>
+                <option value="lock">Locks the screen</option>
+                <option value="ignore">Does nothing</option>
+              </Select>
+            </label>
           </div>
+
+          <h4 className="subsection">With nobody signed in</h4>
+          <div className="field-grid">
+            <label className="field">
+              <span>When the machine is idle, logind</span>
+              <Select
+                value={current.idle_action}
+                onChange={(e) => set({ idle_action: e.target.value })}
+              >
+                <option value="ignore">Does nothing</option>
+                <option value="lock">Locks every session</option>
+                <option value="suspend">Suspends</option>
+                <option value="hibernate">Hibernates</option>
+                <option value="poweroff">Shuts down</option>
+              </Select>
+              <small>Applies to a locked screen and an empty login screen alike.</small>
+            </label>
+            <label className="field">
+              <span>After (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={current.idle_action_minutes}
+                onChange={(e) => set({ idle_action_minutes: Number(e.target.value) })}
+              />
+              <small>{MINUTES_NEVER}, whatever the action says.</small>
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={!current.allow_suspend}
+              onChange={(e) => set({ allow_suspend: !e.target.checked })}
+            />
+            Never let this machine suspend, whatever asks it to
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={!current.allow_hibernate}
+              onChange={(e) => set({ allow_hibernate: !e.target.checked })}
+            />
+            Never let this machine hibernate, whatever asks it to
+          </label>
+
+          <h4 className="subsection">A nearly flat battery</h4>
+          <div className="field-grid">
+            <label className="field">
+              <span>At the critical level</span>
+              <Select
+                value={current.critical_battery_action}
+                onChange={(e) => set({ critical_battery_action: e.target.value })}
+              >
+                <option value="">Leave the machine&rsquo;s own setting alone</option>
+                <option value="hybrid_sleep">Hybrid sleep</option>
+                <option value="hibernate">Hibernates</option>
+                <option value="poweroff">Shuts down</option>
+              </Select>
+              <small>UPower has no &ldquo;do nothing&rdquo;.</small>
+            </label>
+            <label className="field">
+              <span>Critical level (%)</span>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={current.critical_battery_percent}
+                onChange={(e) => set({ critical_battery_percent: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+
           <label className="checkbox">
             <input
               type="checkbox"

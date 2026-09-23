@@ -166,6 +166,15 @@ var neverPruned = map[string]bool{
 	// Seen live: "removed:/etc/odm/tls/api-ca.pem success", then
 	// "read ca_cert: no such file or directory" on every poll.
 	"/etc/odm/tls/api-ca.pem": true,
+	// UPower's own configuration, which ODM only sets individual keys
+	// inside because UPower reads one file and has no drop-in directory.
+	// Deleting it would take the machine's whole battery policy with it.
+	"/etc/UPower/UPower.conf": true,
+	// And the copy taken before the first of those keys was changed, which
+	// is how clearing the setting puts the distribution's file back. It is
+	// written once and removed deliberately on restore, so every pass in
+	// between is a pass that did not write it.
+	"/var/lib/odm/UPower.conf.original": true,
 }
 
 // neverPrune reports whether a path is one of those.

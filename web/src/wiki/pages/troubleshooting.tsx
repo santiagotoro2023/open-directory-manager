@@ -242,6 +242,18 @@ export function Content() {
                 "Upgrade the agent.",
               ],
               [
+                "The machine sleeps at the login screen, or while locked, although Power and suspend says never",
+                <>
+                  The greeter reads its own dconf database, where GNOME&rsquo;s own default is to
+                  suspend after twenty minutes on mains, and <C key="a">systemd-logind</C> acts
+                  with no session at all. Set <strong>At the login screen &rarr; Suspend</strong>{" "}
+                  to 0 and leave <strong>When the machine is idle, logind</strong> doing nothing.
+                  For a machine that must never sleep whatever asks, tick{" "}
+                  <strong>Never let this machine suspend</strong> &mdash; that one is a refusal
+                  rather than a timer.
+                </>,
+              ],
+              [
                 "Applications take minutes to open and settings do not save",
                 <>
                   A roaming profile stored as a directory on SMB: dconf cannot rename its
