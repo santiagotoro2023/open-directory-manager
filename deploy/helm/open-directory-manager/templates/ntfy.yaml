@@ -1,0 +1,113 @@
+{{- if .Values.ntfy.enabled }}
+# Phone approvals: ntfy, from the control-plane image, presenting the
+# console's own certificate on the console's address (port {{ .Values.ntfy.port }}).
+# One replica: its subscriptions live in its own memory and database.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "odm.fullname" . }}-ntfy
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ntfy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "odm.selector" (dict "root" . "component" "ntfy") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "odm.selector" (dict "root" . "component" "ntfy") | nindent 8 }}
+        {{- include "odm.publicLabel" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.controlPlane.podSecurityContext | nindent 8 }}
+      containers:
+        - name: ntfy
+          image: {{ include "odm.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["ntfy"]
+          securityContext:
+            {{- toYaml .Values.controlPlane.securityContext | nindent 12 }}
+          env:
+            {{- include "odm.controlPlaneEnv" . | nindent 12 }}
+            - name: ODM_NTFY_DATA_DIR
+              value: /var/lib/odm-ntfy
+          ports:
+            - name: phone
+              containerPort: {{ .Values.ntfy.port }}
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: phone
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["curl", "-fsS", "http://127.0.0.1:8445/v1/health"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.ntfy.resources | nindent 12 }}
+          volumeMounts:
+            - name: shared
+              mountPath: /srv/odm-data
+            - name: data
+              mountPath: /var/lib/odm-ntfy
+            - name: run
+              mountPath: /run/odm
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: {{ include "odm.sharedClaim" . }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "odm.fullname" . }}-ntfy
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "odm.fullname" . }}-ntfy
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ntfy
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.ntfy.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.ntfy.storage }}
+---
+# Inside the cluster: where the control plane publishes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "odm.fullname" . }}-ntfy
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ntfy
+spec:
+  selector:
+    {{- include "odm.selector" (dict "root" . "component" "ntfy") | nindent 4 }}
+  ports:
+    - name: phone
+      port: {{ .Values.ntfy.port }}
+      targetPort: phone
+{{- end }}

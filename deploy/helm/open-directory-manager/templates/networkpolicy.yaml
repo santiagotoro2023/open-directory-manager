@@ -1,0 +1,48 @@
+{{- if .Values.networkPolicy.enabled }}
+# The control plane takes connections on the console port (browsers, agents,
+# the other replicas carrying a terminal across) and opens them to PostgreSQL,
+# the notification server, the domain's machines and DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "odm.fullname" . }}
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "odm.selector" (dict "root" . "component" "control-plane") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+      ports:
+        - port: console
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "odm.selector" (dict "root" . "component" "control-plane") | nindent 14 }}
+      ports:
+        - port: console
+{{- if .Values.database.bundled.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "odm.fullname" . }}-db
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "odm.selector" (dict "root" . "component" "database") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "odm.selector" (dict "root" . "component" "control-plane") | nindent 14 }}
+      ports:
+        - port: postgres
+{{- end }}
+{{- end }}

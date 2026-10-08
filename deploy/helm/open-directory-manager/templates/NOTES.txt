@@ -1,0 +1,26 @@
+Open Directory Manager {{ .Chart.AppVersion }} for {{ .Values.domain.realm | upper }}.
+
+  Console          https://{{ include "odm.consoleFqdn" . }}:{{ .Values.console.port }}/
+  Control plane    {{ if .Values.autoscaling.enabled }}{{ .Values.autoscaling.minReplicas }} to {{ .Values.autoscaling.maxReplicas }}{{ else }}{{ .Values.controlPlane.replicaCount }}{{ end }} replicas
+{{- range $i, $dc := .Values.domainControllers }}
+  Controller       {{ $dc.hostname | default $dc.node }}.{{ $.Values.domain.name | lower }} at {{ $dc.address }} (node {{ $dc.node }}){{ if eq $i 0 }}, provisions the domain{{ end }}
+{{- end }}
+{{- range .Values.memberServers }}
+  Member server    {{ .hostname | default .node }}.{{ $.Values.domain.name | lower }} at {{ .address }} (node {{ .node }})
+{{- end }}
+
+The first controller provisions the domain; the console starts as soon as it
+has (a few minutes). Follow it with:
+  kubectl logs -n {{ .Release.Namespace }} -f statefulset/{{ include "odm.fullname" . }}-dc0
+
+Sign in as Administrator. Its password:
+  kubectl get secret -n {{ .Release.Namespace }} {{ include "odm.adminSecret" . }} -o jsonpath='{.data.password}' | base64 -d; echo
+{{- if not .Values.console.address }}
+
+console.address is not set, so {{ include "odm.consoleFqdn" . }} is not in the domain's DNS
+yet. Find the Service's address and set it (helm upgrade --set console.address=...):
+  kubectl get svc -n {{ .Release.Namespace }} {{ include "odm.fullname" . }}
+{{- end }}
+
+Point the network's clients at the controllers for DNS ({{ include "odm.dcAddresses" . }}),
+then join machines with odm-client-install. docs/CONTAINERS.md has the rest.

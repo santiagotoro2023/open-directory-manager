@@ -1,0 +1,8 @@
+[Unit]
+Description=Open Directory Manager node sync (SYSVOL, console certificate, DHCP)
+After=odm-node-setup.service
+Requisite=odm-node-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/odm-node-sync

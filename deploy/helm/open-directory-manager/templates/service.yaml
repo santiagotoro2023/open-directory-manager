@@ -1,0 +1,40 @@
+# The console's one address: the API on {{ .Values.console.port }}, phone approvals on {{ .Values.ntfy.port }}.
+# One Service over both kinds of pod; each port only reaches the pods that
+# name it, so the console port never lands on the notification server.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "odm.fullname" . }}
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  {{- if or (eq .Values.service.type "LoadBalancer") (eq .Values.service.type "NodePort") }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  selector:
+    {{- include "odm.publicLabel" . | nindent 4 }}
+  ports:
+    - name: console
+      port: {{ .Values.console.port }}
+      targetPort: console
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePorts.console }}
+      nodePort: {{ .Values.service.nodePorts.console }}
+      {{- end }}
+    {{- if .Values.ntfy.enabled }}
+    - name: phone
+      port: {{ .Values.ntfy.port }}
+      targetPort: phone
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePorts.phone }}
+      nodePort: {{ .Values.service.nodePorts.phone }}
+      {{- end }}
+    {{- end }}

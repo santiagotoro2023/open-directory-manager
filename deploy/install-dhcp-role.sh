@@ -288,15 +288,51 @@ $GSS_BLOCK
 }
 JSON
 
+# A node container (deploy/docker/node, docs/CONTAINERS.md) is not where the
+# control plane runs: the control plane is another container, possibly on
+# another machine, so the loopback is the one address it can never reach this
+# on. There the Control Agent listens on the node's own address instead, over
+# TLS with a certificate made here, and the address, the credential and the
+# certificate are handed to the control plane (odm-node-sync kea).
+CA_HOST="127.0.0.1"
+CA_TLS=""
+if [[ -f /etc/odm/container-node ]]; then
+    NODE_ADDRESS="$( (. /etc/odm/node.env 2>/dev/null; printf '%s' "${ODM_NODE_ADDRESS:-}") )"
+    [[ -n "$NODE_ADDRESS" ]] ||
+        NODE_ADDRESS="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+    [[ -n "$NODE_ADDRESS" ]] || { echo "cannot tell which address this node serves on" >&2; exit 1; }
+    CA_HOST="$NODE_ADDRESS"
+    if [[ ! -s /etc/kea/odm-control.crt || ! -s /etc/kea/odm-control.key ]]; then
+        ( umask 077
+          openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes \
+              -keyout /etc/kea/odm-control.key -out /etc/kea/odm-control.crt \
+              -subj "/CN=$(hostname -f)" \
+              -addext "subjectAltName=DNS:$(hostname -f),IP:$NODE_ADDRESS" \
+              -addext "extendedKeyUsage=serverAuth" >/dev/null 2>&1 )
+    fi
+    chmod 0644 /etc/kea/odm-control.crt
+    chown "root:$KEA_USER" /etc/kea/odm-control.key
+    chmod 0640 /etc/kea/odm-control.key
+    CA_TLS=$(cat <<JSON
+    "trust-anchor": "/etc/kea/odm-control.crt",
+    "cert-file": "/etc/kea/odm-control.crt",
+    "key-file": "/etc/kea/odm-control.key",
+    "cert-required": false,
+JSON
+)
+fi
+
 echo "==> Writing /etc/kea/kea-ctrl-agent.conf"
 backup /etc/kea/kea-ctrl-agent.conf
 cat > /etc/kea/kea-ctrl-agent.conf <<JSON
-// Managed by Open Directory Manager. Bound to the loopback: ODM is the only
-// client, and the credential below is the second factor if that changes.
+// Managed by Open Directory Manager. Bound to the loopback on a host install:
+// ODM is the only client, and the credential below is the second factor if
+// that changes. In a node container, the node's address over TLS.
 {
   "Control-agent": {
-    "http-host": "127.0.0.1",
+    "http-host": "$CA_HOST",
     "http-port": $CA_PORT,
+$CA_TLS
     "authentication": {
       "type": "basic",
       "realm": "kea-control-agent",
@@ -389,6 +425,25 @@ odm_enable kea-dhcp4-server kea-dhcp-ddns-server kea-ctrl-agent
 # Agent. It printed these three lines and waited for somebody to paste them
 # into the secrets file, so the console said "The DHCP role is not installed"
 # on a machine where it plainly was.
+if [[ -f /etc/odm/container-node ]]; then
+    # The credential is in it: root's alone.
+    ( umask 077
+      { printf 'ODM_KEA_URL=https://%s:%s/\n' "$CA_HOST" "$CA_PORT"
+        printf 'ODM_KEA_USER=%s\n' "$CA_USER"
+        printf 'ODM_KEA_PASSWORD=%s\n' "$(cat "$CA_PASSWORD_FILE")"
+      } > /etc/kea/odm-control.env )
+    chmod 0600 /etc/kea/odm-control.env
+    echo "==> The control plane reaches this Control Agent at https://$CA_HOST:$CA_PORT/"
+    if [[ -x /usr/sbin/odm-node-sync ]] && /usr/sbin/odm-node-sync kea; then
+        echo "    handed to it on the shared volume; it restarts to pick them up"
+    fi
+    echo "    Without a shared volume, give the control plane these settings and"
+    echo "    /etc/kea/odm-control.crt from this node as ODM_KEA_CA_CERT:"
+    echo "      ODM_KEA_URL=https://$CA_HOST:$CA_PORT/"
+    echo "      ODM_KEA_USER=$CA_USER"
+    echo "      ODM_KEA_PASSWORD=(the contents of $CA_PASSWORD_FILE)"
+fi
+
 SECRETS="/etc/odm/odm.env"
 if [[ -f "$SECRETS" ]]; then
     echo "==> Recording the Control Agent credential in $SECRETS"

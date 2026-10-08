@@ -1,0 +1,659 @@
+# Open Directory Manager on Kubernetes without Helm: one file, edit and apply.
+#
+#   1. Edit the values marked CHANGE below: the passwords in the two Secrets,
+#      the controller's node name and address (StatefulSet ...-dc0, and the
+#      hostAliases of the control plane), and the console's address.
+#   2. kubectl apply -f deploy/kubernetes/open-directory-manager.yaml
+#   3. kubectl -n odm logs -f statefulset/odm-dc0        the domain being provisioned
+#   4. Point odm.<domain> at the Service's address; sign in as Administrator.
+#
+# Generated from the Helm chart (deploy/helm/open-directory-manager) by
+# deploy/kubernetes/generate.sh with deploy/kubernetes/values.yaml: the chart
+# is the easier way to change anything here, and adds controllers and member
+# servers by listing them. docs/CONTAINERS.md explains all of it.
+#
+# The namespace allows privileged pods: a domain controller is a server.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: odm
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: odm-open-directory-manager
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-directory-manager
+      app.kubernetes.io/instance: odm
+      app.kubernetes.io/component: control-plane
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: odm-open-directory-manager-admin
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    # Never deleted by helm uninstall: it is the domain Administrator's password
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  password: "CHANGE-Me-0dm-Administrator"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: odm-open-directory-manager-db
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  password: "CHANGE-me-database-password"
+  url: "postgresql://odm:CHANGE-me-database-password@odm-open-directory-manager-db:5432/odm"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: odm-open-directory-manager-ntfy
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: ntfy
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# The volume every replica and every machine of the domain shares (values.yaml,
+# sharedData). Kept by helm uninstall: the control plane's keytab and the
+# certificate authority's key are on it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: odm-open-directory-manager-shared
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteMany]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: odm-open-directory-manager-db
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: database
+spec:
+  selector:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/component: database
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# Inside the cluster: where the control plane publishes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: odm-open-directory-manager-ntfy
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: ntfy
+spec:
+  selector:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/component: ntfy
+  ports:
+    - name: phone
+      port: 8444
+      targetPort: phone
+---
+# The console's one address: the API on 8443, phone approvals on 8444.
+# One Service over both kinds of pod; each port only reaches the pods that
+# name it, so the console port never lands on the notification server.
+apiVersion: v1
+kind: Service
+metadata:
+  name: odm-open-directory-manager
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    open-directory-manager/public: "odm"
+  ports:
+    - name: console
+      port: 8443
+      targetPort: console
+      protocol: TCP
+    - name: phone
+      port: 8444
+      targetPort: phone
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odm-open-directory-manager
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: control-plane
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-directory-manager
+      app.kubernetes.io/instance: odm
+      app.kubernetes.io/component: control-plane
+  template:
+    metadata:
+      annotations:
+        checksum/settings: babab738f837c6da
+      labels:
+        app.kubernetes.io/name: open-directory-manager
+        app.kubernetes.io/instance: odm
+        app.kubernetes.io/component: control-plane
+        open-directory-manager/public: "odm"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # The controllers and servers by name: Kerberos and LDAP need names,
+      # and cluster DNS does not know the domain's.
+      hostAliases:
+        
+        - ip: "192.0.2.11"
+          hostnames:
+            - "dc1.corp.example.internal"
+            - "dc1"
+      initContainers:
+        # A network filesystem ignores fsGroup: the shared volume is made the
+        # control plane's once, here, and nothing else runs as root.
+        - name: shared-data
+          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.7
+          imagePullPolicy: IfNotPresent
+          # Where root may not chown (NFS with root_squash), make the export
+          # owned by 10001:10001 instead; this then changes nothing.
+          command: ["/bin/sh", "-c", "chown 10001:10001 /srv/odm-data; chmod 0750 /srv/odm-data; true"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, FOWNER]
+          volumeMounts:
+            - name: shared
+              mountPath: /srv/odm-data
+      containers:
+        - name: control-plane
+          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.7
+          imagePullPolicy: IfNotPresent
+          args: ["serve"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: ODM_REALM
+              value: "CORP.EXAMPLE.INTERNAL"
+            - name: ODM_DOMAIN
+              value: "corp.example.internal"
+            - name: ODM_DOMAIN_CONTROLLERS
+              value: "dc1.corp.example.internal"
+            - name: ODM_CONSOLE_URL
+              value: "https://odm.corp.example.internal:8443"
+            - name: ODM_PORT
+              value: "8443"
+            - name: ODM_NTFY_PORT
+              value: "8444"
+            - name: ODM_ADMIN_GROUP
+              value: "Domain Admins"
+            - name: ODM_RETENTION_DAYS
+              value: "180"
+            - name: ODM_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: odm-open-directory-manager-db
+                  key: url
+            # Every replica, by its own address, for the terminals it holds.
+            - name: ODM_REPLICA_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: ODM_NTFY_URL
+              value: "https://odm-open-directory-manager-ntfy:8444"
+          ports:
+            - name: console
+              containerPort: 8443
+              protocol: TCP
+          # Until the first controller has provisioned the domain and handed
+          # over the keytab, the control plane waits rather than listens.
+          startupProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: console
+              scheme: HTTPS
+            periodSeconds: 10
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: console
+              scheme: HTTPS
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: console
+              scheme: HTTPS
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+            - name: shared
+              mountPath: /srv/odm-data
+            - name: run
+              mountPath: /run/odm
+            - name: tmp
+              mountPath: /tmp
+            - name: vartmp
+              mountPath: /var/tmp
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: odm-open-directory-manager-shared
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        # Kerberos replay cache
+        - name: vartmp
+          emptyDir:
+            sizeLimit: 64Mi
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: open-directory-manager
+              app.kubernetes.io/instance: odm
+              app.kubernetes.io/component: control-plane
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: open-directory-manager
+              app.kubernetes.io/instance: odm
+              app.kubernetes.io/component: control-plane
+---
+# Phone approvals: ntfy, from the control-plane image, presenting the
+# console's own certificate on the console's address (port 8444).
+# One replica: its subscriptions live in its own memory and database.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odm-open-directory-manager-ntfy
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: ntfy
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-directory-manager
+      app.kubernetes.io/instance: odm
+      app.kubernetes.io/component: ntfy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-directory-manager
+        app.kubernetes.io/instance: odm
+        app.kubernetes.io/component: ntfy
+        open-directory-manager/public: "odm"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ntfy
+          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.7
+          imagePullPolicy: IfNotPresent
+          args: ["ntfy"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: ODM_REALM
+              value: "CORP.EXAMPLE.INTERNAL"
+            - name: ODM_DOMAIN
+              value: "corp.example.internal"
+            - name: ODM_DOMAIN_CONTROLLERS
+              value: "dc1.corp.example.internal"
+            - name: ODM_CONSOLE_URL
+              value: "https://odm.corp.example.internal:8443"
+            - name: ODM_PORT
+              value: "8443"
+            - name: ODM_NTFY_PORT
+              value: "8444"
+            - name: ODM_NTFY_DATA_DIR
+              value: /var/lib/odm-ntfy
+          ports:
+            - name: phone
+              containerPort: 8444
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: phone
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["curl", "-fsS", "http://127.0.0.1:8445/v1/health"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 20m
+              memory: 32Mi
+          volumeMounts:
+            - name: shared
+              mountPath: /srv/odm-data
+            - name: data
+              mountPath: /var/lib/odm-ntfy
+            - name: run
+              mountPath: /run/odm
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: odm-open-directory-manager-shared
+        - name: data
+          persistentVolumeClaim:
+            claimName: odm-open-directory-manager-ntfy
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+# The bundled PostgreSQL: one pod, data on a persistent volume that outlives the release
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: odm-open-directory-manager-db
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: database
+spec:
+  serviceName: odm-open-directory-manager-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-directory-manager
+      app.kubernetes.io/instance: odm
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-directory-manager
+        app.kubernetes.io/instance: odm
+        app.kubernetes.io/component: database
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_DB
+              value: odm
+            - name: POSTGRES_USER
+              value: odm
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: odm-open-directory-manager-db
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "odm", "-d", "odm"]
+            periodSeconds: 5
+          resources:
+            limits:
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+      volumes:
+        - name: run
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
+---
+# domain-controller on node dc1: dc1.corp.example.internal at 192.0.2.11
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: odm-open-directory-manager-dc0
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/component: node
+    open-directory-manager/machine: "dc1"
+spec:
+  serviceName: odm-open-directory-manager-dc0
+  replicas: 1
+  # A controller is never two pods at once, even for a moment.
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-directory-manager
+      app.kubernetes.io/instance: odm
+      app.kubernetes.io/component: node
+      open-directory-manager/machine: "dc1"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-directory-manager
+        app.kubernetes.io/instance: odm
+        app.kubernetes.io/component: node
+        open-directory-manager/machine: "dc1"
+    spec:
+      automountServiceAccountToken: false
+      # The node's own network and name: DNS, Kerberos, LDAP, SMB and DHCP
+      # are served on the node's address, as on any server.
+      hostNetwork: true
+      dnsPolicy: Default
+      nodeSelector:
+        kubernetes.io/hostname: "dc1"
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: machine
+          image: ghcr.io/santiagotoro2023/open-directory-manager-node:0.17.7
+          imagePullPolicy: IfNotPresent
+          # systemd as init, NT ACLs in extended attributes, roles that run
+          # network services: a server, with a server's privileges.
+          securityContext:
+            privileged: true
+          env:
+            - name: ODM_NODE_ROLE
+              value: "domain-controller"
+            - name: ODM_REALM
+              value: "CORP.EXAMPLE.INTERNAL"
+            - name: ODM_DOMAIN
+              value: "corp.example.internal"
+            - name: ODM_NODE_ADDRESS
+              value: "192.0.2.11"
+            - name: ODM_CONSOLE_FQDN
+              value: "odm.corp.example.internal"
+            - name: ODM_CONSOLE_PORT
+              value: "8443"
+            - name: ODM_CONSOLE_ADDRESS
+              value: "192.0.2.10"
+            - name: ODM_SYSVOL_MIRROR
+              value: "no"
+            - name: ODM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: odm-open-directory-manager-admin
+                  key: password
+          resources:
+            limits:
+              memory: 4Gi
+            requests:
+              cpu: 200m
+              memory: 512Mi
+          # systemd halts on SIGRTMIN+3, not on the SIGTERM Kubernetes sends:
+          # ask it to shut down, and give it the time to stop Samba cleanly.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "systemctl poweroff --no-block; sleep 110"]
+          volumeMounts:
+            - name: root
+              mountPath: /persist
+            - name: shared
+              mountPath: /srv/odm-data
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: odm-open-directory-manager-shared
+  volumeClaimTemplates:
+    - metadata:
+        name: root
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "odm-open-directory-manager-test"
+  labels:
+    app.kubernetes.io/name: open-directory-manager
+    app.kubernetes.io/instance: odm
+    app.kubernetes.io/version: "0.17.7"
+    app.kubernetes.io/managed-by: kubectl
+  annotations:

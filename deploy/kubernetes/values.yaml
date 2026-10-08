@@ -1,0 +1,16 @@
+# The values deploy/kubernetes/open-directory-manager.yaml is generated with.
+domain:
+  realm: CORP.EXAMPLE.INTERNAL
+  name: corp.example.internal
+  # CHANGE: the domain Administrator's password
+  adminPassword: CHANGE-Me-0dm-Administrator
+console:
+  # CHANGE: the Service's external address, put into DNS as odm.<domain>
+  address: 192.0.2.10
+database:
+  # CHANGE: the bundled PostgreSQL's password
+  password: CHANGE-me-database-password
+domainControllers:
+  # CHANGE: the Kubernetes node the controller runs on, and its address
+  - node: dc1
+    address: 192.0.2.11

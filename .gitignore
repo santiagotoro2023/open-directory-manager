@@ -4,6 +4,7 @@
 *.key
 *.crt
 odm.env
+.env
 secrets/
 !deploy/odm.env.example
 

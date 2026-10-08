@@ -1,0 +1,21 @@
+{{- if not .Values.sharedData.existingClaim }}
+# The volume every replica and every machine of the domain shares (values.yaml,
+# sharedData). Kept by helm uninstall: the control plane's keytab and the
+# certificate authority's key are on it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "odm.sharedClaim" . }}
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ .Values.sharedData.accessMode }}]
+  {{- with .Values.sharedData.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.sharedData.size }}
+{{- end }}

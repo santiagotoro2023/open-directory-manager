@@ -23,6 +23,10 @@ from .config import get_settings
 # installed control plane silently found nothing to apply.
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
+# Advisory lock keys, one per thing only one replica may do at a time.
+MIGRATION_LOCK = 0x4F444D01
+SCHEDULER_LOCK = 0x4F444D02
+
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migration (
     filename    text PRIMARY KEY,
@@ -61,25 +65,33 @@ async def migrate(pool: asyncpg.Pool) -> list[str]:
         raise RuntimeError(f"no migrations directory at {MIGRATIONS_DIR}")
     applied: list[str] = []
     async with pool.acquire() as conn:
-        await conn.execute(_BOOTSTRAP)
-        known = {
-            r["filename"]: r["sha256"] for r in await conn.fetch("SELECT * FROM schema_migration")
-        }
-        for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-            body = path.read_text(encoding="utf-8")
-            digest = hashlib.sha256(body.encode()).hexdigest()
-            if path.name in known:
-                if known[path.name] != digest:
-                    raise RuntimeError(f"{path.name} changed after being applied")
-                continue
-            async with conn.transaction():
-                await conn.execute(body)
-                await conn.execute(
-                    "INSERT INTO schema_migration (filename, sha256) VALUES ($1, $2)",
-                    path.name,
-                    digest,
-                )
-            applied.append(path.name)
+        # Replicas of the control plane start together and each migrates on
+        # start-up. One at a time: the second waits here, then finds nothing
+        # left to apply, instead of applying the same file and failing on it.
+        await conn.execute("SELECT pg_advisory_lock($1)", MIGRATION_LOCK)
+        try:
+            await conn.execute(_BOOTSTRAP)
+            known = {
+                r["filename"]: r["sha256"]
+                for r in await conn.fetch("SELECT * FROM schema_migration")
+            }
+            for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                body = path.read_text(encoding="utf-8")
+                digest = hashlib.sha256(body.encode()).hexdigest()
+                if path.name in known:
+                    if known[path.name] != digest:
+                        raise RuntimeError(f"{path.name} changed after being applied")
+                    continue
+                async with conn.transaction():
+                    await conn.execute(body)
+                    await conn.execute(
+                        "INSERT INTO schema_migration (filename, sha256) VALUES ($1, $2)",
+                        path.name,
+                        digest,
+                    )
+                applied.append(path.name)
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock($1)", MIGRATION_LOCK)
     return applied
 
 

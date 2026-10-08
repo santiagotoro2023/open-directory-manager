@@ -21,7 +21,7 @@ import (
 	"odm.example.org/client-join/join"
 )
 
-const version = "0.17.6"
+const version = "0.17.7"
 
 func main() {
 	flags := flag.NewFlagSet("odm-client-install", flag.ContinueOnError)
@@ -38,7 +38,7 @@ func main() {
 	caCert := flags.String("ca-cert", "",
 		"the console's certificate. Read from the domain's SYSVOL when omitted")
 	noAgent := flags.Bool("no-agent", false, "join without installing the policy agent")
-	keepName := flags.Bool("keep-hostname", false, "fail rather than rename this machine")
+	keepName := flags.Bool("keep-hostname", false, "never rename this machine: keep a short name that matches, refuse any other")
 	unattended := flags.Bool("unattended", false, "never prompt; fail instead")
 	leave := flags.Bool("leave", false, "leave the domain instead of joining it")
 	force := flags.Bool("force", false, "with --leave, disconnect locally even without a credential")
@@ -301,7 +301,8 @@ policy agent.
   --hostname        override this machine's name
   --ca-cert         the console's certificate. Read from the domain when omitted
   --no-agent        join without installing the policy agent
-  --keep-hostname   fail rather than rename this machine to its domain name
+  --keep-hostname   never rename this machine: a short name that matches is
+                    kept, any other is refused
   --unattended      never prompt; fail instead
   --dry-run         report what would happen and change nothing
   --root            write beneath this directory instead of /, for testing

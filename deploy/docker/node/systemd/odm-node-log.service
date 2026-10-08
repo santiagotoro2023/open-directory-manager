@@ -1,0 +1,15 @@
+[Unit]
+ConditionPathExists=/run/odm-console
+Description=The node's journal on the container's output (docker logs, kubectl logs)
+DefaultDependencies=no
+After=systemd-journald.service
+
+[Service]
+ExecStart=/bin/journalctl --follow --lines=0 --output=short-iso
+StandardOutput=file:/run/odm-console
+StandardError=file:/run/odm-console
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=sysinit.target

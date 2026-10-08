@@ -1,0 +1,178 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "odm.fullname" . }}
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: control-plane
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.controlPlane.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "odm.selector" (dict "root" . "component" "control-plane") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/settings: {{ dict "d" .Values.domain "c" .Values.console "db" .Values.database "x" .Values.controlPlane.extraEnv | toJson | sha256sum | trunc 16 }}
+        {{- with .Values.controlPlane.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "odm.selector" (dict "root" . "component" "control-plane") | nindent 8 }}
+        {{- include "odm.publicLabel" . | nindent 8 }}
+        {{- with .Values.controlPlane.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.controlPlane.podSecurityContext | nindent 8 }}
+      # The controllers and servers by name: Kerberos and LDAP need names,
+      # and cluster DNS does not know the domain's.
+      hostAliases:
+        {{- include "odm.hostAliases" . | nindent 8 }}
+      initContainers:
+        # A network filesystem ignores fsGroup: the shared volume is made the
+        # control plane's once, here, and nothing else runs as root.
+        - name: shared-data
+          image: {{ include "odm.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Where root may not chown (NFS with root_squash), make the export
+          # owned by 10001:10001 instead; this then changes nothing.
+          command: ["/bin/sh", "-c", "chown 10001:10001 /srv/odm-data; chmod 0750 /srv/odm-data; true"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, FOWNER]
+          volumeMounts:
+            - name: shared
+              mountPath: /srv/odm-data
+      containers:
+        - name: control-plane
+          image: {{ include "odm.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          securityContext:
+            {{- toYaml .Values.controlPlane.securityContext | nindent 12 }}
+          env:
+            {{- include "odm.controlPlaneEnv" . | nindent 12 }}
+            - name: ODM_ADMIN_GROUP
+              value: {{ .Values.domain.adminGroup | quote }}
+            - name: ODM_RETENTION_DAYS
+              value: {{ .Values.domain.retentionDays | quote }}
+            - name: ODM_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "odm.dbSecret" . }}
+                  key: {{ ternary .Values.database.existingSecretKey "url" (not (empty .Values.database.existingSecret)) }}
+            # Every replica, by its own address, for the terminals it holds.
+            - name: ODM_REPLICA_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- if .Values.ntfy.enabled }}
+            - name: ODM_NTFY_URL
+              value: {{ printf "https://%s-ntfy:%v" (include "odm.fullname" .) .Values.ntfy.port | quote }}
+            {{- end }}
+            {{- if .Values.domain.sysvolMirror }}
+            - name: ODM_SYSVOL_PATH
+              value: {{ printf "/srv/odm-data/sysvol/%s/Policies" (.Values.domain.name | lower) | quote }}
+            {{- end }}
+            {{- with .Values.controlPlane.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: console
+              containerPort: {{ .Values.console.port }}
+              protocol: TCP
+          # Until the first controller has provisioned the domain and handed
+          # over the keytab, the control plane waits rather than listens.
+          startupProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: console
+              scheme: HTTPS
+            periodSeconds: 10
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: console
+              scheme: HTTPS
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: console
+              scheme: HTTPS
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.controlPlane.resources | nindent 12 }}
+          volumeMounts:
+            - name: shared
+              mountPath: /srv/odm-data
+            - name: run
+              mountPath: /run/odm
+            - name: tmp
+              mountPath: /tmp
+            - name: vartmp
+              mountPath: /var/tmp
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: {{ include "odm.sharedClaim" . }}
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        # Kerberos replay cache
+        - name: vartmp
+          emptyDir:
+            sizeLimit: 64Mi
+      {{- if .Values.controlPlane.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.controlPlane.topologySpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.controlPlane.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "odm.selector" (dict "root" . "component" "control-plane") | nindent 14 }}
+        - maxSkew: {{ .Values.controlPlane.topologySpread.maxSkew }}
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "odm.selector" (dict "root" . "component" "control-plane") | nindent 14 }}
+      {{- end }}
+      {{- with .Values.controlPlane.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlPlane.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controlPlane.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# What a node container keeps in step with the rest of the domain, every few
+# minutes (odm-node-sync.timer) and whenever setup asks.
+#
+#   sysvol    on a controller that joined another: copy SYSVOL from the
+#             controller it joined. Samba replicates the directory between
+#             controllers but not SYSVOL, so a policy object, a logon script
+#             or the console's trust anchor that exists on one controller
+#             would otherwise be missing on every other — and a machine that
+#             asks the wrong one cannot join.
+#   console   on a controller with the shared volume: when the console's
+#             certificate there changes, publish it into SYSVOL, the same as
+#             odm-apply-console-certificate does on a host install.
+#   mirror    on the first controller, with ODM_SYSVOL_MIRROR=yes: put the
+#             policy folders the control plane writes on the shared volume
+#             (ODM_SYSVOL_PATH) into the real SYSVOL, for GPMC and RSAT.
+#   kea       on a node with the DHCP role: hand the Control Agent's address
+#             and credential to the control plane on the shared volume.
+#
+# With no argument, all of them that apply here.
+
+set -uo pipefail
+
+[[ -r /etc/odm/node.env ]] && . /etc/odm/node.env
+
+SHARED="${ODM_SHARED_DIR:-/srv/odm-data}"
+STATE="/var/lib/odm/node"
+REALM="${ODM_REALM^^}"
+DOMAIN="${ODM_DOMAIN:-${REALM,,}}"
+DOMAIN="${DOMAIN,,}"
+SYSVOL="/var/lib/samba/sysvol"
+install -d -m 0750 "$STATE"
+
+log() { printf 'odm-node-sync: %s\n' "$*"; }
+is_controller() { [[ -f /var/lib/samba/private/sam.ldb ]]; }
+shared() { mountpoint -q "$SHARED" 2>/dev/null; }
+
+sync_sysvol() {
+    is_controller || return 0
+    [[ -n "${ODM_DC_JOIN:-}" ]] || return 0
+    local source="$ODM_DC_JOIN" work
+    [[ "$source" == *.* ]] || source="$source.$DOMAIN"
+    work="$(mktemp -d)"
+    # As this controller's own machine account: a controller may read SYSVOL.
+    if ! smbclient "//$source/sysvol" -P --use-kerberos=required \
+            -c "prompt OFF; recurse ON; lcd $work; mget $DOMAIN" >/dev/null 2>&1; then
+        rm -rf "$work"
+        log "could not copy SYSVOL from $source"
+        return 1
+    fi
+    if [[ -d "$work/$DOMAIN" ]]; then
+        rsync -a --delete "$work/$DOMAIN/" "$SYSVOL/$DOMAIN/"
+        samba-tool ntacl sysvolreset >/dev/null 2>&1 || log "sysvolreset reported a problem"
+    fi
+    rm -rf "$work"
+}
+
+publish_console() {
+    is_controller || return 0
+    shared || return 0
+    local cert="$SHARED/tls/api.crt" seen sum
+    [[ -s "$cert" ]] || return 0
+    sum="$(sha256sum "$cert" "$SHARED/ca/ca-cert.pem" 2>/dev/null | sha256sum | cut -d' ' -f1)"
+    seen="$(cat "$STATE/console-published" 2>/dev/null || true)"
+    [[ "$sum" == "$seen" ]] && return 0
+    if ODM_CA_DIR="$SHARED/ca" /usr/lib/odm/roles/publish-console-certificate.sh "$cert" >/dev/null; then
+        # This machine's own agent trusts what every other machine does: the
+        # anchor just published (the domain's root, once it signs the console).
+        local published="$SYSVOL/$DOMAIN/odm/api-ca.pem"
+        [[ -s "$published" ]] && install -m 0644 "$published" /etc/odm/tls/api-ca.pem
+        printf '%s\n' "$sum" > "$STATE/console-published"
+        log "published the console certificate into SYSVOL"
+    fi
+}
+
+# Folders are added and updated; a folder is removed only if it came from
+# here, so a policy object created in GPMC is never touched.
+mirror_sysvol() {
+    is_controller || return 0
+    shared || return 0
+    [[ "${ODM_SYSVOL_MIRROR:-no}" == "yes" ]] || return 0
+    local source="$SHARED/sysvol/$DOMAIN/Policies" target="$SYSVOL/$DOMAIN/Policies"
+    local manifest="$STATE/sysvol-mirror.list" current guid changed=no
+    [[ -d "$source" ]] || return 0
+    current="$(find "$source" -mindepth 1 -maxdepth 1 -type d -name '{*}' -printf '%f\n' | sort)"
+    for guid in $current; do
+        if ! diff -rq "$source/$guid" "$target/$guid" >/dev/null 2>&1; then
+            # Content only: ownership is the controller's, set by sysvolreset.
+            rsync -rt --no-owner --no-group "$source/$guid/" "$target/$guid/"
+            changed=yes
+        fi
+    done
+    if [[ -s "$manifest" ]]; then
+        while read -r guid; do
+            [[ "$guid" =~ ^\{[0-9A-Fa-f-]{36}\}$ ]] || continue
+            if ! grep -qxF "$guid" <<<"$current" && [[ -d "$target/$guid" ]]; then
+                rm -rf "${target:?}/$guid"
+                changed=yes
+            fi
+        done < "$manifest"
+    fi
+    printf '%s\n' "$current" > "$manifest"
+    if [[ "$changed" == yes ]]; then
+        samba-tool ntacl sysvolreset >/dev/null 2>&1 || log "sysvolreset reported a problem"
+        log "SYSVOL mirror updated"
+    fi
+}
+
+publish_kea() {
+    shared || return 0
+    local settings="/etc/kea/odm-control.env"
+    [[ -s "$settings" ]] || return 0
+    install -d -m 0750 "$SHARED/secrets"
+    if ! cmp -s "$settings" "$SHARED/secrets/kea.env" 2>/dev/null; then
+        install -m 0640 -o root -g odm "$settings" "$SHARED/secrets/kea.env"
+        [[ -s /etc/kea/odm-control.crt ]] &&
+            install -m 0644 /etc/kea/odm-control.crt "$SHARED/secrets/kea-ca.pem"
+        log "the DHCP Control Agent's address is on the shared volume for the control plane"
+    fi
+}
+
+case "${1:-all}" in
+    sysvol) sync_sysvol ;;
+    console) publish_console ;;
+    mirror) mirror_sysvol ;;
+    kea) publish_kea ;;
+    all)
+        sync_sysvol
+        publish_console
+        mirror_sysvol
+        publish_kea
+        ;;
+    *) echo "usage: odm-node-sync [sysvol|console|mirror|kea]" >&2; exit 2 ;;
+esac
+exit 0

@@ -1,0 +1,20 @@
+[Unit]
+Description=Open Directory Manager node setup (provision, join, agent)
+Documentation=https://github.com/santiagotoro2023/open-directory-manager/blob/main/docs/CONTAINERS.md
+After=basic.target dbus.service
+Wants=dbus.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/odm-node-setup
+# Waiting on another controller, or on the control plane's certificate, is
+# not a failure to give up on: try again until it works.
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=infinity
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

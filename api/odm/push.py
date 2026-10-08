@@ -127,7 +127,17 @@ def _client(settings: Settings) -> httpx.Client:
         raise PushUnavailable("phone approvals are not set up (ODM_NTFY_URL is unset)")
     verify: Any = str(settings.ntfy_ca_cert) if settings.ntfy_ca_cert else True
     headers = {"Authorization": f"Bearer {settings.ntfy_token}"}
-    return httpx.Client(timeout=TIMEOUT, headers=headers, verify=verify)
+    hooks: dict[str, list[Any]] = {}
+    if settings.ntfy_tls_server_name:
+        # Reached by a container's name, presenting the console's certificate:
+        # checked against the console's name instead, which it does carry.
+        name = settings.ntfy_tls_server_name
+
+        def server_name(request: httpx.Request) -> None:
+            request.extensions["sni_hostname"] = name
+
+        hooks["request"] = [server_name]
+    return httpx.Client(timeout=TIMEOUT, headers=headers, verify=verify, event_hooks=hooks)
 
 
 def publish(

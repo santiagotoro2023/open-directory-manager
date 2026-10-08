@@ -1,0 +1,139 @@
+{{- $root := . }}
+{{- $machines := include "odm.machines" . | fromJsonArray }}
+{{- $first := first .Values.domainControllers | default dict }}
+{{- if not $first.node }}
+{{- fail "domainControllers needs at least one entry: the controller that provisions the domain" }}
+{{- end }}
+{{- range $machines }}
+{{- $name := printf "%s-%s%d" (include "odm.fullname" $root) .kind (int .index) }}
+{{- if not .address }}
+{{- fail (printf "%s (node %s) needs an address" $name .node) }}
+{{- end }}
+---
+# {{ .role }} on node {{ .node }}: {{ .hostname }}.{{ $root.Values.domain.name | lower }} at {{ .address }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "odm.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: node
+    open-directory-manager/machine: {{ .hostname | lower | quote }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  # A controller is never two pods at once, even for a moment.
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "odm.selector" (dict "root" $root "component" "node") | nindent 6 }}
+      open-directory-manager/machine: {{ .hostname | lower | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "odm.selector" (dict "root" $root "component" "node") | nindent 8 }}
+        open-directory-manager/machine: {{ .hostname | lower | quote }}
+    spec:
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      # The node's own network and name: DNS, Kerberos, LDAP, SMB and DHCP
+      # are served on the node's address, as on any server.
+      hostNetwork: true
+      dnsPolicy: Default
+      nodeSelector:
+        kubernetes.io/hostname: {{ .node | quote }}
+      {{- with $root.Values.nodes.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $root.Values.nodes.terminationGracePeriodSeconds }}
+      containers:
+        - name: machine
+          image: {{ include "odm.nodeImage" $root }}
+          imagePullPolicy: {{ $root.Values.nodeImage.pullPolicy }}
+          # systemd as init, NT ACLs in extended attributes, roles that run
+          # network services: a server, with a server's privileges.
+          securityContext:
+            privileged: true
+          env:
+            - name: ODM_NODE_ROLE
+              value: {{ .role | quote }}
+            - name: ODM_REALM
+              value: {{ $root.Values.domain.realm | upper | quote }}
+            - name: ODM_DOMAIN
+              value: {{ $root.Values.domain.name | lower | quote }}
+            {{- with $root.Values.domain.netbios }}
+            - name: ODM_NETBIOS
+              value: {{ . | quote }}
+            {{- end }}
+            - name: ODM_NODE_ADDRESS
+              value: {{ .address | quote }}
+            - name: ODM_CONSOLE_FQDN
+              value: {{ include "odm.consoleFqdn" $root | quote }}
+            - name: ODM_CONSOLE_PORT
+              value: {{ $root.Values.console.port | quote }}
+            {{- with $root.Values.console.address }}
+            - name: ODM_CONSOLE_ADDRESS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $root.Values.domain.dnsForwarder }}
+            - name: ODM_DNS_FORWARDER
+              value: {{ . | quote }}
+            {{- end }}
+            - name: ODM_SYSVOL_MIRROR
+              value: {{ ternary "yes" "no" (and $root.Values.domain.sysvolMirror (eq .kind "dc") (eq (int .index) 0)) | quote }}
+            {{- if or (ne .kind "dc") (ne (int .index) 0) }}
+            # Not the first controller: the domain is found through the ones before it.
+            - name: ODM_DNS_SERVERS
+              value: {{ include "odm.dcAddresses" $root | quote }}
+            {{- end }}
+            {{- if and (eq .kind "dc") (ne (int .index) 0) }}
+            - name: ODM_DC_JOIN
+              value: {{ $first.hostname | default $first.node | lower | quote }}
+            {{- end }}
+            - name: ODM_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "odm.adminSecret" $root }}
+                  key: password
+            {{- if and (eq .kind "srv") $root.Values.nodes.joinToken }}
+            - name: ODM_JOIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "odm.fullname" $root }}-join
+                  key: token
+            {{- end }}
+          resources:
+            {{- toYaml $root.Values.nodes.resources | nindent 12 }}
+          # systemd halts on SIGRTMIN+3, not on the SIGTERM Kubernetes sends:
+          # ask it to shut down, and give it the time to stop Samba cleanly.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "systemctl poweroff --no-block; sleep {{ sub $root.Values.nodes.terminationGracePeriodSeconds 10 }}"]
+          volumeMounts:
+            - name: root
+              mountPath: /persist
+            - name: shared
+              mountPath: /srv/odm-data
+      volumes:
+        - name: shared
+          persistentVolumeClaim:
+            claimName: {{ include "odm.sharedClaim" $root }}
+  volumeClaimTemplates:
+    - metadata:
+        name: root
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $root.Values.nodes.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $root.Values.nodes.storage }}
+{{- end }}

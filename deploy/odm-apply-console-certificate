@@ -17,6 +17,24 @@ SERVICE_GROUP="$(systemctl show -p Group --value "$SERVICE" 2>/dev/null || true)
 [[ -n "$SERVICE_GROUP" ]] || SERVICE_GROUP="odm"
 
 [[ $EUID -eq 0 ]] || { echo "must run as root" >&2; exit 1; }
+
+# In containers (docs/CONTAINERS.md) the control plane is not on this machine:
+# it has installed the certificate itself, on the volume it shares with this
+# controller, and restarted on it. What is left is this controller's part —
+# publishing it into SYSVOL for the machines that verify the console with it.
+if [[ -f /etc/odm/container-node ]]; then
+    SHARED="/srv/odm-data"
+    [[ -s "$SHARED/tls/api.crt" ]] || {
+        echo "no console certificate on the shared volume at $SHARED/tls" >&2; exit 1
+    }
+    if [[ -x /usr/sbin/odm-node-sync ]]; then
+        /usr/sbin/odm-node-sync console
+    else
+        ODM_CA_DIR="$SHARED/ca" "$(dirname "$0")/publish-console-certificate.sh" "$SHARED/tls/api.crt"
+    fi
+    echo "published the console certificate into SYSVOL"
+    exit 0
+fi
 [[ -f "$STAGING/console.crt" && -f "$STAGING/console.key" ]] || {
     echo "no staged certificate to install" >&2; exit 1
 }

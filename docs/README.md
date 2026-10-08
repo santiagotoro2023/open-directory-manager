@@ -9,6 +9,7 @@ repository itself.
 |---|---|
 | [../CLAUDE.md](../CLAUDE.md) | Authoritative build specification |
 | [../deploy/README.md](../deploy/README.md) | Bring-up: domain controller, database, API, UI |
+| [CONTAINERS.md](CONTAINERS.md) | Docker, Docker Compose, Kubernetes and Helm: images, topology, every feature in containers |
 | [../api/README.md](../api/README.md) | Control-plane API internals and endpoints |
 | [../agent/README.md](../agent/README.md) | Policy agent |
 | [../client-join/README.md](../client-join/README.md) | Domain-join CLI |

@@ -1,0 +1,9 @@
+[Unit]
+Description=Keep this node in step with the rest of the domain
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=3min
+
+[Install]
+WantedBy=timers.target
