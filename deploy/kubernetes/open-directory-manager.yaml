@@ -27,7 +27,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
 spec:
   maxUnavailable: 1
@@ -44,7 +44,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
   annotations:
     # Never deleted by helm uninstall: it is the domain Administrator's password
@@ -60,7 +60,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
   annotations:
     helm.sh/resource-policy: keep
@@ -76,7 +76,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: ntfy
 spec:
@@ -95,7 +95,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
   annotations:
     helm.sh/resource-policy: keep
@@ -112,7 +112,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: database
 spec:
@@ -133,7 +133,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: ntfy
 spec:
@@ -156,7 +156,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
 spec:
   type: LoadBalancer
@@ -180,7 +180,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: control-plane
 spec:
@@ -226,7 +226,7 @@ spec:
         # A network filesystem ignores fsGroup: the shared volume is made the
         # control plane's once, here, and nothing else runs as root.
         - name: shared-data
-          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.6
+          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.7
           imagePullPolicy: IfNotPresent
           # Where root may not chown (NFS with root_squash), make the export
           # owned by 10001:10001 instead; this then changes nothing.
@@ -244,7 +244,7 @@ spec:
               mountPath: /srv/odm-data
       containers:
         - name: control-plane
-          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.6
+          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.7
           imagePullPolicy: IfNotPresent
           args: ["serve"]
           securityContext:
@@ -366,7 +366,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: ntfy
 spec:
@@ -396,7 +396,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ntfy
-          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.6
+          image: ghcr.io/santiagotoro2023/open-directory-manager:0.17.7
           imagePullPolicy: IfNotPresent
           args: ["ntfy"]
           securityContext:
@@ -471,7 +471,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: database
 spec:
@@ -554,7 +554,7 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/component: node
     open-directory-manager/machine: "dc1"
@@ -589,7 +589,7 @@ spec:
       terminationGracePeriodSeconds: 120
       containers:
         - name: machine
-          image: ghcr.io/santiagotoro2023/open-directory-manager-node:0.17.6
+          image: ghcr.io/santiagotoro2023/open-directory-manager-node:0.17.7
           imagePullPolicy: IfNotPresent
           # systemd as init, NT ACLs in extended attributes, roles that run
           # network services: a server, with a server's privileges.
@@ -654,6 +654,6 @@ metadata:
   labels:
     app.kubernetes.io/name: open-directory-manager
     app.kubernetes.io/instance: odm
-    app.kubernetes.io/version: "0.17.6"
+    app.kubernetes.io/version: "0.17.7"
     app.kubernetes.io/managed-by: kubectl
   annotations:

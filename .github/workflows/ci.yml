@@ -405,6 +405,7 @@ jobs:
           # "v0.8.0" and one given "0.8.0" produce one tag rather than
           # v0.8.0 and vv0.8.0.
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: odm-client-deb
@@ -450,3 +451,14 @@ jobs:
             opens the app straight onto the subscription and asks once whether
             to trust the server. Signed with one key across releases, so it
             updates in place.
+
+            The domain itself can also run from containers — Docker, Docker
+            Compose, Kubernetes or Helm — with the images and chart of this
+            same version in the GitHub Container Registry
+            (docs/CONTAINERS.md):
+
+            ```
+            ghcr.io/${{ github.repository_owner }}/open-directory-manager:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/open-directory-manager-node:${{ steps.version.outputs.version }}
+            helm install odm oci://ghcr.io/${{ github.repository_owner }}/charts/open-directory-manager --version ${{ steps.version.outputs.version }}
+            ```
