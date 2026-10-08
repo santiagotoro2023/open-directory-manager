@@ -35,7 +35,7 @@ COPY branding/ /src/branding/
 RUN npm run build
 
 # ----------------------------------------------------------- agent and join --
-FROM golang:1.25-bookworm AS binaries
+FROM golang:1.27.2-bookworm AS binaries
 RUN --mount=type=secret,id=build_ca,required=false \
     if [ -s /run/secrets/build_ca ]; then \
       cp /run/secrets/build_ca /usr/local/share/ca-certificates/build-ca.crt && update-ca-certificates >/dev/null; \
