@@ -1,0 +1,123 @@
+# Open Directory Manager with Docker Compose: a whole domain on one host.
+#
+#   cp deploy/compose/.env.example .env     then fill it in
+#   docker compose up -d                    then open https://odm.<your domain>:8443
+#
+# Four containers:
+#   dc1    the domain controller: Samba AD (directory, Kerberos, DNS, SYSVOL)
+#          and the ODM agent, on the host's own network — it is the domain's
+#          DNS server and KDC, at this host's address. Roles installed on it
+#          from the console (DHCP, file shares, print, time, ...) run here too.
+#   odm    the control plane: API and console, https on port 8443
+#   ntfy   phone approvals, https on port 8444
+#   db     PostgreSQL
+#
+# More controllers and role servers, on other hosts: deploy/compose/node/.
+# Everything about running ODM in containers: docs/CONTAINERS.md.
+#
+# The images come from the GitHub Container Registry. To build them from this
+# checkout instead: docker compose build
+name: odm
+
+x-control-plane: &control-plane
+  image: ghcr.io/santiagotoro2023/open-directory-manager:${ODM_VERSION:-latest}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp
+    - /var/tmp
+    - /run/odm:uid=10001,gid=10001,mode=0755
+  volumes:
+    # Shared by every control-plane container and by the controller: the
+    # console certificate, the control plane's keytab, the certificate
+    # authority, uploaded packages, backups.
+    - odm-data:/srv/odm-data
+  # The domain's own DNS, so every machine in it resolves by name; Docker's
+  # resolver still answers for db and ntfy.
+  dns:
+    - ${ODM_HOST_ADDRESS:?set ODM_HOST_ADDRESS in .env}
+  environment: &control-plane-environment
+    ODM_REALM: ${ODM_REALM:?set ODM_REALM in .env}
+    ODM_DOMAIN_CONTROLLERS: ${ODM_DC_NAME:-dc1}
+    ODM_ADMIN_GROUP: ${ODM_ADMIN_GROUP:-Domain Admins}
+    ODM_CONSOLE_URL: https://${ODM_CONSOLE_NAME:-odm}.${ODM_DOMAIN:?set ODM_DOMAIN in .env}:8443
+    ODM_DATABASE_URL: postgresql://odm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/odm
+    ODM_NTFY_URL: https://ntfy:8444
+    # Off unless asked for, as on a host install (docs/CONTAINERS.md, "SYSVOL mirror").
+    ODM_SYSVOL_PATH: ${ODM_SYSVOL_PATH:-}
+    ODM_RETENTION_DAYS: ${ODM_RETENTION_DAYS:-180}
+
+services:
+  dc1:
+    image: ghcr.io/santiagotoro2023/open-directory-manager-node:${ODM_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: deploy/docker/node/Dockerfile
+    hostname: ${ODM_DC_NAME:-dc1}
+    # A domain controller is its network's DNS server and KDC, at this host's
+    # address; a DHCP server installed here has to hear broadcasts.
+    network_mode: host
+    # systemd as init, Samba's NT ACLs in extended attributes, roles that
+    # install kernel-facing services: this container is a server, not an app.
+    privileged: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      ODM_NODE_ROLE: domain-controller
+      ODM_REALM: ${ODM_REALM}
+      ODM_NETBIOS: ${ODM_NETBIOS:-}
+      ODM_NODE_ADDRESS: ${ODM_HOST_ADDRESS}
+      ODM_CONSOLE_FQDN: ${ODM_CONSOLE_NAME:-odm}.${ODM_DOMAIN}
+      ODM_CONSOLE_ADDRESS: ${ODM_HOST_ADDRESS}
+      ODM_DNS_FORWARDER: ${ODM_DNS_FORWARDER:-}
+      ODM_SYSVOL_MIRROR: ${ODM_SYSVOL_MIRROR:-no}
+      ODM_ADMIN_PASSWORD: ${ODM_ADMIN_PASSWORD:?set ODM_ADMIN_PASSWORD in .env}
+    volumes:
+      # The controller's whole root filesystem: the directory, SYSVOL, and
+      # whatever roles install. Back it up (docs/CONTAINERS.md, "Backups").
+      - dc1:/persist
+      - odm-data:/srv/odm-data
+
+  odm:
+    <<: *control-plane
+    build: .
+    command: ["serve"]
+    ports:
+      - "8443:8443"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  ntfy:
+    <<: *control-plane
+    command: ["ntfy"]
+    ports:
+      - "8444:8444"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8445/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: odm
+      POSTGRES_USER: odm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U odm -d odm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db:
+  odm-data:
+  dc1:

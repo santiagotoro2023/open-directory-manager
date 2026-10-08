@@ -394,7 +394,8 @@ jobs:
             VERSION="${RELEASE_VERSION#v}"
           fi
           for file in api/pyproject.toml agent/main.go web/package.json \
-                      client-join/cmd/odm-client-install/main.go; do
+                      client-join/cmd/odm-client-install/main.go \
+                      deploy/helm/open-directory-manager/Chart.yaml; do
             grep -q "\"$VERSION\"" "$file" || {
               echo "$file does not say $VERSION; bump the version first" >&2
               exit 1

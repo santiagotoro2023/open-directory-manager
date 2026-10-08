@@ -553,3 +553,63 @@ def stage_console_certificate(settings, certificate_pem: str, private_key_pem: s
     cert_file.chmod(0o644)
 
 
+
+
+def install_staged_console_certificate(settings) -> None:
+    """Put the staged pair where the console reads it, in containers.
+
+    On a host install deploy/odm-apply-console-certificate does this as root,
+    asked by the agent, because the sandboxed service cannot write /etc. A
+    container has no host for an agent to do it on: the control plane's own
+    certificate directory is on the volume it shares with its other replicas,
+    and it may write there. The checks are the helper's — a pair that does not
+    belong together, or has already expired, would replace a working console
+    with none — and so is keeping the previous pair beside the new one.
+    Every replica's entrypoint sees the new certificate and restarts on it.
+    """
+    from datetime import UTC, datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+
+    staging = Path(STAGING_DIR)
+    cert_file, key_file = staging / "console.crt", staging / "console.key"
+    if not cert_file.is_file() or not key_file.is_file():
+        raise RoleError("no staged certificate to install")
+    cert_pem = cert_file.read_bytes()
+    key_pem = key_file.read_bytes()
+    try:
+        certificate = x509.load_pem_x509_certificate(cert_pem)
+        key = serialization.load_pem_private_key(key_pem, password=None)
+    except (ValueError, TypeError) as exc:
+        raise RoleError(f"the staged certificate cannot be read: {exc}") from exc
+    public = serialization.PublicFormat.SubjectPublicKeyInfo
+    encoding = serialization.Encoding.DER
+    if certificate.public_key().public_bytes(encoding, public) != key.public_key().public_bytes(
+        encoding, public
+    ):
+        raise RoleError("the staged certificate and key do not match")
+    if certificate.not_valid_after_utc <= datetime.now(UTC):
+        raise RoleError("the staged certificate is already expired")
+
+    tls = Path(settings.tls_dir)
+    tls.mkdir(parents=True, exist_ok=True)
+    for name in ("api.crt", "api.key"):
+        current = tls / name
+        if current.is_file():
+            previous = tls / f"{name}.previous"
+            previous.write_bytes(current.read_bytes())
+            previous.chmod(0o644 if name.endswith(".crt") else 0o600)
+    # The key first and the certificate last: the certificate changing is
+    # what the replicas watch for, and by then its key is already in place.
+    new_key = tls / "api.key.new"
+    new_key.touch(mode=0o600, exist_ok=True)
+    new_key.chmod(0o600)
+    new_key.write_bytes(key_pem)
+    new_key.replace(tls / "api.key")
+    new_cert = tls / "api.crt.new"
+    new_cert.write_bytes(cert_pem)
+    new_cert.chmod(0o644)
+    new_cert.replace(tls / "api.crt")
+    key_file.unlink(missing_ok=True)
+    cert_file.unlink(missing_ok=True)

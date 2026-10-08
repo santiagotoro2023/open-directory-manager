@@ -9,9 +9,11 @@ environment wins, so a secrets manager can inject values instead.
 from __future__ import annotations
 
 import os
+import socket
 import stat
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -172,6 +174,33 @@ class Settings(BaseSettings):
     # --- Recycle bin (CLAUDE.md §3.9 / §10) ---
     retention_days: int = 180
 
+    # --- Deployment shape ---
+    # "host" is the systemd install deploy/setup.sh makes: the control plane
+    # beside its controller on one machine. "container" is the Docker and
+    # Kubernetes images (docs/CONTAINERS.md): the control plane in its own
+    # container, the controller in another, possibly on another machine.
+    deployment: Literal["host", "container"] = "host"
+    # The machine whose agent does what has to happen on a domain controller
+    # rather than in the control plane: the domain backup, publishing the
+    # console's certificate into SYSVOL. On a host install that is the
+    # machine the control plane runs on, which is the default; in containers
+    # the control plane's own host name is a pod's, and no agent answers to it.
+    controller_node: str = ""
+    # Where the console's certificate and key are read from. In containers the
+    # control plane installs a replacement itself, here, rather than asking an
+    # agent to, because there is no host for an agent to install it on.
+    tls_dir: Path = Path("/etc/odm/tls")
+    # This replica's own address, as the other replicas reach it, when more
+    # than one runs against the same database. A terminal or a shared screen
+    # is held in the memory of the replica that opened it; a browser or an
+    # agent that lands on another one is carried across to it. Unset (one
+    # replica), nothing is carried anywhere.
+    replica_url: str | None = None
+    # The name the notification server's certificate is checked against, when
+    # the control plane reaches it by an internal name (a container's) that
+    # the console certificate it presents does not carry.
+    ntfy_tls_server_name: str | None = None
+
     @field_validator("realm")
     @classmethod
     def _upper_realm(cls, v: str) -> str:
@@ -184,6 +213,16 @@ class Settings(BaseSettings):
         if not v.startswith("ldaps://"):
             raise ValueError("ldap_uri must use ldaps://")
         return v
+
+    @field_validator("replica_url")
+    @classmethod
+    def _replica_transport(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        # A terminal's keystrokes travel over this; never in the clear.
+        if not v.startswith("https://"):
+            raise ValueError("replica_url must use https")
+        return v.rstrip("/")
 
     @field_validator("kea_url", "ntfy_url")
     @classmethod
@@ -205,6 +244,8 @@ class Settings(BaseSettings):
         if not self.console_url:
             self.console_url = f"https://odm.{self.domain}:8443"
         self.console_url = self.console_url.rstrip("/")
+        if not self.controller_node:
+            self.controller_node = socket.getfqdn()
         return self
 
 

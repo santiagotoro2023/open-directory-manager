@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+# First-boot setup of a node container (docs/CONTAINERS.md), run by systemd
+# on every boot and idempotent: each step is skipped once done.
+#
+# What deploy/setup.sh does to a server, for a container that is one:
+#
+#   ODM_NODE_ROLE=domain-controller, no ODM_DC_JOIN
+#       provisions the domain (provision-dc.sh), creates the control plane's
+#       account and keytab (create-api-service-account.sh) and publishes them
+#       to the control plane on the shared volume, points odm.<domain> at the
+#       console, publishes the console certificate into SYSVOL, and installs
+#       the agent — the controller is a managed machine like any other.
+#   ODM_NODE_ROLE=domain-controller, ODM_DC_JOIN=<an existing controller>
+#       joins the domain as another controller: DNS, Kerberos and LDAP served
+#       from one more place, the directory replicated by Samba itself, SYSVOL
+#       copied from the first controller (odm-node-sync).
+#   ODM_NODE_ROLE=member
+#       joins with odm-client-install, exactly as a server joins: a machine
+#       to install roles on from the console.
+#
+# Settings come from /etc/odm/node.env, written from the container's
+# environment by odm-node-init.
+
+set -Eeuo pipefail
+
+[[ -r /etc/odm/node.env ]] && . /etc/odm/node.env
+
+STATE="/var/lib/odm/node"
+SHARED="${ODM_SHARED_DIR:-/srv/odm-data}"
+install -d -m 0750 "$STATE"
+
+log() { printf 'odm-node-setup: %s\n' "$*"; }
+die() { log "$*"; exit 1; }
+done_step() { [[ -e "$STATE/$1" ]]; }
+mark() { date -u +%FT%TZ > "$STATE/$1"; }
+
+ROLE="${ODM_NODE_ROLE:-}"
+case "$ROLE" in
+    domain-controller|member) ;;
+    *) die "ODM_NODE_ROLE must be domain-controller or member (it is \"$ROLE\")" ;;
+esac
+
+[[ -n "${ODM_REALM:-}" ]] || die "ODM_REALM is required, e.g. CORP.EXAMPLE.INTERNAL"
+REALM="${ODM_REALM^^}"
+DOMAIN="${ODM_DOMAIN:-${REALM,,}}"
+DOMAIN="${DOMAIN,,}"
+NETBIOS_DOMAIN="${ODM_NETBIOS:-$(printf '%s' "${DOMAIN%%.*}" | tr '[:lower:]' '[:upper:]' | cut -c1-15)}"
+
+SHORT="$(hostname -s | tr '[:upper:]' '[:lower:]')"
+[[ "$SHORT" =~ ^[a-z0-9][a-z0-9-]{0,14}$ ]] ||
+    die "this machine's name \"$SHORT\" cannot be a domain machine's: at most 15 letters, digits and hyphens"
+FQDN="$SHORT.$DOMAIN"
+NETBIOS_NAME="${SHORT^^}"
+
+ADDRESS="${ODM_NODE_ADDRESS:-}"
+if [[ -z "$ADDRESS" ]]; then
+    ADDRESS="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+fi
+[[ -n "$ADDRESS" ]] || die "ODM_NODE_ADDRESS is required: the address this machine serves on"
+
+CONSOLE_PORT="${ODM_CONSOLE_PORT:-8443}"
+CONSOLE_FQDN="${ODM_CONSOLE_FQDN:-odm.$DOMAIN}"
+CONSOLE_URL="https://$CONSOLE_FQDN:$CONSOLE_PORT"
+
+# The upstream resolver the container was started with, kept by odm-node-init
+# before this node became its own resolver.
+UPSTREAM="${ODM_DNS_FORWARDER:-}"
+if [[ -z "$UPSTREAM" && -r /etc/odm/upstream-resolv.conf ]]; then
+    UPSTREAM="$(awk '/^nameserver/ {print $2; exit}' /etc/odm/upstream-resolv.conf)"
+fi
+# A cluster's own resolver forwards nowhere useful for a domain's clients.
+case "$UPSTREAM" in 127.*|::1|"") UPSTREAM="${ODM_DNS_FORWARDER:-9.9.9.9}" ;; esac
+
+admin_password() {
+    [[ -n "${ODM_ADMIN_PASSWORD:-}" ]] ||
+        die "ODM_ADMIN_PASSWORD (or ODM_ADMIN_PASSWORD_FILE) is required to $1"
+    printf '%s' "$ODM_ADMIN_PASSWORD"
+}
+
+write_hosts() {
+    cat > /etc/hosts <<HOSTS
+127.0.0.1	localhost
+::1	localhost ip6-localhost ip6-loopback
+$ADDRESS	$FQDN $SHORT
+HOSTS
+}
+
+write_resolver() {
+    local servers="$1"
+    {
+        printf '# Written by odm-node-setup.\nsearch %s\n' "$DOMAIN"
+        for server in ${servers//,/ }; do printf 'nameserver %s\n' "$server"; done
+    } > /etc/resolv.conf.odm
+    # The runtime may have bind-mounted its own file here.
+    cat /etc/resolv.conf.odm > /etc/resolv.conf 2>/dev/null || cp /etc/resolv.conf.odm /etc/resolv.conf
+    rm -f /etc/resolv.conf.odm
+}
+
+wait_for_directory() {
+    for _ in $(seq 1 60); do
+        samba-tool domain level show >/dev/null 2>&1 && return 0
+        sleep 3
+    done
+    die "the directory did not start; journalctl -u samba-ad-dc"
+}
+
+# Options both provisioning and joining give Samba.
+samba_options() {
+    printf '%s\n' \
+        "--option=netbios name = $NETBIOS_NAME" \
+        "--option=bind interfaces only = yes" \
+        "--option=interfaces = lo $ADDRESS" \
+        "--option=dns forwarder = $UPSTREAM" \
+        "--option=ldap server require strong auth = allow_sasl_over_tls"
+}
+
+start_controller() {
+    if [[ -s /var/lib/samba/private/krb5.conf ]]; then
+        install -m 0644 /var/lib/samba/private/krb5.conf /etc/krb5.conf
+    else
+        # What provisioning writes; a join does not always.
+        cat > /etc/krb5.conf <<KRB5
+[libdefaults]
+    default_realm = $REALM
+    dns_lookup_realm = false
+    dns_lookup_kdc = true
+KRB5
+    fi
+    systemctl unmask samba-ad-dc.service >/dev/null 2>&1 || true
+    systemctl enable --now samba-ad-dc.service
+    wait_for_directory
+}
+
+# ------------------------------------------------------------ controllers --
+
+provision() {
+    log "provisioning $REALM on $FQDN ($ADDRESS)"
+    local password options=()
+    password="$(admin_password "provision the domain")"
+    mapfile -t options < <(samba_options)
+    rm -f /etc/samba/smb.conf
+    samba-tool domain provision \
+        --server-role=dc \
+        --use-rfc2307 \
+        --dns-backend=SAMBA_INTERNAL \
+        --realm="$REALM" \
+        --domain="$NETBIOS_DOMAIN" \
+        --host-name="$SHORT" \
+        --host-ip="$ADDRESS" \
+        --adminpass="$password" \
+        --option="ad dc functional level = 2016" \
+        "${options[@]}"
+}
+
+join_controller() {
+    local existing="$ODM_DC_JOIN" password options=()
+    [[ "$existing" == *.* ]] || existing="$existing.$DOMAIN"
+    log "joining $REALM as another controller, from $existing"
+    password="$(admin_password "join the domain as a controller")"
+    mapfile -t options < <(samba_options)
+    rm -f /etc/samba/smb.conf
+    PASSWD="$password" samba-tool domain join "$DOMAIN" DC \
+        --server="$existing" \
+        -U Administrator \
+        --dns-backend=SAMBA_INTERNAL \
+        "${options[@]}"
+}
+
+# The control plane's own account, its keytab and the directory's CA, put
+# where the control plane reads them: the volume it shares with this node.
+control_plane_account() {
+    local target="$SHARED/secrets"
+    if ! mountpoint -q "$SHARED" 2>/dev/null; then
+        target="/var/lib/odm/control-plane"
+        log "no shared volume at $SHARED: the keytab goes to $target, to be copied"
+        log "to the control plane by hand (docs/CONTAINERS.md, \"Without a shared volume\")"
+    fi
+    # Owned by the control plane's account, which writes here too (ntfy's
+    # token); this node only adds files.
+    [[ -d "$target" ]] || install -d -m 0750 -o odm -g odm "$target"
+    /usr/lib/odm/deploy/create-api-service-account.sh \
+        --realm "$DOMAIN" --api-host "$CONSOLE_FQDN" \
+        --keytab "$target/odm-api.keytab" --service-user odm
+    install -m 0644 /var/lib/samba/private/tls/ca.pem "$target/dc-ca.pem"
+    chown root:odm "$target/odm-api.keytab"
+    chmod 0640 "$target/odm-api.keytab"
+}
+
+# odm.<domain> is where every joined machine looks for the console.
+console_record() {
+    local address="${ODM_CONSOLE_ADDRESS:-}" current
+    [[ -n "$address" ]] || { log "ODM_CONSOLE_ADDRESS is unset: add $CONSOLE_FQDN to DNS yourself"; return 0; }
+    [[ "$CONSOLE_FQDN" == *".$DOMAIN" ]] || { log "$CONSOLE_FQDN is outside $DOMAIN; not adding it"; return 0; }
+    local name="${CONSOLE_FQDN%".$DOMAIN"}"
+    current="$(samba-tool dns query 127.0.0.1 "$DOMAIN" "$name" A -P 2>/dev/null |
+        sed -n 's/.*A: \([0-9.]*\).*/\1/p' | head -1 || true)"
+    if [[ "$current" == "$address" ]]; then
+        return 0
+    elif [[ -n "$current" ]]; then
+        samba-tool dns update 127.0.0.1 "$DOMAIN" "$name" A "$current" "$address" -P >/dev/null
+    else
+        samba-tool dns add 127.0.0.1 "$DOMAIN" "$name" A "$address" -P >/dev/null
+    fi
+    log "$CONSOLE_FQDN is $address"
+}
+
+machine_keytab() {
+    [[ -s /etc/krb5.keytab ]] && return 0
+    samba-tool domain exportkeytab /etc/krb5.keytab --principal="$NETBIOS_NAME\$" >/dev/null
+    chmod 0600 /etc/krb5.keytab
+}
+
+console_certificate() {
+    local cert="$SHARED/tls/api.crt"
+    if mountpoint -q "$SHARED" 2>/dev/null; then
+        for _ in $(seq 1 120); do [[ -s "$cert" ]] && break; sleep 5; done
+    fi
+    [[ -s "$cert" ]] || return 0
+    install -d -m 0755 /etc/odm/tls
+    install -m 0644 "$cert" /etc/odm/tls/api-ca.pem
+    ODM_CA_DIR="$SHARED/ca" /usr/lib/odm/roles/publish-console-certificate.sh "$cert" >/dev/null
+}
+
+install_agent() {
+    local ca=() published="/var/lib/samba/sysvol/$DOMAIN/odm/api-ca.pem"
+    # From the shared volume, or what SYSVOL publishes for every machine (a
+    # controller on a host of its own has no shared volume). install-agent.sh
+    # copies it to api-ca.pem itself.
+    if [[ -s "$SHARED/tls/api.crt" ]]; then
+        ca=(--ca-cert "$SHARED/tls/api.crt")
+    elif [[ -s "$published" ]]; then
+        ca=(--ca-cert "$published")
+    fi
+    /usr/lib/odm/deploy/install-agent.sh --api-url "$CONSOLE_URL" \
+        --binary /usr/lib/odm/bin/odm-agent --client-binary /usr/lib/odm/bin/odm-client-install \
+        "${ca[@]}"
+}
+
+# -------------------------------------------------------------------- run --
+
+write_hosts
+
+# The image ships without package lists, and the agent installs what its
+# settings and roles need with apt, as on any machine: give it the lists a
+# freshly installed server has. apt-daily.timer keeps them current after.
+if ! done_step apt-lists; then
+    if apt-get update -qq; then mark apt-lists; else log "apt-get update failed; retried at the next start"; fi
+fi
+
+if [[ "$ROLE" == "domain-controller" ]]; then
+    if [[ ! -f /var/lib/samba/private/sam.ldb ]]; then
+        if [[ -n "${ODM_DC_JOIN:-}" ]]; then
+            write_resolver "${ODM_DNS_SERVERS:?ODM_DNS_SERVERS is required to join: the address of an existing controller}"
+            join_controller
+        else
+            write_resolver "127.0.0.1"
+            provision
+        fi
+    fi
+    write_resolver "127.0.0.1 ${ODM_DNS_SERVERS:-}"
+    start_controller
+
+    if [[ -z "${ODM_DC_JOIN:-}" ]]; then
+        if ! done_step control-plane-account || [[ ! -s "$SHARED/secrets/odm-api.keytab" && ! -s /var/lib/odm/control-plane/odm-api.keytab ]]; then
+            control_plane_account
+            mark control-plane-account
+        fi
+        console_record
+    else
+        # SYSVOL is not replicated by Samba; the first copy comes from the
+        # controller this one joined, and odm-node-sync keeps it current.
+        /usr/sbin/odm-node-sync sysvol || log "SYSVOL is not copied yet; odm-node-sync retries"
+    fi
+
+    machine_keytab
+    console_certificate
+    if ! done_step agent || ! systemctl is-enabled --quiet odm-agent.service; then
+        install_agent
+        mark agent
+    fi
+else
+    write_resolver "${ODM_DNS_SERVERS:?ODM_DNS_SERVERS is required: the addresses of the domain controllers}"
+    if ! done_step joined; then
+        args=(--domain "$DOMAIN" --keep-hostname --unattended --api-url "$CONSOLE_URL")
+        [[ -n "${ODM_DC_SERVER:-}" ]] && args+=(--server "$ODM_DC_SERVER")
+        # A token is redeemed with the console before this machine has an
+        # account to read SYSVOL with, so the console is verified against a
+        # certificate given here — as --ca-cert on any other machine: the
+        # shared volume's, or one handed over (ODM_CONSOLE_CA_CERT_FILE).
+        if [[ -n "${ODM_CONSOLE_CA_CERT:-}" ]]; then
+            install -d -m 0755 /etc/odm
+            printf '%s\n' "$ODM_CONSOLE_CA_CERT" > /etc/odm/console-ca.pem
+            args+=(--ca-cert /etc/odm/console-ca.pem)
+        elif [[ -s "$SHARED/tls/api.crt" ]]; then
+            args+=(--ca-cert "$SHARED/tls/api.crt")
+        fi
+        if [[ -n "${ODM_JOIN_TOKEN:-}" ]]; then
+            args+=(--otp "$ODM_JOIN_TOKEN")
+        else
+            admin_password "join the domain" >/dev/null
+            args+=(--admin-user "${ODM_ADMIN_USER:-Administrator}")
+        fi
+        log "joining $DOMAIN as $FQDN"
+        ODM_ADMIN_PASSWORD="${ODM_ADMIN_PASSWORD:-}" odm-client-install "${args[@]}"
+        mark joined
+    fi
+    systemctl enable --now odm-agent.service
+fi
+
+log "ready: $FQDN ($ROLE)"

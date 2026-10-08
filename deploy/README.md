@@ -4,6 +4,9 @@ Everything here targets Debian 12 (bookworm) and Debian 13 (trixie). Run it
 on dedicated servers or VMs — `provision-dc.sh` reconfigures Samba,
 networking and DNS on the host it runs on.
 
+To run ODM from container images instead — Docker, Docker Compose,
+Kubernetes or Helm — see [../docs/CONTAINERS.md](../docs/CONTAINERS.md).
+
 Bring-up installs the core role only: Active Directory, Group Policy and
 DNS, plus the ODM control plane and its console. DHCP, file-server,
 certificate-authority and PXE are installed afterwards through the role

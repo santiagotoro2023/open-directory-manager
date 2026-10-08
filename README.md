@@ -74,6 +74,30 @@ sudo deploy/setup.sh \
 It is safe to run again: anything already done is skipped, and a failure
 names the step it stopped at.
 
+### With Docker, Docker Compose or Kubernetes
+
+The same domain, from container images: the control plane as a stateless
+service with any number of replicas, and the domain controllers and role
+servers as containers of their own on the hosts' networks. On a dedicated
+Docker host:
+
+```bash
+cp deploy/compose/.env.example .env      # the domain, this host's address, passwords
+docker compose up -d
+```
+
+On Kubernetes:
+
+```bash
+helm install odm oci://ghcr.io/santiagotoro2023/charts/open-directory-manager \
+  --namespace odm --set domain.realm=CORP.EXAMPLE.INTERNAL --set domain.name=corp.example.internal \
+  --set 'domainControllers[0].node=dc1' --set 'domainControllers[0].address=192.0.2.11'
+```
+
+[docs/CONTAINERS.md](docs/CONTAINERS.md) covers Docker, Compose, Kubernetes
+and Helm: what runs where, more controllers and servers, networking, storage,
+upgrades, and every feature as it works in containers.
+
 ### Joining a client
 
 Download `odm-client_*.deb` from the
@@ -227,7 +251,8 @@ api/          Control plane and database migrations
 agent/        Policy agent for domain members
 client-join/  Join library and odm-client-install
 web/          Console, including the operator wiki under web/src/wiki
-deploy/       Provisioning, role installers, systemd units, sudoers
+deploy/       Provisioning, role installers, systemd units, sudoers;
+              docker/, compose/, kubernetes/ and helm/ for containers
 packaging/    The odm-client Debian package
 docs/         Repository notes and build status
 branding/     Logo assets — see branding/BRAND.md
@@ -238,7 +263,8 @@ branding/     Logo assets — see branding/BRAND.md
 - **Operator documentation** is in the console under **Wiki**, written in
   `web/src/wiki/`. Every page opens with a Quickstart and continues into
   Details.
-- **Deployment**: [deploy/README.md](deploy/README.md)
+- **Deployment**: [deploy/README.md](deploy/README.md) ·
+  **Docker, Compose, Kubernetes, Helm**: [docs/CONTAINERS.md](docs/CONTAINERS.md)
 - **Control plane internals**: [api/README.md](api/README.md)
 - **Agent**: [agent/README.md](agent/README.md) ·
   **Join client**: [client-join/README.md](client-join/README.md)
@@ -249,7 +275,8 @@ branding/     Logo assets — see branding/BRAND.md
 ## Requirements
 
 - Debian 12 (bookworm) or Debian 13 (trixie), for controllers, members and
-  desktops
+  desktops — or Docker / Kubernetes for the controllers, role servers and
+  control plane ([docs/CONTAINERS.md](docs/CONTAINERS.md))
 - Python 3.11+, Node 22+, Go 1.25+ to build from source
 - PostgreSQL for the control plane's own metadata
 

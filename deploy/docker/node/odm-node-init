@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# PID 1 of the node image: keep the machine's root filesystem on a volume,
+# then become systemd inside it.
+#
+# A domain controller or role server is a machine that changes itself: apt
+# installs a role's packages under /usr, Samba keeps the directory under
+# /var/lib/samba, the agent replaces its own binary when the console offers a
+# newer one. In a container all of that would be lost the moment the
+# container is recreated — an image update, a rescheduled pod. So the image
+# is only what the machine starts as: on the first start its root filesystem
+# is copied onto the volume at /persist, and every start after that boots the
+# copy, the way a virtual machine boots its disk. Updating the image does not
+# rewrite a node that already exists; the node updates itself the way any
+# other machine in the domain does, from the console (Updates, agent update).
+#
+# Without a volume at /persist the container boots its own filesystem and
+# says, loudly, that nothing it does will survive.
+
+set -euo pipefail
+
+PERSIST="${ODM_NODE_PERSIST:-/persist}"
+ROOT="$PERSIST/root"
+
+log() { printf 'odm-node-init: %s\n' "$*" >&2; }
+
+# The settings the node's first-boot setup reads (odm-node-setup), from the
+# container's environment, which systemd does not pass on to its services.
+# Only ODM_ names, written root-only: the domain's administrator password
+# can be among them.
+write_environment() {
+    local target="$1/etc/odm/node.env"
+    mkdir -p "$1/etc/odm"
+    # The resolver the runtime gave the container: where the domain's DNS
+    # forwards what it does not answer itself (odm-node-setup).
+    if [[ -r /etc/resolv.conf ]]; then
+        cp /etc/resolv.conf "$1/etc/odm/upstream-resolv.conf" 2>/dev/null || true
+    fi
+    # From the shell's variables rather than /proc/self/environ, which holds
+    # only what the container started with — not what the _FILE settings
+    # above added.
+    ( umask 077
+      : > "$target"
+      for name in $(compgen -e); do
+          [[ "$name" == ODM_* && "$name" != *_FILE ]] || continue
+          printf '%s=%q\n' "$name" "${!name}" >> "$target"
+      done )
+}
+
+# Settings given as files (Docker and Kubernetes secrets) rather than values.
+for variable in $(compgen -e); do
+    [[ "$variable" == ODM_*_FILE ]] || continue
+    name="${variable%_FILE}"
+    file="${!variable}"
+    if [[ -z "${!name:-}" && -r "$file" ]]; then
+        export "$name=$(cat "$file")"
+    fi
+done
+
+if ! mountpoint -q "$PERSIST" 2>/dev/null; then
+    log "WARNING: no volume at $PERSIST. This node boots the image itself, and"
+    log "WARNING: the domain, every role and every change are lost with the container."
+    write_environment ""
+    exec /sbin/init
+fi
+
+if [[ ! -e "$ROOT/.odm-node-seeded" ]]; then
+    log "first start: copying the image's root filesystem to $ROOT"
+    rm -rf "$ROOT.partial"
+    mkdir -p "$ROOT.partial"
+    # One filesystem: the image's own, without /proc, /sys, /dev, the volume
+    # itself, or the files the container runtime mounts over it.
+    tar --one-file-system --numeric-owner --xattrs --acls -C / -cpf - \
+        --exclude=./persist --exclude=./proc --exclude=./sys --exclude=./dev \
+        --exclude=./run --exclude=./tmp --exclude=./srv/odm-data . \
+        | tar --numeric-owner --xattrs --acls -C "$ROOT.partial" -xpf -
+    mkdir -p "$ROOT.partial"/{proc,sys,dev,run,tmp,srv/odm-data}
+    chmod 1777 "$ROOT.partial/tmp"
+    image_version="$(cat /etc/odm/container-node 2>/dev/null || echo unknown)"
+    printf 'seeded from the node image %s on %s\n' "$image_version" "$(date -u +%FT%TZ)" \
+        > "$ROOT.partial/.odm-node-seeded"
+    mv "$ROOT.partial" "$ROOT"
+fi
+
+# systemd sets up its own mount namespaces and needs its root to be a mount
+# point of its own, not a directory it was chrooted into ("Failed to fork off
+# sandboxing environment"). So the copy becomes the root the way a container
+# runtime makes one: bind-mounted onto itself, then pivot_root.
+mount --make-rprivate /
+mount --bind "$ROOT" "$ROOT"
+
+# The machine's view of the kernel and of the world, from the container's.
+mount --rbind /proc "$ROOT/proc"
+mount --rbind /sys "$ROOT/sys"
+mount --rbind /dev "$ROOT/dev"
+mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs "$ROOT/run"
+mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs "$ROOT/tmp"
+if mountpoint -q /srv/odm-data 2>/dev/null; then
+    mount --rbind /srv/odm-data "$ROOT/srv/odm-data"
+fi
+# The runtime's own files: the host name it gave the container. Resolvers and
+# /etc/hosts are the node's own (odm-node-setup writes them): a controller is
+# its domain's DNS, not a client of the container runtime's.
+if [[ -f /etc/hostname ]]; then
+    cp /etc/hostname "$ROOT/etc/hostname" 2>/dev/null || true
+fi
+write_environment "$ROOT"
+
+# systemd as PID 1 lets go of the container's output, so the node's journal
+# reaches docker logs and kubectl logs through a pipe opened here, before it
+# starts: odm-node-log.service writes the journal into it, and a reader that
+# started now — holding the container's output — copies it out.
+mkfifo -m 0600 "$ROOT/run/odm-console"
+exec 3<>"$ROOT/run/odm-console"
+cat <&3 &
+exec 3>&-
+
+log "booting the node from $ROOT"
+cd "$ROOT"
+mkdir -p .odm-oldroot
+pivot_root . .odm-oldroot
+umount -l /.odm-oldroot
+rmdir /.odm-oldroot 2>/dev/null || true
+exec /sbin/init

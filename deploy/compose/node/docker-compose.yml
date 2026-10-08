@@ -1,0 +1,47 @@
+# Another machine for the domain, on another Docker host: a second domain
+# controller, or a member server to install roles on from the console.
+#
+#   cp .env.example .env      beside this file, then fill it in
+#   docker compose up -d
+#
+# One per host: the container is the machine, with the host's address and
+# network — DNS, Kerberos, LDAP, SMB and DHCP are served on it directly.
+# docs/CONTAINERS.md, "More machines".
+name: odm-node
+
+services:
+  node:
+    image: ghcr.io/santiagotoro2023/open-directory-manager-node:${ODM_VERSION:-latest}
+    hostname: ${ODM_NODE_NAME:?set ODM_NODE_NAME in .env}
+    network_mode: host
+    privileged: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      # domain-controller (with ODM_DC_JOIN) or member
+      ODM_NODE_ROLE: ${ODM_NODE_ROLE:?set ODM_NODE_ROLE in .env}
+      ODM_REALM: ${ODM_REALM:?set ODM_REALM in .env}
+      ODM_NODE_ADDRESS: ${ODM_NODE_ADDRESS:?set ODM_NODE_ADDRESS in .env}
+      # The controllers' addresses: this machine's resolvers until it is one.
+      ODM_DNS_SERVERS: ${ODM_DNS_SERVERS:?set ODM_DNS_SERVERS in .env}
+      # For another controller: the one to join from (its name).
+      ODM_DC_JOIN: ${ODM_DC_JOIN:-}
+      ODM_DC_SERVER: ${ODM_DC_SERVER:-}
+      ODM_CONSOLE_FQDN: ${ODM_CONSOLE_FQDN:-}
+      ODM_DNS_FORWARDER: ${ODM_DNS_FORWARDER:-}
+      # A join token from the console (Directory → Join tokens) for a member,
+      # or the domain Administrator's password (always, for a controller).
+      ODM_JOIN_TOKEN: ${ODM_JOIN_TOKEN:-}
+      ODM_ADMIN_PASSWORD: ${ODM_ADMIN_PASSWORD:-}
+      # With a join token: the console's certificate (or the domain's root),
+      # which the token is redeemed against — mounted below.
+      ODM_CONSOLE_CA_CERT_FILE: ${ODM_CONSOLE_CA_CERT_FILE:+/run/odm-console-ca.pem}
+    volumes:
+      - root:/persist
+      - ${ODM_CONSOLE_CA_CERT_FILE:-/dev/null}:/run/odm-console-ca.pem:ro
+      # Shares, profile disks, print spools — anything a role keeps that
+      # should live outside the machine's own disk, if you want it so.
+      # - /srv/odm-node:/srv/data
+
+volumes:
+  root:

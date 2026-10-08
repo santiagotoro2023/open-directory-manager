@@ -1,0 +1,91 @@
+{{- if .Values.database.bundled.enabled }}
+# The bundled PostgreSQL: one pod, data on a persistent volume that outlives the release
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "odm.fullname" . }}-db
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  serviceName: {{ include "odm.fullname" . }}-db
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "odm.selector" (dict "root" . "component" "database") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "odm.selector" (dict "root" . "component" "database") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ .Values.database.bundled.image }}
+          env:
+            - name: POSTGRES_DB
+              value: odm
+            - name: POSTGRES_USER
+              value: odm
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "odm.dbSecret" . }}
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "odm", "-d", "odm"]
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.database.bundled.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+      volumes:
+        - name: run
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.database.bundled.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.database.bundled.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "odm.fullname" . }}-db
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  selector:
+    {{- include "odm.selector" (dict "root" . "component" "database") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{{- end }}

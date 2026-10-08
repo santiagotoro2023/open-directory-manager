@@ -126,6 +126,10 @@ func run(ctx context.Context, settings policy.Settings, env Env, userOnly bool) 
 		if userOnly && !userScoped[item.name] {
 			continue
 		}
+		if skipped, skip := skipForContainer(item.name, settings, env); skip {
+			results = append(results, skipped...)
+			continue
+		}
 		func() {
 			defer func() {
 				if recovered := recover(); recovered != nil {

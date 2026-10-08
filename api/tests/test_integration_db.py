@@ -742,3 +742,58 @@ async def test_deleting_a_policy_object_puts_it_in_the_recycle_bin(client):
         item["object_type"] == "gpo" and item["display_name"] == "Disposable"
         for item in listed
     ), listed
+
+
+async def test_replicas_starting_together_migrate_once():
+    """Every replica migrates on start-up; started together, none fails on a
+    migration another already applied."""
+    import asyncio
+
+    import asyncpg
+
+    from odm import db
+
+    pools = [
+        await asyncpg.create_pool(
+            TEST_DB_URL, min_size=1, max_size=2, server_settings={"search_path": "odm_race"}
+        )
+        for _ in range(3)
+    ]
+    try:
+        async with pools[0].acquire() as conn:
+            await conn.execute("DROP SCHEMA IF EXISTS odm_race CASCADE")
+            await conn.execute("CREATE SCHEMA odm_race")
+        results = await asyncio.gather(*(db.migrate(pool) for pool in pools))
+        every = list(db.MIGRATIONS_DIR.glob("*.sql"))
+        assert sum(len(applied) for applied in results) == len(every)
+        async with pools[0].acquire() as conn:
+            await conn.execute("DROP SCHEMA odm_race CASCADE")
+    finally:
+        for pool in pools:
+            await pool.close()
+
+
+async def test_a_replica_registers_once_per_address(fresh):
+    from odm import replicas
+
+    settings = conftest_settings(replica_url="https://10.0.0.5:8443")
+    try:
+        await replicas.register(fresh, settings)
+        first = replicas._self_id
+        await replicas.register(fresh, settings)
+        assert replicas._self_id == first
+        assert replicas.new_session_id().startswith(f"{first}.")
+        other = conftest_settings(replica_url="https://10.0.0.6:8443")
+        await replicas.register(fresh, other)
+        assert replicas._self_id != first
+        replicas._known.clear()
+        assert await replicas._url_of(first) == "https://10.0.0.5:8443"
+    finally:
+        replicas._self_id = None
+        replicas._known.clear()
+
+
+def conftest_settings(**update):
+    from odm.config import get_settings
+
+    return get_settings().model_copy(update=update)

@@ -24,10 +24,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+from . import replicas
 
 # The first byte of every message, at every end. 0 is terminal bytes; 1 is a
 # small JSON object — a resize from the console, an exit from the agent.
@@ -139,7 +140,7 @@ class Registry:
     ) -> Terminal:
         self._sweep()
         term = Terminal(
-            id=secrets.token_urlsafe(24),
+            id=replicas.new_session_id(),
             dn=dn,
             hostname=hostname,
             admin_session_id=admin_session_id,

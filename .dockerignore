@@ -1,0 +1,14 @@
+# Only what the images are built from goes to the builder.
+*
+!api/
+!web/
+!agent/
+!client-join/
+!branding/
+!deploy/
+api/**/__pycache__
+api/**/*.egg-info
+api/.pytest_cache
+api/.ruff_cache
+web/node_modules
+web/dist

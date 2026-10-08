@@ -1,0 +1,239 @@
+# Values for Open Directory Manager on Kubernetes. docs/CONTAINERS.md explains
+# every part of this; the short version:
+#
+#   controlPlane    the API and console: any number of replicas, behind one
+#                   address, all data in PostgreSQL and on the shared volume
+#   ntfy            phone approvals, beside the console on the same address
+#   database        PostgreSQL, bundled or your own
+#   domainControllers / memberServers
+#                   the machines of the domain itself — Samba controllers and
+#                   servers to install roles on (DHCP, file shares, print,
+#                   VPN, RADIUS, network boot, remote desktop, time,
+#                   monitoring, the password manager). Each one runs on a
+#                   Kubernetes node of its own, on that node's network and
+#                   under its host name, with its whole disk on a volume.
+#
+# The namespace has to allow privileged pods (pod-security.kubernetes.io/
+# enforce: privileged): a domain controller is a server, not an app.
+
+# --------------------------------------------------------------- the domain --
+domain:
+  # Kerberos realm, in capitals, and the same name in DNS.
+  realm: CORP.EXAMPLE.INTERNAL
+  name: corp.example.internal
+  # NetBIOS domain name. Empty: the first label of the name, in capitals.
+  netbios: ""
+  # Members of this group may sign in to the console.
+  adminGroup: Domain Admins
+  # The domain Administrator's password: set when the domain is provisioned,
+  # used again by every controller that joins it. Empty: generated at the
+  # first install and kept in the Secret <release>-admin across upgrades.
+  #   kubectl get secret <release>-admin -o jsonpath='{.data.password}' | base64 -d
+  adminPassword: ""
+  # ... or an existing Secret that holds it (key "password").
+  existingSecret: ""
+  # Where the domain's DNS sends what it does not answer itself. Empty: the
+  # resolver of the node the first controller runs on.
+  dnsForwarder: ""
+  # Mirror policy objects into SYSVOL for GPMC and RSAT (ODM_SYSVOL_PATH on a
+  # host install). Off by default there too.
+  sysvolMirror: false
+  # Days a deleted object stays restorable.
+  retentionDays: 180
+
+# --------------------------------------------------------------- the console --
+console:
+  # odm.<domain> is where every joined machine looks for the console.
+  name: odm
+  port: 8443
+  # The address clients reach the console (and phone approvals) at: the
+  # LoadBalancer address of the Service below. The first controller puts it
+  # in DNS as <name>.<domain>. Empty: add that record yourself.
+  address: ""
+  # More names for the first, self-signed certificate.
+  extraCertificateNames: []
+
+image:
+  repository: ghcr.io/santiagotoro2023/open-directory-manager
+  # Defaults to the appVersion of the chart
+  tag: ""
+  pullPolicy: IfNotPresent
+
+nodeImage:
+  repository: ghcr.io/santiagotoro2023/open-directory-manager-node
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ----------------------------------------------------------- control plane --
+controlPlane:
+  # Three replicas, spread over the nodes, at most one down at a time.
+  # Scheduled work runs on one of them at a time; a terminal opened through
+  # any of them reaches the machine whichever replica the machine lands on.
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  # More settings, as ODM_ variables (docs/CONTAINERS.md, "Settings").
+  extraEnv: []
+  #  - name: ODM_SESSION_IDLE_MINUTES
+  #    value: "30"
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway
+
+autoscaling:
+  enabled: false
+  minReplicas: 3
+  maxReplicas: 9
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# Phone approvals (ntfy): HTTPS on its own port, on the console's address.
+ntfy:
+  enabled: true
+  port: 8444
+  storage: 1Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 256Mi
+
+# ------------------------------------------------------------ the address --
+# One Service for the console (8443) and phone approvals (8444). Agents,
+# browsers and phones all verify the console's own certificate, so TLS must
+# reach the pods untouched: a LoadBalancer (or NodePort), or an Ingress in
+# TLS passthrough — never one that terminates TLS itself.
+service:
+  type: LoadBalancer
+  loadBalancerIP: ""
+  # Keeps the client's address, which the sign-in lockout counts by.
+  externalTrafficPolicy: Local
+  annotations: {}
+  # For type NodePort
+  nodePorts:
+    console: null
+    phone: null
+
+ingress:
+  # Only in TLS passthrough (ingress-nginx: --enable-ssl-passthrough).
+  enabled: false
+  className: ""
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+  # Empty: <console.name>.<domain.name>
+  host: ""
+
+# ------------------------------------------------------------- shared data --
+# The console certificate, the control plane's keytab and the directory's CA
+# (put there by the first controller), the certificate authority, uploaded
+# packages and domain backups. Mounted by every control-plane replica and by
+# every controller and member server, so it must be ReadWriteMany unless all
+# of them run on one node.
+sharedData:
+  accessMode: ReadWriteMany
+  size: 20Gi
+  storageClass: ""
+  existingClaim: ""
+
+# ---------------------------------------------------------------- database --
+database:
+  # A small PostgreSQL inside the release: one pod with a persistent volume.
+  # For important data use one that is run and backed up separately:
+  # bundled.enabled=false and url or existingSecret.
+  bundled:
+    enabled: true
+    image: postgres:17-alpine
+    storage: 10Gi
+    storageClass: ""
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 1Gi
+  # Password of the bundled database. Empty: generated at the first install
+  # and kept in the Secret <release>-db across upgrades.
+  password: ""
+  # An external database: postgresql://user:password@host:5432/odm ...
+  url: ""
+  # ... or an existing Secret that holds the URL
+  existingSecret: ""
+  existingSecretKey: url
+
+# ------------------------------------------------- the machines of the domain --
+# Each entry is one machine, pinned to one Kubernetes node. It uses that
+# node's network (it is the domain's DNS, KDC and LDAP server, or its DHCP
+# server, at the node's address) and that node's host name, which becomes the
+# machine's name in the domain: at most 15 letters, digits and hyphens.
+# The first controller provisions the domain; the others join it.
+domainControllers:
+  - node: dc1
+    # The node's address on the network the domain serves.
+    address: 192.0.2.11
+  # - node: dc2
+  #   address: 192.0.2.12
+
+# Servers to install roles on from the console (Server Roles). Roles can be
+# installed on the controllers too, as on a single-server install.
+memberServers: []
+  # - node: srv1
+  #   address: 192.0.2.21
+
+nodes:
+  # Each machine's root filesystem: the directory, SYSVOL, whatever roles
+  # install. A local volume is right: the machine never moves off its node.
+  storage: 20Gi
+  storageClass: ""
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 4Gi
+  # Members join with the Administrator password, or with a join token from
+  # the console (Directory → Join tokens) when one is given here.
+  joinToken: ""
+  tolerations: []
+  # Seconds a machine gets to shut down cleanly.
+  terminationGracePeriodSeconds: 120
+
+# Only allow traffic to the control plane from the namespace of the ingress
+# controller and the domain's own machines. Needs a CNI that enforces it.
+networkPolicy:
+  enabled: false
+  # Where browsers, agents and phones come from: everything, by default.
+  ingressFrom:
+    - ipBlock:
+        cidr: 0.0.0.0/0

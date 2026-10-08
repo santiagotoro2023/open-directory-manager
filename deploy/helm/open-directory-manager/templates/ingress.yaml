@@ -1,0 +1,29 @@
+{{- if .Values.ingress.enabled -}}
+# TLS passthrough only: the console's own certificate has to reach every
+# browser, agent and phone unchanged, because they verify it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "odm.fullname" . }}
+  labels:
+    {{- include "odm.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | default (include "odm.consoleFqdn" .) | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "odm.fullname" . }}
+                port:
+                  name: console
+{{- end }}

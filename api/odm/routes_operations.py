@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import socket
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -126,7 +125,7 @@ async def take_backup(
     async with pool.acquire() as conn:
         await tasks.enqueue(
             conn,
-            node_fqdn=socket.getfqdn(),
+            node_fqdn=settings.controller_node,
             kind="domain-backup",
             payload={"target_dir": str(backup.directory(settings))},
             subject=str(row["id"]),
@@ -220,7 +219,7 @@ async def backup_loop(pool: asyncpg.Pool, settings: Settings) -> None:
             async with pool.acquire() as conn:
                 await tasks.enqueue(
                     conn,
-                    node_fqdn=socket.getfqdn(),
+                    node_fqdn=settings.controller_node,
                     kind="domain-backup",
                     payload={"target_dir": str(backup.directory(settings))},
                     subject=str(row["id"]),

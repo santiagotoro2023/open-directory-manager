@@ -21,10 +21,11 @@ carried untouched — the console never interprets them.
 from __future__ import annotations
 
 import asyncio
-import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+from . import replicas
 
 # How long the console waits for the agent to be on the line once a viewer
 # attaches. The agent connects the moment sharing starts, so this only elapses
@@ -120,7 +121,7 @@ class Registry:
     ) -> Offer:
         self._sweep()
         offer = Offer(
-            id=secrets.token_urlsafe(24),
+            id=replicas.new_session_id(),
             dn=dn,
             hostname=hostname,
             username=username,

@@ -517,6 +517,33 @@ terminal and runs the same one line a scripted install does; one code path
 means one thing to test, one shape of failure to report, and no missing
 dependency chain of graphics libraries to keep working.
 
+### 5.7 Containers (Docker, Compose, Kubernetes, Helm)
+
+ODM also runs from two images (`docs/CONTAINERS.md`): the control plane
+(`Dockerfile`), stateless and replicated, and the node image
+(`deploy/docker/node/`), which makes a domain controller or role server out
+of a privileged, host-networked container with systemd, the agent and its
+whole root filesystem on a volume. Every feature must keep working there.
+What that asks of new code:
+- The control plane may run as several replicas. State lives in PostgreSQL
+  or on the shared volume (`/srv/odm-data`), never only in one process's
+  memory — except terminals and shared screens, whose ids name their replica
+  (`api/odm/replicas.py`); anything else held in memory between requests
+  needs the same treatment. Work on a clock runs under the scheduler lock
+  (`api/odm/leader.py`), not once per replica.
+- The control plane is not on a controller. A `samba-tool` call goes over
+  the wire (`dns.connection_flags`), and work that has to happen on the
+  controller goes to `settings.controller_node`'s agent, not
+  `socket.getfqdn()`'s.
+- A node container shares its host's kernel, network namespace and name. An
+  applier whose setting would change those belongs in `hostOwned`
+  (`agent/internal/apply/container.go`), from its first commit.
+- A role installer runs on a node exactly as on a server; where the control
+  plane has to reach what it installs, it must be reachable from another
+  machine (see the DHCP role's Control Agent), not only on the loopback.
+- `scripts/test-containers.sh` brings up a domain from the images and is run
+  by CI before anything is published.
+
 ---
 
 ## 6. Security requirements (apply everywhere, not just where reasonable)

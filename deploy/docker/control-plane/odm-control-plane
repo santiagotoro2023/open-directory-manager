@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+# Entry point of the control-plane image (Dockerfile at the repository root).
+#
+#   odm-control-plane            the API and console (the default)
+#   odm-control-plane ntfy       the notification server phones subscribe to
+#   odm-control-plane migrate    apply database migrations and exit
+#
+# Everything a host install keeps in /etc/odm/odm.env comes from the
+# environment instead (docs/CONTAINERS.md lists it). What has to be shared by
+# every replica, and outlive all of them, is on the volume at /srv/odm-data:
+#
+#   tls/              the console certificate and key (made here on first start)
+#   secrets/          the control plane's keytab and the directory's CA,
+#                     published there by the first domain controller
+#   ca/ packages/ backups/ tls-staging/ ntfy/
+#
+# It writes the Kerberos and Samba client configuration the control plane
+# needs from ODM_REALM and the controllers it is given, then runs the API and
+# restarts it whenever the console certificate on the volume changes — which
+# is how a certificate replaced from the console reaches every replica.
+
+set -Eeuo pipefail
+
+DATA="/srv/odm-data"
+RUN="/run/odm"
+
+log() { printf 'odm-control-plane: %s\n' "$*" >&2; }
+die() { log "$*"; exit 1; }
+
+# Per container, and the target of /etc/krb5.conf and /etc/samba/smb.conf.
+mkdir -p "$RUN" || die "$RUN must be writable (a tmpfs or emptyDir)"
+
+# ---------------------------------------------------------------- settings --
+
+[[ -n "${ODM_REALM:-}" ]] || die "ODM_REALM is required, e.g. CORP.EXAMPLE.INTERNAL"
+ODM_REALM="${ODM_REALM^^}"
+export ODM_REALM
+export ODM_DOMAIN="${ODM_DOMAIN:-${ODM_REALM,,}}"
+DOMAIN="${ODM_DOMAIN,,}"
+NETBIOS="${ODM_NETBIOS:-$(printf '%s' "${DOMAIN%%.*}" | tr '[:lower:]' '[:upper:]' | cut -c1-15)}"
+
+# The controllers, by name: Kerberos service principals are names, so the
+# directory must be reached by one. ODM_DOMAIN_CONTROLLERS lists them
+# (space or comma separated); the first is the one LDAP and samba-tool use.
+CONTROLLERS="${ODM_DOMAIN_CONTROLLERS:-}"
+CONTROLLERS="${CONTROLLERS//,/ }"
+if [[ -z "${CONTROLLERS// /}" ]]; then
+    if [[ -n "${ODM_LDAP_URI:-}" ]]; then
+        CONTROLLERS="$(printf '%s' "${ODM_LDAP_URI#ldaps://}" | cut -d/ -f1 | cut -d: -f1)"
+    else
+        die "ODM_DOMAIN_CONTROLLERS is required, e.g. dc1.${DOMAIN}"
+    fi
+fi
+read -r -a CONTROLLER_LIST <<<"$CONTROLLERS"
+FIRST_DC="${CONTROLLER_LIST[0]}"
+[[ "$FIRST_DC" == *.* ]] || FIRST_DC="$FIRST_DC.$DOMAIN"
+export ODM_LDAP_URI="${ODM_LDAP_URI:-ldaps://$FIRST_DC}"
+export ODM_CONTROLLER_NODE="${ODM_CONTROLLER_NODE:-$FIRST_DC}"
+
+PORT="${ODM_PORT:-8443}"
+export ODM_CONSOLE_URL="${ODM_CONSOLE_URL:-https://odm.$DOMAIN:$PORT}"
+CONSOLE_HOST="${ODM_CONSOLE_URL#https://}"
+CONSOLE_HOST="${CONSOLE_HOST%%/*}"
+CONSOLE_FQDN="${CONSOLE_HOST%%:*}"
+# The browser's origin is the console's own address; refused otherwise.
+export ODM_ALLOWED_ORIGINS="${ODM_ALLOWED_ORIGINS:-[\"https://$CONSOLE_HOST\"]}"
+
+export ODM_KEYTAB="${ODM_KEYTAB:-$DATA/secrets/odm-api.keytab}"
+export ODM_LDAP_CA_CERT="${ODM_LDAP_CA_CERT:-$DATA/secrets/dc-ca.pem}"
+export KRB5_KTNAME="${KRB5_KTNAME:-FILE:$ODM_KEYTAB}"
+export KRB5_CLIENT_KTNAME="${KRB5_CLIENT_KTNAME:-FILE:$ODM_KEYTAB}"
+
+# One of several replicas: the address the others reach this one at.
+# "auto" is this container's own address, for runtimes with nothing better
+# to offer (Kubernetes passes the pod's address down instead).
+if [[ -z "${ODM_REPLICA_URL:-}" && -n "${ODM_REPLICA_ADDRESS:-}" ]]; then
+    ADDRESS="$ODM_REPLICA_ADDRESS"
+    [[ "$ADDRESS" == "auto" ]] && ADDRESS="$(hostname -i | awk '{print $1}')"
+    [[ "$ADDRESS" == *:* && "$ADDRESS" != \[* ]] && ADDRESS="[$ADDRESS]"
+    export ODM_REPLICA_URL="https://$ADDRESS:$PORT"
+fi
+
+# The notification server's publishing token, written by its own container.
+if [[ -n "${ODM_NTFY_URL:-}" && -z "${ODM_NTFY_TOKEN:-}" && -s "$DATA/secrets/ntfy-token" ]]; then
+    ODM_NTFY_TOKEN="$(cat "$DATA/secrets/ntfy-token")"
+    export ODM_NTFY_TOKEN
+fi
+if [[ -n "${ODM_NTFY_URL:-}" ]]; then
+    export ODM_NTFY_PUBLIC_URL="${ODM_NTFY_PUBLIC_URL:-https://$CONSOLE_FQDN:${ODM_NTFY_PORT:-8444}}"
+    export ODM_NTFY_CA_CERT="${ODM_NTFY_CA_CERT:-/etc/odm/tls/api.crt}"
+    export ODM_NTFY_TLS_SERVER_NAME="${ODM_NTFY_TLS_SERVER_NAME:-$CONSOLE_FQDN}"
+fi
+
+# The DHCP role's Control Agent, handed over by the node it was installed on
+# (install-dhcp-role.sh, odm-node-sync kea) unless it is set here already.
+# Only ODM_KEA_ names are taken from the file.
+if [[ -z "${ODM_KEA_URL:-}" && -s "$DATA/secrets/kea.env" ]]; then
+    while IFS='=' read -r name value; do
+        [[ "$name" =~ ^ODM_KEA_(URL|USER|PASSWORD)$ ]] && export "$name=$value"
+    done < "$DATA/secrets/kea.env"
+    if [[ -s "$DATA/secrets/kea-ca.pem" ]]; then
+        export ODM_KEA_CA_CERT="${ODM_KEA_CA_CERT:-$DATA/secrets/kea-ca.pem}"
+    fi
+fi
+
+# ------------------------------------------------------- client configuration --
+
+write_kerberos() {
+    {
+        printf '# Written by odm-control-plane at start; edits are lost.\n'
+        printf '[libdefaults]\n'
+        printf '    default_realm = %s\n' "$ODM_REALM"
+        printf '    dns_lookup_realm = false\n'
+        printf '    dns_lookup_kdc = true\n'
+        # A container's reverse DNS is the cluster's, never the domain's.
+        printf '    rdns = false\n'
+        printf '    dns_canonicalize_hostname = false\n'
+        printf '\n[realms]\n    %s = {\n' "$ODM_REALM"
+        for DC in "${CONTROLLER_LIST[@]}"; do
+            [[ "$DC" == *.* ]] || DC="$DC.$DOMAIN"
+            printf '        kdc = %s\n' "$DC"
+        done
+        printf '        admin_server = %s\n' "$FIRST_DC"
+        printf '    }\n\n[domain_realm]\n    .%s = %s\n    %s = %s\n' \
+            "$DOMAIN" "$ODM_REALM" "$DOMAIN" "$ODM_REALM"
+    } > "$RUN/krb5.conf"
+    # samba-tool reads a configuration even as a client.
+    cat > "$RUN/smb.conf" <<CONF
+# Written by odm-control-plane at start; edits are lost.
+[global]
+    workgroup = $NETBIOS
+    realm = $ODM_REALM
+    security = ADS
+    kerberos method = secrets and keytab
+    client signing = required
+    client ldap sasl wrapping = seal
+CONF
+}
+
+# ---------------------------------------------------------------- the volume --
+
+prepare_volume() {
+    install -d -m 0750 "$DATA/tls" "$DATA/secrets" "$DATA/ca" "$DATA/packages" \
+        "$DATA/tls-staging" "$DATA/ntfy"
+    # Root on the controller writes backups here; this account lists and prunes.
+    install -d -m 0770 "$DATA/backups"
+}
+
+# The console's first certificate, self-signed until the domain's authority
+# issues one (Certificates → Replace console certificate). Replicas starting
+# together make one between them, not one each.
+first_certificate() {
+    exec 9>"$DATA/.tls.lock"
+    flock 9
+    if [[ ! -s "$DATA/tls/api.crt" || ! -s "$DATA/tls/api.key" ]]; then
+        log "making the console's first certificate, for $CONSOLE_FQDN"
+        local alt="DNS:$CONSOLE_FQDN,DNS:odm.$DOMAIN,DNS:localhost,IP:127.0.0.1"
+        for EXTRA in ${ODM_CERTIFICATE_NAMES:-}; do alt="$alt,DNS:$EXTRA"; done
+        ( umask 077
+          openssl req -x509 -newkey rsa:4096 -sha256 -days 825 -nodes \
+              -keyout "$DATA/tls/api.key.new" -out "$DATA/tls/api.crt.new" \
+              -subj "/CN=$CONSOLE_FQDN" -addext "subjectAltName=$alt" \
+              -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+              -addext "extendedKeyUsage=serverAuth" >/dev/null 2>&1 )
+        chmod 0644 "$DATA/tls/api.crt.new"
+        mv "$DATA/tls/api.key.new" "$DATA/tls/api.key"
+        mv "$DATA/tls/api.crt.new" "$DATA/tls/api.crt"
+    fi
+    # What phones are asked to trust: the first, self-signed certificate,
+    # kept when the console's is replaced (install-phone-approvals.sh).
+    if [[ ! -s "$DATA/tls/phone.crt" || ! -s "$DATA/tls/phone.key" ]]; then
+        cp "$DATA/tls/api.crt" "$DATA/tls/phone.crt"
+        ( umask 077; cp "$DATA/tls/api.key" "$DATA/tls/phone.key" )
+    fi
+    flock -u 9
+}
+
+# What a running server has to restart for: its certificate, and the
+# settings read from the volume at start (a role's, the notification
+# server's token — which that server may write after this one started).
+fingerprint() {
+    # Either may be missing; that is a state too, not an error.
+    { cat "$DATA/tls/api.crt" "$DATA/secrets/kea.env" "$DATA/secrets/ntfy-token" \
+          2>/dev/null || true; } | sha256sum | cut -d' ' -f1
+}
+
+wait_for() {
+    local what="$1" path="$2" said=""
+    until [[ -s "$path" ]]; do
+        if [[ -z "$said" ]]; then
+            log "waiting for $what at $path"
+            said=yes
+        fi
+        sleep 5
+    done
+}
+
+# ------------------------------------------------------------- supervision --
+
+CHILD=""
+stop() {
+    [[ -n "$CHILD" ]] && kill -TERM "$CHILD" 2>/dev/null && wait "$CHILD" 2>/dev/null
+    exit 0
+}
+trap stop TERM INT
+
+# Run a server, and run it again whenever the console certificate changes.
+supervise() {
+    while true; do
+        local seen
+        seen="$(fingerprint)"
+        "$@" &
+        CHILD=$!
+        while kill -0 "$CHILD" 2>/dev/null; do
+            sleep 10 &
+            wait $! || true
+            if [[ "$(fingerprint)" != "$seen" ]]; then
+                # Spread out, so the replicas do not all go at once.
+                sleep "$((RANDOM % 15))"
+                log "the console certificate or a role's settings changed; restarting"
+                kill -TERM "$CHILD" 2>/dev/null || true
+                wait "$CHILD" 2>/dev/null || true
+                # Settings are read at start: start again, from the top.
+                exec "$0" "$MODE"
+            fi
+        done
+        wait "$CHILD" && status=0 || status=$?
+        log "$1 exited with status $status"
+        exit "$status"
+    done
+}
+
+serve_api() {
+    write_kerberos
+    prepare_volume
+    first_certificate
+    wait_for "the control plane's keytab (published by the first domain controller)" "$ODM_KEYTAB"
+    wait_for "the directory's CA certificate (published by the first domain controller)" \
+        "$ODM_LDAP_CA_CERT"
+    log "serving https://$CONSOLE_HOST/ for $ODM_REALM against $ODM_LDAP_URI"
+    supervise uvicorn odm.main:app \
+        --host "${ODM_LISTEN:-0.0.0.0}" --port "$PORT" \
+        --ssl-certfile "$DATA/tls/api.crt" --ssl-keyfile "$DATA/tls/api.key" \
+        --proxy-headers --forwarded-allow-ips "${ODM_FORWARDED_ALLOW_IPS:-127.0.0.1}" \
+        --no-server-header
+}
+
+# ------------------------------------------------------------- notifications --
+
+serve_ntfy() {
+    local port="${ODM_NTFY_PORT:-8444}" config="$RUN/ntfy.yml"
+    # Its own databases (SQLite): on the shared volume by default, or on a
+    # volume of their own where the shared one is a network filesystem.
+    local store="${ODM_NTFY_DATA_DIR:-$DATA/ntfy}"
+    prepare_volume
+    install -d -m 0750 "$store"
+    first_certificate
+    cat > "$config" <<CONF
+# Written by odm-control-plane ntfy at start (install-phone-approvals.sh, in a container).
+base-url: "https://$CONSOLE_FQDN:$port"
+listen-https: ":$port"
+listen-http: "127.0.0.1:8445"
+cert-file: "$DATA/tls/phone.crt"
+key-file: "$DATA/tls/phone.key"
+cache-file: "$store/cache.db"
+cache-duration: "1h"
+auth-file: "$store/user.db"
+auth-default-access: "read-only"
+enable-signup: false
+enable-login: false
+web-root: "disable"
+behind-proxy: false
+CONF
+    export NTFY_CONFIG_FILE="$config"
+    (
+        # The publishing account and its token, once; and the one topic family
+        # anyone may write to, which is a phone's answer.
+        for _ in $(seq 1 60); do [[ -s "$store/user.db" ]] && break; sleep 1; done
+        if [[ ! -s "$DATA/secrets/ntfy-token" ]]; then
+            if ! ntfy user --config "$config" list 2>&1 | grep -q '^user odm '; then
+                NTFY_PASSWORD="$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40)" \
+                    ntfy user --config "$config" add --role=admin odm >/dev/null 2>&1
+            fi
+            TOKEN="$(ntfy token --config "$config" add odm 2>&1 |
+                sed -n 's/.*\(tk_[A-Za-z0-9_-]\{1,\}\).*/\1/p' | head -1)"
+            if [[ -n "$TOKEN" ]]; then
+                ( umask 077; printf '%s\n' "$TOKEN" > "$DATA/secrets/ntfy-token" )
+                log "publishing token written to $DATA/secrets/ntfy-token"
+            else
+                log "could not create the publishing token"
+            fi
+        fi
+        ntfy access --config "$config" everyone 'odm-answer-*' write-only >/dev/null 2>&1 || true
+    ) &
+    supervise ntfy serve --config "$config"
+}
+
+MODE="${1:-serve}"
+case "$MODE" in
+    serve) serve_api ;;
+    ntfy) serve_ntfy ;;
+    migrate) write_kerberos; exec odm-db migrate ;;
+    *) exec "$@" ;;
+esac

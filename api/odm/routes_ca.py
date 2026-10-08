@@ -8,7 +8,6 @@ with.
 from __future__ import annotations
 
 import json
-import socket
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -481,16 +480,20 @@ async def console_certificate(
             issued.certificate_pem,
             issued.private_key_pem or "",
         )
+        if settings.deployment == "container":
+            await run_in_threadpool(roles.install_staged_console_certificate, settings)
         entry.after = {"serial": issued.serial, "not_after": str(issued.not_after)}
 
     # Installing it means writing /etc and restarting a service, which the
     # sandboxed control plane cannot do to its own host. The agent on this
     # machine does it, the same way it installs a role. The certificate is
     # already staged on disk, so nothing private travels through the queue.
+    # In containers it is installed already, above; the controller's agent
+    # then only publishes it into SYSVOL for the machines that verify it.
     async with pool.acquire() as conn:
         await tasks.enqueue(
             conn,
-            node_fqdn=socket.getfqdn(),
+            node_fqdn=settings.controller_node,
             kind="console-certificate",
             payload={},
             subject=issued.serial,
@@ -758,6 +761,8 @@ async def console_certificate_upload(
         await run_in_threadpool(
             roles.stage_console_certificate, settings, body.certificate_pem, key_pem
         )
+        if settings.deployment == "container":
+            await run_in_threadpool(roles.install_staged_console_certificate, settings)
         entry.after = {
             "names": info["names"],
             "issuer": info["issuer"],
@@ -766,7 +771,7 @@ async def console_certificate_upload(
     async with pool.acquire() as conn:
         await tasks.enqueue(
             conn,
-            node_fqdn=socket.getfqdn(),
+            node_fqdn=settings.controller_node,
             kind="console-certificate",
             payload={},
             subject=info["names"][0],

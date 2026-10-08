@@ -115,14 +115,14 @@ func Run(ctx context.Context, options Options, env Env, progress Progress) (*Res
 		return nil, err
 	}
 	renamed := false
-	if name.NeedsRename() {
-		if options.KeepName {
-			return nil, fmt.Errorf(
-				"this machine is called %q, but joining %s needs %q; "+
-					"drop --keep-hostname or set it yourself first",
-				name.Current, options.Domain, name.Wanted,
-			)
-		}
+	rename, err := hostnameAction(name, options)
+	if err != nil {
+		return nil, err
+	}
+	if name.NeedsRename() && !rename {
+		progress("Keeping this machine's name", name.Current)
+	}
+	if rename {
 		progress("Naming this machine", name.Wanted)
 		if !options.DryRun {
 			if err := ApplyHostname(ctx, name, env); err != nil {
@@ -283,4 +283,27 @@ func consoleURL(options Options, controller string) string {
 		return "https://" + strings.TrimSuffix(names[0], ".") + ":8443"
 	}
 	return "https://" + convention + ":8443"
+}
+
+// hostnameAction decides whether a join renames this machine. With
+// --keep-hostname a name that is already the domain name's short form is
+// kept as it is: the domain names the machine by its FQDN regardless, and
+// everything after this uses that. Where the name is not the machine's to
+// change — a container sharing its host's, where a rename renames the host —
+// that is the only way to join. Any other name is refused rather than kept.
+func hostnameAction(name MachineName, options Options) (bool, error) {
+	if !name.NeedsRename() {
+		return false, nil
+	}
+	if !options.KeepName {
+		return true, nil
+	}
+	if name.Current == name.Short {
+		return false, nil
+	}
+	return false, fmt.Errorf(
+		"this machine is called %q, but joining %s needs %q; "+
+			"drop --keep-hostname or set it yourself first",
+		name.Current, options.Domain, name.Wanted,
+	)
 }

@@ -96,3 +96,68 @@ def test_an_spn_that_already_exists_does_not_fail_reenrolment(monkeypatch):
     )
     assert keytab == b"K"
     assert any(call[:2] == ("user", "setpassword") for call in calls)
+
+
+# ------------------------------------------------------------ in containers ---
+# The control plane is not on a controller there (docs/CONTAINERS.md): every
+# samba-tool command goes over the wire, and the keytab is derived from the
+# password instead of exported, since a controller only hands keys out locally.
+
+
+def test_in_containers_enrolment_reaches_the_directory_over_the_wire(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(enrolment, "_run", _fake_run(calls, b"K"))
+    made: dict = {}
+
+    def fake_keytab(settings, short, password, principals, kvno):
+        made.update(short=short, principals=principals, kvno=kvno, password=password)
+        return b"KT"
+
+    monkeypatch.setattr(enrolment, "keytab_from_password", fake_keytab)
+    monkeypatch.setattr(enrolment, "_account_keys", lambda settings, account: ("fs1$", 3))
+    settings = get_settings().model_copy(update={"deployment": "container"})
+
+    keytab = enrolment.provision_machine(settings, "fs1.corp.example.internal", CONTAINER)
+
+    assert keytab == b"KT"
+    for call in calls:
+        assert "-H" in call and "ldap://dc1.corp.example.internal" in call, call
+    assert not [call for call in calls if call[:2] == ("domain", "exportkeytab")]
+    assert made["short"] == "fs1" and made["kvno"] == 3
+    # As the directory spells it, and as an agent asks for it.
+    assert made["principals"][:2] == ["fs1$@CORP.EXAMPLE.INTERNAL", "FS1$@CORP.EXAMPLE.INTERNAL"]
+    assert "cifs/fs1.corp.example.internal@CORP.EXAMPLE.INTERNAL" in made["principals"]
+    # The password the account was given is the one the keys come from.
+    setpassword = [call for call in calls if call[:2] == ("user", "setpassword")][0]
+    assert f"--newpassword={made['password']}" in setpassword
+
+
+def test_a_computer_accounts_salt_is_active_directorys(monkeypatch):
+    settings = get_settings()
+    assert (
+        enrolment.computer_salt(settings, "FS1")
+        == "CORP.EXAMPLE.INTERNALhostfs1.corp.example.internal"
+    )
+
+
+def test_the_password_reaches_ktutil_on_stdin_only(monkeypatch):
+    seen: dict = {}
+
+    class Done:
+        returncode = 0
+        stdout = stderr = ""
+
+    def fake_run(argv, **kwargs):
+        seen["argv"], seen["input"] = argv, kwargs["input"]
+        target = [line for line in kwargs["input"].splitlines() if line.startswith("wkt ")][0]
+        Path(target.split(" ", 1)[1]).write_bytes(b"keytab")
+        return Done()
+
+    monkeypatch.setattr(enrolment.subprocess, "run", fake_run)
+    out = enrolment.keytab_from_password(
+        get_settings(), "fs1", "s3cret-Pass", ["fs1$@CORP.EXAMPLE.INTERNAL"], 2
+    )
+    assert out == b"keytab"
+    assert seen["argv"] == ["ktutil"]
+    assert "s3cret-Pass" not in " ".join(seen["argv"])
+    assert "-k 2 -e aes256-cts-hmac-sha1-96 -s CORP.EXAMPLE.INTERNALhostfs1." in seen["input"]

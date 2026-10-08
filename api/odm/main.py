@@ -30,12 +30,14 @@ from . import (
     events,
     kea,
     ldappool,
+    leader,
     monitor,
     objects,
     oidc,
     printers,
     radius,
     remotedesktop,
+    replicas,
     roles,
     routes_activity,
     routes_admx,
@@ -110,16 +112,23 @@ async def lifespan(app: FastAPI):
     # What changed, as it changes, for every console with a page open.
     await events.broadcaster.start(app.state.pool)
 
-    background = [
-        asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool)),
-        asyncio.create_task(vaultkeeper.reconcile_loop(app.state.pool, settings)),
-        asyncio.create_task(routes_operations.backup_loop(app.state.pool, settings)),
-        # A group whose membership is a query is only true if something keeps
-        # answering the question.
-        asyncio.create_task(routes_directory.group_query_loop(app.state.pool, settings)),
-        # The rules are only true if something keeps asking whether they hold.
-        asyncio.create_task(monitor.evaluate_loop(app.state.pool, settings)),
-    ]
+    def scheduled() -> list[asyncio.Task]:
+        return [
+            asyncio.create_task(routes_recyclebin.purge_loop(app.state.pool)),
+            asyncio.create_task(vaultkeeper.reconcile_loop(app.state.pool, settings)),
+            asyncio.create_task(routes_operations.backup_loop(app.state.pool, settings)),
+            # A group whose membership is a query is only true if something
+            # keeps answering the question.
+            asyncio.create_task(routes_directory.group_query_loop(app.state.pool, settings)),
+            # The rules are only true if something keeps asking whether they hold.
+            asyncio.create_task(monitor.evaluate_loop(app.state.pool, settings)),
+        ]
+
+    # Once across every replica, not once per replica (leader.py).
+    background = [asyncio.create_task(leader.run_while_leader(app.state.pool, scheduled))]
+    # Where this replica can be reached by the others, for the terminals and
+    # shared screens it holds (replicas.py).
+    await replicas.register(app.state.pool, settings)
     try:
         yield
     finally:
@@ -181,6 +190,9 @@ def create_app() -> FastAPI:
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Content-Type", "Authorization", CSRF_HEADER],
         )
+    # Added last, so outermost: a session another replica holds is carried
+    # to it before anything here looks at the request (replicas.py).
+    app.add_middleware(replicas.ReplicaForwarder)
     app.include_router(auth.router)
     app.include_router(routes_directory.router)
     app.include_router(routes_policy.router)

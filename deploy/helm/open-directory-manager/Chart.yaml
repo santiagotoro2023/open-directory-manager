@@ -1,0 +1,11 @@
+apiVersion: v2
+name: open-directory-manager
+description: "Open Directory Manager: an Active Directory domain on Samba — directory, Group Policy, DNS, DHCP and the roles of a Windows domain — managed from one console."
+type: application
+version: 0.17.6
+appVersion: "0.17.6"
+home: https://github.com/santiagotoro2023/open-directory-manager
+sources:
+  - https://github.com/santiagotoro2023/open-directory-manager
+keywords: [active-directory, samba, ldap, kerberos, group-policy, dns, dhcp, identity]
+icon: https://raw.githubusercontent.com/santiagotoro2023/open-directory-manager/main/branding/odm-mark.svg
