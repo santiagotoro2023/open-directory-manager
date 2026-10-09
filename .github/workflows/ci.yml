@@ -373,7 +373,7 @@ jobs:
 
   release:
     name: publish odm-client.deb
-    needs: [api, installed, web, go, client-package, ntfy-app]
+    needs: [api, installed, web, go, deploy, dependency-scan, client-package, ntfy-app]
     if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-latest
     permissions:
