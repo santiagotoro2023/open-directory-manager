@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.27.0"
+  GO_VERSION: "1.27.2"
   NODE_VERSION: "22"
   PYTHON_VERSION: "3.11"
 
@@ -373,7 +373,7 @@ jobs:
 
   release:
     name: publish odm-client.deb
-    needs: [api, installed, web, go, client-package, ntfy-app]
+    needs: [api, installed, web, go, deploy, dependency-scan, client-package, ntfy-app]
     if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-latest
     permissions:

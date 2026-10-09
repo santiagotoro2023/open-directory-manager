@@ -103,10 +103,34 @@ jobs:
       - name: Provision a domain and test it
         run: scripts/test-containers.sh
 
+  # The images carry the agent every machine updates itself from: they are
+  # not published while the Go they are built with has a known vulnerability
+  # the agent or the join client can reach.
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: go
+        name: The Go the images are built with
+        run: |
+          GO="$(sed -n 's/^FROM golang:\([0-9.]*\)-.*/\1/p' Dockerfile | head -1)"
+          [[ -n "$GO" ]] || { echo "::error::no golang build stage in Dockerfile"; exit 1; }
+          grep -q "^FROM golang:$GO-" deploy/docker/node/Dockerfile || {
+            echo "::error::the node image is not built with Go $GO"; exit 1; }
+          echo "version=$GO" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: false
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          for m in agent client-join; do (cd "$m" && "$(go env GOPATH)/bin/govulncheck" ./...); done
+
   publish:
     name: publish images and chart
     if: github.event_name != 'pull_request'
-    needs: [chart, e2e]
+    needs: [chart, e2e, govulncheck]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
